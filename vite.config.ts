@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.0.11';
+const PLUGIN_VERSION = '2.0.12';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -72,6 +72,211 @@ const VENDOR_NATURAL_BASE_HELP_NEEDLE =
 
 const VENDOR_NATURAL_BASE_HELP_PATCH =
   `"nx-natural-base": { title: "자연어 base", body: "NovelAI base에 넣는 자연어 장면을 고릅니다. 안넣기 / 짧게 넣기(머리·나이·성별·행동) / 구도·자세히(구도·표정·옷·조명) / 태그 보완 자연어(태그가 못 담는 문장)." }`;
+
+/**
+ * Sticky always-image hide = effective size 0% (not display:none / card-id).
+ * Click collapse, 상시 off, and shot/char editors all go through La().
+ */
+const VENDOR_STICKY_LA_NEEDLE = `  function La() {
+    const e = t.backendSettings?.card || {};
+    let n = Ne(e.inline_thumb_pct, 0);
+    if (!n) {
+      const o = Ne(e.inline_thumb_w, at);
+      n = Math.round(o / at * 100) || Sa;
+    }
+    return n = Math.max(1, n), {
+      w: Math.max(1, Math.round(at * n / 100)),
+      h: Math.max(1, Math.round(ka * n / 100)),
+      pct: n
+    };
+  }`;
+
+const VENDOR_STICKY_LA_PATCH = `  function La() {
+    const e = t.backendSettings?.card || {};
+    let n = Ne(e.inline_thumb_pct, 0);
+    if (!n) {
+      const o = Ne(e.inline_thumb_w, at);
+      n = Math.round(o / at * 100) || Sa;
+    }
+    const ov = t.overlayUi || {};
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const alwaysOn = Nt();
+    const userCollapsed = !!ov._stickyThumbCollapsed;
+    const editorOpen = !!ov._stickyEditorOpen || !!t.cardTagUi || !!t.charEditUi;
+    const pct = typeof VC?.resolveStickyThumbPct == "function"
+      ? VC.resolveStickyThumbPct({ settingsPct: n, alwaysOn, userCollapsed, editorOpen })
+      : alwaysOn && !userCollapsed && !editorOpen ? Math.max(0, n) : 0;
+    if (typeof VC?.stickyThumbBoxFromPct == "function") return VC.stickyThumbBoxFromPct(pct, at, ka);
+    return {
+      w: Math.max(0, Math.round(at * pct / 100)),
+      h: Math.max(0, Math.round(ka * pct / 100)),
+      pct
+    };
+  }`;
+
+const VENDOR_STICKY_KEEP_NEEDLE = `    const keepHidden = typeof VC?.shouldKeepStickyThumbHidden == "function" ? VC.shouldKeepStickyThumbHidden(!!e._stickyThumbUserHidden, e._stickyThumbHiddenId, activeIdNow) : !!(e._stickyThumbUserHidden && String(e._stickyThumbHiddenId || "") === String(activeIdNow || "") && activeIdNow);
+    if (!keepHidden && e._stickyThumbUserHidden) e._stickyThumbUserHidden = !1, e._stickyThumbHiddenId = "";
+`;
+
+const VENDOR_STICKY_KEEP_PATCH = ``;
+
+const VENDOR_STICKY_SHOW_NEEDLE = `    const showStickyImg = p && !hideThumbOffscreen && !keepHidden, u = 6, b = 11, C = 4;`;
+const VENDOR_STICKY_SHOW_PATCH = `    const showStickyImg = m.pct > 0 && !hideThumbOffscreen, u = 6, b = 11, C = 4;`;
+
+const VENDOR_STICKY_SKIP_NEEDLE = `e._lastHideThumbOff === hideThumbOffscreen && e._lastStickyUserHidden === keepHidden && e._lastVpW === vpW`;
+const VENDOR_STICKY_SKIP_PATCH = `e._lastHideThumbOff === hideThumbOffscreen && e._lastVpW === vpW`;
+
+const VENDOR_STICKY_ASSIGN_NEEDLE = `e._lastHideThumbOff = hideThumbOffscreen, e._lastStickyUserHidden = keepHidden, e._lastVpW = vpW`;
+const VENDOR_STICKY_ASSIGN_PATCH = `e._lastHideThumbOff = hideThumbOffscreen, e._lastVpW = vpW`;
+
+const VENDOR_STICKY_CLICK_NEEDLE = `      if (fPress.source === "sticky-thumb") {
+        await hidePressFill();
+        const ov = t.overlayUi;
+        if (ov) ov._stickyThumbUserHidden = !0, ov._stickyThumbHiddenId = fPress.card?.id || "", ov._lastStickyUserHidden = null;
+        try {
+          await Ht();
+        } catch {
+        }
+        y("info", "sticky.thumb.hide", String(fPress.card?.id || "").slice(0, 8));
+        return;
+      }
+      if (fPress.source === "sticky-pin") {
+        const ov = t.overlayUi;
+        if (ov) ov._stickyThumbUserHidden = !1, ov._stickyThumbHiddenId = "", ov._lastStickyUserHidden = null;
+        try {
+          await Ht();
+        } catch {
+        }`;
+
+const VENDOR_STICKY_CLICK_PATCH = `      if (fPress.source === "sticky-thumb") {
+        await hidePressFill();
+        const ov = t.overlayUi;
+        if (ov) ov._stickyThumbCollapsed = !ov._stickyThumbCollapsed;
+        try {
+          await Ht();
+        } catch {
+        }
+        y("info", ov?._stickyThumbCollapsed ? "sticky.thumb.hide" : "sticky.thumb.show", String(fPress.card?.id || "").slice(0, 8));
+        return;
+      }
+      if (fPress.source === "sticky-pin") {
+        const ov = t.overlayUi;
+        if (ov) ov._stickyThumbCollapsed = !1;
+        try {
+          await Ht();
+        } catch {
+        }`;
+
+const VENDOR_STICKY_PRESS_NEEDLE = `if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbUserHidden) continue;`;
+const VENDOR_STICKY_PRESS_PATCH = `if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;`;
+
+const VENDOR_STICKY_REVIVE_NEEDLE = `if (Nt() && t.overlayUi?._stickyThumbUserHidden) {`;
+const VENDOR_STICKY_REVIVE_PATCH = `if (Nt() && t.overlayUi?._stickyThumbCollapsed) {`;
+
+const VENDOR_STICKY_INIT_NEEDLE = `      _stickyThumbUserHidden: !1,
+      _stickyThumbHiddenId: "",
+      _lastStickyUserHidden: null,`;
+const VENDOR_STICKY_INIT_PATCH = `      _stickyThumbCollapsed: !1,
+      _stickyEditorOpen: !1,`;
+
+const VENDOR_STICKY_RESET_NEEDLE = `e._lastStickyThumbHtmlId = null, e._stickyThumbUserHidden = !1, e._stickyThumbHiddenId = "", e._lastStickyUserHidden = null);`;
+const VENDOR_STICKY_RESET_PATCH = `e._lastStickyThumbHtmlId = null, e._stickyThumbCollapsed = !1, e._stickyEditorOpen = !1);`;
+
+const VENDOR_STICKY_OPEN_CARD_NEEDLE = `  async function openCardTagEdit(e) {
+    if (!e?.id) return;
+    if (typeof document > "u" || !document.body) {
+      y("error", "card.tags.open", "plugin document unavailable");
+      return;
+    }
+    await closeCharacterCreateModal().catch(() => null);
+    await closeCardTagEdit(), await xe();`;
+
+const VENDOR_STICKY_OPEN_CARD_PATCH = `  async function openCardTagEdit(e) {
+    if (!e?.id) return;
+    if (typeof document > "u" || !document.body) {
+      y("error", "card.tags.open", "plugin document unavailable");
+      return;
+    }
+    await closeCharacterCreateModal().catch(() => null);
+    await closeCardTagEdit(), await xe();
+    if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
+    try { await Ht(); } catch {}`;
+
+const VENDOR_STICKY_OPEN_CHAR_NEEDLE = `  async function Ua(e) {
+    if (!e?.name) return;
+    if (typeof document > "u" || !document.body) {
+      y("error", "char.edit.open", "plugin document unavailable");
+      return;
+    }
+    await closeCardTagEdit(), await xe(), await closeCharacterCreateModal().catch(() => null);`;
+
+const VENDOR_STICKY_OPEN_CHAR_PATCH = `  async function Ua(e) {
+    if (!e?.name) return;
+    if (typeof document > "u" || !document.body) {
+      y("error", "char.edit.open", "plugin document unavailable");
+      return;
+    }
+    await closeCardTagEdit(), await xe(), await closeCharacterCreateModal().catch(() => null);
+    if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
+    try { await Ht(); } catch {}`;
+
+const VENDOR_STICKY_CLOSE_CARD_NEEDLE = `  async function closeCardTagEdit() {
+    const e = t.cardTagUi, n = e?.root || (typeof document < "u" ? document.getElementById("nx-card-tag-modal") : null);
+    try {
+      n?.remove?.();
+    } catch {
+    }
+    const o = !!e?.openedContainer;
+    if (t.cardTagUi = null, o && !t.uiOpen && typeof k.hideContainer == "function") try {
+      await k.hideContainer();
+    } catch {
+    }
+  }`;
+
+const VENDOR_STICKY_CLOSE_CARD_PATCH = `  async function closeCardTagEdit() {
+    const e = t.cardTagUi, n = e?.root || (typeof document < "u" ? document.getElementById("nx-card-tag-modal") : null);
+    try {
+      n?.remove?.();
+    } catch {
+    }
+    const o = !!e?.openedContainer;
+    if (t.cardTagUi = null, o && !t.uiOpen && typeof k.hideContainer == "function") try {
+      await k.hideContainer();
+    } catch {
+    }
+    if (t.overlayUi && !t.charEditUi) {
+      t.overlayUi._stickyEditorOpen = !1;
+      try { await Ht(); } catch {}
+    }
+  }`;
+
+const VENDOR_STICKY_CLOSE_CHAR_NEEDLE = `    if (t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), o && !t.uiOpen && typeof k.hideContainer == "function") try {
+      await k.hideContainer();
+    } catch {
+    }
+    // Viewer stays visible during overlays — no restoreFloatingViewerAfterModal.
+    if (t.galleryUi?.renderCast) try {
+      await t.galleryUi.renderCast();
+    } catch {
+    }
+  }
+  async function Ua(e) {`;
+
+const VENDOR_STICKY_CLOSE_CHAR_PATCH = `    if (t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), o && !t.uiOpen && typeof k.hideContainer == "function") try {
+      await k.hideContainer();
+    } catch {
+    }
+    // Viewer stays visible during overlays — no restoreFloatingViewerAfterModal.
+    if (t.galleryUi?.renderCast) try {
+      await t.galleryUi.renderCast();
+    } catch {
+    }
+    if (t.overlayUi && !t.cardTagUi) {
+      t.overlayUi._stickyEditorOpen = !1;
+      try { await Ht(); } catch {}
+    }
+  }
+  async function Ua(e) {`;
 
 const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
 //@display-name Inlay Nexus ${PLUGIN_VERSION}
@@ -153,12 +358,44 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_NATURAL_BASE_HTML_NEEDLE, 'natural_base checkbox');
   assertOnce(raw, VENDOR_NATURAL_BASE_SAVE_NEEDLE, 'natural_base save ee()');
   assertOnce(raw, VENDOR_NATURAL_BASE_HELP_NEEDLE, 'natural_base help entry');
+  for (const [needle, label] of [
+    [VENDOR_STICKY_LA_NEEDLE, 'sticky La()'],
+    [VENDOR_STICKY_KEEP_NEEDLE, 'sticky keepHidden'],
+    [VENDOR_STICKY_SHOW_NEEDLE, 'sticky showStickyImg'],
+    [VENDOR_STICKY_SKIP_NEEDLE, 'sticky skip keepHidden'],
+    [VENDOR_STICKY_ASSIGN_NEEDLE, 'sticky assign keepHidden'],
+    [VENDOR_STICKY_CLICK_NEEDLE, 'sticky click hide/revive'],
+    [VENDOR_STICKY_PRESS_NEEDLE, 'sticky press skip'],
+    [VENDOR_STICKY_REVIVE_NEEDLE, 'sticky pin revive'],
+    [VENDOR_STICKY_INIT_NEEDLE, 'sticky init flags'],
+    [VENDOR_STICKY_RESET_NEEDLE, 'sticky reset flags'],
+    [VENDOR_STICKY_OPEN_CARD_NEEDLE, 'sticky open card edit'],
+    [VENDOR_STICKY_OPEN_CHAR_NEEDLE, 'sticky open char edit'],
+    [VENDOR_STICKY_CLOSE_CARD_NEEDLE, 'sticky close card edit'],
+    [VENDOR_STICKY_CLOSE_CHAR_NEEDLE, 'sticky close char edit'],
+  ] as const) {
+    assertOnce(raw, needle, label);
+  }
   return raw
     .replace(VENDOR_VERSION_NEEDLE, `He = "${PLUGIN_VERSION}"`)
     .replace(VENDOR_PROMPT_RESET_NEEDLE, VENDOR_PROMPT_RESET_PATCH)
     .replace(VENDOR_NATURAL_BASE_HTML_NEEDLE, VENDOR_NATURAL_BASE_HTML_PATCH)
     .replace(VENDOR_NATURAL_BASE_SAVE_NEEDLE, VENDOR_NATURAL_BASE_SAVE_PATCH)
-    .replace(VENDOR_NATURAL_BASE_HELP_NEEDLE, VENDOR_NATURAL_BASE_HELP_PATCH);
+    .replace(VENDOR_NATURAL_BASE_HELP_NEEDLE, VENDOR_NATURAL_BASE_HELP_PATCH)
+    .replace(VENDOR_STICKY_LA_NEEDLE, VENDOR_STICKY_LA_PATCH)
+    .replace(VENDOR_STICKY_KEEP_NEEDLE, VENDOR_STICKY_KEEP_PATCH)
+    .replace(VENDOR_STICKY_SHOW_NEEDLE, VENDOR_STICKY_SHOW_PATCH)
+    .replace(VENDOR_STICKY_SKIP_NEEDLE, VENDOR_STICKY_SKIP_PATCH)
+    .replace(VENDOR_STICKY_ASSIGN_NEEDLE, VENDOR_STICKY_ASSIGN_PATCH)
+    .replace(VENDOR_STICKY_CLICK_NEEDLE, VENDOR_STICKY_CLICK_PATCH)
+    .replace(VENDOR_STICKY_PRESS_NEEDLE, VENDOR_STICKY_PRESS_PATCH)
+    .replace(VENDOR_STICKY_REVIVE_NEEDLE, VENDOR_STICKY_REVIVE_PATCH)
+    .replace(VENDOR_STICKY_INIT_NEEDLE, VENDOR_STICKY_INIT_PATCH)
+    .replace(VENDOR_STICKY_RESET_NEEDLE, VENDOR_STICKY_RESET_PATCH)
+    .replace(VENDOR_STICKY_CLOSE_CHAR_NEEDLE, VENDOR_STICKY_CLOSE_CHAR_PATCH)
+    .replace(VENDOR_STICKY_OPEN_CHAR_NEEDLE, VENDOR_STICKY_OPEN_CHAR_PATCH)
+    .replace(VENDOR_STICKY_CLOSE_CARD_NEEDLE, VENDOR_STICKY_CLOSE_CARD_PATCH)
+    .replace(VENDOR_STICKY_OPEN_CARD_NEEDLE, VENDOR_STICKY_OPEN_CARD_PATCH);
 };
 
 /** Wraps the emitted chunk in an IIFE, prepends the header, appends the frozen UI. */

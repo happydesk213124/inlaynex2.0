@@ -29,6 +29,8 @@ import {
   shouldRefreshGallery,
   shouldRewriteStickyThumb,
   shouldKeepStickyThumbHidden,
+  resolveStickyThumbPct,
+  stickyThumbBoxFromPct,
   composeStickyThumbHtml,
   stickyThumbNeedsHtmlPaint,
   stickyCornerImageBox,
@@ -191,6 +193,20 @@ test("shouldRewriteStickyThumb only when active card id changes", () => {
 test("shouldKeepStickyThumbHidden only for the same card the user hid", () => {
   assert.equal(shouldKeepStickyThumbHidden(true, "a", "a"), true);
   assert.equal(shouldKeepStickyThumbHidden(true, "a", "b"), false);
+});
+
+test("resolveStickyThumbPct is settings size only when always on and not collapsed/editing", () => {
+  assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: true, userCollapsed: false, editorOpen: false }), 120);
+  assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: false, userCollapsed: false, editorOpen: false }), 0);
+  assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: true, userCollapsed: true, editorOpen: false }), 0);
+  assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: true, userCollapsed: false, editorOpen: true }), 0);
+  assert.equal(resolveStickyThumbPct({ settingsPct: 0, alwaysOn: true, userCollapsed: false, editorOpen: false }), 0);
+});
+
+test("stickyThumbBoxFromPct allows 0 size for hide-by-pct", () => {
+  assert.deepEqual(stickyThumbBoxFromPct(0, 200, 160), { pct: 0, w: 0, h: 0 });
+  assert.deepEqual(stickyThumbBoxFromPct(100, 200, 160), { pct: 100, w: 200, h: 160 });
+  assert.deepEqual(stickyThumbBoxFromPct(50, 200, 160), { pct: 50, w: 100, h: 80 });
 });
 
 test("composeStickyThumbHtml uses a single img (no dual data-URL stack)", () => {

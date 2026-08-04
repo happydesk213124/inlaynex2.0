@@ -1074,6 +1074,39 @@ export function shouldKeepStickyThumbHidden(
 }
 
 /**
+ * Effective sticky always-image size %.
+ *
+ * Hide is size 0 (not display:none): 상시 off, click-collapse, or shot/char
+ * editor open all collapse to 0; otherwise use the settings percentage.
+ */
+export function resolveStickyThumbPct(opts: {
+  settingsPct: unknown;
+  alwaysOn: boolean;
+  userCollapsed: boolean;
+  editorOpen: boolean;
+}): number {
+  if (!opts.alwaysOn || opts.userCollapsed || opts.editorOpen) return 0;
+  const pct = finiteNumber(opts.settingsPct, 0);
+  return pct > 0 ? pct : 0;
+}
+
+/** Pixel box from an effective sticky thumb %. Allows 0×0 for hide-by-pct. */
+export function stickyThumbBoxFromPct(
+  pct: unknown,
+  baseW: number,
+  baseH: number,
+): { pct: number; w: number; h: number } {
+  const p = Math.max(0, finiteNumber(pct, 0));
+  const bw = Math.max(0, finiteNumber(baseW, 0));
+  const bh = Math.max(0, finiteNumber(baseH, 0));
+  return {
+    pct: p,
+    w: Math.max(0, Math.round(bw * p / 100)),
+    h: Math.max(0, Math.round(bh * p / 100)),
+  };
+}
+
+/**
  * Sticky thumb HTML. Prefer a single <img> — dual-stack under/over doubles the
  * data-URL payload through SafeDOM setInnerHTML and is what made scroll flashes lag.
  */

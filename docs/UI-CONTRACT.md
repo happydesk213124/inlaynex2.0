@@ -33,7 +33,7 @@ missing, which historically hid bugs — so we publish the full surface.
 
 | Global | Purpose |
 |---|---|
-| `__INLAY_VIEWER_CORE__` | overlay/pin geometry, gallery ordering, DOM↔API message matching |
+| `__INLAY_VIEWER_CORE__` | overlay/pin geometry, gallery ordering, DOM↔API message matching; sticky always-image size via `resolveStickyThumbPct` / `stickyThumbBoxFromPct` (hide = 0%, not display:none) |
 | `__INLAY_LLM__` | provider list, endpoint defaults, model placeholders |
 | `__INLAY_LORE_EXTRA__` | `lb-xnai.lb.extra` lorebook trimming |
 | `__INLAY_EXPLORER__` | explorer multi-select state machine |

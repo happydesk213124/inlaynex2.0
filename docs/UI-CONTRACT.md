@@ -68,6 +68,10 @@ so out-of-order responses are discarded client-side. The backend just answers.
 `/v1/prompts` → `{ prompts: [{key, text}] }` · `/v1/prompts/:key` ·
 `PUT /v1/prompts/:key` `{text}` · `POST /v1/prompts/:key/reset`
 
+The frozen UI asks `globalThis.confirm` before calling reset (same pattern as
+settings reset); that confirm is inserted by an asserted build patch in
+`vite.config.ts`, not by editing `vendor/`.
+
 Keys: `author_note, tagger, format, prefill, preprocess, preset_1, lore_inject,
 char_inject, appearance_inject, autotag`.
 

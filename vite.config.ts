@@ -17,7 +17,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
-import { encodePromptPack } from './src/config/prompt-codec';
+import { encodePromptPack } from './src/config/prompt-codec.ts';
 
 const configRoot = dirname(fileURLToPath(import.meta.url));
 
@@ -30,10 +30,24 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.0.9';
+const PLUGIN_VERSION = '2.0.10';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
+
+/**
+ * Settings reset already asks via `globalThis.confirm`; prompt restore did not.
+ * We cannot edit the frozen vendor file, so the build inserts the same guard
+ * at the one call site. Needle must stay unique or the build fails loudly.
+ */
+const VENDOR_PROMPT_RESET_NEEDLE = `const r = a.getAttribute("data-reset-prompt");
+        try {
+          await K(\`/v1/prompts/\${encodeURIComponent(r)}/reset\`, {`;
+
+const VENDOR_PROMPT_RESET_PATCH = `const r = a.getAttribute("data-reset-prompt");
+        if (!globalThis.confirm?.(\`정말로 "\${r}" 프롬프트를 기본값으로 복원할까요?\`)) return;
+        try {
+          await K(\`/v1/prompts/\${encodeURIComponent(r)}/reset\`, {`;
 
 const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
 //@display-name Inlay Nexus ${PLUGIN_VERSION}
@@ -109,9 +123,12 @@ const loadVendorUi = (): string => {
     }
   }
 
-  // Sole cosmetic patch: the footer version label.
+  // Asserted patches only — never hand-edit vendor/inlay-nexus-ui.js.
   assertOnce(raw, VENDOR_VERSION_NEEDLE, VENDOR_VERSION_NEEDLE);
-  return raw.replace(VENDOR_VERSION_NEEDLE, `He = "${PLUGIN_VERSION}"`);
+  assertOnce(raw, VENDOR_PROMPT_RESET_NEEDLE, 'prompt-reset confirm insertion point');
+  return raw
+    .replace(VENDOR_VERSION_NEEDLE, `He = "${PLUGIN_VERSION}"`)
+    .replace(VENDOR_PROMPT_RESET_NEEDLE, VENDOR_PROMPT_RESET_PATCH);
 };
 
 /** Wraps the emitted chunk in an IIFE, prepends the header, appends the frozen UI. */

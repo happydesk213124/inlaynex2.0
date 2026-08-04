@@ -10,9 +10,11 @@ and silently destroys user data or stops rendering.
 
 ### 1. Never edit `vendor/inlay-nexus-ui.js`
 It is a 500 KB upstream Vite build with no source in this repo. Treat it as a
-binary. The build verifies it is the native-bridge build and applies exactly one
-asserted cosmetic patch (the version label). If you think you need to change the
-UI, you actually need to change what the backend returns.
+binary. The build verifies it is the native-bridge build and applies only the
+asserted patches in `vite.config.ts` (today: the version label, and a confirm
+dialog on prompt-default restore). If you think you need to change the UI, prefer
+changing what the backend returns; a new asserted build-time patch is the
+exception, and it must fail the build when its needle drifts.
 
 ### 2. Never edit `dist/` — always `npm run build`
 `dist/inlaynexus2.0.js` is generated. Editing it means the next build silently

@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.0.13';
+const PLUGIN_VERSION = '2.0.14';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -50,28 +50,84 @@ const VENDOR_PROMPT_RESET_PATCH = `const r = a.getAttribute("data-reset-prompt")
           await K(\`/v1/prompts/\${encodeURIComponent(r)}/reset\`, {`;
 
 /**
- * `card.natural_base` is now an enum (`off|short|detailed|supplement`), not a
- * boolean. Patch the frozen checkbox + `ee()` save into a `<select>` + `N()`.
+ * `card.natural_base` enum: remove dashboard checkbox; place select in card
+ * settings 3-col row with person_tag / lore_extra; save via Ct() not Mt().
  */
 const VENDOR_NATURAL_BASE_HTML_NEEDLE =
-  `<label class="toggle-row" data-nx-help-id="nx-natural-base"><input type="checkbox" id="nx-natural-base" \${i.natural_base !== !1 ? "checked" : ""}><span>자연어 base 태그</span></label>`;
+  `<label class="toggle-row" data-nx-help-id="nx-natural-base"><input type="checkbox" id="nx-natural-base" \${i.natural_base !== !1 ? "checked" : ""}><span>자연어 base 태그</span></label>
+`;
 
-const VENDOR_NATURAL_BASE_HTML_PATCH =
-  `<label class="wide" data-nx-help-id="nx-natural-base" style="grid-column:1/-1"><span>자연어 base</span><select id="nx-natural-base">
+const VENDOR_NATURAL_BASE_HTML_PATCH = ``;
+
+const VENDOR_NATURAL_BASE_SAVE_NEEDLE = `      natural_base: ee("nx-natural-base"),
+`;
+const VENDOR_NATURAL_BASE_SAVE_PATCH = ``;
+
+const VENDOR_NATURAL_BASE_CT_NEEDLE =
+  `      lore_extra: document.getElementById("nx-lore-extra") ? normalizeLoreExtraMode(N("nx-lore-extra")) : normalizeLoreExtraMode(e.lore_extra),`;
+
+const VENDOR_NATURAL_BASE_CT_PATCH =
+  `      lore_extra: document.getElementById("nx-lore-extra") ? normalizeLoreExtraMode(N("nx-lore-extra")) : normalizeLoreExtraMode(e.lore_extra),
+      natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",`;
+
+const VENDOR_NATURAL_BASE_CARD_NEEDLE =
+  `<label class="wide"><span>사람 태그 자동넣기</span><select id="nx-person-tag-mode">
+              <option value="gender" \${R === "gender" ? "selected" : ""}>성별 분리 (1girl, 1boy…)</option>
+              <option value="girls" \${R === "girls" ? "selected" : ""}>인원수 → girls (4girls)</option>
+              <option value="people" \${R === "people" ? "selected" : ""}>인원수 → people (4people)</option>
+              <option value="off" \${R === "off" ? "selected" : ""}>안 넣기</option>
+            </select></label>
+            <label class="wide" data-nx-help-id="nx-lore-extra"><span>lb-xnai.lb.extra</span><select id="nx-lore-extra">
+              <option value="tags" \${loreExtraUi === "tags" ? "selected" : ""}>캐릭터 태그만</option>
+              <option value="full" \${loreExtraUi === "full" ? "selected" : ""}>전체</option>
+              <option value="off" \${loreExtraUi === "off" ? "selected" : ""}>넣지 않음</option>
+            </select></label>`;
+
+const VENDOR_NATURAL_BASE_CARD_PATCH =
+  `<div class="wide" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end">
+            <label data-nx-help-id="nx-person-tag-mode"><span>사람 태그 자동넣기</span><select id="nx-person-tag-mode">
+              <option value="gender" \${R === "gender" ? "selected" : ""}>성별 분리 (1girl, 1boy…)</option>
+              <option value="girls" \${R === "girls" ? "selected" : ""}>인원수 → girls (4girls)</option>
+              <option value="people" \${R === "people" ? "selected" : ""}>인원수 → people (4people)</option>
+              <option value="off" \${R === "off" ? "selected" : ""}>안 넣기</option>
+            </select></label>
+            <label data-nx-help-id="nx-lore-extra"><span>lb-xnai.lb.extra</span><select id="nx-lore-extra">
+              <option value="tags" \${loreExtraUi === "tags" ? "selected" : ""}>캐릭터 태그만</option>
+              <option value="full" \${loreExtraUi === "full" ? "selected" : ""}>전체</option>
+              <option value="off" \${loreExtraUi === "off" ? "selected" : ""}>넣지 않음</option>
+            </select></label>
+            <label data-nx-help-id="nx-natural-base"><span>자연어 base</span><select id="nx-natural-base">
               <option value="off" \${i.natural_base === !1 || i.natural_base === "off" ? "selected" : ""}>안넣기</option>
               <option value="short" \${i.natural_base !== !1 && i.natural_base !== "off" && i.natural_base !== "detailed" && i.natural_base !== "supplement" ? "selected" : ""}>짧게 넣기</option>
               <option value="detailed" \${i.natural_base === "detailed" ? "selected" : ""}>구도·자세히</option>
               <option value="supplement" \${i.natural_base === "supplement" ? "selected" : ""}>태그 보완 자연어</option>
-            </select></label>`;
-
-const VENDOR_NATURAL_BASE_SAVE_NEEDLE = 'natural_base: ee("nx-natural-base"),';
-const VENDOR_NATURAL_BASE_SAVE_PATCH = 'natural_base: N("nx-natural-base") || "short",';
+            </select></label>
+            </div>`;
 
 const VENDOR_NATURAL_BASE_HELP_NEEDLE =
   `"nx-natural-base": { title: "자연어 base 태그", body: "이미지 요청에 짧은 자연어 장면도 함께 넣습니다. 태그만 쓸 때보다 분위기가 자연스러워질 수 있습니다." }`;
 
 const VENDOR_NATURAL_BASE_HELP_PATCH =
   `"nx-natural-base": { title: "자연어 base", body: "NovelAI base에 넣는 자연어 장면을 고릅니다. 안넣기 / 짧게 넣기(머리·나이·성별·행동) / 구도·자세히(구도·표정·옷·조명) / 태그 보완 자연어(태그가 못 담는 문장)." }`;
+
+/**
+ * Global character "use in this chat" toggle: compact control left of 오토태그,
+ * not a full-width toggle-row inside the card body.
+ */
+const VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE =
+  `<span class="autotag-badge\${l ? " show" : ""}" data-autotag-badge>\${l ? "선택됨 · Ctrl+V" : ""}</span>
+            <button type="button" class="secondary\${l ? " armed" : ""}" data-char-autotag title="클릭: 붙여넣기 대상 선택 · 더블클릭: 파일 선택">\${l ? "붙여넣기 대기" : "오토태그"}</button>`;
+
+const VENDOR_GLOBAL_TOGGLE_SUMMARY_PATCH =
+  `<span class="autotag-badge\${l ? " show" : ""}" data-autotag-badge>\${l ? "선택됨 · Ctrl+V" : ""}</span>
+            \${n === "global" ? \`<label class="char-lock" data-global-toggle-wrap title="이 캐릭터 챗에서 사용" style="display:inline-flex;align-items:center;gap:4px;margin:0;flex-shrink:0;white-space:nowrap;cursor:pointer"><input data-global-toggle="\${c}" type="checkbox" \${p ? "checked" : ""}><span>사용</span></label>\` : ""}
+            <button type="button" class="secondary\${l ? " armed" : ""}" data-char-autotag title="클릭: 붙여넣기 대상 선택 · 더블클릭: 파일 선택">\${l ? "붙여넣기 대기" : "오토태그"}</button>`;
+
+const VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE =
+  `            \${n === "global" ? \`<label class="toggle-row" data-global-toggle-wrap><input data-global-toggle="\${c}" type="checkbox" \${p ? "checked" : ""}><span>이 캐릭터 챗에서 사용 (ON/OFF)</span></label>\` : ""}
+`;
+
+const VENDOR_GLOBAL_TOGGLE_BODY_PATCH = ``;
 
 /**
  * Sticky always-image hide = effective size 0% (not display:none / card-id).
@@ -357,7 +413,11 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_PROMPT_RESET_NEEDLE, 'prompt-reset confirm insertion point');
   assertOnce(raw, VENDOR_NATURAL_BASE_HTML_NEEDLE, 'natural_base checkbox');
   assertOnce(raw, VENDOR_NATURAL_BASE_SAVE_NEEDLE, 'natural_base save ee()');
+  assertOnce(raw, VENDOR_NATURAL_BASE_CT_NEEDLE, 'natural_base Ct() insert');
+  assertOnce(raw, VENDOR_NATURAL_BASE_CARD_NEEDLE, 'natural_base card 3-col');
   assertOnce(raw, VENDOR_NATURAL_BASE_HELP_NEEDLE, 'natural_base help entry');
+  assertOnce(raw, VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, 'global toggle summary');
+  assertOnce(raw, VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE, 'global toggle body row');
   for (const [needle, label] of [
     [VENDOR_STICKY_LA_NEEDLE, 'sticky La()'],
     [VENDOR_STICKY_KEEP_NEEDLE, 'sticky keepHidden'],
@@ -381,7 +441,11 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_PROMPT_RESET_NEEDLE, VENDOR_PROMPT_RESET_PATCH)
     .replace(VENDOR_NATURAL_BASE_HTML_NEEDLE, VENDOR_NATURAL_BASE_HTML_PATCH)
     .replace(VENDOR_NATURAL_BASE_SAVE_NEEDLE, VENDOR_NATURAL_BASE_SAVE_PATCH)
+    .replace(VENDOR_NATURAL_BASE_CT_NEEDLE, VENDOR_NATURAL_BASE_CT_PATCH)
+    .replace(VENDOR_NATURAL_BASE_CARD_NEEDLE, VENDOR_NATURAL_BASE_CARD_PATCH)
     .replace(VENDOR_NATURAL_BASE_HELP_NEEDLE, VENDOR_NATURAL_BASE_HELP_PATCH)
+    .replace(VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, VENDOR_GLOBAL_TOGGLE_SUMMARY_PATCH)
+    .replace(VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE, VENDOR_GLOBAL_TOGGLE_BODY_PATCH)
     .replace(VENDOR_STICKY_LA_NEEDLE, VENDOR_STICKY_LA_PATCH)
     .replace(VENDOR_STICKY_KEEP_NEEDLE, VENDOR_STICKY_KEEP_PATCH)
     .replace(VENDOR_STICKY_SHOW_NEEDLE, VENDOR_STICKY_SHOW_PATCH)

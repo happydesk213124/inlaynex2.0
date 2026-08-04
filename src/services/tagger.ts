@@ -19,6 +19,7 @@ import { dbg } from '../core/debug';
 import type { CharacterRecord, JobRequest, TaggedShot, TaggerResult } from '../core/types';
 import { deepMerge } from '../core/util/object';
 import { cleanText, stripCbs } from '../core/util/text';
+import { normalizeNaturalBaseMode, type NaturalBaseMode } from '../config/schema';
 import { characterTriggers, dedupeShotCharacters, matchCharactersInText } from '../domain/character/roster';
 import { characterHasAppearance, characterMaxLimit } from '../domain/character/tags';
 import {
@@ -175,18 +176,11 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
       'Every shot MUST include `y_percent` (number 0–100): reading position top→bottom in the message. CRITICAL spread rule: NEVER cluster all shots in the early band. Space them across the whole 0–100 range in reading order (shot0 < shot1 < shot2 …). Aim ~even gaps. Examples — 2 shots: ~25 and ~75; 3 shots: ~20, ~50, ~80; 4 shots: ~15, ~40, ~65, ~90. Forbidden: all values under 40, duplicates, or gaps under ~15 between neighbors unless only 1 shot.',
   });
 
-  if (card.natural_base !== false) {
-    messages.push({
-      role: 'system',
-      content:
-        'Natural base mode ON. Every shot MUST include `natural`: a short English natural-language phrase for NovelAI base caption only (NOT Danbooru comma tags, NOT characters[].action). Include hair color + age band + gender for each visible person, plus the shared action. Example: `red hair adult woman forced hug blue hair boy`. Keep ~6–20 words, English only.',
-    });
-  } else {
-    messages.push({
-      role: 'system',
-      content: 'Natural base mode OFF. Omit the `natural` field (or leave it empty). Do not invent natural-language base phrases.',
-    });
-  }
+  const naturalMode = normalizeNaturalBaseMode(card.natural_base);
+  messages.push({
+    role: 'system',
+    content: naturalBaseSystemMessage(naturalMode),
+  });
 
   const charMax = characterMaxLimit(card);
   messages.push({
@@ -242,4 +236,31 @@ export function flattenShots(tagged: unknown): TaggedShot[] {
     }
   }
   return shots;
+}
+
+function naturalBaseSystemMessage(mode: NaturalBaseMode): string {
+  if (mode === 'off') {
+    return 'Natural base mode OFF. Omit the `natural` field (or leave it empty). Do not invent natural-language base phrases.';
+  }
+  if (mode === 'detailed') {
+    return [
+      'Natural base mode DETAILED. Every shot MUST include `natural`: a compact English phrase for NovelAI base caption only (NOT Danbooru comma tags, NOT characters[].action).',
+      'Include framing/vantage when useful (side view, close-up, viewed through, reflected in…), then for each visible person in left-to-right (or front-to-back) order: hair color + age band + gender, facial expression, clothing, and pose/action as separate details.',
+      'Multi-person: NEVER use character names — use position (left girl, right boy) or hair. Add shared action and lighting/atmosphere briefly.',
+      'Telegraphic and objective. Example: `side view upper body, left red hair adult woman tense smile in coat pulling right blue hair teen boy startled arms pinned, warm cafe light`. Keep ~12–28 words, English only.',
+    ].join(' ');
+  }
+  if (mode === 'supplement') {
+    return [
+      'Natural base mode SUPPLEMENT. Every shot MUST include `natural`: telegraphic English sentences describing what tags cannot express (composition, framing, actions, atmosphere, lighting) for NovelAI base caption only (NOT Danbooru comma tags, NOT characters[].action).',
+      'Keep tags and natural language clearly separated. Multi-person: NEVER use names — identify by position (left girl, bottom boy) or appearance. For each person include facial expression and clothing as distinct details; also hair and pose unless already obvious.',
+      'Unusual framing welcome (viewed through, reflected in shards of a broken mirror, behind…). Concise, minimal, objective — no subjective interpretation.',
+      'Example: `Side view, upper body. Left: adult woman with red hair, tense smile, coat, pulling. Right: teen boy with blue hair, startled face, arms pinned. Warm cafe lighting.` Prefer ~2–5 short sentences, English only.',
+    ].join(' ');
+  }
+  // short (default)
+  return [
+    'Natural base mode SHORT. Every shot MUST include `natural`: a short English natural-language phrase for NovelAI base caption only (NOT Danbooru comma tags, NOT characters[].action).',
+    'Include hair color + age band + gender for each visible person, plus the shared action. Example: `red hair adult woman forced hug blue hair boy`. Keep ~6–20 words, English only.',
+  ].join(' ');
 }

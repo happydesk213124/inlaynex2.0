@@ -117,7 +117,17 @@ export async function runScenario(N, handles) {
     card: { power: true, image_max: 1, image_min: 1, character_max: 4, execute: 'auto' },
   }));
   await rec('settings.after_put', () => get('/v1/settings'));
+  // Legacy boolean still accepted; 2.0 migrates true→"short" (see compare natural_base).
   await rec('settings.update_alias', () => post('/v1/settings/update', { card: { natural_base: true } }));
+  await rec('settings.natural_base_after_bool', async () => {
+    const s = await get('/v1/settings');
+    return { natural_base: s?.settings?.card?.natural_base };
+  });
+  await rec('settings.natural_base_set_detailed', () => post('/v1/settings/update', { card: { natural_base: 'detailed' } }));
+  await rec('settings.natural_base_after_detailed', async () => {
+    const s = await get('/v1/settings');
+    return { natural_base: s?.settings?.card?.natural_base };
+  });
   await rec('settings.export', () => get('/v1/settings/export'));
 
   // ── prompts ─────────────────────────────────────────────────────────────

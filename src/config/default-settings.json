@@ -90,7 +90,7 @@
     "floating_viewer": true,
     "overlay_markers": true,
     "llm_anchor_percent": true,
-    "natural_base": true,
+    "natural_base": "short",
     "inline_previews": true,
     "inline_thumb_pct": 100,
     "scale_semantics_version": 2,

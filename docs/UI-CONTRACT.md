@@ -72,6 +72,10 @@ The frozen UI asks `globalThis.confirm` before calling reset (same pattern as
 settings reset); that confirm is inserted by an asserted build patch in
 `vite.config.ts`, not by editing `vendor/`.
 
+`card.natural_base` is a string mode: `off` | `short` | `detailed` | `supplement`
+(legacy booleans migrate in `schema.ts`). The dashboard control is a `<select>`
+patched in at build time (was a checkbox).
+
 Keys: `author_note, tagger, format, prefill, preprocess, preset_1, lore_inject,
 char_inject, appearance_inject, autotag`.
 

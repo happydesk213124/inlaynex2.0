@@ -12,6 +12,7 @@
  */
 
 import { QUALITY_TAGS, UC_PRESETS } from '../config/defaults';
+import { normalizeNaturalBaseMode } from '../config/schema';
 import { API_URL, IMAGE_KEY } from '../core/constants';
 import { dbg } from '../core/debug';
 import type { JobRequest, NaiSettings, ShotCharacter, TaggedShot } from '../core/types';
@@ -188,8 +189,13 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
     setup = joinTags(shot.camera, situation, shot.place, shot.action);
     if (card.mode === 'asset') setup = joinTags(setup, 'white background', 'simple background', 'cowboy shot', 'looking at viewer', 'portrait');
   }
-  // Natural-language base phrase (LLM shots[].natural) — only when setting enabled.
-  const natural = card.natural_base !== false ? cleanText(shot.natural || shot.natural_base || shot.nl || '', 400) : '';
+  // Natural-language base phrase (LLM shots[].natural) — mode from card.natural_base.
+  const naturalMode = normalizeNaturalBaseMode(card.natural_base);
+  const naturalCap = naturalMode === 'supplement' ? 600 : naturalMode === 'detailed' ? 480 : 400;
+  const natural =
+    naturalMode === 'off'
+      ? ''
+      : cleanText(shot.natural || shot.natural_base || shot.nl || '', naturalCap);
   let main = joinTags(person, stylePos, natural, setup);
   const naiaModel = modelToNaia(nai.model || 'nai-diffusion-4-5-full');
   if (nai.apply_quality_tags !== false) main += QUALITY_TAGS[naiaModel] || '';

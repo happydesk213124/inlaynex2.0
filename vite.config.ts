@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.0.10';
+const PLUGIN_VERSION = '2.0.11';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -48,6 +48,30 @@ const VENDOR_PROMPT_RESET_PATCH = `const r = a.getAttribute("data-reset-prompt")
         if (!globalThis.confirm?.(\`정말로 "\${r}" 프롬프트를 기본값으로 복원할까요?\`)) return;
         try {
           await K(\`/v1/prompts/\${encodeURIComponent(r)}/reset\`, {`;
+
+/**
+ * `card.natural_base` is now an enum (`off|short|detailed|supplement`), not a
+ * boolean. Patch the frozen checkbox + `ee()` save into a `<select>` + `N()`.
+ */
+const VENDOR_NATURAL_BASE_HTML_NEEDLE =
+  `<label class="toggle-row" data-nx-help-id="nx-natural-base"><input type="checkbox" id="nx-natural-base" \${i.natural_base !== !1 ? "checked" : ""}><span>자연어 base 태그</span></label>`;
+
+const VENDOR_NATURAL_BASE_HTML_PATCH =
+  `<label class="wide" data-nx-help-id="nx-natural-base" style="grid-column:1/-1"><span>자연어 base</span><select id="nx-natural-base">
+              <option value="off" \${i.natural_base === !1 || i.natural_base === "off" ? "selected" : ""}>안넣기</option>
+              <option value="short" \${i.natural_base !== !1 && i.natural_base !== "off" && i.natural_base !== "detailed" && i.natural_base !== "supplement" ? "selected" : ""}>짧게 넣기</option>
+              <option value="detailed" \${i.natural_base === "detailed" ? "selected" : ""}>구도·자세히</option>
+              <option value="supplement" \${i.natural_base === "supplement" ? "selected" : ""}>태그 보완 자연어</option>
+            </select></label>`;
+
+const VENDOR_NATURAL_BASE_SAVE_NEEDLE = 'natural_base: ee("nx-natural-base"),';
+const VENDOR_NATURAL_BASE_SAVE_PATCH = 'natural_base: N("nx-natural-base") || "short",';
+
+const VENDOR_NATURAL_BASE_HELP_NEEDLE =
+  `"nx-natural-base": { title: "자연어 base 태그", body: "이미지 요청에 짧은 자연어 장면도 함께 넣습니다. 태그만 쓸 때보다 분위기가 자연스러워질 수 있습니다." }`;
+
+const VENDOR_NATURAL_BASE_HELP_PATCH =
+  `"nx-natural-base": { title: "자연어 base", body: "NovelAI base에 넣는 자연어 장면을 고릅니다. 안넣기 / 짧게 넣기(머리·나이·성별·행동) / 구도·자세히(구도·표정·옷·조명) / 태그 보완 자연어(태그가 못 담는 문장)." }`;
 
 const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
 //@display-name Inlay Nexus ${PLUGIN_VERSION}
@@ -126,9 +150,15 @@ const loadVendorUi = (): string => {
   // Asserted patches only — never hand-edit vendor/inlay-nexus-ui.js.
   assertOnce(raw, VENDOR_VERSION_NEEDLE, VENDOR_VERSION_NEEDLE);
   assertOnce(raw, VENDOR_PROMPT_RESET_NEEDLE, 'prompt-reset confirm insertion point');
+  assertOnce(raw, VENDOR_NATURAL_BASE_HTML_NEEDLE, 'natural_base checkbox');
+  assertOnce(raw, VENDOR_NATURAL_BASE_SAVE_NEEDLE, 'natural_base save ee()');
+  assertOnce(raw, VENDOR_NATURAL_BASE_HELP_NEEDLE, 'natural_base help entry');
   return raw
     .replace(VENDOR_VERSION_NEEDLE, `He = "${PLUGIN_VERSION}"`)
-    .replace(VENDOR_PROMPT_RESET_NEEDLE, VENDOR_PROMPT_RESET_PATCH);
+    .replace(VENDOR_PROMPT_RESET_NEEDLE, VENDOR_PROMPT_RESET_PATCH)
+    .replace(VENDOR_NATURAL_BASE_HTML_NEEDLE, VENDOR_NATURAL_BASE_HTML_PATCH)
+    .replace(VENDOR_NATURAL_BASE_SAVE_NEEDLE, VENDOR_NATURAL_BASE_SAVE_PATCH)
+    .replace(VENDOR_NATURAL_BASE_HELP_NEEDLE, VENDOR_NATURAL_BASE_HELP_PATCH);
 };
 
 /** Wraps the emitted chunk in an IIFE, prepends the header, appends the frozen UI. */

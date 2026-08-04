@@ -39,7 +39,15 @@ test("valid import migrates legacy scale", () => {
   assert.equal(imported.settings_schema_version, 2);
 });
 
-test("overlay_markers and inline_previews stay synced as one feature", () => {
+test("natural_base migrates boolean and aliases to mode enum", () => {
+  assert.equal(migrateSettings({ card: { natural_base: true } }).card.natural_base, "short");
+  assert.equal(migrateSettings({ card: { natural_base: false } }).card.natural_base, "off");
+  assert.equal(migrateSettings({ card: { natural_base: "detailed" } }).card.natural_base, "detailed");
+  assert.equal(migrateSettings({ card: { natural_base: "supplement" } }).card.natural_base, "supplement");
+  assert.equal(migrateSettings({ card: {} }).card.natural_base, "short");
+});
+
+test("overlay_markers is canonical for left-line overlay + inline previews", () => {
   const on = migrateSettings({ card: { overlay_markers: true, inline_previews: false } });
   assert.equal(on.card.overlay_markers, true);
   assert.equal(on.card.inline_previews, true);

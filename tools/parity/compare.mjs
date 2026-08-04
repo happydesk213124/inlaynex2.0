@@ -85,6 +85,15 @@ const normalize = (root) => {
   };
 
   const walk = (node, key) => {
+    // natural_base: 1.x boolean ↔ 2.0 off|short|detailed|supplement (same semantics).
+    // Collapse the wire type so parity compares intent, not storage shape.
+    if (key === 'natural_base') {
+      if (node === false || node === 'false' || node === 'off' || node === 'none') return 'off';
+      if (node === true || node === 'true' || node === 'on' || node === 'short') return 'short';
+      if (node === 'detailed' || node === 'detail') return 'detailed';
+      if (node === 'supplement' || node === 'supp') return 'supplement';
+      return String(node);
+    }
     if (typeof node === 'number') {
       if (Number.isFinite(node) && node >= TS_LOW && node <= TS_HIGH) return '<TS>';
       if (key && VOLATILE_KEYS.has(key)) return '<NUM>';
@@ -95,6 +104,15 @@ const normalize = (root) => {
       if (key && VOLATILE_KEYS.has(key) && /^\d+$/.test(node)) return '<NUM>';
       if (key === 'version' && VERSION_RE.test(node)) return '<VERSION>';
       if (key && STAGE_NAME_KEYS.has(key)) return node ? '<STAGE>' : node;
+      // Settings export/import payloads are JSON strings; walk the object so
+      // intentional schema migrations (e.g. natural_base) can be normalised.
+      if (key === 'json' && node.trimStart().startsWith('{')) {
+        try {
+          return walk(JSON.parse(node), 'json_object');
+        } catch {
+          /* keep as string */
+        }
+      }
       let out = node.replace(UUID_RE, (m) => idFor(m.toLowerCase())).replace(EMBEDDED_TS_RE, '<TS>');
       // Long opaque payloads: keep the shape, drop the bytes.
       const dataUrl = /^data:([\w/+.-]+);base64,([A-Za-z0-9+/=]+)$/.exec(out);

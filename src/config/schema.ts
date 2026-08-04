@@ -1,5 +1,25 @@
 /** Settings migration + export/import. Pure: no storage, no I/O. */
 
+/** NovelAI base natural-language mode (replaces the old boolean toggle). */
+export type NaturalBaseMode = 'off' | 'short' | 'detailed' | 'supplement';
+
+const NATURAL_BASE_MODES = new Set<NaturalBaseMode>(['off', 'short', 'detailed', 'supplement']);
+
+/**
+ * Normalize `card.natural_base` from legacy booleans / unknown strings.
+ * Missing or unknown → `short` (matches the old default of `true`).
+ */
+export function normalizeNaturalBaseMode(value: unknown): NaturalBaseMode {
+  if (value === false || value === 'false' || value === 'off' || value === 'none') return 'off';
+  if (value === true || value === 'true' || value === 'on') return 'short';
+  if (value === 'detailed' || value === 'detail') return 'detailed';
+  if (value === 'supplement' || value === 'supp') return 'supplement';
+  if (typeof value === 'string' && NATURAL_BASE_MODES.has(value as NaturalBaseMode)) {
+    return value as NaturalBaseMode;
+  }
+  return 'short';
+}
+
 /** What `migrateSettings` guarantees on the way out — everything else stays as found. */
 export interface MigratedSettings {
   card: Record<string, unknown>;
@@ -64,6 +84,8 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   else if (loreExtra === false || loreExtra === 'false' || loreExtra === 'none') card.lore_extra = 'off';
   else if (loreExtra === 'full' || loreExtra === 'tags' || loreExtra === 'off') card.lore_extra = loreExtra;
   else card.lore_extra = 'tags';
+  // natural_base: legacy boolean → "off" | "short" | "detailed" | "supplement"
+  card.natural_base = normalizeNaturalBaseMode(card.natural_base);
   // Left-line overlay + always-on image are one feature: overlay_markers is canonical.
   const overlayOn = card.overlay_markers !== false;
   card.overlay_markers = overlayOn;

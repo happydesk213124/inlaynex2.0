@@ -205,9 +205,24 @@ function auditPromptPack(out) {
   }
   const dropped = Object.keys(legacy).filter((k) => !(k in pack));
   if (dropped.length) fail(`prompt(s) present in 1.x but missing here: ${dropped.join(', ')}`);
+  // Intentional 2.0 prompt edits vs 1.x — each key needs a justifying comment.
+  // Unexplained drift still fails the audit (AGENTS.md §5).
+  const INTENTIONAL_PROMPT_DRIFT = new Set([
+    // natural_base is off|short|detailed|supplement; tagger/format defer to the
+    // mode-specific system message instead of a single boolean ON rule.
+    'tagger',
+    'format',
+  ]);
   const changed = Object.keys(legacy).filter((k) => k in pack && legacy[k] !== pack[k]);
-  if (changed.length) {
-    fail(`prompt(s) differ from 1.x: ${changed.map((k) => `${k} (${legacy[k].length}→${pack[k].length})`).join(', ')}`);
+  const unexplained = changed.filter((k) => !INTENTIONAL_PROMPT_DRIFT.has(k));
+  const expected = changed.filter((k) => INTENTIONAL_PROMPT_DRIFT.has(k));
+  if (expected.length) {
+    notes.push(
+      `intentional prompt drift vs 1.x: ${expected.map((k) => `${k} (${legacy[k].length}→${pack[k].length})`).join(', ')}`,
+    );
+  }
+  if (unexplained.length) {
+    fail(`prompt(s) differ from 1.x: ${unexplained.map((k) => `${k} (${legacy[k].length}→${pack[k].length})`).join(', ')}`);
   }
 }
 

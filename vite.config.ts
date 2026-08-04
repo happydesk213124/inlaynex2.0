@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.0.14';
+const PLUGIN_VERSION = '2.0.15';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -128,6 +128,97 @@ const VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE =
 `;
 
 const VENDOR_GLOBAL_TOGGLE_BODY_PATCH = ``;
+
+/**
+ * Explorer paints thumbs via sync resolveImageUrl only. Explore lists with
+ * cachedOnly, so new cards start with empty src (broken-image icon). Warm fills
+ * the cache in the background, but onWarmProgress used to bail while uiOpen —
+ * so the grid never reapplied src. Sync cache hits into <img> and warm on folder
+ * paint; refresh explorer thumbs from warm progress even when the panel is open.
+ */
+const VENDOR_EXPLORER_THUMB_PAINT_NEEDLE = `    document.querySelectorAll("[data-explorer-id]").forEach((el) => {
+      const id = el.getAttribute("data-explorer-id");
+      el.classList.toggle("selected", !!ex.selection?.selected?.has(id));
+      el.classList.toggle("focus", ex.selection?.focusId === id);
+      const check = el.querySelector(".ex-check");
+      check && (check.textContent = ex.selection?.selected?.has(id) ? "✓" : "");
+    });
+    const r = document.querySelector(".explorer-toolbar .muted");
+    r && (r.textContent = \`\${n.length}장\`);
+  }
+  function ha(e) {`;
+
+const VENDOR_EXPLORER_THUMB_PAINT_PATCH = `    document.querySelectorAll("[data-explorer-id]").forEach((el) => {
+      const id = el.getAttribute("data-explorer-id");
+      el.classList.toggle("selected", !!ex.selection?.selected?.has(id));
+      el.classList.toggle("focus", ex.selection?.focusId === id);
+      const check = el.querySelector(".ex-check");
+      check && (check.textContent = ex.selection?.selected?.has(id) ? "✓" : "");
+      const img = el.querySelector("img");
+      if (img && id) {
+        try {
+          const src = Ie({ id });
+          if (typeof src == "string" && /^data:image\\//i.test(src) && img.getAttribute("src") !== src) img.setAttribute("src", src);
+        } catch {
+        }
+      }
+    });
+    const r = document.querySelector(".explorer-toolbar .muted");
+    r && (r.textContent = \`\${n.length}장\`);
+  }
+  function ha(e) {`;
+
+const VENDOR_EXPLORER_THUMB_WARM_NEEDLE = `    a && a.style.setProperty("--ex-thumb", \`\${thumb}px\`);
+    paintExplorerSelectionUi(), tt();
+  }
+  function downloadBase64Zip(b64, filename) {`;
+
+const VENDOR_EXPLORER_THUMB_WARM_PATCH = `    a && a.style.setProperty("--ex-thumb", \`\${thumb}px\`);
+    paintExplorerSelectionUi(), tt();
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      const ids = [...new Set((n || []).map((x) => x && x.id).filter(Boolean))];
+      if (ids.length) {
+        if (typeof N?.pinImageUrls == "function") N.pinImageUrls(ids);
+        const done = () => {
+          try {
+            paintExplorerSelectionUi();
+          } catch {
+          }
+        };
+        if (typeof N?.warmImages == "function") N.warmImages(ids).then(done).catch(() => {
+        });
+        else if (typeof N?.ensureImageUrl == "function") Promise.all(ids.map((id) => N.ensureImageUrl(id).catch(() => ""))).then(done).catch(() => {
+        });
+      }
+    } catch {
+    }
+  }
+  function downloadBase64Zip(b64, filename) {`;
+
+const VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE = `          N.onWarmProgress(() => {
+            if (t.uiOpen || t._indexPaintQueued) return;
+            t._indexPaintQueued = !0;
+            Promise.resolve().then(() => {
+              t._indexPaintQueued = !1;
+              if (t.galleryUi?.paintStatus) t.galleryUi.paintStatus().catch(() => {
+              });
+            });
+          });`;
+
+const VENDOR_EXPLORER_WARM_PROGRESS_PATCH = `          N.onWarmProgress(() => {
+            try {
+              if (t.uiOpen && t.uiTab === "explorer") paintExplorerSelectionUi();
+            } catch {
+            }
+            if (t.uiOpen || t._indexPaintQueued) return;
+            t._indexPaintQueued = !0;
+            Promise.resolve().then(() => {
+              t._indexPaintQueued = !1;
+              if (t.galleryUi?.paintStatus) t.galleryUi.paintStatus().catch(() => {
+              });
+            });
+          });`;
 
 /**
  * Sticky always-image hide = effective size 0% (not display:none / card-id).
@@ -418,6 +509,9 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_NATURAL_BASE_HELP_NEEDLE, 'natural_base help entry');
   assertOnce(raw, VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, 'global toggle summary');
   assertOnce(raw, VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE, 'global toggle body row');
+  assertOnce(raw, VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, 'explorer thumb paint');
+  assertOnce(raw, VENDOR_EXPLORER_THUMB_WARM_NEEDLE, 'explorer thumb warm');
+  assertOnce(raw, VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE, 'explorer warm progress');
   for (const [needle, label] of [
     [VENDOR_STICKY_LA_NEEDLE, 'sticky La()'],
     [VENDOR_STICKY_KEEP_NEEDLE, 'sticky keepHidden'],
@@ -446,6 +540,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_NATURAL_BASE_HELP_NEEDLE, VENDOR_NATURAL_BASE_HELP_PATCH)
     .replace(VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, VENDOR_GLOBAL_TOGGLE_SUMMARY_PATCH)
     .replace(VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE, VENDOR_GLOBAL_TOGGLE_BODY_PATCH)
+    .replace(VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, VENDOR_EXPLORER_THUMB_PAINT_PATCH)
+    .replace(VENDOR_EXPLORER_THUMB_WARM_NEEDLE, VENDOR_EXPLORER_THUMB_WARM_PATCH)
+    .replace(VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE, VENDOR_EXPLORER_WARM_PROGRESS_PATCH)
     .replace(VENDOR_STICKY_LA_NEEDLE, VENDOR_STICKY_LA_PATCH)
     .replace(VENDOR_STICKY_KEEP_NEEDLE, VENDOR_STICKY_KEEP_PATCH)
     .replace(VENDOR_STICKY_SHOW_NEEDLE, VENDOR_STICKY_SHOW_PATCH)

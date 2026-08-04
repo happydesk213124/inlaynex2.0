@@ -25,6 +25,12 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 
 > **Image URLs must be `data:image/...`.** The UI passes them through DOMPurify,
 > which strips `blob:`. Returning a `blob:` URL renders nothing.
+>
+> Explorer thumbs: `/v1/gallery/explore` attaches URLs with `cachedOnly`, so the
+> grid paints from `resolveImageUrl` and fills in via `warmImages` /
+> `onWarmProgress`. While the explorer panel is open, warm progress must still
+> reapply `src` on `.explorer-card img` (build patch); otherwise freshly generated
+> cards stay on the broken-image icon until a full panel remount.
 
 ## 2. Other globals the UI reads
 

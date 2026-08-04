@@ -33,13 +33,13 @@ import {
   personCountTagsForShot,
   stripPersonCountTags,
 } from '../domain/character/tags';
-import { resolveGenerationNaiParams } from '../domain/style-preset-overrides';
+import { resolveGenerationCfgParams } from '../domain/style-preset-overrides';
 import { generateViaComfy, imageBackendKind } from '../providers/comfy/client';
 import { generateT2i } from '../providers/nai/client';
 import { modelToNaia, type CharacterReference, type T2iRequest, type VibeReference } from '../providers/nai/payload';
 import { idbGet, idbPut, imageLocation } from '../storage/stores';
 import { getConfig } from './context';
-import { ensureVibeEncoded, getReferenceImageBytes } from './nai-assets';
+import { ensurePresetVibeEncoded, ensureVibeEncoded, getReferenceImageBytes } from './nai-assets';
 import { getPrompt } from './settings';
 
 /**
@@ -248,7 +248,7 @@ export async function generateImage(plan: ImageRequest): Promise<GeneratedImage>
       });
     }
   }
-  // Active style preset may override CFG / vibe; empty preset fields keep NAI defaults.
+  // Active style preset may override CFG; preset vibe image replaces NAI vibe when set.
   const card = getConfig().card;
   const presets: unknown[] = Array.isArray(card.presets) ? card.presets : [];
   const activeId = cleanText(card.active_preset_id, 120);
@@ -263,23 +263,27 @@ export async function generateImage(plan: ImageRequest): Promise<GeneratedImage>
     }
     if (!activePreset && typeof presets[0] === 'object') activePreset = presets[0] as Record<string, unknown>;
   }
-  const naiParams = resolveGenerationNaiParams(nai, activePreset as StylePreset | null);
+  const presetId = cleanText((activePreset?.id as string) || activeId, 120);
+  const cfgParams = resolveGenerationCfgParams(nai, activePreset as StylePreset | null);
 
   const vibes: VibeReference[] = [];
-  const vibeMode = cleanText(naiParams.vibe_transfer || 'none').toLowerCase();
-  if (!['', 'none', 'off', 'false', '0'].includes(vibeMode)) {
-    const vibe = await ensureVibeEncoded();
-    if (vibe?.encoded) {
-      let strength = Number(nai.vibe_transfer_strength ?? 0.6);
-      let ie = Number(nai.vibe_transfer_information_extracted ?? vibe.information_extracted ?? 1.0);
-      if (Number.isNaN(strength)) strength = 0.6;
-      if (Number.isNaN(ie)) ie = 1.0;
-      vibes.push({
-        encoded: vibe.encoded,
-        strength: Math.max(0, Math.min(1, strength)),
-        information_extracted: Math.max(0, Math.min(1, ie)),
-      });
+  let vibeRow = presetId ? await ensurePresetVibeEncoded(presetId) : null;
+  if (!vibeRow) {
+    const vibeMode = cleanText(nai.vibe_transfer || 'none').toLowerCase();
+    if (!['', 'none', 'off', 'false', '0'].includes(vibeMode)) {
+      vibeRow = await ensureVibeEncoded();
     }
+  }
+  if (vibeRow?.encoded) {
+    let strength = Number(nai.vibe_transfer_strength ?? 0.6);
+    let ie = Number(nai.vibe_transfer_information_extracted ?? vibeRow.information_extracted ?? 1.0);
+    if (Number.isNaN(strength)) strength = 0.6;
+    if (Number.isNaN(ie)) ie = 1.0;
+    vibes.push({
+      encoded: vibeRow.encoded,
+      strength: Math.max(0, Math.min(1, strength)),
+      information_extracted: Math.max(0, Math.min(1, ie)),
+    });
   }
   const req: T2iRequest = {
     prompt: plan.main,
@@ -289,8 +293,8 @@ export async function generateImage(plan: ImageRequest): Promise<GeneratedImage>
     height: Math.min(Number(nai.height ?? 960) || 960, 1216),
     seed: Number(nai.seed ?? 0) || 0,
     steps: Math.min(Number(nai.steps ?? 28) || 28, 28),
-    cfg_scale: naiParams.cfg_scale,
-    cfg_rescale: naiParams.cfg_rescale,
+    cfg_scale: cfgParams.cfg_scale,
+    cfg_rescale: cfgParams.cfg_rescale,
     sampler: cleanText(nai.sampler) || 'k_euler_ancestral',
     scheduler: cleanText(nai.scheduler) || 'karras',
     model: modelToNaia(nai.model || 'nai-diffusion-4-5-full'),

@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.0.16';
+const PLUGIN_VERSION = '2.0.17';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -259,15 +259,13 @@ const VENDOR_PRESET_QT_PATCH = `}, mt = ($, L) => \`\${String($ || "preset").toL
     const nRs = Number(M.cfg_rescale);
     Number.isFinite(nRs) && (cfgRescale = nRs);
   }
-  const vibe = String(M.vibe_transfer || "").trim();
-  return !Y && !q && cfgScale == null && cfgRescale == null && !vibe ? null : {
+  return !Y && !q && cfgScale == null && cfgRescale == null ? null : {
     id: String(M.id || mt(V, L)),
     name: V,
     positive: Y,
     negative: q,
     cfg_scale: cfgScale,
-    cfg_rescale: cfgRescale,
-    vibe_transfer: vibe
+    cfg_rescale: cfgRescale
   };
 }, pn = ($) => {`;
 
@@ -282,8 +280,7 @@ const VENDOR_PRESET_UN_PATCH = `    Y >= 0 ? M[Y] = {
       positive: V.positive,
       negative: V.negative,
       cfg_scale: V.cfg_scale,
-      cfg_rescale: V.cfg_rescale,
-      vibe_transfer: V.vibe_transfer
+      cfg_rescale: V.cfg_rescale
     } : M.push(V);`;
 
 const VENDOR_PRESET_HTML_NEEDLE = `            <label class="wide"><span>프리셋 이름</span><input id="nx-preset-name" value="\${h(f?.name || "")}" \${f ? "" : "disabled"}></label>
@@ -312,13 +309,15 @@ const VENDOR_PRESET_HTML_PATCH = `            <label class="wide"><span>프리�
             <label class="wide"><span>Negative</span><textarea id="nx-custom-neg" \${f ? "" : "disabled"}>\${h(f?.negative || "")}</textarea></label>
             <label><span>CFG scale</span><input id="nx-preset-cfg" type="number" step="0.1" placeholder="NAI 기본" value="\${h(f?.cfg_scale ?? "")}" \${f ? "" : "disabled"}></label>
             <label><span>CFG rescale</span><input id="nx-preset-rescale" type="number" step="0.01" placeholder="NAI 기본" value="\${h(f?.cfg_rescale ?? "")}" \${f ? "" : "disabled"}></label>
-            <label><span>Vibe Transfer</span>
-              <select id="nx-preset-vibe" \${f ? "" : "disabled"}>
-                <option value="" \${!f?.vibe_transfer ? "selected" : ""}>비어있음 · 모델설정 NAI 기본값</option>
-                <option value="none" \${f?.vibe_transfer === "none" ? "selected" : ""}>끄기</option>
-                <option value="file" \${f?.vibe_transfer === "file" ? "selected" : ""}>사용 (업로드된 vibe)</option>
-              </select>
+            <label class="wide"><span>Vibe Transfer</span>
+              <div class="row" style="margin:0">
+                <button type="button" id="nx-preset-vibe-pick" class="secondary" \${f ? "" : "disabled"}>이미지 불러오기</button>
+                <button type="button" id="nx-preset-vibe-clear" class="secondary" \${f ? "" : "disabled"}>제거</button>
+                <span id="nx-preset-vibe-status" class="muted">\${f?.vibe_configured ? "설정됨 · 이 프리셋 사용" : "없음 · NAI 모델설정 사용"}</span>
+              </div>
+              <input id="nx-preset-vibe-file" type="file" accept="image/*" style="display:none">
             </label>
+            <div class="ref-preview wide" id="nx-preset-vibe-preview">\${f?.vibe_configured && f?.vibe_preview_url ? \`<img src="\${h(f.vibe_preview_url)}" alt="vibe">\` : '<span class="muted">없음 · 생성 시 NAI 모델설정 vibe 사용</span>'}</div>
           </div>
           <div class="row" style="margin-top:14px">
             <button id="nx-save-card">카드 설정 저장</button>
@@ -334,8 +333,8 @@ const VENDOR_PRESET_READ_NEEDLE = `    const nameEl = typeof document < "u" ? do
   }
   function fa(e) {`;
 
-const VENDOR_PRESET_READ_PATCH = `    const nameEl = typeof document < "u" ? document.getElementById("nx-preset-name") : null, posEl = typeof document < "u" ? document.getElementById("nx-custom-pos") : null, negEl = typeof document < "u" ? document.getElementById("nx-custom-neg") : null, cfgEl = typeof document < "u" ? document.getElementById("nx-preset-cfg") : null, rescaleEl = typeof document < "u" ? document.getElementById("nx-preset-rescale") : null, vibeEl = typeof document < "u" ? document.getElementById("nx-preset-vibe") : null;
-    if (!nameEl && !posEl && !negEl && !cfgEl && !rescaleEl && !vibeEl) return e;
+const VENDOR_PRESET_READ_PATCH = `    const nameEl = typeof document < "u" ? document.getElementById("nx-preset-name") : null, posEl = typeof document < "u" ? document.getElementById("nx-custom-pos") : null, negEl = typeof document < "u" ? document.getElementById("nx-custom-neg") : null, cfgEl = typeof document < "u" ? document.getElementById("nx-preset-cfg") : null, rescaleEl = typeof document < "u" ? document.getElementById("nx-preset-rescale") : null;
+    if (!nameEl && !posEl && !negEl && !cfgEl && !rescaleEl) return e;
     nameEl && (n.name = nameEl.value || "");
     posEl && (n.positive = posEl.value || "", e.custom_pos = n.positive);
     negEl && (n.negative = negEl.value || "", e.custom_neg = n.negative);
@@ -349,7 +348,6 @@ const VENDOR_PRESET_READ_PATCH = `    const nameEl = typeof document < "u" ? doc
       n.cfg_rescale = v === "" ? null : Number(v);
       if (n.cfg_rescale != null && !Number.isFinite(n.cfg_rescale)) n.cfg_rescale = null;
     }
-    vibeEl && (n.vibe_transfer = String(vibeEl.value || ""));
     return e;
   }
   function fa(e) {`;
@@ -361,8 +359,8 @@ const VENDOR_PRESET_FA_NEEDLE = `    const nameEl = typeof document < "u" ? docu
       negEl && (owner.negative = negEl.value || "", n.custom_neg = owner.negative);
     }`;
 
-const VENDOR_PRESET_FA_PATCH = `    const nameEl = typeof document < "u" ? document.getElementById("nx-preset-name") : null, posEl = typeof document < "u" ? document.getElementById("nx-custom-pos") : null, negEl = typeof document < "u" ? document.getElementById("nx-custom-neg") : null, cfgEl = typeof document < "u" ? document.getElementById("nx-preset-cfg") : null, rescaleEl = typeof document < "u" ? document.getElementById("nx-preset-rescale") : null, vibeEl = typeof document < "u" ? document.getElementById("nx-preset-vibe") : null;
-    if (owner && (nameEl || posEl || negEl || cfgEl || rescaleEl || vibeEl)) {
+const VENDOR_PRESET_FA_PATCH = `    const nameEl = typeof document < "u" ? document.getElementById("nx-preset-name") : null, posEl = typeof document < "u" ? document.getElementById("nx-custom-pos") : null, negEl = typeof document < "u" ? document.getElementById("nx-custom-neg") : null, cfgEl = typeof document < "u" ? document.getElementById("nx-preset-cfg") : null, rescaleEl = typeof document < "u" ? document.getElementById("nx-preset-rescale") : null;
+    if (owner && (nameEl || posEl || negEl || cfgEl || rescaleEl)) {
       nameEl && (owner.name = nameEl.value || "");
       posEl && (owner.positive = posEl.value || "", n.custom_pos = owner.positive);
       negEl && (owner.negative = negEl.value || "", n.custom_neg = owner.negative);
@@ -376,7 +374,6 @@ const VENDOR_PRESET_FA_PATCH = `    const nameEl = typeof document < "u" ? docum
         owner.cfg_rescale = v === "" ? null : Number(v);
         if (owner.cfg_rescale != null && !Number.isFinite(owner.cfg_rescale)) owner.cfg_rescale = null;
       }
-      vibeEl && (owner.vibe_transfer = String(vibeEl.value || ""));
     }`;
 
 const VENDOR_PRESET_SYNC_NEEDLE = `    const name = document.getElementById("nx-preset-name"), pos = document.getElementById("nx-custom-pos"), neg = document.getElementById("nx-custom-neg");
@@ -386,13 +383,15 @@ const VENDOR_PRESET_SYNC_NEEDLE = `    const name = document.getElementById("nx-
   }
   async function Je() {`;
 
-const VENDOR_PRESET_SYNC_PATCH = `    const name = document.getElementById("nx-preset-name"), pos = document.getElementById("nx-custom-pos"), neg = document.getElementById("nx-custom-neg"), cfg = document.getElementById("nx-preset-cfg"), rescale = document.getElementById("nx-preset-rescale"), vibe = document.getElementById("nx-preset-vibe");
+const VENDOR_PRESET_SYNC_PATCH = `    const name = document.getElementById("nx-preset-name"), pos = document.getElementById("nx-custom-pos"), neg = document.getElementById("nx-custom-neg"), cfg = document.getElementById("nx-preset-cfg"), rescale = document.getElementById("nx-preset-rescale");
     if (name) name.value = active.name || "";
     if (pos) pos.value = active.positive || "";
     if (neg) neg.value = active.negative || "";
     if (cfg) cfg.value = active.cfg_scale == null || active.cfg_scale === "" ? "" : String(active.cfg_scale);
     if (rescale) rescale.value = active.cfg_rescale == null || active.cfg_rescale === "" ? "" : String(active.cfg_rescale);
-    if (vibe) vibe.value = active.vibe_transfer || "";
+    const st = document.getElementById("nx-preset-vibe-status"), prev = document.getElementById("nx-preset-vibe-preview");
+    st && (st.textContent = active.vibe_configured ? "설정됨 · 이 프리셋 사용" : "없음 · NAI 모델설정 사용");
+    prev && (prev.innerHTML = active.vibe_configured && active.vibe_preview_url ? \`<img src="\${h(active.vibe_preview_url)}" alt="vibe">\` : '<span class="muted">없음 · 생성 시 NAI 모델설정 vibe 사용</span>');
   }
   async function Je() {`;
 
@@ -413,10 +412,9 @@ const VENDOR_PRESET_EXPORT_PATCH = `  function exportPresetsJson() {
         positive: String(a.positive || ""),
         negative: String(a.negative || ""),
         cfg_scale: cfg != null && Number.isFinite(cfg) ? cfg : null,
-        cfg_rescale: rescale != null && Number.isFinite(rescale) ? rescale : null,
-        vibe_transfer: String(a.vibe_transfer || "")
+        cfg_rescale: rescale != null && Number.isFinite(rescale) ? rescale : null
       };
-    }).filter((a) => a.name || a.positive || a.negative || a.cfg_scale != null || a.cfg_rescale != null || a.vibe_transfer);`;
+    }).filter((a) => a.name || a.positive || a.negative || a.cfg_scale != null || a.cfg_rescale != null);`;
 
 const VENDOR_PRESET_NEW_NEEDLE = `      a.presets.push({
         id: r,
@@ -431,8 +429,7 @@ const VENDOR_PRESET_NEW_PATCH = `      a.presets.push({
         positive: "",
         negative: "",
         cfg_scale: null,
-        cfg_rescale: null,
-        vibe_transfer: ""
+        cfg_rescale: null
       }), pinActivePreset(a, r), a.custom_pos = "", a.custom_neg = "", queueSettingsSave({ card: { ...a } }), await P();`;
 
 const VENDOR_PRESET_DUP_NEEDLE = `      a.presets.push({
@@ -448,9 +445,96 @@ const VENDOR_PRESET_DUP_PATCH = `      a.presets.push({
         positive: r.positive || "",
         negative: r.negative || "",
         cfg_scale: r.cfg_scale ?? null,
-        cfg_rescale: r.cfg_rescale ?? null,
-        vibe_transfer: r.vibe_transfer || ""
-      }), pinActivePreset(a, i), a.custom_pos = r.positive || "", a.custom_neg = r.negative || "", queueSettingsSave({ card: { ...a } }), await P();`;
+        cfg_rescale: r.cfg_rescale ?? null
+      }), pinActivePreset(a, i), a.custom_pos = r.positive || "", a.custom_neg = r.negative || "";
+      try {
+        await K("/v1/nai/vibe", { method: "POST", body: { preset_id: i, copy_from: r.id } }, 6e4);
+      } catch {
+      }
+      queueSettingsSave({ card: { ...a } }), await P();`;
+
+const VENDOR_PRESET_DEL_NEEDLE = `    }), document.getElementById("nx-preset-del")?.addEventListener("click", async () => {
+      const a = _e();
+      if (!a.presets.length) return;
+      a.presets = a.presets.filter((i) => !presetIdEq(i.id, a.active_preset_id));
+      const nextId = a.presets[0]?.id || "";
+      pinActivePreset(a, nextId);
+      const r = a.presets[0];
+      a.custom_pos = r?.positive || "", a.custom_neg = r?.negative || "", queueSettingsSave({ card: { ...a } }), await P();
+    }), document.getElementById("nx-preset-export")?.addEventListener("click", async () => {`;
+
+const VENDOR_PRESET_DEL_PATCH = `    }), document.getElementById("nx-preset-del")?.addEventListener("click", async () => {
+      const a = _e();
+      if (!a.presets.length) return;
+      const delId = a.active_preset_id;
+      a.presets = a.presets.filter((i) => !presetIdEq(i.id, a.active_preset_id));
+      const nextId = a.presets[0]?.id || "";
+      pinActivePreset(a, nextId);
+      const r = a.presets[0];
+      a.custom_pos = r?.positive || "", a.custom_neg = r?.negative || "";
+      try {
+        delId && await K("/v1/nai/vibe/clear", { method: "POST", body: { preset_id: delId } });
+      } catch {
+      }
+      queueSettingsSave({ card: { ...a } }), await P();
+    }), document.getElementById("nx-preset-export")?.addEventListener("click", async () => {`;
+
+const VENDOR_PRESET_VIBE_EVT_NEEDLE = `    }), document.getElementById("nx-preset-file")?.addEventListener("click", () => {
+      document.getElementById("nx-preset-file-input")?.click();
+    }), document.getElementById("nx-preset-file-input")?.addEventListener("change", async (a) => {`;
+
+const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), document.getElementById("nx-preset-vibe-pick")?.addEventListener("click", () => {
+      document.getElementById("nx-preset-vibe-file")?.click();
+    }), document.getElementById("nx-preset-vibe-file")?.addEventListener("change", async (a) => {
+      const r = a.target?.files?.[0], pid = String(t.backendSettings?.card?.active_preset_id || "");
+      if (r && pid) {
+        try {
+          const res = await K("/v1/nai/vibe", {
+            method: "POST",
+            body: {
+              preset_id: pid,
+              image_b64: await It(r),
+              information_extracted: Number(N("nx-nai-vibe-ie") || 1),
+              strength: Number(N("nx-nai-vibe-strength") || 0.6)
+            }
+          }, 12e4);
+          const s = document.getElementById("nx-preset-vibe-status");
+          s && (s.textContent = "설정됨 · 이 프리셋 사용");
+          const c = document.getElementById("nx-preset-vibe-preview");
+          const url = res?.preview_url || "";
+          c && (c.innerHTML = url ? \`<img src="\${h(url)}" alt="vibe">\` : '<span class="muted">설정됨</span>');
+          const card = t.backendSettings?.card, pr = (card?.presets || []).find((p) => presetIdEq(p.id, pid));
+          pr && (pr.vibe_configured = !0, pr.vibe_preview_url = url);
+          $e("프리셋 Vibe 저장");
+        } catch (i) {
+          t.uiMessage = {
+            type: "error",
+            text: z(i?.message || i)
+          }, await P();
+        }
+        a.target.value = "";
+      }
+    }), document.getElementById("nx-preset-vibe-clear")?.addEventListener("click", async () => {
+      const pid = String(t.backendSettings?.card?.active_preset_id || "");
+      if (!pid) return;
+      try {
+        await K("/v1/nai/vibe/clear", { method: "POST", body: { preset_id: pid } });
+        const s = document.getElementById("nx-preset-vibe-status");
+        s && (s.textContent = "없음 · NAI 모델설정 사용");
+        const c = document.getElementById("nx-preset-vibe-preview");
+        c && (c.innerHTML = '<span class="muted">없음 · 생성 시 NAI 모델설정 vibe 사용</span>');
+        const card = t.backendSettings?.card, pr = (card?.presets || []).find((p) => presetIdEq(p.id, pid));
+        pr && (pr.vibe_configured = !1, delete pr.vibe_preview_url);
+        $e("프리셋 Vibe 제거");
+      } catch (i) {
+        t.uiMessage = {
+          type: "error",
+          text: z(i?.message || i)
+        }, await P();
+      }
+    }), document.getElementById("nx-preset-file")?.addEventListener("click", () => {
+      document.getElementById("nx-preset-file-input")?.click();
+    }), document.getElementById("nx-preset-file-input")?.addEventListener("change", async (a) => {`;
 
 /**
  * Sticky always-image hide = effective size 0% (not display:none / card-id).
@@ -753,6 +837,8 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_PRESET_EXPORT_NEEDLE, 'preset JSON export');
   assertOnce(raw, VENDOR_PRESET_NEW_NEEDLE, 'preset new');
   assertOnce(raw, VENDOR_PRESET_DUP_NEEDLE, 'preset dup');
+  assertOnce(raw, VENDOR_PRESET_DEL_NEEDLE, 'preset del clear vibe');
+  assertOnce(raw, VENDOR_PRESET_VIBE_EVT_NEEDLE, 'preset vibe upload events');
   for (const [needle, label] of [
     [VENDOR_STICKY_LA_NEEDLE, 'sticky La()'],
     [VENDOR_STICKY_KEEP_NEEDLE, 'sticky keepHidden'],
@@ -793,6 +879,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_PRESET_EXPORT_NEEDLE, VENDOR_PRESET_EXPORT_PATCH)
     .replace(VENDOR_PRESET_NEW_NEEDLE, VENDOR_PRESET_NEW_PATCH)
     .replace(VENDOR_PRESET_DUP_NEEDLE, VENDOR_PRESET_DUP_PATCH)
+    .replace(VENDOR_PRESET_DEL_NEEDLE, VENDOR_PRESET_DEL_PATCH)
+    .replace(VENDOR_PRESET_VIBE_EVT_NEEDLE, VENDOR_PRESET_VIBE_EVT_PATCH)
     .replace(VENDOR_STICKY_LA_NEEDLE, VENDOR_STICKY_LA_PATCH)
     .replace(VENDOR_STICKY_KEEP_NEEDLE, VENDOR_STICKY_KEEP_PATCH)
     .replace(VENDOR_STICKY_SHOW_NEEDLE, VENDOR_STICKY_SHOW_PATCH)

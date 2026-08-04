@@ -8,7 +8,7 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.0.16';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.0.17';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
@@ -37,6 +37,17 @@ export const IMAGE_KEY = (id: string): string => `inx_nximg_${String(id).replace
 export const REF_IMAGE_KEY = 'inx_nxref_image';
 export const VIBE_IMAGE_KEY = 'inx_nxvibe_image';
 export const VIBE_DATA_KEY = 'inx_nxvibe_data';
+/** Per-style-preset vibe PNG (device store). */
+export const VIBE_PRESET_IMAGE_KEY = (presetId: string): string =>
+  `inx_nxvibe_p_${String(presetId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}`;
+/** Per-style-preset vibe encode sidecar. */
+export const VIBE_PRESET_DATA_KEY = (presetId: string): string =>
+  `inx_nxvibe_pd_${String(presetId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}`;
+/** Meta row key for a preset's vibe blob. */
+export const vibePresetMetaKey = (presetId: string): string => `vibe_preset_${String(presetId)}`;
+export const isVibePresetMetaKey = (key: unknown): boolean =>
+  typeof key === 'string' && key.startsWith('vibe_preset_');
+export const presetIdFromVibeMetaKey = (key: string): string => key.slice('vibe_preset_'.length);
 
 // ── legacy save-file keys (one-time migration source) ──────────────────────
 export const LEGACY_SETTINGS_KEY = 'native_settings';

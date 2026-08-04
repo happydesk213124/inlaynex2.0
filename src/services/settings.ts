@@ -29,7 +29,7 @@ import { comfyConfigured, imageBackendKind } from '../providers/comfy/client';
 import { llmConfigured } from '../providers/llm/transform';
 import { saveSettingsToStorage } from '../storage/settings-store';
 import { idbGet, idbGetAll, idbPut, imageLocations, storeSize, totalImageBytes } from '../storage/stores';
-import { configLock, getConfig, getRefPreviewUrl, getVibePreviewUrl, setConfig } from './context';
+import { configLock, getConfig, getPresetVibePreviewUrl, getRefPreviewUrl, getVibePreviewUrl, setConfig } from './context';
 
 /** Values that read as "the feature is switched off" in the settings UI. */
 const OFF_VALUES = ['', 'none', 'off', 'false', '0'];
@@ -245,6 +245,23 @@ export function publicSettings(): Record<string, unknown> {
   nai.vibe_transfer_configured = Boolean(vibeOn && vibePreview);
   if (!nai.vibe_transfer) nai.vibe_transfer = nai.vibe_transfer_configured ? 'file' : 'none';
   if (nai.vibe_transfer_configured && vibePreview) nai.vibe_preview_url = vibePreview;
+  // Annotate style presets with per-preset vibe presence (preview map filled at boot/upload).
+  if (Array.isArray(cfg.card?.presets)) {
+    for (const raw of cfg.card.presets) {
+      if (!raw || typeof raw !== 'object') continue;
+      const p = raw as StylePreset & Record<string, unknown>;
+      const pid = cleanText(p.id, 120);
+      const preview = pid ? getPresetVibePreviewUrl(pid) : '';
+      if (preview) {
+        p.vibe_configured = true;
+        p.vibe_preview_url = preview;
+      } else {
+        delete p.vibe_configured;
+        delete p.vibe_preview_url;
+      }
+      delete p.vibe_transfer;
+    }
+  }
   cfg.card.character_max = characterMaxLimit(cfg.card);
   cfg.database_path = 'indexeddb:getLocalPluginStorage';
   cfg.images_dir = 'indexeddb:inx_nximg_*';

@@ -23,7 +23,7 @@ import { base64ToBytes, u8ToArrayBuffer } from '../core/util/bytes';
 import { cleanText } from '../core/util/text';
 import { GLOBAL_SCOPE } from '../core/constants';
 import { promptText } from '../config/prompts';
-import { getConfig } from '../services/context';
+import { getConfig, getPresetVibePreviewUrl } from '../services/context';
 import * as cards from '../services/cards';
 import * as characters from '../services/characters';
 import * as diagnostics from '../services/diagnostics';
@@ -324,19 +324,42 @@ const WRITE_ROUTES: readonly Route[] = [
   {
     match: exact('/v1/nai/vibe', '/v1/nai/vibe/upload'),
     handler: async ({ body }) => {
-      if (body.clear) return ok(await naiAssets.clearVibeTransfer());
+      const presetId = cleanText(body.preset_id || body.presetId || '', 120);
+      if (body.clear) {
+        if (presetId) return ok(await naiAssets.clearPresetVibeTransfer(presetId));
+        return ok(await naiAssets.clearVibeTransfer());
+      }
+      if (presetId && body.copy_from) {
+        const from = cleanText(body.copy_from, 120);
+        const copied = from ? await naiAssets.copyPresetVibeTransfer(from, presetId) : false;
+        return ok({
+          ok: true,
+          preset_id: presetId,
+          configured: copied,
+          preview_url: copied ? getPresetVibePreviewUrl(presetId) : '',
+        });
+      }
       const rawB64 = uploadBase64(body);
       if (!cleanText(rawB64)) throw new Error('image_b64 required');
-      return ok(
-        await naiAssets.setVibeTransfer(u8ToArrayBuffer(base64ToBytes(rawB64)), {
-          model: body.model,
-          information_extracted: body.information_extracted ?? body.vibe_transfer_information_extracted,
-          strength: body.strength ?? body.vibe_transfer_strength,
-        }),
-      );
+      const opts = {
+        model: body.model,
+        information_extracted: body.information_extracted ?? body.vibe_transfer_information_extracted,
+        strength: body.strength ?? body.vibe_transfer_strength,
+      };
+      if (presetId) {
+        return ok(await naiAssets.setPresetVibeTransfer(presetId, u8ToArrayBuffer(base64ToBytes(rawB64)), opts));
+      }
+      return ok(await naiAssets.setVibeTransfer(u8ToArrayBuffer(base64ToBytes(rawB64)), opts));
     },
   },
-  { match: exact('/v1/nai/vibe/clear'), handler: async () => ok(await naiAssets.clearVibeTransfer()) },
+  {
+    match: exact('/v1/nai/vibe/clear'),
+    handler: async ({ body }) => {
+      const presetId = cleanText(body?.preset_id || body?.presetId || '', 120);
+      if (presetId) return ok(await naiAssets.clearPresetVibeTransfer(presetId));
+      return ok(await naiAssets.clearVibeTransfer());
+    },
+  },
   {
     match: exact('/v1/autotag', '/v1/autotag/evaluate'),
     handler: async ({ body }) => {

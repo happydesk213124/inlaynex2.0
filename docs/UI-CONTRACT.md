@@ -32,8 +32,10 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 > reapply `src` on `.explorer-card img` (build patch); otherwise freshly generated
 > cards stay on the broken-image icon until a full panel remount.
 >
-> Style presets may carry optional `cfg_scale`, `cfg_rescale`, and `vibe_transfer`.
-> Empty / missing means use NAI model-settings defaults for that generation.
+> Style presets may carry optional `cfg_scale` / `cfg_rescale` (empty → NAI
+> model defaults). Per-preset vibe is a device-local upload like NAI vibe
+> (`POST /v1/nai/vibe` with `preset_id`); when set it replaces the NAI vibe for
+> that generation. JSON export does not embed vibe bytes.
 
 ## 2. Other globals the UI reads
 

@@ -26,10 +26,12 @@ export interface StylePreset {
   /** Empty / null → use NAI model-settings cfg_rescale. */
   cfg_rescale?: number | null;
   /**
-   * Empty → use NAI model-settings vibe_transfer.
-   * `none` forces off; `file` uses the uploaded vibe when configured.
+   * Ephemeral / UI: true when this preset has its own vibe image on device.
+   * Not a mode select — upload/clear only. Missing → fall back to NAI vibe.
    */
-  vibe_transfer?: string;
+  vibe_configured?: boolean;
+  /** Ephemeral preview data URL for the card-settings UI. */
+  vibe_preview_url?: string;
 }
 
 /** Everything under `settings.card` — mostly UI behaviour plus prompt assembly. */

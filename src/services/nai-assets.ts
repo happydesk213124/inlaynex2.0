@@ -13,15 +13,18 @@
  */
 
 import type { ApiResult, MetaRow } from '../core/types';
+import { isVibePresetMetaKey, presetIdFromVibeMetaKey, vibePresetMetaKey } from '../core/constants';
 import { cleanText } from '../core/util/text';
 import { modelToNaia, resolveModel } from '../providers/nai/payload';
 import { encodeVibe } from '../providers/nai/vibe';
 import { pngToDataUrl } from '../storage/image-urls';
-import { idbDelete, idbGet, idbPut } from '../storage/stores';
+import { idbDelete, idbGet, idbGetAll, idbPut } from '../storage/stores';
 import {
   getConfig,
+  getPresetVibePreviewUrl,
   getRefPreviewUrl,
   getVibePreviewUrl,
+  setPresetVibePreviewUrl,
   setRefPreviewUrl,
   setVibePreviewUrl,
 } from './context';
@@ -176,4 +179,123 @@ export async function ensureVibeEncoded(): Promise<MetaRow | null> {
   const next: MetaRow = { ...vibe, key: 'vibe_transfer', encoded, model, information_extracted: ie };
   await idbPut('meta', next);
   return next;
+}
+
+// ── per-style-preset vibe transfer ─────────────────────────────────────────
+
+export async function hasPresetVibeTransfer(presetId: string): Promise<boolean> {
+  const id = cleanText(presetId, 120);
+  if (!id) return false;
+  const vibe = await idbGet('meta', vibePresetMetaKey(id));
+  return Boolean(vibe?.png && vibe.png.byteLength > MIN_IMAGE_BYTES);
+}
+
+export async function getPresetVibeTransfer(presetId: string): Promise<MetaRow | null> {
+  const id = cleanText(presetId, 120);
+  if (!id) return null;
+  return (await idbGet('meta', vibePresetMetaKey(id))) || null;
+}
+
+export async function getPresetVibeImageBytes(presetId: string): Promise<ArrayBuffer | null> {
+  const vibe = await getPresetVibeTransfer(presetId);
+  return vibe?.png || null;
+}
+
+export async function setPresetVibeTransfer(
+  presetId: string,
+  png: ArrayBuffer,
+  opts: VibeOptions = {},
+): Promise<ApiResult> {
+  const id = cleanText(presetId, 120);
+  if (!id) throw new Error('preset_id required');
+  if (!png || png.byteLength < MIN_IMAGE_BYTES) throw new Error('Vibe 이미지가 비어 있습니다');
+  if (png.byteLength > MAX_IMAGE_BYTES) throw new Error('Vibe 이미지가 너무 큽니다 (최대 12MB)');
+  const cfg = getConfig();
+  const token = cleanText(cfg.nai.api_key);
+  if (!token) throw new Error('NAI api_key가 설정되지 않았습니다. encode-vibe에 키가 필요합니다.');
+  const model = modelToNaia(opts.model || cfg.nai.model || 'nai-diffusion-4-5-full');
+  const ie = normalizeInformationExtracted(opts.information_extracted ?? cfg.nai.vibe_transfer_information_extracted);
+  const encoded = await encodeVibe(token, png, model, ie);
+  const metaKey = vibePresetMetaKey(id);
+  await idbPut('meta', {
+    key: metaKey,
+    png,
+    encoded,
+    model: resolveModel(model),
+    information_extracted: ie,
+  });
+  const preview = pngToDataUrl(png);
+  setPresetVibePreviewUrl(id, preview);
+  return {
+    ok: true,
+    preset_id: id,
+    vibe_transfer: 'file',
+    configured: true,
+    bytes: png.byteLength,
+    encoded_bytes: encoded.length,
+    model: resolveModel(model),
+    information_extracted: ie,
+    preview_url: preview,
+  };
+}
+
+export async function clearPresetVibeTransfer(presetId: string): Promise<ApiResult> {
+  const id = cleanText(presetId, 120);
+  if (!id) throw new Error('preset_id required');
+  await idbDelete('meta', vibePresetMetaKey(id));
+  setPresetVibePreviewUrl(id, '');
+  return { ok: true, preset_id: id, vibe_transfer: 'none', configured: false };
+}
+
+/** Copy vibe bytes from one preset id to another (duplicate preset). */
+export async function copyPresetVibeTransfer(fromId: string, toId: string): Promise<boolean> {
+  const src = await getPresetVibeTransfer(fromId);
+  if (!src?.png || src.png.byteLength < MIN_IMAGE_BYTES) return false;
+  const dest = cleanText(toId, 120);
+  if (!dest) return false;
+  await idbPut('meta', {
+    key: vibePresetMetaKey(dest),
+    png: src.png,
+    encoded: src.encoded || '',
+    model: src.model || '',
+    information_extracted: src.information_extracted ?? 1.0,
+  });
+  const preview = getPresetVibePreviewUrl(fromId) || (src.png ? pngToDataUrl(src.png) : '');
+  if (preview) setPresetVibePreviewUrl(dest, preview);
+  return true;
+}
+
+/**
+ * Preset vibe for generation: re-encode when model / IE drifted. Returns null
+ * when this preset has no vibe image (caller should fall back to NAI default).
+ */
+export async function ensurePresetVibeEncoded(presetId: string): Promise<MetaRow | null> {
+  const vibe = await getPresetVibeTransfer(presetId);
+  if (!vibe?.png || vibe.png.byteLength < MIN_IMAGE_BYTES) return null;
+  const cfg = getConfig();
+  const token = cleanText(cfg.nai.api_key);
+  if (!token) throw new Error('NAI api_key가 설정되지 않았습니다.');
+  const model = resolveModel(modelToNaia(cfg.nai.model || 'nai-diffusion-4-5-full'));
+  const ie = normalizeInformationExtracted(cfg.nai.vibe_transfer_information_extracted);
+  const needEncode =
+    !cleanText(vibe.encoded) ||
+    cleanText(vibe.model) !== model ||
+    Math.abs(Number(vibe.information_extracted ?? 1) - ie) > 0.001;
+  if (!needEncode) return vibe;
+  const encoded = await encodeVibe(token, vibe.png, model, ie);
+  const metaKey = vibePresetMetaKey(cleanText(presetId, 120));
+  const next: MetaRow = { ...vibe, key: metaKey, encoded, model, information_extracted: ie };
+  await idbPut('meta', next);
+  return next;
+}
+
+/** Warm preview URLs for any preset vibe rows already in memory after boot. */
+export async function hydratePresetVibePreviews(): Promise<void> {
+  for (const row of await idbGetAll('meta')) {
+    const key = String((row as MetaRow)?.key || '');
+    if (!isVibePresetMetaKey(key)) continue;
+    const png = (row as MetaRow).png;
+    if (!png || png.byteLength < MIN_IMAGE_BYTES) continue;
+    setPresetVibePreviewUrl(presetIdFromVibeMetaKey(key), pngToDataUrl(png));
+  }
 }

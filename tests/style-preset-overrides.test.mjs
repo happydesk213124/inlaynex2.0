@@ -1,36 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveGenerationNaiParams } from '../.test-build/style-preset-overrides.mjs';
+import { resolveGenerationCfgParams } from '../.test-build/style-preset-overrides.mjs';
 
-const baseNai = { cfg_scale: 7, cfg_rescale: 0.36, vibe_transfer: 'none' };
+const baseNai = { cfg_scale: 7, cfg_rescale: 0.36 };
 
-test('empty preset keeps NAI model-settings defaults', () => {
-  assert.deepEqual(resolveGenerationNaiParams(baseNai, null), {
+test('empty preset keeps NAI CFG defaults', () => {
+  assert.deepEqual(resolveGenerationCfgParams(baseNai, null), {
     cfg_scale: 7,
     cfg_rescale: 0.36,
-    vibe_transfer: 'none',
   });
-  assert.deepEqual(resolveGenerationNaiParams(baseNai, { vibe_transfer: '' }), {
+  assert.deepEqual(resolveGenerationCfgParams(baseNai, {}), {
     cfg_scale: 7,
     cfg_rescale: 0.36,
-    vibe_transfer: 'none',
   });
 });
 
-test('preset cfg and vibe override NAI defaults', () => {
+test('preset cfg overrides NAI defaults', () => {
   assert.deepEqual(
-    resolveGenerationNaiParams(baseNai, {
+    resolveGenerationCfgParams(baseNai, {
       cfg_scale: 5.5,
       cfg_rescale: 0.2,
-      vibe_transfer: 'file',
     }),
-    { cfg_scale: 5.5, cfg_rescale: 0.2, vibe_transfer: 'file' },
-  );
-});
-
-test('preset can force vibe off while NAI default is file', () => {
-  assert.deepEqual(
-    resolveGenerationNaiParams({ ...baseNai, vibe_transfer: 'file' }, { vibe_transfer: 'none' }),
-    { cfg_scale: 7, cfg_rescale: 0.36, vibe_transfer: 'none' },
+    { cfg_scale: 5.5, cfg_rescale: 0.2 },
   );
 });

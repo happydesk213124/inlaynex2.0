@@ -29,6 +29,10 @@ import {
   STORE_NAMES,
   VIBE_DATA_KEY,
   VIBE_IMAGE_KEY,
+  VIBE_PRESET_DATA_KEY,
+  VIBE_PRESET_IMAGE_KEY,
+  isVibePresetMetaKey,
+  presetIdFromVibeMetaKey,
 } from '../core/constants';
 import { dbg } from '../core/debug';
 import { base64ToAb, bytesToBase64Async } from '../core/util/bytes';
@@ -199,6 +203,17 @@ function snapshotOf(store: StoreName): Record<string, unknown> {
     if (store === 'meta' && row?.key === 'vibe_transfer') {
       obj[k] = {
         key: 'vibe_transfer',
+        has_png: Boolean(row.png),
+        has_encoded: Boolean(row.encoded),
+        model: row.model || '',
+        information_extracted: row.information_extracted ?? 1.0,
+        updated_at: row.updated_at || 0,
+      };
+      continue;
+    }
+    if (store === 'meta' && isVibePresetMetaKey(row?.key)) {
+      obj[k] = {
+        key: row.key,
         has_png: Boolean(row.png),
         has_encoded: Boolean(row.encoded),
         model: row.model || '',
@@ -395,6 +410,26 @@ export async function openDb(): Promise<boolean> {
             model: (d.model as string) || (v.model as string) || '',
             information_extracted: (d.information_extracted ?? v.information_extracted ?? 1.0) as number,
           });
+        } else if (store === 'meta' && isVibePresetMetaKey(v.key || k)) {
+          const metaKey = String(v.key || k);
+          const presetId = presetIdFromVibeMetaKey(metaKey);
+          const png = decodeStoredPng(await psGet(VIBE_PRESET_IMAGE_KEY(presetId)));
+          let data = await psGet(VIBE_PRESET_DATA_KEY(presetId));
+          if (typeof data === 'string') {
+            try {
+              data = JSON.parse(data);
+            } catch {
+              data = null;
+            }
+          }
+          const d = (data ?? {}) as Record<string, unknown>;
+          memStores.meta.set(metaKey, {
+            key: metaKey,
+            png,
+            encoded: (d.encoded as string) || '',
+            model: (d.model as string) || (v.model as string) || '',
+            information_extracted: (d.information_extracted ?? v.information_extracted ?? 1.0) as number,
+          });
         } else if (store === 'cards') {
           const row = v as unknown as CardRow;
           memStores.cards.set(k, row);
@@ -529,6 +564,38 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
     return 'vibe_transfer';
   }
 
+  if (store === 'meta' && isVibePresetMetaKey(value.key)) {
+    const metaKey = String(value.key);
+    const presetId = presetIdFromVibeMetaKey(metaKey);
+    const row: MetaRow = {
+      key: metaKey,
+      png: (value.png as ArrayBuffer | null) || null,
+      encoded: (value.encoded as string) || '',
+      model: (value.model as string) || '',
+      information_extracted: (value.information_extracted ?? 1.0) as number,
+    };
+    memStores.meta.set(metaKey, row);
+    imagePersistChain = imagePersistChain
+      .then(async () => {
+        if (row.png) await psSet(VIBE_PRESET_IMAGE_KEY(presetId), await bytesToBase64Async(new Uint8Array(row.png)));
+        else await psRemove(VIBE_PRESET_IMAGE_KEY(presetId));
+        if (row.encoded) {
+          await psSet(VIBE_PRESET_DATA_KEY(presetId), {
+            encoded: row.encoded,
+            model: row.model,
+            information_extracted: row.information_extracted,
+          });
+        } else {
+          await psRemove(VIBE_PRESET_DATA_KEY(presetId));
+        }
+      })
+      .catch((err: unknown) =>
+        console.warn('[Inlay Nexus] preset vibe persist failed', (err as Error)?.message || err),
+      );
+    if (persist) schedulePersist('meta');
+    return metaKey;
+  }
+
   if (store === 'cards') {
     deindexCard(memStores.cards.get(k));
     const row = value as unknown as CardRow;
@@ -557,6 +624,11 @@ export async function idbDelete(store: StoreName, key: unknown): Promise<boolean
   if (store === 'meta' && k === 'vibe_transfer') {
     await psRemove(VIBE_IMAGE_KEY);
     await psRemove(VIBE_DATA_KEY);
+  }
+  if (store === 'meta' && isVibePresetMetaKey(k)) {
+    const presetId = presetIdFromVibeMetaKey(k);
+    await psRemove(VIBE_PRESET_IMAGE_KEY(presetId));
+    await psRemove(VIBE_PRESET_DATA_KEY(presetId));
   }
   schedulePersist(store);
   if (store === 'images') dropBlobUrl(k);

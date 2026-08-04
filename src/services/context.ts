@@ -69,6 +69,8 @@ export const messageBusyKeys = new Set<string>();
 
 let refPreviewUrl = '';
 let vibePreviewUrl = '';
+/** Per-style-preset vibe preview data URLs (device-local uploads). */
+const presetVibePreviewUrls = new Map<string, string>();
 
 export function getRefPreviewUrl(): string {
   return refPreviewUrl;
@@ -86,6 +88,21 @@ export function setVibePreviewUrl(url: string): void {
   vibePreviewUrl = url;
 }
 
+export function getPresetVibePreviewUrl(presetId: string): string {
+  return presetVibePreviewUrls.get(String(presetId || '')) || '';
+}
+
+export function setPresetVibePreviewUrl(presetId: string, url: string): void {
+  const id = String(presetId || '');
+  if (!id) return;
+  if (url) presetVibePreviewUrls.set(id, url);
+  else presetVibePreviewUrls.delete(id);
+}
+
+export function clearAllPresetVibePreviewUrls(): void {
+  presetVibePreviewUrls.clear();
+}
+
 /** Test seam: returns the module to its post-import state. */
 export function resetContext(): void {
   config = deepcopy(DEFAULT_CONFIG);
@@ -94,4 +111,5 @@ export function resetContext(): void {
   messageBusyKeys.clear();
   refPreviewUrl = '';
   vibePreviewUrl = '';
+  presetVibePreviewUrls.clear();
 }

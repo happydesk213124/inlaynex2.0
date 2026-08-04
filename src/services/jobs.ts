@@ -1,0 +1,588 @@
+/**
+ * The generation job engine.
+ *
+ * A job turns one chat message into N illustrated cards: tag the scene with an
+ * LLM, reconcile the character roster, then generate and store one image per
+ * shot. Two properties dominate the design:
+ *
+ * **Supersession.** The user can edit or reroll a message while its job is still
+ * running. Results from the old run must never appear. Each target message has
+ * an epoch (`jobEpochByKey`); starting a job bumps it, and the running job
+ * re-checks `isJobCurrent` at every await boundary. A superseded job deletes any
+ * cards it already published and marks itself cancelled. In-flight NovelAI
+ * requests are deliberately allowed to finish rather than aborted — the image is
+ * already paid for in Anlas, and discarding after the fact is simpler than
+ * unwinding a partial HTTP read.
+ *
+ * **Progress without I/O.** Progress ticks every few seconds for potentially
+ * minutes. Persisting a full jobs snapshot per tick is what made 1.x stall
+ * during NovelAI calls, so `generating`→`generating` transitions stay in memory
+ * (`persist: false`) and only state changes reach disk. Payloads are also kept
+ * small: `tagged`, `appearance` and data URLs are stripped before storage
+ * because they run to megabytes and would block the storage RPC.
+ */
+
+import { ASSISTANT_PREVIEW_LIMIT } from '../core/constants';
+import {
+  dbg,
+  dbgSpan,
+  eventsForJob,
+  getFocusStage,
+  getJobContext,
+  getLastError,
+  getLastStage,
+  setJobContext,
+} from '../core/debug';
+import type { ApiResult, JobRequest, JobState, TaggedShot, TaggerResult } from '../core/types';
+import { cleanText, stripCbs, uuid } from '../core/util/text';
+import { parseJsonLoose } from '../core/util/object';
+import {
+  forceFinishNaiBody,
+  getNaiBodyBytesExpected,
+  getNaiBodyBytesReceived,
+  getNaiLastByteAt,
+  hasNaiBodyControl,
+} from '../providers/nai/http';
+import { callLlm } from '../providers/llm/client';
+import { characterMaxLimit } from '../domain/character/tags';
+import { dedupeShotCharacters } from '../domain/character/roster';
+import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
+import { flushPersist, idbGet, idbPut } from '../storage/stores';
+import { getConfig, jobEpochByKey, jobRunMeta } from './context';
+import { mergeRosterFromTagged } from './characters';
+import { buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage } from './generation';
+import { buildTaggerMessages, flattenShots } from './tagger';
+import { deleteCard, unlinkCardsForMessage } from './gallery';
+import { busyReplyForRequest, jobKey } from './job-locks';
+import { getPrompt } from './settings';
+
+
+/** Progress heartbeat period while waiting on NovelAI. */
+const HEARTBEAT_MS = 5000;
+
+/**
+ * NovelAI occasionally delivers the whole ZIP then never closes the stream. Once
+ * bytes have arrived and gone quiet this long, treat the body as complete.
+ */
+const NAI_IDLE_FINISH_MS = 2500;
+const NAI_MIN_BODY_BYTES = 64;
+
+/** A request as it arrives from the UI: `session_id` is filled in by `createJob`. */
+type IncomingRequest = Partial<JobRequest> & Record<string, unknown>;
+
+// ── target identity and epochs ──────────────────────────────────────────────
+
+function beginJobEpoch(jobId: string, request: IncomingRequest, sessionId: string): { key: string; epoch: number } {
+  const key = jobKey(request, sessionId);
+  const prev = jobEpochByKey.get(key);
+  const epoch = (prev?.epoch || 0) + 1;
+  // Deliberately does not cancel a running job for the same key; callers must
+  // busy-check first, so that a queued duplicate is rejected rather than
+  // silently replacing work the user is already waiting on.
+  jobEpochByKey.set(key, { epoch, jobId });
+  jobRunMeta.set(jobId, { key, epoch, cancelRequested: false, publishedIds: [] });
+  return { key, epoch };
+}
+
+function isJobCurrent(jobId: string): boolean {
+  const meta = jobRunMeta.get(jobId);
+  if (!meta || meta.cancelRequested) return false;
+  const cur = jobEpochByKey.get(meta.key);
+  return Boolean(cur && cur.jobId === jobId && cur.epoch === meta.epoch);
+}
+
+/** Removes cards a now-superseded run already published. */
+async function discardJobPublished(jobId: string): Promise<number> {
+  const meta = jobRunMeta.get(jobId);
+  const ids = meta?.publishedIds ? [...meta.publishedIds] : [];
+  if (meta) meta.publishedIds = [];
+  for (const id of ids) {
+    try {
+      await deleteCard(id);
+    } catch {
+      /* a card the user already deleted is not an error here */
+    }
+  }
+  return ids.length;
+}
+
+/** Returns true when the job was stale and has now been cancelled. */
+async function cancelJobIfStale(jobId: string, note = 'interrupted'): Promise<boolean> {
+  if (isJobCurrent(jobId)) return false;
+  const dropped = await discardJobPublished(jobId);
+  await setJob(
+    jobId,
+    'cancelled',
+    {
+      phase: 'cancelled',
+      progress: 0,
+      message: `${note}${dropped ? ` · discarded ${dropped}` : ''}`,
+      shot_count: 0,
+      shot_done: 0,
+    },
+    null,
+  );
+  dbg('job.cancelled', { job_id: jobId, message: note, discarded: dropped, focus: true });
+  return true;
+}
+
+// ── progress and state ─────────────────────────────────────────────────────
+
+interface ProgressExtra {
+  shot_count?: number;
+  shot_index?: number;
+  shot_done?: number;
+  progress?: number;
+  phase?: string;
+  message?: string;
+  cards_so_far?: number;
+}
+
+/** Small by design: a progress row must never carry the tagged scene. */
+function progressPayload(extra: ProgressExtra = {}): Record<string, unknown> {
+  return {
+    shot_count: extra.shot_count ?? 0,
+    shot_index: extra.shot_index ?? 0,
+    shot_done: extra.shot_done ?? 0,
+    progress: extra.progress ?? 0,
+    phase: extra.phase || 'generating',
+    message: extra.message || '',
+    cards_so_far: extra.cards_so_far,
+    debug_stage: getFocusStage() || getLastStage(),
+    debug_error: getLastError()?.message || '',
+  };
+}
+
+/** Strips payload fields that must never reach storage. */
+function slimResultForStorage(result: unknown): unknown {
+  if (!result || typeof result !== 'object') return result;
+  return JSON.parse(
+    JSON.stringify(result, (key, val: unknown) => {
+      if (key === 'image_url' && typeof val === 'string' && val.startsWith('data:')) return '';
+      if (key === 'tagged' || key === 'appearance' || key === 'debug_tail') return undefined;
+      return val;
+    }),
+  );
+}
+
+async function setJob(
+  jobId: string,
+  state: JobState,
+  result: unknown = null,
+  error: string | null = null,
+): Promise<void> {
+  const row = await idbGet('jobs', jobId);
+  if (!row) return;
+  const prevState = row.state;
+  const next: Record<string, unknown> = { ...(row as unknown as Record<string, unknown>), state };
+  const stored = slimResultForStorage(result);
+  next.result_json = stored != null ? JSON.stringify(stored) : null;
+  next.error = error;
+  next.updated_at = Date.now() / 1000;
+  // A tick within `generating` is transient: it will be superseded within
+  // seconds, so skipping the disk write costs nothing and keeps the storage RPC
+  // free for the image bytes.
+  const persistDisk = state !== 'generating' || prevState !== 'generating' || Boolean(error);
+  await idbPut('jobs', next, { persist: persistDisk });
+  // Row writes are normally coalesced into a flush 25 ms later, which is fine for
+  // transient progress but not for the end of a job: the cards written during it
+  // are the images the user just paid for, and a reload inside that window would
+  // lose them. Terminal states therefore wait for the write to land, as 1.x did.
+  if (state === 'done' || state === 'error' || state === 'cancelled') {
+    await flushPersist();
+  }
+  dbg('job.set', {
+    message: `${state}${error ? ' ERR' : ''}${persistDisk ? '' : ' (mem)'}`,
+    job_id: jobId,
+    state,
+    persist: persistDisk,
+    err: error ? String(error).slice(0, 160) : '',
+    background: state === 'generating',
+    focus: state !== 'generating',
+  });
+}
+
+// ── public API ─────────────────────────────────────────────────────────────
+
+export async function createJob(request: IncomingRequest): Promise<ApiResult> {
+  const card = getConfig().card || {};
+  if (!card.power && !request.force) throw new Error('Power가 OFF 상태입니다.');
+  const sessionId = cleanText(request.session_id, 200) || `sess_${uuid().replace(/-/g, '').slice(0, 12)}`;
+  const payload: JobRequest = { ...request, session_id: sessionId };
+  const busy = await busyReplyForRequest(payload, sessionId);
+  if (busy) {
+    dbg('job.busy', { message: busy.error.message || 'busy', key: jobKey(payload, sessionId), focus: true }, 'warn');
+    return busy;
+  }
+  const jobId = uuid();
+  const now = Date.now() / 1000;
+  beginJobEpoch(jobId, payload, sessionId);
+  // A forced retag starts a fresh cohort, so drop the previous cards for this
+  // message. Only on force: a normal run must be additive.
+  if (payload.force) {
+    try {
+      await unlinkCardsForMessage(sessionId, cleanText(payload.content_hash || ''), payload.message_index);
+    } catch {
+      /* nothing to unlink */
+    }
+  }
+  await idbPut('jobs', {
+    id: jobId,
+    session_id: sessionId,
+    state: 'queued',
+    request_json: JSON.stringify(payload),
+    result_json: null,
+    error: null,
+    created_at: now,
+    updated_at: now,
+  });
+  // Intentionally not awaited: the UI polls `getJob`, so createJob returns as
+  // soon as the job is durable.
+  runJob(jobId).catch(async (err: unknown) => {
+    console.error('[Inlay Nexus] job crashed', jobId, err);
+    try {
+      await setJob(jobId, 'error', null, String((err as Error)?.message || err).slice(0, 1500));
+    } catch {
+      /* the job row is already gone */
+    }
+  });
+  return { ok: true, accepted: true, job_id: jobId, session_id: sessionId, job_state: 'queued' };
+}
+
+export async function getJob(jobId: string): Promise<ApiResult> {
+  const row = await idbGet('jobs', jobId);
+  if (!row) return { ok: false, error: { code: 'not_found', message: 'job not found' } };
+  const result = row.result_json ? (JSON.parse(row.result_json) as Record<string, unknown> | null) : null;
+  const progress: Record<string, unknown> = {};
+  if (result && typeof result === 'object') {
+    for (const key of [
+      'shot_count',
+      'shot_index',
+      'shot_done',
+      'progress',
+      'phase',
+      'message',
+      'cards_so_far',
+      'debug_stage',
+      'debug_error',
+    ]) {
+      if (key in result) progress[key] = result[key];
+    }
+  }
+  if (result) await attachImageUrls(result);
+  return {
+    ok: true,
+    job_id: row.id,
+    session_id: row.session_id,
+    state: row.state,
+    error: row.error,
+    result,
+    progress,
+    debug: {
+      last_stage: getLastStage(),
+      last_error: getLastError(),
+      events: eventsForJob(jobId, 40),
+    },
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+// ── the run loop ───────────────────────────────────────────────────────────
+
+/** Reads the LLM's vertical anchor for a shot, if it gave one. */
+function shotAnchorPercent(shot: TaggedShot): number | null {
+  for (const key of ['y_percent', 'anchor_percent', 'read_percent'] as const) {
+    const raw = (shot as unknown as Record<string, unknown>)[key];
+    if (raw == null) continue;
+    try {
+      return Math.max(0, Math.min(100, Number(raw)));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+async function runJob(jobId: string): Promise<void> {
+  const row = await idbGet('jobs', jobId);
+  if (!row) return;
+  const request = JSON.parse(row.request_json ?? '{}') as JobRequest;
+  const sessionId = String(row.session_id ?? '');
+  const prevCtx = getJobContext();
+  setJobContext(jobId);
+  const jobSpan = dbgSpan('job.run');
+  dbg('job.start', {
+    job_id: jobId,
+    session_id: sessionId,
+    message_index: request.message_index,
+    text_len: String(request.assistant_text || '').length,
+  });
+  try {
+    if (await cancelJobIfStale(jobId, 'superseded before start')) return;
+    // createJob already unlinked on force; repeated here because a job can also
+    // be started by a retry path that skips createJob's unlink.
+    if (request.force) {
+      await unlinkCardsForMessage(sessionId, cleanText(request.content_hash || ''), request.message_index);
+    }
+    if (await cancelJobIfStale(jobId, 'superseded before tagging')) return;
+    await setJob(jobId, 'tagging', {
+      phase: 'tagging',
+      progress: 0,
+      message: '장면 태깅 중…',
+      shot_count: 0,
+      shot_done: 0,
+      debug_stage: 'job.tagging',
+    });
+
+    const messages = await buildTaggerMessages(request);
+    dbg('job.tagger.messages', { msgs: messages.length });
+    if (getConfig().card?.preprocessing) {
+      const pre = stripCbs(await getPrompt('preprocess'));
+      if (pre) {
+        const preMessages = [{ role: 'system', content: pre }, messages[messages.length - 1]];
+        const summary = await callLlm(getConfig().llm, preMessages);
+        if (await cancelJobIfStale(jobId, 'superseded during preprocess')) return;
+        messages.splice(messages.length - 1, 0, {
+          role: 'system',
+          content: `## Preprocess Summary\n${summary}`,
+        });
+      }
+    }
+    const taggedRaw = await callLlm(getConfig().llm, messages);
+    if (await cancelJobIfStale(jobId, 'superseded after tagging')) return;
+    const tagged = parseJsonLoose(taggedRaw) as TaggerResult;
+    let shots = flattenShots(tagged);
+    dbg('job.tagger.done', { shots: shots.length, raw_len: String(taggedRaw || '').length });
+    if (!shots.length) throw new Error('태거가 shot을 반환하지 않았습니다.');
+    const card = getConfig().card || {};
+    const imageMin = Math.max(1, Number(card.image_min ?? 1));
+    const imageMax = Math.max(imageMin, Number(card.image_max ?? 3));
+    shots = shots.slice(0, imageMax);
+
+    const allChars = shots.flatMap((shot) => shot.characters || []);
+    const unifiedSessionId = cleanText(request.unified_session_id || '', 200);
+    const characterId = cleanText(request.character_id || '', 200);
+    const sourceSessionIds = Array.isArray(request.source_session_ids)
+      ? request.source_session_ids.map((s) => cleanText(s, 200)).filter(Boolean)
+      : [];
+    const roster = await mergeRosterFromTagged({
+      sessionId,
+      tagged,
+      shotChars: allChars,
+      unifiedSessionId,
+      characterId,
+      sourceSessionIds,
+    });
+    dbg('job.roster', { roster: roster.length });
+    const charMax = characterMaxLimit(card);
+    for (const shot of shots) {
+      shot.characters = dedupeShotCharacters(shot.characters || [], roster, charMax);
+    }
+
+    if (await cancelJobIfStale(jobId, 'superseded before generate')) return;
+    await setJob(
+      jobId,
+      'generating',
+      progressPayload({
+        shot_count: shots.length,
+        shot_index: 0,
+        shot_done: 0,
+        progress: 0,
+        phase: 'generating',
+        message: `이미지 1/${shots.length} 생성 준비`,
+      }),
+    );
+
+    const cards: Array<Record<string, unknown>> = [];
+    const wantAnchor = Boolean(card.llm_anchor_percent);
+    for (let idx = 0; idx < shots.length; idx += 1) {
+      if (await cancelJobIfStale(jobId, `superseded before shot ${idx + 1}`)) return;
+      const shot = shots[idx];
+      const { main, neg, captions, meta } = await buildGenerationForShot({ shot, roster });
+      const cardId = uuid();
+      const now = Date.now() / 1000;
+      const contentHash = cleanText(request.content_hash || '');
+      // The LLM's anchor is always stored when present; the setting only affects
+      // how it is used at display time.
+      let yPercent = shotAnchorPercent(shot);
+      // With anchoring on but no LLM value, fall back to an equal band start so
+      // the sticky-pin logic still has a threshold to compare against.
+      if (yPercent == null && wantAnchor) {
+        yPercent = Math.round((idx / Math.max(1, shots.length)) * 10000) / 100;
+      }
+
+      dbg('job.shot.prepare', {
+        shot: idx,
+        card_id: cardId,
+        prompt_len: String(main || '').length,
+        captions: (captions || []).length,
+      });
+      await setJob(
+        jobId,
+        'generating',
+        progressPayload({
+          shot_count: shots.length,
+          shot_index: idx,
+          shot_done: idx,
+          progress: Math.round((idx / Math.max(1, shots.length)) * 1000) / 10,
+          phase: 'generating',
+          message: `NovelAI 요청 중 ${idx + 1}/${shots.length}… [${getFocusStage()}]`,
+        }),
+      );
+
+      let hbTicks = 0;
+      const hb = setInterval(() => {
+        hbTicks += HEARTBEAT_MS / 1000;
+        const lastByteAt = getNaiLastByteAt();
+        if (
+          hasNaiBodyControl() &&
+          getNaiBodyBytesReceived() >= NAI_MIN_BODY_BYTES &&
+          lastByteAt &&
+          Date.now() - lastByteAt >= NAI_IDLE_FINISH_MS
+        ) {
+          forceFinishNaiBody('heartbeat-idle');
+        }
+        const kb = getNaiBodyBytesReceived() || getNaiBodyBytesExpected();
+        setJob(
+          jobId,
+          'generating',
+          progressPayload({
+            shot_count: shots.length,
+            shot_index: idx,
+            shot_done: idx,
+            progress: Math.round((idx / Math.max(1, shots.length)) * 1000) / 10,
+            phase: 'generating',
+            message: `NovelAI 대기 ${idx + 1}/${shots.length} (${hbTicks}s) · ${getFocusStage()}${
+              kb ? ` ${Math.round(kb / 1024)}KB` : ''
+            }`,
+          }),
+        ).catch(() => {});
+      }, HEARTBEAT_MS);
+
+      let raw: ArrayBuffer;
+      let seed: number;
+      try {
+        // Not cancelled mid-flight on purpose: the image is already being paid
+        // for, so let it land and discard afterwards if the job went stale.
+        ({ bytes: raw, seed } = await generateImage({ main, neg, captions }));
+      } finally {
+        clearInterval(hb);
+      }
+      dbg('job.shot.nai_done', { shot: idx, bytes: raw?.byteLength || 0, seed });
+
+      if (await cancelJobIfStale(jobId, `superseded after shot ${idx + 1} nai`)) return;
+
+      await setJob(
+        jobId,
+        'generating',
+        progressPayload({
+          shot_count: shots.length,
+          shot_index: idx,
+          shot_done: idx,
+          progress: Math.round(((idx + 0.5) / Math.max(1, shots.length)) * 1000) / 10,
+          phase: 'generating',
+          message: `이미지 저장 중 ${idx + 1}/${shots.length}… [${getFocusStage()}]`,
+        }),
+      );
+      const location = buildImageLocation({
+        imageId: cardId,
+        sessionId,
+        request,
+        shotIndex: idx,
+        paragraph: shot.paragraph,
+        yPercent,
+        contentHash,
+      });
+      await publishImage(cardId, raw, location);
+      const cardMeta = cardMetaFromLocation(meta, location, raw?.byteLength || 0);
+      await idbPut('cards', {
+        id: cardId,
+        job_id: jobId,
+        session_id: sessionId,
+        shot_index: idx,
+        paragraph: Number(shot.paragraph || 0),
+        main_prompt: main,
+        negative_prompt: neg,
+        characters_json: JSON.stringify(meta.characters || []),
+        seed,
+        meta_json: JSON.stringify(cardMeta),
+        created_at: now,
+      });
+      const runMeta = jobRunMeta.get(jobId);
+      if (runMeta) runMeta.publishedIds.push(cardId);
+      if (await cancelJobIfStale(jobId, `superseded after shot ${idx + 1} save`)) return;
+      cards.push({
+        id: cardId,
+        shot_index: idx,
+        paragraph: location.paragraph,
+        y_percent: location.y_percent,
+        message_index: location.message_index ?? -1,
+        message_role: location.message_role || '',
+        content_hash: location.content_hash || '',
+        character_id: location.character_id || '',
+        chat_id: location.chat_id || '',
+        character_name: location.character_name || '',
+        chat_name: location.chat_name || '',
+        char_index: location.char_index ?? -1,
+        chat_index: location.chat_index ?? -1,
+        assistant_preview: cleanText(request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT),
+        main_prompt: main,
+        negative_prompt: neg,
+        characters: meta.characters || [],
+        image_url: resolveImageUrl(cardId),
+        seed,
+        storage: 'indexeddb',
+        png_bytes: raw?.byteLength || 0,
+      });
+      dbg('job.shot.saved', { shot: idx, card_id: cardId, has_url: Boolean(resolveImageUrl(cardId)) });
+      await setJob(
+        jobId,
+        'generating',
+        progressPayload({
+          shot_count: shots.length,
+          shot_index: idx,
+          shot_done: idx + 1,
+          progress: Math.round(((idx + 1) / Math.max(1, shots.length)) * 1000) / 10,
+          phase: 'generating',
+          message: `이미지 ${idx + 1}/${shots.length} 완료`,
+          cards_so_far: cards.length,
+        }),
+      );
+    }
+    if (await cancelJobIfStale(jobId, 'superseded before done')) return;
+    const result = {
+      cards,
+      message_index: request.message_index != null ? Number(request.message_index) : -1,
+      shot_count: shots.length,
+      shot_done: shots.length,
+      progress: 100,
+      phase: 'done',
+      message: `이미지 ${shots.length}/${shots.length} 완료`,
+    };
+    await attachImageUrls(result);
+    await setJob(jobId, 'done', result);
+    // The run succeeded, so its cards are the user's now and must survive any
+    // later supersession of this job id.
+    const doneMeta = jobRunMeta.get(jobId);
+    if (doneMeta) doneMeta.publishedIds = [];
+    jobSpan.end({ message: 'done', cards: cards.length });
+  } catch (exc) {
+    jobSpan.fail(exc);
+    const err = exc as Error;
+    const errText = `${err?.message || exc}\n${err?.stack || ''}`.slice(-1500);
+    await setJob(
+      jobId,
+      'error',
+      {
+        phase: 'error',
+        message: String(err?.message || exc).slice(0, 240),
+        debug_stage: getLastStage(),
+        debug_tail: eventsForJob(jobId, 12),
+      },
+      errText,
+    );
+  } finally {
+    setJobContext(prevCtx);
+  }
+}

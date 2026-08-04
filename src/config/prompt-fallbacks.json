@@ -1,0 +1,11 @@
+{
+  "author_note": "",
+  "tagger": "Tag the chat message into Danbooru-style English image prompts. Output ONE JSON object only.",
+  "format": "{\"scenes\":[{\"place\":\"...\",\"shots\":[{\"paragraph\":0,\"camera\":\"...\",\"situation\":\"...\",\"characters\":[{\"name\":\"...\",\"action\":\"...\"}]}]}],\"new_characters\":[]}",
+  "appearance_inject": "Registered: {registered_block}\nIncomplete: {incomplete_block}\nDetected: {detected_block}",
+  "lore_inject": "Use matched lorebook context:",
+  "char_inject": "Character info:",
+  "preprocess": "Summarize visual details from the message.",
+  "prefill": "",
+  "preset_1": "[Positive]\n, masterpiece, best quality\n\n[Negative]\nlowres, bad quality, watermark"
+}

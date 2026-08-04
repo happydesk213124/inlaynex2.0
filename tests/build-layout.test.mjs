@@ -35,8 +35,12 @@ test('every prompt file is listed for embedding', () => {
 });
 
 test('reference copies the audit and parity harness need are present', () => {
-  assert.ok(exists('reference', 'old-built-plugin.js'), 'missing reference/old-built-plugin.js');
   assert.ok(exists('reference', 'native-backend.js'), 'missing reference/native-backend.js');
+  // old-built-plugin.js embeds the plaintext prompt pack, so it is gitignored and
+  // kept only on machines that run parity/audit against 1.x.
+  if (!exists('reference', 'old-built-plugin.js')) {
+    console.log('[build-layout] note: reference/old-built-plugin.js absent (local-only for parity)');
+  }
 });
 
 test('package version matches the version the backend reports', () => {

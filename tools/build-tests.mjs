@@ -33,6 +33,7 @@ const MODULES = {
   'character-tags': 'src/domain/character/tags.ts',
   'blob-url-cache': 'src/storage/blob-url-cache.ts',
   'prompt-codec': 'src/config/prompt-codec.ts',
+  'style-preset-overrides': 'src/domain/style-preset-overrides.ts',
 };
 
 await rm(outdir, { recursive: true, force: true });

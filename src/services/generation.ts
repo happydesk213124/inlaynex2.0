@@ -15,7 +15,7 @@ import { QUALITY_TAGS, UC_PRESETS } from '../config/defaults';
 import { normalizeNaturalBaseMode } from '../config/schema';
 import { API_URL, IMAGE_KEY } from '../core/constants';
 import { dbg } from '../core/debug';
-import type { JobRequest, NaiSettings, ShotCharacter, TaggedShot } from '../core/types';
+import type { JobRequest, NaiSettings, ShotCharacter, StylePreset, TaggedShot } from '../core/types';
 import {
   ASSISTANT_PREVIEW_LIMIT,
   cleanText,
@@ -33,6 +33,7 @@ import {
   personCountTagsForShot,
   stripPersonCountTags,
 } from '../domain/character/tags';
+import { resolveGenerationNaiParams } from '../domain/style-preset-overrides';
 import { generateViaComfy, imageBackendKind } from '../providers/comfy/client';
 import { generateT2i } from '../providers/nai/client';
 import { modelToNaia, type CharacterReference, type T2iRequest, type VibeReference } from '../providers/nai/payload';
@@ -247,8 +248,25 @@ export async function generateImage(plan: ImageRequest): Promise<GeneratedImage>
       });
     }
   }
+  // Active style preset may override CFG / vibe; empty preset fields keep NAI defaults.
+  const card = getConfig().card;
+  const presets: unknown[] = Array.isArray(card.presets) ? card.presets : [];
+  const activeId = cleanText(card.active_preset_id, 120);
+  let activePreset: Record<string, unknown> | null = null;
+  if (presets.length) {
+    if (activeId) {
+      activePreset =
+        (presets.find(
+          (item) =>
+            typeof item === 'object' && cleanText((item as Record<string, unknown>).id, 120) === activeId,
+        ) as Record<string, unknown> | undefined) || null;
+    }
+    if (!activePreset && typeof presets[0] === 'object') activePreset = presets[0] as Record<string, unknown>;
+  }
+  const naiParams = resolveGenerationNaiParams(nai, activePreset as StylePreset | null);
+
   const vibes: VibeReference[] = [];
-  const vibeMode = cleanText(nai.vibe_transfer || 'none').toLowerCase();
+  const vibeMode = cleanText(naiParams.vibe_transfer || 'none').toLowerCase();
   if (!['', 'none', 'off', 'false', '0'].includes(vibeMode)) {
     const vibe = await ensureVibeEncoded();
     if (vibe?.encoded) {
@@ -271,8 +289,8 @@ export async function generateImage(plan: ImageRequest): Promise<GeneratedImage>
     height: Math.min(Number(nai.height ?? 960) || 960, 1216),
     seed: Number(nai.seed ?? 0) || 0,
     steps: Math.min(Number(nai.steps ?? 28) || 28, 28),
-    cfg_scale: Number(nai.cfg_scale ?? 7),
-    cfg_rescale: Number(nai.cfg_rescale ?? 0.36),
+    cfg_scale: naiParams.cfg_scale,
+    cfg_rescale: naiParams.cfg_rescale,
     sampler: cleanText(nai.sampler) || 'k_euler_ancestral',
     scheduler: cleanText(nai.scheduler) || 'karras',
     model: modelToNaia(nai.model || 'nai-diffusion-4-5-full'),

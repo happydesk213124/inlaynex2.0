@@ -21,6 +21,15 @@ export interface StylePreset {
   name: string;
   positive: string;
   negative: string;
+  /** Empty / null → use NAI model-settings cfg_scale. */
+  cfg_scale?: number | null;
+  /** Empty / null → use NAI model-settings cfg_rescale. */
+  cfg_rescale?: number | null;
+  /**
+   * Empty → use NAI model-settings vibe_transfer.
+   * `none` forces off; `file` uses the uploaded vibe when configured.
+   */
+  vibe_transfer?: string;
 }
 
 /** Everything under `settings.card` — mostly UI behaviour plus prompt assembly. */

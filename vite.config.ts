@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.0.15';
+const PLUGIN_VERSION = '2.0.16';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -219,6 +219,238 @@ const VENDOR_EXPLORER_WARM_PROGRESS_PATCH = `          N.onWarmProgress(() => {
               });
             });
           });`;
+
+/**
+ * Style presets: CFG scale / CFG rescale / vibe per preset; drop paste textarea;
+ * put 카드 설정 저장 left of JSON export/import file buttons.
+ */
+const VENDOR_PRESET_QT_NEEDLE = `}, mt = ($, L) => \`\${String($ || "preset").toLowerCase().replace(/[^a-z0-9\\uac00-\\ud7a3]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 48) || "preset"}_\${L}_\${Math.random().toString(36).slice(2, 7)}\`, Qt = ($, L) => {
+  if (!$ || typeof $ != "object") return null;
+  const M = $, V = String(M.name || M.comment || M.title || \`프리셋 \${L + 1}\`).trim();
+  let Y = String(M.positive || M.pos || "").trim(), q = String(M.negative || M.neg || "").trim();
+  if (!Y && !q && typeof M.content == "string") {
+    const ne = ht(M.content);
+    if (!ne) return null;
+    Y = ne.positive, q = ne.negative;
+  }
+  return !Y && !q ? null : {
+    id: String(M.id || mt(V, L)),
+    name: V,
+    positive: Y,
+    negative: q
+  };
+}, pn = ($) => {`;
+
+const VENDOR_PRESET_QT_PATCH = `}, mt = ($, L) => \`\${String($ || "preset").toLowerCase().replace(/[^a-z0-9\\uac00-\\ud7a3]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 48) || "preset"}_\${L}_\${Math.random().toString(36).slice(2, 7)}\`, Qt = ($, L) => {
+  if (!$ || typeof $ != "object") return null;
+  const M = $, V = String(M.name || M.comment || M.title || \`프리셋 \${L + 1}\`).trim();
+  let Y = String(M.positive || M.pos || "").trim(), q = String(M.negative || M.neg || "").trim();
+  if (!Y && !q && typeof M.content == "string") {
+    const ne = ht(M.content);
+    if (!ne) return null;
+    Y = ne.positive, q = ne.negative;
+  }
+  let cfgScale = null, cfgRescale = null;
+  if (M.cfg_scale != null && M.cfg_scale !== "") {
+    const nCfg = Number(M.cfg_scale);
+    Number.isFinite(nCfg) && (cfgScale = nCfg);
+  }
+  if (M.cfg_rescale != null && M.cfg_rescale !== "") {
+    const nRs = Number(M.cfg_rescale);
+    Number.isFinite(nRs) && (cfgRescale = nRs);
+  }
+  const vibe = String(M.vibe_transfer || "").trim();
+  return !Y && !q && cfgScale == null && cfgRescale == null && !vibe ? null : {
+    id: String(M.id || mt(V, L)),
+    name: V,
+    positive: Y,
+    negative: q,
+    cfg_scale: cfgScale,
+    cfg_rescale: cfgRescale,
+    vibe_transfer: vibe
+  };
+}, pn = ($) => {`;
+
+const VENDOR_PRESET_UN_NEEDLE = `    Y >= 0 ? M[Y] = {
+      ...M[Y],
+      positive: V.positive,
+      negative: V.negative
+    } : M.push(V);`;
+
+const VENDOR_PRESET_UN_PATCH = `    Y >= 0 ? M[Y] = {
+      ...M[Y],
+      positive: V.positive,
+      negative: V.negative,
+      cfg_scale: V.cfg_scale,
+      cfg_rescale: V.cfg_rescale,
+      vibe_transfer: V.vibe_transfer
+    } : M.push(V);`;
+
+const VENDOR_PRESET_HTML_NEEDLE = `            <label class="wide"><span>프리셋 이름</span><input id="nx-preset-name" value="\${h(f?.name || "")}" \${f ? "" : "disabled"}></label>
+            <label class="wide"><span>Positive</span><textarea id="nx-custom-pos" \${f ? "" : "disabled"}>\${h(f?.positive || "")}</textarea></label>
+            <label class="wide"><span>Negative</span><textarea id="nx-custom-neg" \${f ? "" : "disabled"}>\${h(f?.negative || "")}</textarea></label>
+          </div>
+          <div class="section-split"></div>
+          <div class="prompt-group-label">프리셋 가져오기 / 내보내기</div>
+          <div class="row" style="margin-top:8px">
+            <button type="button" id="nx-preset-export" class="secondary">JSON 내보내기</button>
+            <button type="button" id="nx-preset-file" class="secondary">JSON 파일 열기</button>
+            <button type="button" id="nx-preset-import">붙여넣기 가져오기</button>
+            <input id="nx-preset-file-input" type="file" accept=".json,application/json,text/plain" style="display:none">
+          </div>
+          <label class="wide" style="display:flex;flex-direction:column;gap:6px;margin-top:12px;color:#bbc6d8;font-size:11px;font-weight:680;text-transform:uppercase;letter-spacing:.055em">
+            <span>card.json 또는 프리셋 JSON 붙여넣기</span>
+            <textarea id="nx-preset-import-text" class="import-box" placeholder='Risu card.json 전체, 또는 {"presets":[...]} 형식'></textarea>
+          </label>
+          <div class="row" style="margin-top:14px">
+            <button id="nx-save-card">카드 설정 저장</button>
+          </div>
+        </div>\`;`;
+
+const VENDOR_PRESET_HTML_PATCH = `            <label class="wide"><span>프리셋 이름</span><input id="nx-preset-name" value="\${h(f?.name || "")}" \${f ? "" : "disabled"}></label>
+            <label class="wide"><span>Positive</span><textarea id="nx-custom-pos" \${f ? "" : "disabled"}>\${h(f?.positive || "")}</textarea></label>
+            <label class="wide"><span>Negative</span><textarea id="nx-custom-neg" \${f ? "" : "disabled"}>\${h(f?.negative || "")}</textarea></label>
+            <label><span>CFG scale</span><input id="nx-preset-cfg" type="number" step="0.1" placeholder="NAI 기본" value="\${h(f?.cfg_scale ?? "")}" \${f ? "" : "disabled"}></label>
+            <label><span>CFG rescale</span><input id="nx-preset-rescale" type="number" step="0.01" placeholder="NAI 기본" value="\${h(f?.cfg_rescale ?? "")}" \${f ? "" : "disabled"}></label>
+            <label><span>Vibe Transfer</span>
+              <select id="nx-preset-vibe" \${f ? "" : "disabled"}>
+                <option value="" \${!f?.vibe_transfer ? "selected" : ""}>비어있음 · 모델설정 NAI 기본값</option>
+                <option value="none" \${f?.vibe_transfer === "none" ? "selected" : ""}>끄기</option>
+                <option value="file" \${f?.vibe_transfer === "file" ? "selected" : ""}>사용 (업로드된 vibe)</option>
+              </select>
+            </label>
+          </div>
+          <div class="row" style="margin-top:14px">
+            <button id="nx-save-card">카드 설정 저장</button>
+            <button type="button" id="nx-preset-export" class="secondary">JSON 내보내기</button>
+            <button type="button" id="nx-preset-file" class="secondary">JSON 파일 열기</button>
+            <input id="nx-preset-file-input" type="file" accept=".json,application/json,text/plain" style="display:none">
+          </div>
+        </div>\`;`;
+
+const VENDOR_PRESET_READ_NEEDLE = `    const nameEl = typeof document < "u" ? document.getElementById("nx-preset-name") : null, posEl = typeof document < "u" ? document.getElementById("nx-custom-pos") : null, negEl = typeof document < "u" ? document.getElementById("nx-custom-neg") : null;
+    if (!nameEl && !posEl && !negEl) return e;
+    return nameEl && (n.name = nameEl.value || ""), posEl && (n.positive = posEl.value || "", e.custom_pos = n.positive), negEl && (n.negative = negEl.value || "", e.custom_neg = n.negative), e;
+  }
+  function fa(e) {`;
+
+const VENDOR_PRESET_READ_PATCH = `    const nameEl = typeof document < "u" ? document.getElementById("nx-preset-name") : null, posEl = typeof document < "u" ? document.getElementById("nx-custom-pos") : null, negEl = typeof document < "u" ? document.getElementById("nx-custom-neg") : null, cfgEl = typeof document < "u" ? document.getElementById("nx-preset-cfg") : null, rescaleEl = typeof document < "u" ? document.getElementById("nx-preset-rescale") : null, vibeEl = typeof document < "u" ? document.getElementById("nx-preset-vibe") : null;
+    if (!nameEl && !posEl && !negEl && !cfgEl && !rescaleEl && !vibeEl) return e;
+    nameEl && (n.name = nameEl.value || "");
+    posEl && (n.positive = posEl.value || "", e.custom_pos = n.positive);
+    negEl && (n.negative = negEl.value || "", e.custom_neg = n.negative);
+    if (cfgEl) {
+      const v = String(cfgEl.value || "").trim();
+      n.cfg_scale = v === "" ? null : Number(v);
+      if (n.cfg_scale != null && !Number.isFinite(n.cfg_scale)) n.cfg_scale = null;
+    }
+    if (rescaleEl) {
+      const v = String(rescaleEl.value || "").trim();
+      n.cfg_rescale = v === "" ? null : Number(v);
+      if (n.cfg_rescale != null && !Number.isFinite(n.cfg_rescale)) n.cfg_rescale = null;
+    }
+    vibeEl && (n.vibe_transfer = String(vibeEl.value || ""));
+    return e;
+  }
+  function fa(e) {`;
+
+const VENDOR_PRESET_FA_NEEDLE = `    const nameEl = typeof document < "u" ? document.getElementById("nx-preset-name") : null, posEl = typeof document < "u" ? document.getElementById("nx-custom-pos") : null, negEl = typeof document < "u" ? document.getElementById("nx-custom-neg") : null;
+    if (owner && (nameEl || posEl || negEl)) {
+      nameEl && (owner.name = nameEl.value || "");
+      posEl && (owner.positive = posEl.value || "", n.custom_pos = owner.positive);
+      negEl && (owner.negative = negEl.value || "", n.custom_neg = owner.negative);
+    }`;
+
+const VENDOR_PRESET_FA_PATCH = `    const nameEl = typeof document < "u" ? document.getElementById("nx-preset-name") : null, posEl = typeof document < "u" ? document.getElementById("nx-custom-pos") : null, negEl = typeof document < "u" ? document.getElementById("nx-custom-neg") : null, cfgEl = typeof document < "u" ? document.getElementById("nx-preset-cfg") : null, rescaleEl = typeof document < "u" ? document.getElementById("nx-preset-rescale") : null, vibeEl = typeof document < "u" ? document.getElementById("nx-preset-vibe") : null;
+    if (owner && (nameEl || posEl || negEl || cfgEl || rescaleEl || vibeEl)) {
+      nameEl && (owner.name = nameEl.value || "");
+      posEl && (owner.positive = posEl.value || "", n.custom_pos = owner.positive);
+      negEl && (owner.negative = negEl.value || "", n.custom_neg = owner.negative);
+      if (cfgEl) {
+        const v = String(cfgEl.value || "").trim();
+        owner.cfg_scale = v === "" ? null : Number(v);
+        if (owner.cfg_scale != null && !Number.isFinite(owner.cfg_scale)) owner.cfg_scale = null;
+      }
+      if (rescaleEl) {
+        const v = String(rescaleEl.value || "").trim();
+        owner.cfg_rescale = v === "" ? null : Number(v);
+        if (owner.cfg_rescale != null && !Number.isFinite(owner.cfg_rescale)) owner.cfg_rescale = null;
+      }
+      vibeEl && (owner.vibe_transfer = String(vibeEl.value || ""));
+    }`;
+
+const VENDOR_PRESET_SYNC_NEEDLE = `    const name = document.getElementById("nx-preset-name"), pos = document.getElementById("nx-custom-pos"), neg = document.getElementById("nx-custom-neg");
+    if (name) name.value = active.name || "";
+    if (pos) pos.value = active.positive || "";
+    if (neg) neg.value = active.negative || "";
+  }
+  async function Je() {`;
+
+const VENDOR_PRESET_SYNC_PATCH = `    const name = document.getElementById("nx-preset-name"), pos = document.getElementById("nx-custom-pos"), neg = document.getElementById("nx-custom-neg"), cfg = document.getElementById("nx-preset-cfg"), rescale = document.getElementById("nx-preset-rescale"), vibe = document.getElementById("nx-preset-vibe");
+    if (name) name.value = active.name || "";
+    if (pos) pos.value = active.positive || "";
+    if (neg) neg.value = active.negative || "";
+    if (cfg) cfg.value = active.cfg_scale == null || active.cfg_scale === "" ? "" : String(active.cfg_scale);
+    if (rescale) rescale.value = active.cfg_rescale == null || active.cfg_rescale === "" ? "" : String(active.cfg_rescale);
+    if (vibe) vibe.value = active.vibe_transfer || "";
+  }
+  async function Je() {`;
+
+const VENDOR_PRESET_EXPORT_NEEDLE = `  function exportPresetsJson() {
+    const e = _e(), n = (e.presets || []).map((a) => ({
+      id: String(a.id || ""),
+      name: String(a.name || ""),
+      positive: String(a.positive || ""),
+      negative: String(a.negative || "")
+    })).filter((a) => a.name || a.positive || a.negative);`;
+
+const VENDOR_PRESET_EXPORT_PATCH = `  function exportPresetsJson() {
+    const e = _e(), n = (e.presets || []).map((a) => {
+      const cfg = a.cfg_scale == null || a.cfg_scale === "" ? null : Number(a.cfg_scale), rescale = a.cfg_rescale == null || a.cfg_rescale === "" ? null : Number(a.cfg_rescale);
+      return {
+        id: String(a.id || ""),
+        name: String(a.name || ""),
+        positive: String(a.positive || ""),
+        negative: String(a.negative || ""),
+        cfg_scale: cfg != null && Number.isFinite(cfg) ? cfg : null,
+        cfg_rescale: rescale != null && Number.isFinite(rescale) ? rescale : null,
+        vibe_transfer: String(a.vibe_transfer || "")
+      };
+    }).filter((a) => a.name || a.positive || a.negative || a.cfg_scale != null || a.cfg_rescale != null || a.vibe_transfer);`;
+
+const VENDOR_PRESET_NEW_NEEDLE = `      a.presets.push({
+        id: r,
+        name: \`새 프리셋 \${a.presets.length + 1}\`,
+        positive: "",
+        negative: ""
+      }), pinActivePreset(a, r), a.custom_pos = "", a.custom_neg = "", queueSettingsSave({ card: { ...a } }), await P();`;
+
+const VENDOR_PRESET_NEW_PATCH = `      a.presets.push({
+        id: r,
+        name: \`새 프리셋 \${a.presets.length + 1}\`,
+        positive: "",
+        negative: "",
+        cfg_scale: null,
+        cfg_rescale: null,
+        vibe_transfer: ""
+      }), pinActivePreset(a, r), a.custom_pos = "", a.custom_neg = "", queueSettingsSave({ card: { ...a } }), await P();`;
+
+const VENDOR_PRESET_DUP_NEEDLE = `      a.presets.push({
+        id: i,
+        name: \`\${r.name} 복사\`,
+        positive: r.positive || "",
+        negative: r.negative || ""
+      }), pinActivePreset(a, i), a.custom_pos = r.positive || "", a.custom_neg = r.negative || "", queueSettingsSave({ card: { ...a } }), await P();`;
+
+const VENDOR_PRESET_DUP_PATCH = `      a.presets.push({
+        id: i,
+        name: \`\${r.name} 복사\`,
+        positive: r.positive || "",
+        negative: r.negative || "",
+        cfg_scale: r.cfg_scale ?? null,
+        cfg_rescale: r.cfg_rescale ?? null,
+        vibe_transfer: r.vibe_transfer || ""
+      }), pinActivePreset(a, i), a.custom_pos = r.positive || "", a.custom_neg = r.negative || "", queueSettingsSave({ card: { ...a } }), await P();`;
 
 /**
  * Sticky always-image hide = effective size 0% (not display:none / card-id).
@@ -512,6 +744,15 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, 'explorer thumb paint');
   assertOnce(raw, VENDOR_EXPLORER_THUMB_WARM_NEEDLE, 'explorer thumb warm');
   assertOnce(raw, VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE, 'explorer warm progress');
+  assertOnce(raw, VENDOR_PRESET_QT_NEEDLE, 'preset Qt()');
+  assertOnce(raw, VENDOR_PRESET_UN_NEEDLE, 'preset un() merge');
+  assertOnce(raw, VENDOR_PRESET_HTML_NEEDLE, 'preset HTML cfg/vibe');
+  assertOnce(raw, VENDOR_PRESET_READ_NEEDLE, 'preset _e() read');
+  assertOnce(raw, VENDOR_PRESET_FA_NEEDLE, 'preset fa() write');
+  assertOnce(raw, VENDOR_PRESET_SYNC_NEEDLE, 'preset form sync');
+  assertOnce(raw, VENDOR_PRESET_EXPORT_NEEDLE, 'preset JSON export');
+  assertOnce(raw, VENDOR_PRESET_NEW_NEEDLE, 'preset new');
+  assertOnce(raw, VENDOR_PRESET_DUP_NEEDLE, 'preset dup');
   for (const [needle, label] of [
     [VENDOR_STICKY_LA_NEEDLE, 'sticky La()'],
     [VENDOR_STICKY_KEEP_NEEDLE, 'sticky keepHidden'],
@@ -543,6 +784,15 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, VENDOR_EXPLORER_THUMB_PAINT_PATCH)
     .replace(VENDOR_EXPLORER_THUMB_WARM_NEEDLE, VENDOR_EXPLORER_THUMB_WARM_PATCH)
     .replace(VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE, VENDOR_EXPLORER_WARM_PROGRESS_PATCH)
+    .replace(VENDOR_PRESET_QT_NEEDLE, VENDOR_PRESET_QT_PATCH)
+    .replace(VENDOR_PRESET_UN_NEEDLE, VENDOR_PRESET_UN_PATCH)
+    .replace(VENDOR_PRESET_HTML_NEEDLE, VENDOR_PRESET_HTML_PATCH)
+    .replace(VENDOR_PRESET_READ_NEEDLE, VENDOR_PRESET_READ_PATCH)
+    .replace(VENDOR_PRESET_FA_NEEDLE, VENDOR_PRESET_FA_PATCH)
+    .replace(VENDOR_PRESET_SYNC_NEEDLE, VENDOR_PRESET_SYNC_PATCH)
+    .replace(VENDOR_PRESET_EXPORT_NEEDLE, VENDOR_PRESET_EXPORT_PATCH)
+    .replace(VENDOR_PRESET_NEW_NEEDLE, VENDOR_PRESET_NEW_PATCH)
+    .replace(VENDOR_PRESET_DUP_NEEDLE, VENDOR_PRESET_DUP_PATCH)
     .replace(VENDOR_STICKY_LA_NEEDLE, VENDOR_STICKY_LA_PATCH)
     .replace(VENDOR_STICKY_KEEP_NEEDLE, VENDOR_STICKY_KEEP_PATCH)
     .replace(VENDOR_STICKY_SHOW_NEEDLE, VENDOR_STICKY_SHOW_PATCH)

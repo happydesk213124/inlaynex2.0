@@ -31,6 +31,9 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 > `onWarmProgress`. While the explorer panel is open, warm progress must still
 > reapply `src` on `.explorer-card img` (build patch); otherwise freshly generated
 > cards stay on the broken-image icon until a full panel remount.
+>
+> Style presets may carry optional `cfg_scale`, `cfg_rescale`, and `vibe_transfer`.
+> Empty / missing means use NAI model-settings defaults for that generation.
 
 ## 2. Other globals the UI reads
 

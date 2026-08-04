@@ -8,13 +8,13 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.0.12';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.0.13';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
  * Only bump it when a prompt change is mandatory for correctness.
  */
-export const PROMPT_PACK = '2026-08-05-natural-base-modes';
+export const PROMPT_PACK = '2026-08-05-base-wear-fixed';
 
 export const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'prefill', 'preprocess',

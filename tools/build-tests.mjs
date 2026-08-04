@@ -30,6 +30,7 @@ const MODULES = {
   'llm-providers': 'src/providers/llm/providers.ts',
   'settings-schema': 'src/config/schema.ts',
   'reroll-setup': 'src/domain/prompt/reroll-setup.ts',
+  'character-tags': 'src/domain/character/tags.ts',
   'blob-url-cache': 'src/storage/blob-url-cache.ts',
   'prompt-codec': 'src/config/prompt-codec.ts',
 };

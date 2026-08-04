@@ -212,6 +212,9 @@ function auditPromptPack(out) {
     // mode-specific system message instead of a single boolean ON rule.
     'tagger',
     'format',
+    // Base attire/accessories stay fixed on the roster; registered block shows
+    // them and shot wear is generation-only override.
+    'appearance_inject',
   ]);
   const changed = Object.keys(legacy).filter((k) => k in pack && legacy[k] !== pack[k]);
   const unexplained = changed.filter((k) => !INTENTIONAL_PROMPT_DRIFT.has(k));

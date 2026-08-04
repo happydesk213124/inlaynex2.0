@@ -27,10 +27,8 @@ import {
 import type { CharacterInput } from '../domain/character/identity';
 import { dedupeShotCharacters, resolveCharacter } from '../domain/character/roster';
 import {
-  characterHasAppearance,
   characterMaxLimit,
-  fullTags,
-  normalizeCharacterCaptionTags,
+  composeCharacterCaptionTags,
   normalizePersonTagMode,
   personCountTagsForShot,
   stripPersonCountTags,
@@ -208,25 +206,7 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
     const char = chars[idx];
     const name = cleanText(char.name, 200);
     const stored = name ? resolveCharacter(name, roster) : null;
-    const hasLooks = characterHasAppearance(stored);
-    const storedTags = stored && hasLooks ? fullTags(stored) : '';
-    const shotOriginal = cleanText(char.original || char.original_tag || '', 400);
-    const storedOriginal = cleanText(stored?.original || '', 400);
-    const prompt = normalizeCharacterCaptionTags(
-      joinTags(
-        storedOriginal ? '' : shotOriginal,
-        storedTags,
-        hasLooks ? '' : char.label,
-        hasLooks ? '' : char.age,
-        hasLooks ? '' : char.appearance,
-        hasLooks ? '' : char.body,
-        hasLooks ? '' : char.attire || stored?.attire,
-        hasLooks ? '' : char.accessories || stored?.accessories,
-        char.expression,
-        char.action,
-        char.sex,
-      ),
-    );
+    const prompt = composeCharacterCaptionTags(stored, char);
     const uc = cleanText(char.negative);
     const cx = n === 1 ? 0.5 : Math.round((0.1 + (0.8 * idx) / Math.max(1, n - 1)) * 10) / 10;
     const cy = 0.5;

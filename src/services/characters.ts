@@ -691,27 +691,8 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     const nameParts = namePartsFrom(rec, existing);
 
     if (existing?.scope === GLOBAL_SCOPE && characterHasAppearance(existing)) {
-      const canAttire = newAttire && !existing.attire_locked;
-      const canAcc = newAccessories && !existing.accessories_locked;
-      if (canAttire || canAcc) {
-        let appearance = existing.appearance || '';
-        let attire = existing.attire || '';
-        let accessories = existing.accessories || '';
-        if (canAttire) [appearance, attire, accessories] = replaceAttire(appearance, attire, accessories, newAttire);
-        if (canAcc) [appearance, attire, accessories] = replaceAccessories(appearance, attire, accessories, newAccessories);
-        // The recomputed `appearance` is deliberately dropped: a global's look is
-        // never rewritten from a chat, only its wear overlay is.
-        await upsertCharacter(writeSessionId, {
-          id: existing.id || rec.id,
-          name: existing.name || rec.name,
-          aliases: existing.aliases || rec.aliases,
-          original: '',
-          appearance: '',
-          attire,
-          accessories,
-          ...nameParts,
-        });
-      }
+      // Filled global: base attire/accessories stay fixed. Shot-level wear overrides
+      // are applied only at generation time — do not write a session wear overlay.
       roster = await readRoster();
       continue;
     }
@@ -754,8 +735,12 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
       let original = existing.original || rec.original || '';
       if (rec.appearance && !existing.appearance) appearance = rec.appearance;
       if (rec.original && !existing.original) original = rec.original;
-      if (!existing.attire_locked && rec.attire) [appearance, attire, accessories] = replaceAttire(appearance, attire, accessories, rec.attire);
-      if (!existing.accessories_locked && rec.accessories) {
+      // Filled look: keep base wear; only incomplete rows may receive first attire/acc.
+      const wearFrozen = characterHasAppearance(existing);
+      if (!wearFrozen && !existing.attire_locked && rec.attire) {
+        [appearance, attire, accessories] = replaceAttire(appearance, attire, accessories, rec.attire);
+      }
+      if (!wearFrozen && !existing.accessories_locked && rec.accessories) {
         [appearance, attire, accessories] = replaceAccessories(appearance, attire, accessories, rec.accessories);
       }
       await upsertCharacter(writeSessionId, {
@@ -783,6 +768,11 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     const newAttire = cleanText(char.attire || '');
     const newAccessories = cleanText(char.accessories || '');
     const legacyApp = cleanText(char.appearance || '');
+    // Filled characters keep base wear on the roster; shot attire is generation-only.
+    if (existing && characterHasAppearance(existing)) {
+      roster = await readRoster();
+      continue;
+    }
     if (existing?.scope === GLOBAL_SCOPE) {
       const canAttire = !existing.attire_locked;
       const canAcc = !existing.accessories_locked;

@@ -139,8 +139,15 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
         ? filled
           .map((c) => {
             const name = cleanText(c.name, 200);
-            const preview = cleanText(c.appearance || '', 120);
-            return preview ? `${name} ← ${preview}` : name;
+            const appearance = cleanText(c.appearance || '', 200);
+            const attire = cleanText(c.attire || '', 160);
+            const accessories = cleanText(c.accessories || '', 120);
+            const parts = [
+              appearance ? `appearance=${appearance}` : '',
+              attire ? `attire=${attire}` : '',
+              accessories ? `accessories=${accessories}` : '',
+            ].filter(Boolean);
+            return parts.length ? `${name} ← ${parts.join(' | ')}` : name;
           })
           .filter(Boolean)
           .join('\n')

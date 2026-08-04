@@ -243,6 +243,64 @@ export function characterHasAppearance(char: unknown): boolean {
   return meaningful.length > 0;
 }
 
+/**
+ * Character caption for one shot.
+ *
+ * Filled roster looks: identity (original + appearance) stays on the stored base;
+ * attire/accessories use the shot override when the LLM sent one, else the base.
+ * Tagging must not rewrite the stored base wear — only this per-shot mix.
+ */
+export function composeCharacterCaptionTags(
+  stored: CharacterInput | null | undefined,
+  shot: {
+    original?: unknown;
+    original_tag?: unknown;
+    label?: unknown;
+    age?: unknown;
+    appearance?: unknown;
+    body?: unknown;
+    attire?: unknown;
+    accessories?: unknown;
+    expression?: unknown;
+    action?: unknown;
+    sex?: unknown;
+    negative?: unknown;
+  } | null | undefined,
+): string {
+  const hasLooks = characterHasAppearance(stored);
+  const shotOriginal = cleanText(shot?.original || shot?.original_tag || '', 400);
+  const storedOriginal = cleanText(stored?.original || '', 400);
+  if (hasLooks) {
+    const attire = cleanText(shot?.attire || '', 4000) || cleanText(stored?.attire || '', 4000);
+    const accessories = cleanText(shot?.accessories || '', 4000) || cleanText(stored?.accessories || '', 4000);
+    return normalizeCharacterCaptionTags(
+      joinTags(
+        storedOriginal || shotOriginal,
+        stored?.appearance,
+        attire,
+        accessories,
+        shot?.expression,
+        shot?.action,
+        shot?.sex,
+      ),
+    );
+  }
+  return normalizeCharacterCaptionTags(
+    joinTags(
+      storedOriginal ? '' : shotOriginal,
+      shot?.label,
+      shot?.age,
+      shot?.appearance,
+      shot?.body,
+      cleanText(shot?.attire || '', 4000) || cleanText(stored?.attire || '', 4000),
+      cleanText(shot?.accessories || '', 4000) || cleanText(stored?.accessories || '', 4000),
+      shot?.expression,
+      shot?.action,
+      shot?.sex,
+    ),
+  );
+}
+
 /** Cast size cap from card settings, clamped to NovelAI's 1..6 characters. */
 export function characterMaxLimit(card: Partial<CardSettings> | null | undefined): number {
   const settings = (typeof card === 'object' && card ? card : {}) as Record<string, unknown>;

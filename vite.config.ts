@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.0.17';
+const PLUGIN_VERSION = '2.0.18';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -223,7 +223,61 @@ const VENDOR_EXPLORER_WARM_PROGRESS_PATCH = `          N.onWarmProgress(() => {
 /**
  * Style presets: CFG scale / CFG rescale / vibe per preset; drop paste textarea;
  * put 카드 설정 저장 left of JSON export/import file buttons.
+ * Also duplicate 카드 설정 저장 next to the preset-count badge in the card head.
  */
+const VENDOR_PRESET_HEAD_SAVE_NEEDLE = `              <div class="prompt-title">스타일 프리셋</div>
+              <div class="muted">card.json / 로어북 [Positive]·[Negative] 항목을 불러와 바로 씁니다.</div>
+            </div>
+            <span class="badge \${U.length ? "custom" : "default"}">\${U.length}개</span>
+          </div>
+          <div class="preset-chip-row">\${I || '<span class="muted">아직 프리셋이 없습니다. JSON을 불러오세요.</span>'}</div>`;
+
+const VENDOR_PRESET_HEAD_SAVE_PATCH = `              <div class="prompt-title">스타일 프리셋</div>
+              <div class="muted">card.json / 로어북 [Positive]·[Negative] 항목을 불러와 바로 씁니다.</div>
+            </div>
+            <div class="row" style="margin:0;gap:8px;align-items:center;flex-shrink:0">
+              <span class="badge \${U.length ? "custom" : "default"}">\${U.length}개</span>
+              <button type="button" id="nx-save-card-head">카드 설정 저장</button>
+            </div>
+          </div>
+          <div class="preset-chip-row">\${I || '<span class="muted">아직 프리셋이 없습니다. JSON을 불러오세요.</span>'}</div>`;
+
+const VENDOR_PRESET_SAVE_EVT_NEEDLE = `    }), document.getElementById("nx-save-card")?.addEventListener("click", async () => {
+      try {
+        const a = Ct();
+        await flushSettingsSave(), await pe({ card: a }), t.uiMessage = {
+          type: "success",
+          text: \`카드 설정 저장됨 · 프리셋 \${(a.presets || []).length}개 · char≤\${a.character_max}\`
+        }, $e("저장됨");
+      } catch (a) {
+        t.uiMessage = {
+          type: "error",
+          text: z(a.message || a)
+        };
+      }
+      await P();
+    });`;
+
+const VENDOR_PRESET_SAVE_EVT_PATCH = `    }), (() => {
+      const saveCard = async () => {
+        try {
+          const a = Ct();
+          await flushSettingsSave(), await pe({ card: a }), t.uiMessage = {
+            type: "success",
+            text: \`카드 설정 저장됨 · 프리셋 \${(a.presets || []).length}개 · char≤\${a.character_max}\`
+          }, $e("저장됨");
+        } catch (a) {
+          t.uiMessage = {
+            type: "error",
+            text: z(a.message || a)
+          };
+        }
+        await P();
+      };
+      document.getElementById("nx-save-card")?.addEventListener("click", saveCard);
+      document.getElementById("nx-save-card-head")?.addEventListener("click", saveCard);
+    })();`;
+
 const VENDOR_PRESET_QT_NEEDLE = `}, mt = ($, L) => \`\${String($ || "preset").toLowerCase().replace(/[^a-z0-9\\uac00-\\ud7a3]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 48) || "preset"}_\${L}_\${Math.random().toString(36).slice(2, 7)}\`, Qt = ($, L) => {
   if (!$ || typeof $ != "object") return null;
   const M = $, V = String(M.name || M.comment || M.title || \`프리셋 \${L + 1}\`).trim();
@@ -831,6 +885,8 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_PRESET_QT_NEEDLE, 'preset Qt()');
   assertOnce(raw, VENDOR_PRESET_UN_NEEDLE, 'preset un() merge');
   assertOnce(raw, VENDOR_PRESET_HTML_NEEDLE, 'preset HTML cfg/vibe');
+  assertOnce(raw, VENDOR_PRESET_HEAD_SAVE_NEEDLE, 'preset head save button');
+  assertOnce(raw, VENDOR_PRESET_SAVE_EVT_NEEDLE, 'preset save card events');
   assertOnce(raw, VENDOR_PRESET_READ_NEEDLE, 'preset _e() read');
   assertOnce(raw, VENDOR_PRESET_FA_NEEDLE, 'preset fa() write');
   assertOnce(raw, VENDOR_PRESET_SYNC_NEEDLE, 'preset form sync');
@@ -873,6 +929,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_PRESET_QT_NEEDLE, VENDOR_PRESET_QT_PATCH)
     .replace(VENDOR_PRESET_UN_NEEDLE, VENDOR_PRESET_UN_PATCH)
     .replace(VENDOR_PRESET_HTML_NEEDLE, VENDOR_PRESET_HTML_PATCH)
+    .replace(VENDOR_PRESET_HEAD_SAVE_NEEDLE, VENDOR_PRESET_HEAD_SAVE_PATCH)
+    .replace(VENDOR_PRESET_SAVE_EVT_NEEDLE, VENDOR_PRESET_SAVE_EVT_PATCH)
     .replace(VENDOR_PRESET_READ_NEEDLE, VENDOR_PRESET_READ_PATCH)
     .replace(VENDOR_PRESET_FA_NEEDLE, VENDOR_PRESET_FA_PATCH)
     .replace(VENDOR_PRESET_SYNC_NEEDLE, VENDOR_PRESET_SYNC_PATCH)

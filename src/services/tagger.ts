@@ -20,10 +20,6 @@ import type { CharacterRecord, JobRequest, TaggedShot, TaggerResult } from '../c
 import { deepMerge } from '../core/util/object';
 import { cleanText, stripCbs } from '../core/util/text';
 import { normalizeNaturalBaseMode, type NaturalBaseMode } from '../config/schema';
-import {
-  compositionCatalogSystemMessage,
-  compositionCurationOn,
-} from '../domain/composition/leaves';
 import { characterTriggers, dedupeShotCharacters, matchCharactersInText } from '../domain/character/roster';
 import { characterHasAppearance, characterMaxLimit } from '../domain/character/tags';
 import {
@@ -35,10 +31,27 @@ import { isCharacterImageExtraLore } from '../domain/lore/extra';
 import type { LlmMessage } from '../providers/llm/transform';
 import { rosterForSession } from './characters';
 import { getConfig } from './context';
+import { curationTaggerSystemMessage } from './curation';
 import { getPrompt } from './settings';
 
 /** The job request, as the tagger reads it. */
 export type TaggerArgs = JobRequest;
+
+/**
+ * Chat user payload from tagger messages (byte-identical for pass-2 cache).
+ * Skips Author's Note follow-up user turns.
+ */
+export function extractTaggerChatContext(messages: readonly LlmMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const row = messages[i];
+    if (!row || row.role !== 'user') continue;
+    const content = typeof row.content === 'string' ? row.content : '';
+    if (!content.trim()) continue;
+    if (content.startsWith('# Priority: Author')) continue;
+    return content;
+  }
+  return '';
+}
 
 /** Builds the full system/user message list for one tagging call. */
 export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessage[]> {
@@ -193,10 +206,11 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
     content: naturalBaseSystemMessage(naturalMode),
   });
 
-  if (compositionCurationOn(card)) {
+  const curationMsg = await curationTaggerSystemMessage();
+  if (curationMsg) {
     messages.push({
       role: 'system',
-      content: compositionCatalogSystemMessage(),
+      content: curationMsg,
     });
   }
 

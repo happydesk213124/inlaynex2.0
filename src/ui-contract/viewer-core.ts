@@ -1130,15 +1130,41 @@ export function stickyThumbBoxFromPct(
 }
 
 /**
+ * Fit `imgW×imgH` inside a max envelope, preserving aspect ratio.
+ * Missing/invalid image size → return the envelope (caller letterboxes with contain).
+ */
+export function fitBoxInside(
+  maxW: unknown,
+  maxH: unknown,
+  imgW: unknown = 0,
+  imgH: unknown = 0,
+): { w: number; h: number } {
+  const mw = Math.max(0, finiteNumber(maxW, 0));
+  const mh = Math.max(0, finiteNumber(maxH, 0));
+  if (mw <= 0 || mh <= 0) return { w: 0, h: 0 };
+  const iw = Math.max(0, finiteNumber(imgW, 0));
+  const ih = Math.max(0, finiteNumber(imgH, 0));
+  if (iw <= 0 || ih <= 0) return { w: mw, h: mh };
+  const scale = Math.min(mw / iw, mh / ih);
+  return {
+    w: Math.max(1, Math.round(iw * scale)),
+    h: Math.max(1, Math.round(ih * scale)),
+  };
+}
+
+/**
  * Sticky thumb HTML. Prefer a single <img> — dual-stack under/over doubles the
  * data-URL payload through SafeDOM setInnerHTML and is what made scroll flashes lag.
+ * `contain` (not cover): portrait / landscape / square all show fully in the box.
+ * Transparent bg: La() already shrinks the frame via fitBoxInside; any residual
+ * contain letterbox must not paint opaque bars over the chat.
  */
 export function composeStickyThumbHtml(src: string | null | undefined, underSrc: string | null | undefined = ''): string {
   const next = typeof src === 'string' ? src : '';
   void underSrc; // kept for call-site compat; stacking is intentionally unused
-  if (!next) return '<div style="width:100%;height:100%;background:#0b0f18"></div>';
-  const cover = 'width:100%;height:100%;object-fit:cover;display:block';
-  return `<img src="${next}" style="${cover}" />`;
+  if (!next) return '<div style="width:100%;height:100%;background:transparent"></div>';
+  const fit = 'width:100%;height:100%;object-fit:contain;display:block;background:transparent';
+  return `<img src="${next}" style="${fit}" />`;
 }
 
 /**
@@ -1480,6 +1506,8 @@ export interface AutotagLook {
   attire: string;
   accessories: string;
   text: string;
+  /** `female` | `male` | `""` from vision JSON when present. */
+  gender?: string;
 }
 
 /**
@@ -1489,7 +1517,7 @@ export interface AutotagLook {
 export function parseAutotagLookJson(raw: unknown): AutotagLook {
   const text = String(raw || '').trim();
   if (!text) {
-    return { appearance: '', attire: '', accessories: '', text: '' };
+    return { appearance: '', attire: '', accessories: '', text: '', gender: '' };
   }
   let obj: Record<string, unknown> | null = null;
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -1509,12 +1537,20 @@ export function parseAutotagLookJson(raw: unknown): AutotagLook {
     const appearance = String(obj.appearance ?? obj.look ?? obj.identity ?? '').trim();
     const attire = String(obj.attire ?? obj.clothing ?? obj.outfit ?? '').trim();
     const accessories = String(obj.accessories ?? obj.accessory ?? obj.props ?? '').trim();
+    const genderRaw = String(obj.gender ?? obj.sex ?? '').trim().toLowerCase();
+    const gender = ['girl', 'female', 'f', 'woman'].includes(genderRaw)
+      ? 'girl'
+      : ['boy', 'male', 'm', 'man'].includes(genderRaw)
+        ? 'boy'
+        : genderRaw === 'other'
+          ? 'other'
+          : '';
     const joined = [appearance, attire, accessories].filter(Boolean).join(', ');
-    return { appearance, attire, accessories, text: joined };
+    return { appearance, attire, accessories, text: joined, gender };
   }
   // Legacy flat tag dump → put everything in appearance.
   const flat = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  return { appearance: flat, attire: '', accessories: '', text: flat };
+  return { appearance: flat, attire: '', accessories: '', text: flat, gender: '' };
 }
 
 /**

@@ -130,6 +130,21 @@ export async function runScenario(N, handles) {
   });
   await rec('settings.export', () => get('/v1/settings/export'));
 
+  // ── curation.strict_ids (2.0-only surface; 1.x has no curation panel at
+  // all, so the route itself is expected to 404 on the old backend — see
+  // NEW_ONLY_STEPS in compare.mjs). Enable then immediately reset so no
+  // later step runs with curation on.
+  await rec('curation.strict_ids.enable', async () => {
+    const patch = await post('/v1/curation/settings', { mode: 'two_stage', strict_ids: true });
+    const after = await get('/v1/settings');
+    return { patch_ok: patch?.ok ?? null, mode: after?.settings?.curation?.mode ?? null, strict_ids: after?.settings?.curation?.strict_ids ?? null };
+  });
+  await rec('curation.strict_ids.reset', async () => {
+    const patch = await post('/v1/curation/settings', { mode: 'off', strict_ids: false });
+    const after = await get('/v1/settings');
+    return { patch_ok: patch?.ok ?? null, mode: after?.settings?.curation?.mode ?? null, strict_ids: after?.settings?.curation?.strict_ids ?? null };
+  });
+
   // ── prompts ─────────────────────────────────────────────────────────────
   const promptList = await rec('prompts.list', () => get('/v1/prompts'));
   await rec('prompts.get_tagger', () => get('/v1/prompts/tagger'));
@@ -137,7 +152,11 @@ export async function runScenario(N, handles) {
   await rec('prompts.get_tagger_after_put', () => get('/v1/prompts/tagger'));
   await rec('prompts.reset_tagger', () => post('/v1/prompts/tagger/reset', {}));
   await rec('prompts.get_tagger_after_reset', () => get('/v1/prompts/tagger'));
-  await rec('prompts.keys', () => (promptList?.prompts ?? []).map((p) => p.key));
+  await rec('prompts.keys', () =>
+    (promptList?.prompts ?? [])
+      .map((p) => p.key)
+      .filter((k) => !String(k).startsWith('curation_')),
+  );
 
   // ── characters: shared surname must not merge ───────────────────────────
   await rec('chars.create_shared_surname', () => post('/v1/characters', {
@@ -172,10 +191,21 @@ export async function runScenario(N, handles) {
     ['sess_chat_a', 'chat-a-nim', 'old chat A marker'],
     ['sess_chat_b', 'chat-b-nim', 'old chat B marker'],
   ]) {
-    await rec(`chars.seed_${sessionId}`, () => post('/v1/characters', {
-      session_id: sessionId,
-      characters: [{ id, name: '니메리엘', aliases: ['니메리엘', 'Nimeriel'], appearance, attire: 'white dress' }],
-    }));
+    await rec(`chars.seed_${sessionId}`, async () => {
+      const saved = await post('/v1/characters', {
+        session_id: sessionId,
+        characters: [{ id, name: '니메리엘', aliases: ['니메리엘', 'Nimeriel'], appearance, attire: 'white dress' }],
+      });
+      const char = (saved?.characters || []).find((c) => c.name === '니메리엘') || saved?.characters?.[0];
+      // 2.0: "hat" must not match inside "chat" — marker stays appearance, dress stays attire.
+      return {
+        ...saved,
+        wear_ok:
+          String(char?.appearance || '').includes(appearance)
+          && String(char?.attire || '').includes('white dress')
+          && !String(char?.attire || '').includes('marker'),
+      };
+    });
   }
   await rec('chars.unified_patch', () => post('/v1/characters', {
     session_id: 'sess_unified',
@@ -233,7 +263,15 @@ export async function runScenario(N, handles) {
   }));
   const jobResult = await rec('job.wait', () => waitForJob(job?.job_id));
   await rec('job.card_count', () => (jobResult?.result?.cards ?? []).length);
-  await rec('job.busy_duplicate', () => post('/v1/jobs/create', {
+  // 2.0: default person_tag_weight=3 wraps cast count as N::1boy:: (1.x was plain).
+  await rec('job.person_tag_emphasis', () => {
+    const main = String(jobResult?.result?.cards?.[0]?.main_prompt || '');
+    return {
+      emphasized: /^3::1boy::/.test(main) || /^3::1girl/.test(main),
+      prefix: main.slice(0, 24),
+    };
+  });
+  const busyDup = await rec('job.busy_duplicate', () => post('/v1/jobs/create', {
     session_id: 'sess_main', content_hash: 'hash_main', message_index: 1, assistant_text: '태양이 망치를 들었다.',
   }));
 
@@ -253,6 +291,10 @@ export async function runScenario(N, handles) {
   await rec('images.json', () => get(`/v1/images/${cardId}.json`));
 
   // ── card editing + reroll ─────────────────────────────────────────────
+  // Finish the overlapping job before reroll so 1.x/2.0 do not race on busy locks
+  // (2.0 finishes the duplicate faster; without this wait, cards.reroll is busy on 1.x only).
+  await rec('job.wait_busy_duplicate', () => waitForJob(busyDup?.job_id));
+
   await rec('cards.tags', () => post(`/v1/cards/${cardId}/tags`, {
     main_prompt: 'PARITY EDITED PROMPT',
     negative_prompt: 'parity negative',

@@ -10,8 +10,7 @@
 import type { ShotCharacter } from '../../core/types.ts';
 import { cleanText, compactText, hashCode, joinTags, normalizeAlias, parseAliasList } from '../../core/util/text.ts';
 import type { CharacterInput, MigratedCharacter } from './identity.ts';
-import { mergeCharacterView, migrateCharacter, resolveCharacterIdentity } from './identity.ts';
-import { splitLookTags } from './tags.ts';
+import { mergeCharacterView, migrateCharacter, resolveCharacterIdentity, normalizeGender } from './identity.ts';
 
 /** Injected helpers for `mergeSessionAndGlobalRoster`; every one has a no-op default. */
 export interface RosterMergeHelpers {
@@ -156,20 +155,9 @@ export function normalizeCharacterRecord(
   let attire = cleanText(rec.attire || '', 4000);
   let accessories = cleanText(rec.accessories || '', 4000);
   const tags = cleanText(rec.tags || '', 4000);
+  // Legacy flat `tags`: dump into appearance as-is. Do not hint-split buckets.
   if (tags && !appearance && !attire && !accessories) {
-    [appearance, attire, accessories] = splitLookTags(tags);
-  } else if (tags) {
-    const [id, clothes, acc] = splitLookTags(joinTags(appearance, tags));
-    appearance = id;
-    attire = joinTags(attire, clothes);
-    accessories = joinTags(accessories, acc);
-  }
-  // Keep appearance identity-only; spill clothes/accessories into their fields.
-  if (appearance) {
-    const [id, clothes, acc] = splitLookTags(appearance);
-    appearance = id;
-    attire = joinTags(attire, clothes);
-    accessories = joinTags(accessories, acc);
+    appearance = tags;
   }
   if (original && appearance) {
     appearance = joinTags(...appearance.split(',').filter((t) => normalizeAlias(t) !== normalizeAlias(original)));
@@ -185,6 +173,7 @@ export function normalizeCharacterRecord(
     appearance,
     attire,
     accessories,
+    gender: normalizeGender(rec.gender ?? rec.sex),
   });
 }
 
@@ -211,11 +200,8 @@ export function mergeSessionAndGlobalRoster(
     typeof helpers.normalizeName === 'function'
       ? helpers.normalizeName
       : (name: unknown) => String(name || '').trim().toLowerCase();
-  const fullTags: Required<RosterMergeHelpers>['fullTags'] =
-    typeof helpers.fullTags === 'function' ? helpers.fullTags : () => '';
   const clean: Required<RosterMergeHelpers>['clean'] =
     typeof helpers.clean === 'function' ? helpers.clean : (v: unknown) => String(v || '').trim();
-  const globalScope = helpers.globalScope || '__global__';
 
   const merged: CharacterInput[] = [];
   const sessionIncomplete = new Set<string>();
@@ -231,28 +217,10 @@ export function mergeSessionAndGlobalRoster(
   }
 
   for (const gchar of globals) {
-    const overlay = resolve(gchar.name, list);
-    // Previously skipped globals when overlay had empty appearance — that blocked looks.
+    // Wear overlays removed: base attire/accessories on the global row win.
     const gKeys = aliasKeys(gchar);
     if ([...gKeys].some((k) => sessionIncomplete.has(k))) continue;
-    const attire = !gchar.attire_locked && clean(overlay?.attire || '')
-      ? overlay?.attire || ''
-      : gchar.attire || '';
-    const accessories = !gchar.accessories_locked && clean(overlay?.accessories || '')
-      ? overlay?.accessories || ''
-      : gchar.accessories || '';
-    const attireChanged = attire !== (gchar.attire || '');
-    const accChanged = accessories !== (gchar.accessories || '');
-    if (overlay && (attireChanged || accChanged)) {
-      merged.push({
-        ...gchar,
-        attire,
-        accessories,
-        aliases: gchar.aliases || overlay.aliases || [],
-        tags: fullTags({ ...gchar, attire, accessories }),
-        scope: globalScope,
-      });
-    } else merged.push(gchar);
+    merged.push(gchar);
   }
 
   for (const schar of list) {

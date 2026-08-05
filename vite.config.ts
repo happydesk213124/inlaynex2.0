@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.0.19';
+const PLUGIN_VERSION = '2.1.0';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -48,6 +48,220 @@ const VENDOR_PROMPT_RESET_PATCH = `const r = a.getAttribute("data-reset-prompt")
         if (!globalThis.confirm?.(\`정말로 "\${r}" 프롬프트를 기본값으로 복원할까요?\`)) return;
         try {
           await K(\`/v1/prompts/\${encodeURIComponent(r)}/reset\`, {`;
+
+/**
+ * Prompts tab: bulk reset (except author_note), pack JSON import/export,
+ * and per-prompt JSON import/export beside save/reset.
+ */
+const VENDOR_PROMPT_TAB_HTML_NEEDLE = `    } else if (t.uiTab === "prompts") {
+      const promptMeta = {
+        author_note: {
+          title: "작가의 노트 (사용자 프롬프트 지침)",
+          hint: "비워두면 무시됩니다. 태깅 LLM 요청 맨 끝에 최우선 지침으로 들어갑니다.",
+        },
+      };
+      u = (t.prompts || []).map((d) => {
+        const meta = promptMeta[d.key] || null;
+        const title = meta?.title || d.key;
+        const hint = meta?.hint ? \`<div class="muted" style="margin:4px 0 8px">\${h(meta.hint)}</div>\` : "";
+        return \`
+          <div class="card">
+            <strong>\${h(title)}</strong>\${d.key !== title ? \`<div class="muted" style="font-size:11px;margin-top:2px">\${h(d.key)}</div>\` : ""}
+            \${hint}
+            <textarea id="nx-prompt-\${h(d.key)}" placeholder="\${d.key === "author_note" ? "예: 항상 실내 조명, 캐릭터는 교복 유지…" : ""}">\${h(t.promptDrafts[d.key] ?? d.text ?? "")}</textarea>
+            <div class="row"><button data-save-prompt="\${h(d.key)}">저장</button><button class="secondary" data-reset-prompt="\${h(d.key)}">기본값 복원</button></div>
+          </div>\`;
+      }).join("");
+    }`;
+
+const VENDOR_PROMPT_TAB_HTML_PATCH = `    } else if (t.uiTab === "prompts") {
+      const promptMeta = {
+        author_note: {
+          title: "작가의 노트 (사용자 프롬프트 지침)",
+          hint: "비워두면 무시됩니다. 태깅 LLM 요청 맨 끝에 최우선 지침으로 들어갑니다.",
+        },
+      };
+      const promptCards = (t.prompts || []).map((d) => {
+        const meta = promptMeta[d.key] || null;
+        const title = meta?.title || d.key;
+        const hint = meta?.hint ? \`<div class="muted" style="margin:4px 0 8px">\${h(meta.hint)}</div>\` : "";
+        return \`
+          <div class="card">
+            <strong>\${h(title)}</strong>\${d.key !== title ? \`<div class="muted" style="font-size:11px;margin-top:2px">\${h(d.key)}</div>\` : ""}
+            \${hint}
+            <textarea id="nx-prompt-\${h(d.key)}" placeholder="\${d.key === "author_note" ? "예: 항상 실내 조명, 캐릭터는 교복 유지…" : ""}">\${h(t.promptDrafts[d.key] ?? d.text ?? "")}</textarea>
+            <div class="row" style="flex-wrap:wrap;gap:8px">
+              <button data-save-prompt="\${h(d.key)}">저장</button>
+              <button class="secondary" data-reset-prompt="\${h(d.key)}">기본값 복원</button>
+              <button class="secondary" data-export-prompt="\${h(d.key)}">JSON 내보내기</button>
+              <button class="secondary" data-import-prompt="\${h(d.key)}">JSON 불러오기</button>
+              <input data-import-prompt-file="\${h(d.key)}" type="file" accept=".json,application/json,text/plain" style="display:none">
+            </div>
+          </div>\`;
+      }).join("");
+      u = \`
+        <div class="prompt-toolbar">
+          <div><strong>프롬프트</strong><div class="muted">작가의 노트만 남기고 나머지를 기본값으로 돌리거나, 전체/개별 JSON으로 백업할 수 있습니다.</div></div>
+          <div class="toolbar-actions" style="flex-wrap:wrap;gap:8px">
+            <button id="nx-prompts-reset-defaults" class="secondary">기본값 복원 (작가 노트 제외)</button>
+            <button id="nx-prompts-export" class="secondary">전체 JSON 내보내기</button>
+            <button id="nx-prompts-import" class="secondary">전체 JSON 불러오기</button>
+            <input id="nx-prompts-import-file" type="file" accept=".json,application/json,text/plain" style="display:none">
+          </div>
+        </div>
+        \${promptCards}\`;
+    }`;
+
+/** Asserted against raw vendor (no confirm yet). */
+const VENDOR_PROMPT_TAB_EVENTS_NEEDLE = `    }), document.querySelectorAll("[data-reset-prompt]").forEach((a) => {
+      a.addEventListener("click", async () => {
+        const r = a.getAttribute("data-reset-prompt");
+        try {
+          await K(\`/v1/prompts/\${encodeURIComponent(r)}/reset\`, {
+            method: "POST",
+            body: {}
+          }), t.promptDrafts[r] = "", delete t.promptDrafts[r], t.uiMessage = {
+            type: "success",
+            text: \`\${r} 복원\`
+          }, await Je();
+        } catch (i) {
+          t.uiMessage = {
+            type: "error",
+            text: z(i.message || i)
+          };
+        }
+        await P();
+      });
+    }), document.getElementById("nx-nai-ref-pick")?.addEventListener("click", () => {`;
+
+/** Match target after VENDOR_PROMPT_RESET_PATCH inserts the confirm guard. */
+const VENDOR_PROMPT_TAB_EVENTS_AFTER_RESET_NEEDLE = `    }), document.querySelectorAll("[data-reset-prompt]").forEach((a) => {
+      a.addEventListener("click", async () => {
+        const r = a.getAttribute("data-reset-prompt");
+        if (!globalThis.confirm?.(\`정말로 "\${r}" 프롬프트를 기본값으로 복원할까요?\`)) return;
+        try {
+          await K(\`/v1/prompts/\${encodeURIComponent(r)}/reset\`, {
+            method: "POST",
+            body: {}
+          }), t.promptDrafts[r] = "", delete t.promptDrafts[r], t.uiMessage = {
+            type: "success",
+            text: \`\${r} 복원\`
+          }, await Je();
+        } catch (i) {
+          t.uiMessage = {
+            type: "error",
+            text: z(i.message || i)
+          };
+        }
+        await P();
+      });
+    }), document.getElementById("nx-nai-ref-pick")?.addEventListener("click", () => {`;
+
+const VENDOR_PROMPT_TAB_EVENTS_PATCH = `    }), document.querySelectorAll("[data-reset-prompt]").forEach((a) => {
+      a.addEventListener("click", async () => {
+        const r = a.getAttribute("data-reset-prompt");
+        if (!globalThis.confirm?.(\`정말로 "\${r}" 프롬프트를 기본값으로 복원할까요?\`)) return;
+        try {
+          await K(\`/v1/prompts/\${encodeURIComponent(r)}/reset\`, {
+            method: "POST",
+            body: {}
+          }), t.promptDrafts[r] = "", delete t.promptDrafts[r], t.uiMessage = {
+            type: "success",
+            text: \`\${r} 복원\`
+          }, await Je();
+        } catch (i) {
+          t.uiMessage = {
+            type: "error",
+            text: z(i.message || i)
+          };
+        }
+        await P();
+      });
+    }), document.querySelectorAll("[data-export-prompt]").forEach((a) => {
+      a.addEventListener("click", () => {
+        const r = a.getAttribute("data-export-prompt");
+        if (!r) return;
+        const text = document.getElementById(\`nx-prompt-\${r}\`)?.value ?? t.promptDrafts[r] ?? "";
+        const blob = new Blob([JSON.stringify({ key: r, text }, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob), link = document.createElement("a");
+        link.href = url, link.download = \`inlay-prompt-\${r}-\${new Date().toISOString().slice(0, 10)}.json\`, document.body.appendChild(link), link.click(), link.remove(), setTimeout(() => URL.revokeObjectURL(url), 1e3);
+        t.uiMessage = { type: "success", text: \`\${r} JSON 내보내기\` };
+        P().catch(() => null);
+      });
+    }), document.querySelectorAll("[data-import-prompt]").forEach((a) => {
+      a.addEventListener("click", () => {
+        const r = a.getAttribute("data-import-prompt");
+        if (!r) return;
+        document.querySelector(\`[data-import-prompt-file="\${CSS.escape(r)}"]\`)?.click();
+      });
+    }), document.querySelectorAll("[data-import-prompt-file]").forEach((a) => {
+      a.addEventListener("change", async (ev) => {
+        const r = a.getAttribute("data-import-prompt-file"), file = ev.target?.files?.[0];
+        if (!r || !file) return;
+        try {
+          const parsed = JSON.parse(await file.text());
+          let text = "";
+          if (parsed && typeof parsed === "object") {
+            if (typeof parsed.text === "string") text = parsed.text;
+            else if (parsed.prompts && typeof parsed.prompts[r] === "string") text = parsed.prompts[r];
+            else if (typeof parsed[r] === "string") text = parsed[r];
+            else throw new Error("JSON에 text 필드가 없습니다");
+          } else throw new Error("잘못된 JSON");
+          const box = document.getElementById(\`nx-prompt-\${r}\`);
+          box && (box.value = text), t.promptDrafts[r] = text;
+          await K(\`/v1/prompts/\${encodeURIComponent(r)}\`, { method: "PUT", body: { text } });
+          t.uiMessage = { type: "success", text: \`\${r} JSON 불러옴\` };
+          await Je(), await P();
+        } catch (err) {
+          t.uiMessage = { type: "error", text: z(err?.message || err) };
+          await P();
+        } finally {
+          a.value = "";
+        }
+      });
+    }), document.getElementById("nx-prompts-reset-defaults")?.addEventListener("click", async () => {
+      if (!globalThis.confirm?.("작가의 노트를 제외한 모든 프롬프트를 기본값으로 복원할까요?")) return;
+      try {
+        await K("/v1/prompts/reset-defaults", { method: "POST", body: { keep_author_note: true } });
+        t.promptDrafts = {};
+        t.uiMessage = { type: "success", text: "프롬프트 기본값 복원 (작가 노트 유지)" };
+        await Je(), await P();
+      } catch (err) {
+        t.uiMessage = { type: "error", text: z(err?.message || err) };
+        await P();
+      }
+    }), document.getElementById("nx-prompts-export")?.addEventListener("click", async () => {
+      try {
+        const res = await K("/v1/prompts/export", { method: "GET" });
+        const blob = new Blob([JSON.stringify({ version: res?.version, prompts: res?.prompts || {} }, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob), link = document.createElement("a");
+        link.href = url, link.download = \`inlay-prompts-\${new Date().toISOString().slice(0, 10)}.json\`, document.body.appendChild(link), link.click(), link.remove(), setTimeout(() => URL.revokeObjectURL(url), 1e3);
+        t.uiMessage = { type: "success", text: "전체 프롬프트 JSON 내보내기" };
+        await P();
+      } catch (err) {
+        t.uiMessage = { type: "error", text: z(err?.message || err) };
+        await P();
+      }
+    }), document.getElementById("nx-prompts-import")?.addEventListener("click", () => {
+      document.getElementById("nx-prompts-import-file")?.click();
+    }), document.getElementById("nx-prompts-import-file")?.addEventListener("change", async (ev) => {
+      const file = ev.target?.files?.[0];
+      if (!file) return;
+      try {
+        const json = await file.text();
+        await K("/v1/prompts/import", { method: "POST", body: { json } });
+        t.promptDrafts = {};
+        t.uiMessage = { type: "success", text: "전체 프롬프트 JSON 불러옴" };
+        await Je(), await P();
+      } catch (err) {
+        t.uiMessage = { type: "error", text: z(err?.message || err) };
+        await P();
+      } finally {
+        ev.target.value = "";
+      }
+    }), document.getElementById("nx-nai-ref-pick")?.addEventListener("click", () => {`;
+
+
 
 /**
  * `card.natural_base` enum: remove dashboard checkbox; place select in card
@@ -68,8 +282,7 @@ const VENDOR_NATURAL_BASE_CT_NEEDLE =
 
 const VENDOR_NATURAL_BASE_CT_PATCH =
   `      lore_extra: document.getElementById("nx-lore-extra") ? normalizeLoreExtraMode(N("nx-lore-extra")) : normalizeLoreExtraMode(e.lore_extra),
-      natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",
-      composition_curation: document.getElementById("nx-composition-curation") ? ee("nx-composition-curation") : !!e.composition_curation,`;
+      natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",`;
 
 const VENDOR_NATURAL_BASE_CARD_NEEDLE =
   `<label class="wide"><span>사람 태그 자동넣기</span><select id="nx-person-tag-mode">
@@ -103,15 +316,345 @@ const VENDOR_NATURAL_BASE_CARD_PATCH =
               <option value="detailed" \${i.natural_base === "detailed" ? "selected" : ""}>구도·자세히</option>
               <option value="supplement" \${i.natural_base === "supplement" ? "selected" : ""}>태그 보완 자연어</option>
             </select></label>
-            </div>
-            <label class="toggle-row wide" data-nx-help-id="nx-composition-curation"><input type="checkbox" id="nx-composition-curation" \${i.composition_curation ? "checked" : ""}><span>구도 큐레이션</span></label>`;
+            </div>`;
 
 const VENDOR_NATURAL_BASE_HELP_NEEDLE =
   `"nx-natural-base": { title: "자연어 base 태그", body: "이미지 요청에 짧은 자연어 장면도 함께 넣습니다. 태그만 쓸 때보다 분위기가 자연스러워질 수 있습니다." }`;
 
 const VENDOR_NATURAL_BASE_HELP_PATCH =
   `"nx-natural-base": { title: "자연어 base", body: "NovelAI base에 넣는 자연어 장면을 고릅니다. 안넣기 / 짧게 넣기(머리·나이·성별·행동) / 구도·자세히(구도·표정·옷·조명) / 태그 보완 자연어(태그가 못 담는 문장)." },
-  "nx-composition-curation": { title: "구도 큐레이션", body: "ON이면 LLM이 카메라/포즈 태그를 지어내지 않고, 미리 손질된 구도 메뉴(leaf)에서만 고릅니다. base에는 구도·배경, char에는 캐릭터별 방향/동작 태그가 들어갑니다. 자연어 base 설정은 그대로 적용됩니다." }`;
+  "nx-person-tag-weight": { title: "사람 태그 강조", body: "메인 프롬프트 맨 앞 인원 태그(1girl, 1boy…)에 NovelAI 강조(N::태그::)를 겁니다. 0=감싸지 않음, 1–5=가중치. 큐레이션 leaf의 composition 인원 태그는 넣지 않습니다." },
+  "nx-curation-mode": { title: "큐레이팅 모드", body: "사용안함: 지금과 동일. 2단: 그룹 선택 후 하위 옵션으로 씬 태그. 임베딩식: 자유 씬 태그를 카탈로그와 유사도 매칭해 교체(캐릭터 태그는 유지)." },
+  "nx-curation-strict-ids": { title: "엄격 ID 모드", body: "2단 모드 전용. 켜면 카메라·상황·자연어·동작/표정을 자유 문장으로 쓰지 않고 카탈로그 ID로만 조립합니다. 캐릭터별 ID(characters[].option_ids)도 추가로 받아 배우 index별로 적용하며, 외형/의상은 절대 덮어쓰지 않습니다." },
+  "nx-curation-catalog": { title: "큐레이션 카탈로그", body: "Inlay groups JSON 또는 Asset Maid DEFAULT_PRESET_CATALOG(modifier_library)를 불러올 수 있습니다. 기본은 소형 SFW. 거대 카탈로그는 저장소·임베딩 비용이 큽니다." },
+  "nx-curation-embed": { title: "임베딩 생성", body: "카탈로그 옵션을 벡터로 만들어 기기에 저장합니다. 임베딩식 모드에서 씬 태그 스냅에 사용. 미생성·실패 시 사용안함과 동일하게 생성됩니다." },
+  "nx-curation-embedding-provider": { title: "임베딩 모델", body: "모델 설정 탭과 같은 UX입니다. Provider를 바꾸면 Endpoint·Model 기본값이 따라갑니다. OpenAI / Voyage / OpenRouter / LM Studio / Ollama / Custom. networkFetch로 호출합니다." }`;
+
+/**
+ * Card settings: person_tag_weight number next to Include Max.
+ * 0 = plain person tags; 1–5 = N::1girl, 1boy::.
+ */
+const VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE =
+  `<label><span>Include Max (최근 문맥 개수)</span><input id="nx-include-max" type="number" min="0" max="20" value="\${h(i.include_max ?? 0)}"></label>
+`;
+
+const VENDOR_PERSON_TAG_WEIGHT_HTML_PATCH =
+  `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end">
+            <label data-nx-help-id="nx-include-max"><span>Include Max (최근 문맥 개수)</span><input id="nx-include-max" type="number" min="0" max="20" value="\${h(i.include_max ?? 0)}"></label>
+            <label data-nx-help-id="nx-person-tag-weight"><span>사람 태그 강조 (0–5)</span><input id="nx-person-tag-weight" type="number" min="0" max="5" step="1" value="\${h(i.person_tag_weight ?? 3)}"></label>
+            </div>
+`;
+
+const VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE =
+  `      include_max: Number(N("nx-include-max") || e.include_max || 0),
+`;
+
+const VENDOR_PERSON_TAG_WEIGHT_CT_PATCH =
+  `      include_max: Number(N("nx-include-max") || e.include_max || 0),
+      person_tag_weight: document.getElementById("nx-person-tag-weight") ? re(N("nx-person-tag-weight"), 0, 5, re(e.person_tag_weight, 0, 5, 3)) : re(e.person_tag_weight, 0, 5, 3),
+`;
+
+/** Settings nav: add 큐레이팅 tab between models and explorer. */
+const VENDOR_CURATION_TABS_NEEDLE = `S = {
+      dashboard: "대시보드",
+      card: "카드 설정",
+      characters: "캐릭터",
+      prompts: "프롬프트",
+      models: "모델 설정",
+      explorer: "이미지 탐색",
+      debug: "디버그"
+    }, E = [
+      "dashboard",
+      "card",
+      "characters",
+      "prompts",
+      "models",
+      "explorer",
+      "debug"
+    ]`;
+
+const VENDOR_CURATION_TABS_PATCH = `S = {
+      dashboard: "대시보드",
+      card: "카드 설정",
+      characters: "캐릭터",
+      prompts: "프롬프트",
+      models: "모델 설정",
+      curation: "큐레이팅",
+      explorer: "이미지 탐색",
+      debug: "디버그"
+    }, E = [
+      "dashboard",
+      "card",
+      "characters",
+      "prompts",
+      "models",
+      "curation",
+      "explorer",
+      "debug"
+    ]`;
+
+const VENDOR_CURATION_PANEL_NEEDLE =
+  `} else t.uiTab === "explorer" ? u = ma() : t.uiTab === "debug" && (u = \``;
+
+const VENDOR_CURATION_PANEL_PATCH =
+  `} else if (t.uiTab === "curation") {
+      const EH = globalThis.__INLAY_EMBED__ || {}, cur = t.backendSettings?.curation || {}, emb = cur.embedding || {}, st = t.curationStatus || {}, mode = w(cur.mode) || "off", strictIds = cur.strict_ids === !0, embSt = w(st.embed_status) || "missing", pct = st.embed_progress && st.embed_progress.total ? Math.round(100 * (st.embed_progress.done || 0) / st.embed_progress.total) : 0, embProviderRaw = w(emb.provider) || "openai", embProvider = EH.normalizeEmbeddingProvider?.(embProviderRaw) || embProviderRaw, embProviders = EH.EMBEDDING_PROVIDERS || [{ value: "openai", label: "OpenAI" }, { value: "voyage", label: "Voyage" }, { value: "openrouter", label: "OpenRouter" }, { value: "openai_compat", label: "OpenAI-compat" }, { value: "lmstudio", label: "LM Studio (로컬)" }, { value: "ollama", label: "Ollama (로컬)" }, { value: "custom", label: "Custom endpoint" }], embEpPh = EH.defaultEndpointForEmbedding?.(embProvider) || "https://api.openai.com/v1/embeddings", embModelPh = EH.embeddingModelPlaceholder?.(embProvider) || EH.defaultModelForEmbedding?.(embProvider) || "text-embedding-3-small", embNeedsKey = EH.embeddingProviderNeedsApiKey?.(embProvider) !== !1, embCredOk = !!emb.api_key_configured, embReady = !!(w(emb.model) && (!embNeedsKey || embCredOk));
+      u = \`
+        <div class="prompt-toolbar">
+          <div><strong>큐레이팅</strong><div class="muted">씬 태그 큐레이션. 캐릭터 외형/의상 태그는 모드와 무관하게 LLM이 유지합니다.</div></div>
+          <div class="toolbar-actions"><button type="button" id="nx-curation-save">설정 저장</button></div>
+        </div>
+        <article class="model-card" data-nx-help-id="nx-curation-mode">
+          <div class="prompt-title">모드</div>
+          <div class="nx-seg" id="nx-curation-mode-bar" style="margin-top:10px">
+            <button type="button" data-nx-curation-mode="off" class="\${mode === "off" ? "active" : ""}">사용안함</button>
+            <button type="button" data-nx-curation-mode="two_stage" class="\${mode === "two_stage" ? "active" : ""}">2단</button>
+            <button type="button" data-nx-curation-mode="embed_snap" class="\${mode === "embed_snap" ? "active" : ""}">임베딩식</button>
+          </div>
+          <label data-nx-help-id="nx-curation-strict-ids" class="toggle-row" style="margin-top:10px;\${mode === "two_stage" ? "" : "opacity:.5"}"><input type="checkbox" id="nx-curation-strict-ids" \${strictIds ? "checked" : ""} \${mode === "two_stage" ? "" : "disabled"}><span>엄격 ID 모드 (2단 전용) — 씬/동작을 자유 문장 없이 카탈로그 ID로만 조립</span></label>
+        </article>
+        <article class="model-card" data-nx-help-id="nx-curation-catalog" style="margin-top:12px">
+          <div class="prompt-title">카탈로그</div>
+          <div class="muted" id="nx-curation-catalog-meta" style="margin-top:8px">\${h(st.catalog_name || "(기본)")} · 그룹 \${st.group_count ?? "-"} · 옵션 \${st.option_count ?? "-"} · sha \${h(st.catalog_sha || "-")}\${st.large_warning ? " · ⚠ 항목 많음" : ""}</div>
+          <div class="toolbar-actions" style="margin-top:10px;gap:8px;display:flex;flex-wrap:wrap">
+            <label class="secondary" style="cursor:pointer;display:inline-flex;align-items:center;padding:8px 12px;border-radius:10px;border:1px solid var(--border2)"><input type="file" id="nx-curation-catalog-file" accept="application/json,.json" hidden>JSON 불러오기</label>
+            <button type="button" class="secondary" id="nx-curation-catalog-reset">기본값 복원</button>
+          </div>
+        </article>
+        <div class="prompt-group-label" style="margin-top:14px">임베딩</div>
+        <article class="model-card" data-nx-help-id="nx-curation-embedding-provider">
+          <div class="model-head">
+            <div><div class="prompt-title">임베딩 모델</div><div class="muted">OpenAI · Voyage · OpenRouter · 로컬 · Custom</div></div>
+            <span class="badge \${embReady ? "custom" : "default"}">\${embReady ? "활성" : "비활성"} · \${embNeedsKey ? (embCredOk ? "API key 설정됨" : "API key 없음") : "로컬 (키 선택)"}</span>
+          </div>
+          <div class="notice info" style="margin:12px 0 0"><strong>팁</strong> Provider를 바꾸면 Endpoint·Model이 기본값으로 바뀝니다. 직접 고친 Endpoint는 유지됩니다.</div>
+          <div class="model-form">
+            <label><span>Provider</span>
+              <select id="nx-curation-emb-provider">
+                \${embProviders.map((opt) => \`<option value="\${h(opt.value)}" \${embProvider === opt.value ? "selected" : ""}>\${h(opt.label)}</option>\`).join("")}
+              </select>
+            </label>
+            <label><span>Model</span><input id="nx-curation-emb-model" value="\${h(emb.model || embModelPh)}" placeholder="\${h(embModelPh)}"></label>
+            <label class="wide"><span>Endpoint</span><input id="nx-curation-emb-endpoint" type="url" value="\${h(emb.endpoint || embEpPh)}" placeholder="\${h(embEpPh)}"></label>
+            <label class="wide"><span>API key <span class="key-status">\${embCredOk ? "설정됨" : "없음"}</span></span><input id="nx-curation-emb-key" type="password" autocomplete="new-password" placeholder="비워 두면 기존 키 유지"></label>
+          </div>
+          <div class="model-actions"><button type="button" id="nx-curation-emb-test">임베딩 연결 테스트</button>\${(t.modelTestResults || {}).curation_emb ? \`<div id="nx-test-result-curation_emb" class="test-result \${(t.modelTestResults || {}).curation_emb.ok ? "success" : "error"}">\${(t.modelTestResults || {}).curation_emb.ok ? "성공 · " : "실패 · "}\${h((t.modelTestResults || {}).curation_emb.message || "")}</div>\` : \`<div id="nx-test-result-curation_emb" class="test-result">아직 테스트하지 않았습니다.</div>\`}</div>
+        </article>
+        <article class="model-card" data-nx-help-id="nx-curation-embed" style="margin-top:12px">
+          <div class="model-head">
+            <div><div class="prompt-title">카탈로그 임베딩 생성</div><div class="muted">선임베딩 → 기기 저장. 생성마다 카탈로그 전체를 다시 보내지 않습니다.</div></div>
+            <span class="badge \${embSt === "ready" ? "custom" : "default"}">\${embSt === "ready" ? "준비됨" : embSt === "stale" ? "재생성 필요" : "없음"}</span>
+          </div>
+          <div class="muted" style="margin-top:8px">\${st.embed_count || 0} vectors · \${h(st.embed_model || "-")}</div>
+          <div style="margin-top:10px;height:10px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden"><div id="nx-curation-embed-bar" style="height:100%;width:\${pct}%;background:rgba(124,108,255,.75);transition:width .2s"></div></div>
+          <div class="muted" id="nx-curation-embed-msg" style="margin-top:6px">\${h(st.embed_progress?.message || (embSt === "missing" ? "임베딩식 사용 전 생성이 필요합니다." : embSt === "stale" ? "카탈로그/모델이 바뀌었습니다. 다시 생성하세요." : ""))}</div>
+          <div class="model-actions" style="margin-top:10px"><button type="button" id="nx-curation-embed-run">임베딩 생성</button></div>
+        </article>
+      \`;
+    } else t.uiTab === "explorer" ? u = ma() : t.uiTab === "debug" && (u = \``;
+
+const VENDOR_CURATION_EVENTS_NEEDLE =
+  `document.getElementById("nx-save-models")?.addEventListener("click", async () => {`;
+
+const VENDOR_CURATION_EVENTS_PATCH =
+  `document.querySelectorAll("[data-nx-curation-mode]").forEach((btn) => btn.addEventListener("click", async () => {
+      const mode = btn.getAttribute("data-nx-curation-mode") || "off";
+      try {
+        await K("/v1/curation/settings", { method: "POST", body: { mode } });
+        if (!t.backendSettings.curation) t.backendSettings.curation = {};
+        t.backendSettings.curation.mode = mode;
+        await P();
+      } catch (err) {
+        t.uiMessage = { type: "error", text: String(err?.message || err) };
+        await P();
+      }
+    })), document.getElementById("nx-curation-strict-ids")?.addEventListener("change", async (ev) => {
+      const strict_ids = !!ev?.target?.checked;
+      try {
+        await K("/v1/curation/settings", { method: "POST", body: { strict_ids } });
+        if (!t.backendSettings.curation) t.backendSettings.curation = {};
+        t.backendSettings.curation.strict_ids = strict_ids;
+        await P();
+      } catch (err) {
+        t.uiMessage = { type: "error", text: String(err?.message || err) };
+        await P();
+      }
+    }), document.getElementById("nx-curation-emb-provider")?.addEventListener("change", (ev) => {
+      const EH = globalThis.__INLAY_EMBED__ || {};
+      const provider = EH.normalizeEmbeddingProvider?.(ev?.target?.value) || String(ev?.target?.value || "openai");
+      const endpointEl = document.getElementById("nx-curation-emb-endpoint");
+      const modelEl = document.getElementById("nx-curation-emb-model");
+      const nextEndpoint = EH.defaultEndpointForEmbedding?.(provider) || "";
+      const nextModel = EH.defaultModelForEmbedding?.(provider) || EH.embeddingModelPlaceholder?.(provider) || "";
+      if (endpointEl && (EH.shouldAutoReplaceEmbeddingEndpoint?.(endpointEl.value) !== !1 || !String(endpointEl.value || "").trim())) {
+        endpointEl.value = nextEndpoint;
+        endpointEl.placeholder = nextEndpoint;
+      }
+      if (modelEl) {
+        if (EH.shouldAutoReplaceEmbeddingModel?.(modelEl.value) !== !1 || !String(modelEl.value || "").trim()) {
+          modelEl.value = nextModel;
+        }
+        modelEl.placeholder = nextModel;
+      }
+    }), document.getElementById("nx-curation-save")?.addEventListener("click", async () => {
+      try {
+        const embedding = {
+          provider: N("nx-curation-emb-provider") || "openai",
+          model: N("nx-curation-emb-model"),
+          endpoint: N("nx-curation-emb-endpoint"),
+        };
+        const key = N("nx-curation-emb-key");
+        if (key) embedding.api_key = key;
+        await K("/v1/curation/settings", { method: "POST", body: { embedding } });
+        const st = await K("/v1/curation/status");
+        t.curationStatus = st?.status || st;
+        if (t.backendSettings) {
+          if (!t.backendSettings.curation) t.backendSettings.curation = {};
+          t.backendSettings.curation.embedding = {
+            ...(t.backendSettings.curation.embedding || {}),
+            provider: embedding.provider,
+            model: embedding.model,
+            endpoint: embedding.endpoint,
+            api_key_configured: !!(key || t.backendSettings.curation.embedding?.api_key_configured),
+          };
+        }
+        t.uiMessage = { type: "success", text: "큐레이팅 설정 저장됨" };
+        await P();
+      } catch (err) {
+        t.uiMessage = { type: "error", text: String(err?.message || err) };
+        await P();
+      }
+    }), document.getElementById("nx-curation-catalog-file")?.addEventListener("change", async (ev) => {
+      const file = ev?.target?.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const catalog = JSON.parse(text);
+        const res = await K("/v1/curation/catalog", { method: "PUT", body: { catalog } });
+        t.curationStatus = res?.status || t.curationStatus;
+        t.uiMessage = { type: "success", text: "카탈로그 불러옴 (임베딩은 다시 생성하세요)" };
+        await P();
+      } catch (err) {
+        t.uiMessage = { type: "error", text: String(err?.message || err) };
+        await P();
+      }
+    }), document.getElementById("nx-curation-catalog-reset")?.addEventListener("click", async () => {
+      if (!globalThis.confirm?.("카탈로그를 기본값(소형 SFW)으로 복원하고 임베딩을 지울까요?")) return;
+      try {
+        const res = await K("/v1/curation/catalog/reset", { method: "POST", body: {} });
+        t.curationStatus = res?.status || t.curationStatus;
+        t.uiMessage = { type: "success", text: "기본 카탈로그로 복원됨" };
+        await P();
+      } catch (err) {
+        t.uiMessage = { type: "error", text: String(err?.message || err) };
+        await P();
+      }
+    }), document.getElementById("nx-curation-emb-test")?.addEventListener("click", async () => {
+      const a = document.getElementById("nx-curation-emb-test"), r = document.getElementById("nx-test-result-curation_emb");
+      a && (a.disabled = !0), r && (r.className = "test-result pending", r.textContent = "저장 후 테스트 중…");
+      try {
+        const embedding = {
+          provider: N("nx-curation-emb-provider") || "openai",
+          model: N("nx-curation-emb-model"),
+          endpoint: N("nx-curation-emb-endpoint"),
+        };
+        const key = N("nx-curation-emb-key");
+        if (key) embedding.api_key = key;
+        const EH = globalThis.__INLAY_EMBED__ || {};
+        const provider = EH.normalizeEmbeddingProvider?.(embedding.provider) || embedding.provider;
+        if (!w(embedding.model)) throw new Error("임베딩 Model이 비어 있습니다.");
+        if (EH.embeddingProviderNeedsApiKey?.(provider) !== !1) {
+          const hasKey = !!(key || t.backendSettings?.curation?.embedding?.api_key_configured);
+          if (!hasKey) throw new Error("임베딩 API key가 없습니다. (NovelAI/태깅 LLM 키가 아니라 임베딩용 키)");
+        }
+        await K("/v1/curation/settings", { method: "POST", body: { embedding } });
+        if (t.backendSettings) {
+          if (!t.backendSettings.curation) t.backendSettings.curation = {};
+          t.backendSettings.curation.embedding = {
+            ...(t.backendSettings.curation.embedding || {}),
+            provider: embedding.provider,
+            model: embedding.model,
+            endpoint: embedding.endpoint,
+            api_key_configured: !!(key || t.backendSettings.curation.embedding?.api_key_configured),
+          };
+        }
+        const res = await K("/v1/curation/embed/test", { method: "POST", body: {} });
+        const ok = !!res?.ok;
+        const msg = ok ? \`dims \${res?.dims ?? "?"} · \${res?.model || embedding.model || ""}\` : (res?.message || "연결 실패");
+        je("curation_emb", ok, msg);
+        t.uiMessage = { type: ok ? "success" : "error", text: ok ? "임베딩 테스트 성공" : \`임베딩 테스트 실패 · \${msg}\` };
+      } catch (err) {
+        je("curation_emb", !1, err?.message || err);
+        t.uiMessage = { type: "error", text: \`임베딩 테스트 실패 · \${err?.message || err}\` };
+      } finally {
+        a && (a.disabled = !1);
+      }
+      await P();
+    }), document.getElementById("nx-curation-embed-run")?.addEventListener("click", async () => {
+      const n = t.curationStatus?.option_count || "?";
+      if (!globalThis.confirm?.(\`카탈로그 \${n}개를 임베딩해 저장할까요?\\n기존 벡터는 덮어씁니다.\`)) return;
+      const msg = document.getElementById("nx-curation-embed-msg");
+      const bar = document.getElementById("nx-curation-embed-bar");
+      let poll = 0;
+      try {
+        if (msg) msg.textContent = "임베딩 시작…";
+        poll = globalThis.setInterval(async () => {
+          try {
+            const st = await K("/v1/curation/status");
+            const p = st?.status?.embed_progress || st?.embed_progress;
+            if (p && bar) {
+              const pct = p.total ? Math.round(100 * (p.done || 0) / p.total) : 0;
+              bar.style.width = pct + "%";
+              if (msg) msg.textContent = p.message || (p.done + " / " + p.total);
+            }
+          } catch {
+          }
+        }, 400);
+        const res = await K("/v1/curation/embed", { method: "POST", body: {} });
+        globalThis.clearInterval(poll);
+        t.curationStatus = res?.status || t.curationStatus;
+        t.uiMessage = { type: "success", text: "임베딩 저장 완료" };
+        await P();
+      } catch (err) {
+        globalThis.clearInterval(poll);
+        t.uiMessage = { type: "error", text: String(err?.message || err) };
+        await P();
+      }
+    }), document.getElementById("nx-save-models")?.addEventListener("click", async () => {`;
+
+const VENDOR_CURATION_TAB_LOAD_NEEDLE =
+  `o.preventDefault(), o.stopPropagation(), t.uiTab = r;
+        try {
+          window.scrollTo?.(0, 0);
+        } catch {
+        }
+        try {
+          document.getElementById("nx-char-edit-modal")?.remove?.();
+        } catch {
+        }
+        t.charEditUi = null, e.querySelectorAll("[data-nx-tab]").forEach((i) => {
+          i.classList.toggle("active", i.getAttribute("data-nx-tab") === r);
+        }), P();`;
+
+const VENDOR_CURATION_TAB_LOAD_PATCH =
+  `o.preventDefault(), o.stopPropagation(), t.uiTab = r;
+        try {
+          window.scrollTo?.(0, 0);
+        } catch {
+        }
+        try {
+          document.getElementById("nx-char-edit-modal")?.remove?.();
+        } catch {
+        }
+        t.charEditUi = null, e.querySelectorAll("[data-nx-tab]").forEach((i) => {
+          i.classList.toggle("active", i.getAttribute("data-nx-tab") === r);
+        });
+        if (r === "curation") {
+          K("/v1/curation/status").then((st) => {
+            t.curationStatus = st?.status || st;
+            return P();
+          }).catch(() => P());
+        } else P();`;
 
 /**
  * Global character "use in this chat" toggle: compact control left of 오토태그,
@@ -675,13 +1218,41 @@ const VENDOR_STICKY_LA_PATCH = `  function La() {
     const pct = typeof VC?.resolveStickyThumbPct == "function"
       ? VC.resolveStickyThumbPct({ settingsPct: n, alwaysOn, userCollapsed, editorOpen })
       : alwaysOn && !userCollapsed && !editorOpen ? Math.max(0, n) : 0;
-    if (typeof VC?.stickyThumbBoxFromPct == "function") return VC.stickyThumbBoxFromPct(pct, at, ka);
-    return {
-      w: Math.max(0, Math.round(at * pct / 100)),
-      h: Math.max(0, Math.round(ka * pct / 100)),
-      pct
-    };
+    const envelope = typeof VC?.stickyThumbBoxFromPct == "function"
+      ? VC.stickyThumbBoxFromPct(pct, at, ka)
+      : { w: Math.max(0, Math.round(at * pct / 100)), h: Math.max(0, Math.round(ka * pct / 100)), pct };
+    // Fit sticky frame to current NAI aspect (portrait/landscape/square) inside the envelope.
+    const nai = t.backendSettings?.nai || {};
+    const fitted = typeof VC?.fitBoxInside == "function"
+      ? VC.fitBoxInside(envelope.w, envelope.h, nai.width, nai.height)
+      : { w: envelope.w, h: envelope.h };
+    return { w: fitted.w, h: fitted.h, pct: envelope.pct };
   }`;
+
+/** Sticky/viewer thumbs: show full image (contain) for portrait/landscape/square. */
+const VENDOR_STICKY_COVER_NEEDLE = 'width:100%;height:100%;object-fit:cover;display:block';
+const VENDOR_STICKY_COVER_PATCH = 'width:100%;height:100%;object-fit:contain;display:block;background:transparent';
+
+/** Sticky always-image shell: no opaque letterbox fill (frame already aspect-fitted). */
+const VENDOR_STICKY_SHELL_BG_NEEDLE = `"box-shadow:0 4px 14px rgba(0,0,0,.35)",
+      "background:#0b0f18"`;
+const VENDOR_STICKY_SHELL_BG_PATCH = `"box-shadow:0 4px 14px rgba(0,0,0,.35)",
+      "background:transparent"`;
+
+/** Sticky marker create: empty placeholder must stay transparent like composeStickyThumbHtml. */
+const VENDOR_STICKY_EMPTY_NEEDLE = '`<div style="width:100%;height:100%;background:#0b0f18"></div>`';
+const VENDOR_STICKY_EMPTY_PATCH = '`<div style="width:100%;height:100%;background:transparent"></div>`';
+
+const VENDOR_EXPLORER_CARD_IMG_NEEDLE =
+  '.explorer-card img{width:100%;aspect-ratio:3/4;object-fit:cover;display:block;background:#0b0f18;pointer-events:none}';
+const VENDOR_EXPLORER_CARD_IMG_PATCH =
+  '.explorer-card img{width:100%;aspect-ratio:3/4;object-fit:contain;display:block;background:#0b0f18;pointer-events:none}';
+
+const VENDOR_VIEWER_THUMB_SHELL_NEEDLE =
+  '}, thumbShellStyle = (on, split) => `width:64px;height:88px;object-fit:cover;border-radius:8px;cursor:pointer;opacity:${on ? 1 : 0.45};outline:${on ? "3px solid #a78bfa" : "1px solid rgba(255,255,255,.08)"};outline-offset:${on ? "1px" : "0"};background:#111827;flex:0 0 auto;transform:${on ? "scale(1.04)" : "none"};box-shadow:${on ? "0 0 0 1px rgba(124,108,255,.55),0 6px 16px rgba(0,0,0,.45)" : "none"};${split ? "margin-left:4px;" : ""}`, refreshThumbsRect = async () => {';
+const VENDOR_VIEWER_THUMB_SHELL_PATCH =
+  '}, thumbShellStyle = (on, split) => `width:64px;height:88px;object-fit:contain;border-radius:8px;cursor:pointer;opacity:${on ? 1 : 0.45};outline:${on ? "3px solid #a78bfa" : "1px solid rgba(255,255,255,.08)"};outline-offset:${on ? "1px" : "0"};background:#111827;flex:0 0 auto;transform:${on ? "scale(1.04)" : "none"};box-shadow:${on ? "0 0 0 1px rgba(124,108,255,.55),0 6px 16px rgba(0,0,0,.45)" : "none"};${split ? "margin-left:4px;" : ""}`, refreshThumbsRect = async () => {';
+
 
 const VENDOR_STICKY_KEEP_NEEDLE = `    const keepHidden = typeof VC?.shouldKeepStickyThumbHidden == "function" ? VC.shouldKeepStickyThumbHidden(!!e._stickyThumbUserHidden, e._stickyThumbHiddenId, activeIdNow) : !!(e._stickyThumbUserHidden && String(e._stickyThumbHiddenId || "") === String(activeIdNow || "") && activeIdNow);
     if (!keepHidden && e._stickyThumbUserHidden) e._stickyThumbUserHidden = !1, e._stickyThumbHiddenId = "";
@@ -771,6 +1342,94 @@ const VENDOR_STICKY_OPEN_CARD_PATCH = `  async function openCardTagEdit(e) {
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
     try { await Ht(); } catch {}`;
 
+/** Shot-tag modal was rebuilding char prompts from live roster + expression/action/sex,
+ * which drops generation caption pieces (original, normalized order, curation-only bits
+ * already folded into `characters[].prompt`) and diverges from PNG/image metadata. */
+const VENDOR_CARD_TAG_ROSTER_REFRESH_NEEDLE = `    // Refresh looks from live roster so base modal shows updated appearance/attire without tab switch.
+    for (const slot of slots) {
+      const nm = w(slot.name || "", 200);
+      if (!nm) continue;
+      const match = roster.find((r) => r.name.toLowerCase() === nm.toLowerCase());
+      if (!match) continue;
+      const looks = match.prompt || [match.appearance, match.attire, match.accessories].filter(Boolean).join(", ");
+      if (!looks) continue;
+      const raw = slot.raw && typeof slot.raw === "object" ? slot.raw : {};
+      const shotBits = [w(raw.expression || "", 400), w(raw.action || "", 400), w(raw.sex || "", 200)].filter(Boolean).join(", ");
+      slot.prompt = shotBits ? \`\${looks}, \${shotBits}\` : looks;
+    }`;
+
+const VENDOR_CARD_TAG_ROSTER_REFRESH_PATCH = `    // Prefer stored generation prompt (same as image metadata). Rebuild from live
+    // roster only when this card has no saved char caption yet.
+    for (const slot of slots) {
+      if (w(slot.prompt || "", 4e3)) continue;
+      const nm = w(slot.name || "", 200);
+      if (!nm) continue;
+      const match = roster.find((r) => r.name.toLowerCase() === nm.toLowerCase());
+      if (!match) continue;
+      const looks = match.prompt || [match.appearance, match.attire, match.accessories].filter(Boolean).join(", ");
+      if (!looks) continue;
+      const raw = slot.raw && typeof slot.raw === "object" ? slot.raw : {};
+      const shotBits = [w(raw.expression || "", 400), w(raw.action || "", 400), w(raw.sex || "", 200)].filter(Boolean).join(", ");
+      slot.prompt = shotBits ? \`\${looks}, \${shotBits}\` : looks;
+    }`;
+
+/**
+ * Shot-tag modal's `stripPersonCountTags` split on bare commas, so a NAI
+ * weighted group like `5::1girl, 1boy::` broke into `5::1girl` + `1boy::` —
+ * neither matches PERSON_COUNT_RE/BARE_PERSON_RE, so both survived and the
+ * plain regenerated tags got prepended in front of the untouched fragments.
+ * Mirror `splitTagTokens`: split on `N::...::` groups intact, then drop bare
+ * person words, whole weighted groups that are only person words, and the
+ * broken half-fragments a previous run of the old bug may have left behind.
+ */
+const VENDOR_CARD_TAG_STRIP_PERSON_NEEDLE = `stripPersonCountTags = (Vt) => String(Vt || "").split(",").map((Xt) => Xt.trim()).filter((Xt) => Xt && !PERSON_COUNT_RE.test(Xt) && !BARE_PERSON_RE.test(Xt)).join(", ")`;
+
+const VENDOR_CARD_TAG_STRIP_PERSON_PATCH = `stripPersonCountTags = (Vt) => {
+      const raw = String(Vt || "");
+      if (!raw.trim()) return "";
+      const isPersonWord = (s) => {
+        const w = String(s || "").trim();
+        return !!w && (PERSON_COUNT_RE.test(w) || BARE_PERSON_RE.test(w));
+      };
+      const tokens = [];
+      const splitRe = /-?\\d+(?:\\.\\d+)?::(?:(?!::).)*?::|[^,]+/g;
+      let mm;
+      while ((mm = splitRe.exec(raw)) !== null) {
+        const tok = mm[0].trim();
+        if (tok) tokens.push(tok);
+      }
+      const kept = [];
+      for (const tok of tokens) {
+        if (isPersonWord(tok)) continue;
+        const weighted = tok.match(/^-?\\d+(?:\\.\\d+)?::([\\s\\S]*)::$/);
+        if (weighted) {
+          const inner = weighted[1].split(",").map((s) => s.trim()).filter(Boolean);
+          if (inner.length && inner.every(isPersonWord)) continue;
+          kept.push(tok);
+          continue;
+        }
+        const openBroken = tok.match(/^-?\\d+(?:\\.\\d+)?::([\\s\\S]*)$/);
+        if (openBroken && isPersonWord(openBroken[1])) continue;
+        const closeBroken = tok.match(/^([\\s\\S]*)::$/);
+        if (closeBroken && isPersonWord(closeBroken[1])) continue;
+        kept.push(tok);
+      }
+      return kept.join(", ");
+    }`;
+
+/**
+ * `applyAutoPerson` prepended the plain `1girl, 1boy` string straight from
+ * `personTagsForSlots` with no emphasis, so every open/save cycle re-wrote
+ * the main prompt without the user's NAI weight. Wrap it the same way the
+ * backend's `emphasizePersonTags` does, from `card.person_tag_weight`.
+ */
+const VENDOR_CARD_TAG_APPLY_WEIGHT_NEEDLE = `const Xt = currentMode(), Yt = personTagsForSlots(slots, Xt), Gt = stripPersonCountTags(baseEl.value || ""), Kt = Yt ? Yt + (Gt ? \`, \${Gt}\` : "") : Gt;`;
+
+const VENDOR_CARD_TAG_APPLY_WEIGHT_PATCH = `const Xt = currentMode(), YtPlain = personTagsForSlots(slots, Xt), personWeight = (() => {
+        const n = Number(t.backendSettings?.card?.person_tag_weight);
+        return Number.isFinite(n) ? Math.max(0, Math.min(5, Math.round(n))) : 3;
+      })(), Yt = YtPlain && personWeight > 0 ? \`\${personWeight}::\${YtPlain}::\` : YtPlain, Gt = stripPersonCountTags(baseEl.value || ""), Kt = Yt ? Yt + (Gt ? \`, \${Gt}\` : "") : Gt;`;
+
 const VENDOR_STICKY_OPEN_CHAR_NEEDLE = `  async function Ua(e) {
     if (!e?.name) return;
     if (typeof document > "u" || !document.body) {
@@ -847,6 +1506,194 @@ const VENDOR_STICKY_CLOSE_CHAR_PATCH = `    if (t.charEditUi = null, t.autotagFo
   }
   async function Ua(e) {`;
 
+/** Char create/edit: gender select + autotag gender (asserted vendor patches). */
+const VENDOR_AUTOTAG_LT_NEEDLE = `    return o(\`LLM 태그 완료 · 외형/의상/악세 \${count ? \`\${count}토큰\` : "반영"}\`, "ok"), {
+      appearance: appearance || (!attire && !accessories ? text : ""),
+      attire,
+      accessories,
+      text,
+      count
+    };
+  }`;
+const VENDOR_AUTOTAG_LT_PATCH = `    const genderRaw = String(a.gender || "").toLowerCase();
+    const gender = ["girl", "female", "f", "woman"].includes(genderRaw) ? "girl" : ["boy", "male", "m", "man"].includes(genderRaw) ? "boy" : ["other"].includes(genderRaw) ? "other" : "";
+    return o(\`LLM 태그 완료 · 외형/의상/악세 \${count ? \`\${count}토큰\` : "반영"}\${gender ? \` · \${gender}\` : ""}\`, "ok"), {
+      appearance: appearance || (!attire && !accessories ? text : ""),
+      attire,
+      accessories,
+      gender,
+      text,
+      count
+    };
+  }`;
+
+const VENDOR_CHAR_CREATE_GENDER_HTML_NEEDLE =
+  `<div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:8px"><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>이름</span><input data-cc-name value="" style="\${field}"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>원본 태그</span><input data-cc-original placeholder="(원작 캐릭터 태그)" style="\${field}"></label></div>`;
+const VENDOR_CHAR_CREATE_GENDER_HTML_PATCH =
+  `<div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr) minmax(0,.7fr);gap:8px"><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>이름</span><input data-cc-name value="" style="\${field}"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>원본 태그</span><input data-cc-original placeholder="(원작 캐릭터 태그)" style="\${field}"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>성별</span><select data-cc-gender style="\${field}"><option value="">미정</option><option value="girl">girl</option><option value="boy">boy</option><option value="other">other</option></select></label></div>`;
+
+const VENDOR_CHAR_CREATE_GENDER_REF_NEEDLE =
+  `const nameEl = root.querySelector("[data-cc-name]"), originalEl = root.querySelector("[data-cc-original]"), surnameEl = root.querySelector("[data-cc-surname]")`;
+const VENDOR_CHAR_CREATE_GENDER_REF_PATCH =
+  `const nameEl = root.querySelector("[data-cc-name]"), originalEl = root.querySelector("[data-cc-original]"), genderEl = root.querySelector("[data-cc-gender]"), surnameEl = root.querySelector("[data-cc-surname]")`;
+
+const VENDOR_CHAR_CREATE_GENDER_AUTOTAG_NEEDLE =
+  `        appearanceEl && (appearanceEl.value = tags.appearance || "");
+        attireEl && (attireEl.value = tags.attire || "");
+        accessoriesEl && (accessoriesEl.value = tags.accessories || "");
+        setStatus("오토태그 반영됨 · 외형/의상/악세 · 저장하세요"), setAutotagFocus(!0, "완료");`;
+const VENDOR_CHAR_CREATE_GENDER_AUTOTAG_PATCH =
+  `        appearanceEl && (appearanceEl.value = tags.appearance || "");
+        attireEl && (attireEl.value = tags.attire || "");
+        accessoriesEl && (accessoriesEl.value = tags.accessories || "");
+        genderEl && tags.gender && (genderEl.value = tags.gender);
+        setStatus("오토태그 반영됨 · 외형/의상/악세/성별 · 저장하세요"), setAutotagFocus(!0, "완료");`;
+
+const VENDOR_CHAR_CREATE_GENDER_SAVE_NEEDLE =
+  `        appearance: w(appearanceEl?.value || "", 4e3),
+        attire: w(attireEl?.value || "", 4e3),
+        accessories: w(accessoriesEl?.value || "", 4e3),
+        attire_locked: !!attireLockedEl?.checked,
+        accessories_locked: !!accLockedEl?.checked,
+        priority: Number(priorityEl?.value || 0) || 0
+      };`;
+const VENDOR_CHAR_CREATE_GENDER_SAVE_PATCH =
+  `        appearance: w(appearanceEl?.value || "", 4e3),
+        attire: w(attireEl?.value || "", 4e3),
+        accessories: w(accessoriesEl?.value || "", 4e3),
+        gender: ["girl", "boy", "other"].includes(String(genderEl?.value || "")) ? String(genderEl.value) : "",
+        attire_locked: attireLockedEl ? !!attireLockedEl.checked : true,
+        accessories_locked: accLockedEl ? !!accLockedEl.checked : true,
+        priority: Number(priorityEl?.value || 0) || 0
+      };`;
+
+const VENDOR_CHAR_EDIT_GENDER_HTML_NEEDLE =
+  `<div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:8px"><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>이름</span><input data-ce-name value="\${h(n.name || e.name)}" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>원본 태그</span><input data-ce-original value="\${h(n.original || "")}" placeholder="(원작 캐릭터 태그)" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"></label></div>`;
+const VENDOR_CHAR_EDIT_GENDER_HTML_PATCH =
+  `<div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr) minmax(0,.7fr);gap:8px"><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>이름</span><input data-ce-name value="\${h(n.name || e.name)}" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>원본 태그</span><input data-ce-original value="\${h(n.original || "")}" placeholder="(원작 캐릭터 태그)" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>성별</span><select data-ce-gender style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"><option value="" \${!["girl","boy","other","female","male"].includes(String(n.gender||n.sex||""))?"selected":""}>미정</option><option value="girl" \${["girl","female"].includes(String(n.gender||n.sex||""))?"selected":""}>girl</option><option value="boy" \${["boy","male"].includes(String(n.gender||n.sex||""))?"selected":""}>boy</option><option value="other" \${String(n.gender||n.sex||"")==="other"?"selected":""}>other</option></select></label></div>`;
+
+const VENDOR_CHAR_EDIT_GENDER_REF_NEEDLE =
+  `const s = i.querySelector("[data-ce-name]"), c = i.querySelector("[data-ce-original]"), surnameEl = i.querySelector("[data-ce-surname]")`;
+const VENDOR_CHAR_EDIT_GENDER_REF_PATCH =
+  `const s = i.querySelector("[data-ce-name]"), c = i.querySelector("[data-ce-original]"), genderEl = i.querySelector("[data-ce-gender]"), surnameEl = i.querySelector("[data-ce-surname]")`;
+
+const VENDOR_CHAR_EDIT_GENDER_AUTOTAG_NEEDLE =
+  `          p && (p.value = x.appearance || "");
+          m && (m.value = x.attire || "");
+          accEl && (accEl.value = x.accessories || "");
+          j(!0, "완료"), b && (b.textContent = "오토태그"), E("오토태그 반영됨 · 외형/의상/악세 · 저장을 누르세요");`;
+const VENDOR_CHAR_EDIT_GENDER_AUTOTAG_PATCH =
+  `          p && (p.value = x.appearance || "");
+          m && (m.value = x.attire || "");
+          accEl && (accEl.value = x.accessories || "");
+          genderEl && x.gender && (genderEl.value = x.gender);
+          j(!0, "완료"), b && (b.textContent = "오토태그"), E("오토태그 반영됨 · 외형/의상/악세/성별 · 저장을 누르세요");`;
+
+const VENDOR_CHAR_EDIT_GENDER_SAVE_NEEDLE =
+  `          appearance: F,
+          attire: T,
+          accessories: Acc,
+          attire_locked: !!attireLockedEl?.checked,
+          accessories_locked: !!accLockedEl?.checked,
+          priority: Number(n.priority || 0)
+        };`;
+const VENDOR_CHAR_EDIT_GENDER_SAVE_PATCH =
+  `          appearance: F,
+          attire: T,
+          accessories: Acc,
+          gender: ["girl", "boy", "other"].includes(String(genderEl?.value || "")) ? String(genderEl.value) : "",
+          attire_locked: attireLockedEl ? !!attireLockedEl.checked : true,
+          accessories_locked: accLockedEl ? !!accLockedEl.checked : true,
+          priority: Number(n.priority || 0)
+        };`;
+
+/** Character settings tab: gender select beside priority. */
+const VENDOR_CHAR_TAB_GENDER_HTML_NEEDLE =
+  `            <label><span>우선순위</span><input data-char-priority type="number" value="\${h(r.priority ?? 0)}"></label>
+            <div class="autotag-status muted\${l ? " pending" : ""}" data-autotag-status>`;
+const VENDOR_CHAR_TAB_GENDER_HTML_PATCH =
+  `            <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:end"><label><span>우선순위</span><input data-char-priority type="number" value="\${h(r.priority ?? 0)}"></label><label><span>성별</span><select data-char-gender><option value="" \${!["girl","boy","other","female","male"].includes(String(r.gender||r.sex||""))?"selected":""}>미정</option><option value="girl" \${["girl","female"].includes(String(r.gender||r.sex||""))?"selected":""}>girl</option><option value="boy" \${["boy","male"].includes(String(r.gender||r.sex||""))?"selected":""}>boy</option><option value="other" \${String(r.gender||r.sex||"")==="other"?"selected":""}>other</option></select></label></div>
+            <div class="autotag-status muted\${l ? " pending" : ""}" data-autotag-status>`;
+
+const VENDOR_CHAR_TAB_GENDER_READ_NEEDLE =
+  `        attire_locked: !!n.querySelector("[data-char-attire-locked]")?.checked,
+        accessories_locked: !!n.querySelector("[data-char-accessories-locked]")?.checked,
+        priority: Number(n.querySelector("[data-char-priority]")?.value || 0)
+      };`;
+const VENDOR_CHAR_TAB_GENDER_READ_PATCH =
+  `        attire_locked: n.querySelector("[data-char-attire-locked]") ? !!n.querySelector("[data-char-attire-locked]")?.checked : true,
+        accessories_locked: n.querySelector("[data-char-accessories-locked]") ? !!n.querySelector("[data-char-accessories-locked]")?.checked : true,
+        priority: Number(n.querySelector("[data-char-priority]")?.value || 0),
+        gender: ["girl", "boy", "other"].includes(String(n.querySelector("[data-char-gender]")?.value || "")) ? String(n.querySelector("[data-char-gender]")?.value || "") : ""
+      };`;
+
+const VENDOR_CHAR_TAB_GENDER_MERGE_NEEDLE =
+  `        attire_locked: !!raw.attire_locked,
+        accessories_locked: !!raw.accessories_locked,
+        priority: Number(raw.priority || 0) || 0
+      };`;
+const VENDOR_CHAR_TAB_GENDER_MERGE_PATCH =
+  `        attire_locked: raw.attire_locked !== false,
+        accessories_locked: raw.accessories_locked !== false,
+        priority: Number(raw.priority || 0) || 0,
+        gender: ["girl", "boy", "other", "female", "male"].includes(String(raw.gender || raw.sex || "").toLowerCase()) ? (["female", "f", "woman"].includes(String(raw.gender || raw.sex || "").toLowerCase()) ? "girl" : ["male", "m", "man"].includes(String(raw.gender || raw.sex || "").toLowerCase()) ? "boy" : String(raw.gender || raw.sex || "").toLowerCase()) : ""
+      };`;
+
+/** Wear tabs: clothes+jewelry / weapons-only; keep lock toggles (default ON). */
+const VENDOR_CHAR_TAB_WEAR_HTML_NEEDLE =
+  `                <div class="char-wear-head"><span>옷 태그</span><label class="char-lock"><input data-char-attire-locked type="checkbox" \${r.attire_locked ? "checked" : ""}><span>고정</span></label></div>
+                <textarea data-char-attire rows="2">\${h(r.attire || "")}</textarea>
+              </div>
+              <div class="char-wear-col">
+                <div class="char-wear-head"><span>악세사리·무기·기타</span><label class="char-lock"><input data-char-accessories-locked type="checkbox" \${r.accessories_locked ? "checked" : ""}><span>고정</span></label></div>
+                <textarea data-char-accessories rows="2">\${h(r.accessories || "")}</textarea>`;
+const VENDOR_CHAR_TAB_WEAR_HTML_PATCH =
+  `                <div class="char-wear-head"><span>옷·악세사리</span><label class="char-lock"><input data-char-attire-locked type="checkbox" \${r.attire_locked !== false ? "checked" : ""}><span>고정</span></label></div>
+                <textarea data-char-attire rows="2">\${h(r.attire || "")}</textarea>
+              </div>
+              <div class="char-wear-col">
+                <div class="char-wear-head"><span>무기·기타</span><label class="char-lock"><input data-char-accessories-locked type="checkbox" \${r.accessories_locked !== false ? "checked" : ""}><span>고정</span></label></div>
+                <textarea data-char-accessories rows="2">\${h(r.accessories || "")}</textarea>`;
+
+const VENDOR_CHAR_EDIT_WEAR_ATTIRE_NEEDLE =
+  `<span>옷 태그</span><label style="display:inline-flex;align-items:center;gap:4px;margin:0;color:#d7deea;font-size:11px;font-weight:550;cursor:pointer;white-space:nowrap"><input data-ce-attire-locked type="checkbox" \${n.attire_locked ? "checked" : ""} style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+const VENDOR_CHAR_EDIT_WEAR_ATTIRE_PATCH =
+  `<span>옷·악세사리</span><label style="display:inline-flex;align-items:center;gap:4px;margin:0;color:#d7deea;font-size:11px;font-weight:550;cursor:pointer;white-space:nowrap"><input data-ce-attire-locked type="checkbox" \${n.attire_locked !== false ? "checked" : ""} style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+
+const VENDOR_CHAR_EDIT_WEAR_ACC_NEEDLE =
+  `<span>악세사리·무기·기타</span><label style="display:inline-flex;align-items:center;gap:4px;margin:0;color:#d7deea;font-size:11px;font-weight:550;cursor:pointer;white-space:nowrap"><input data-ce-accessories-locked type="checkbox" \${n.accessories_locked ? "checked" : ""} style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+const VENDOR_CHAR_EDIT_WEAR_ACC_PATCH =
+  `<span>무기·기타</span><label style="display:inline-flex;align-items:center;gap:4px;margin:0;color:#d7deea;font-size:11px;font-weight:550;cursor:pointer;white-space:nowrap"><input data-ce-accessories-locked type="checkbox" \${n.accessories_locked !== false ? "checked" : ""} style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+
+const VENDOR_CHAR_EDIT_APPEARANCE_LABEL_NEEDLE = `<span>외형 태그 (girl/boy · 옷·악세사리 제외)</span>`;
+const VENDOR_CHAR_EDIT_APPEARANCE_LABEL_PATCH = `<span>외형 태그 (girl/boy · 옷·무기 제외)</span>`;
+
+const VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE =
+  `attireLockedEl && (attireLockedEl.checked = !!I.attire_locked), accLockedEl && (accLockedEl.checked = !!I.accessories_locked)`;
+const VENDOR_CHAR_EDIT_LOCK_PRESET_PATCH =
+  `attireLockedEl && (attireLockedEl.checked = I.attire_locked !== false), accLockedEl && (accLockedEl.checked = I.accessories_locked !== false)`;
+
+const VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE =
+  `attireLockedEl && (attireLockedEl.checked = !!I.attire_locked);
+      accLockedEl && (accLockedEl.checked = !!I.accessories_locked);`;
+const VENDOR_CHAR_CREATE_LOCK_PRESET_PATCH =
+  `attireLockedEl && (attireLockedEl.checked = I.attire_locked !== false);
+      accLockedEl && (accLockedEl.checked = I.accessories_locked !== false);`;
+
+const VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE =
+  `<span>옷 태그</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer"><input data-cc-attire-locked type="checkbox" style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+const VENDOR_CHAR_CREATE_WEAR_ATTIRE_PATCH =
+  `<span>옷·악세사리</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer"><input data-cc-attire-locked type="checkbox" checked style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+
+const VENDOR_CHAR_CREATE_WEAR_ACC_NEEDLE =
+  `<span>악세사리·무기·기타</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer"><input data-cc-accessories-locked type="checkbox" style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+const VENDOR_CHAR_CREATE_WEAR_ACC_PATCH =
+  `<span>무기·기타</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer"><input data-cc-accessories-locked type="checkbox" checked style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+
+/** Tab + create share this label (2 occurrences). */
+const VENDOR_APPEARANCE_LABEL_SHARED_NEEDLE = `<span>외형 태그 (옷·악세사리 제외)</span>`;
+const VENDOR_APPEARANCE_LABEL_SHARED_PATCH = `<span>외형 태그 (옷·무기 제외)</span>`;
+
 const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
 //@display-name Inlay Nexus ${PLUGIN_VERSION}
 //@api 3.0
@@ -871,6 +1718,7 @@ const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
 const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
   'char_inject', 'preprocess', 'prefill', 'preset_1', 'autotag',
+  'curation_refine', 'curation_embed_hint',
 ] as const;
 
 /**
@@ -923,12 +1771,45 @@ const loadVendorUi = (): string => {
 
   // Asserted patches only — never hand-edit vendor/inlay-nexus-ui.js.
   assertOnce(raw, VENDOR_VERSION_NEEDLE, VENDOR_VERSION_NEEDLE);
+  {
+    let coverCount = 0;
+    let at = raw.indexOf(VENDOR_STICKY_COVER_NEEDLE);
+    while (at !== -1) {
+      coverCount += 1;
+      at = raw.indexOf(VENDOR_STICKY_COVER_NEEDLE, at + VENDOR_STICKY_COVER_NEEDLE.length);
+    }
+    if (coverCount !== 4) {
+      throw new Error(`[build] expected 4× sticky/viewer object-fit:cover fill, found ${coverCount}`);
+    }
+  }
+  {
+    let shellBgCount = 0;
+    let at = raw.indexOf(VENDOR_STICKY_SHELL_BG_NEEDLE);
+    while (at !== -1) {
+      shellBgCount += 1;
+      at = raw.indexOf(VENDOR_STICKY_SHELL_BG_NEEDLE, at + VENDOR_STICKY_SHELL_BG_NEEDLE.length);
+    }
+    if (shellBgCount !== 2) {
+      throw new Error(`[build] expected 2× sticky shell background:#0b0f18, found ${shellBgCount}`);
+    }
+  }
+  assertOnce(raw, VENDOR_STICKY_EMPTY_NEEDLE, 'sticky empty placeholder');
+  assertOnce(raw, VENDOR_EXPLORER_CARD_IMG_NEEDLE, 'explorer card img contain');
+  assertOnce(raw, VENDOR_VIEWER_THUMB_SHELL_NEEDLE, 'viewer thumb shell contain');
   assertOnce(raw, VENDOR_PROMPT_RESET_NEEDLE, 'prompt-reset confirm insertion point');
+  assertOnce(raw, VENDOR_PROMPT_TAB_HTML_NEEDLE, 'prompts tab HTML');
+  assertOnce(raw, VENDOR_PROMPT_TAB_EVENTS_NEEDLE, 'prompts tab events');
   assertOnce(raw, VENDOR_NATURAL_BASE_HTML_NEEDLE, 'natural_base checkbox');
   assertOnce(raw, VENDOR_NATURAL_BASE_SAVE_NEEDLE, 'natural_base save ee()');
   assertOnce(raw, VENDOR_NATURAL_BASE_CT_NEEDLE, 'natural_base Ct() insert');
   assertOnce(raw, VENDOR_NATURAL_BASE_CARD_NEEDLE, 'natural_base card 3-col');
   assertOnce(raw, VENDOR_NATURAL_BASE_HELP_NEEDLE, 'natural_base help entry');
+  assertOnce(raw, VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE, 'person_tag_weight HTML');
+  assertOnce(raw, VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE, 'person_tag_weight Ct()');
+  assertOnce(raw, VENDOR_CURATION_TABS_NEEDLE, 'curation tabs S/E');
+  assertOnce(raw, VENDOR_CURATION_PANEL_NEEDLE, 'curation panel insert');
+  assertOnce(raw, VENDOR_CURATION_EVENTS_NEEDLE, 'curation events insert');
+  assertOnce(raw, VENDOR_CURATION_TAB_LOAD_NEEDLE, 'curation tab load');
   assertOnce(raw, VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, 'global toggle summary');
   assertOnce(raw, VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE, 'global toggle body row');
   assertOnce(raw, VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, 'explorer thumb paint');
@@ -963,17 +1844,59 @@ const loadVendorUi = (): string => {
     [VENDOR_STICKY_OPEN_CHAR_NEEDLE, 'sticky open char edit'],
     [VENDOR_STICKY_CLOSE_CARD_NEEDLE, 'sticky close card edit'],
     [VENDOR_STICKY_CLOSE_CHAR_NEEDLE, 'sticky close char edit'],
+    [VENDOR_CARD_TAG_ROSTER_REFRESH_NEEDLE, 'card tag keep stored prompt'],
+    [VENDOR_CARD_TAG_STRIP_PERSON_NEEDLE, 'card tag strip person NAI-safe split'],
+    [VENDOR_CARD_TAG_APPLY_WEIGHT_NEEDLE, 'card tag apply auto person weight'],
+    [VENDOR_AUTOTAG_LT_NEEDLE, 'autotag Lt gender'],
+    [VENDOR_CHAR_CREATE_GENDER_HTML_NEEDLE, 'char create gender html'],
+    [VENDOR_CHAR_CREATE_GENDER_REF_NEEDLE, 'char create gender ref'],
+    [VENDOR_CHAR_CREATE_GENDER_AUTOTAG_NEEDLE, 'char create gender autotag'],
+    [VENDOR_CHAR_CREATE_GENDER_SAVE_NEEDLE, 'char create gender save'],
+    [VENDOR_CHAR_EDIT_GENDER_HTML_NEEDLE, 'char edit gender html'],
+    [VENDOR_CHAR_EDIT_GENDER_REF_NEEDLE, 'char edit gender ref'],
+    [VENDOR_CHAR_EDIT_GENDER_AUTOTAG_NEEDLE, 'char edit gender autotag'],
+    [VENDOR_CHAR_EDIT_GENDER_SAVE_NEEDLE, 'char edit gender save'],
+    [VENDOR_CHAR_TAB_GENDER_HTML_NEEDLE, 'char tab gender html'],
+    [VENDOR_CHAR_TAB_GENDER_READ_NEEDLE, 'char tab gender read'],
+    [VENDOR_CHAR_TAB_GENDER_MERGE_NEEDLE, 'char tab gender merge'],
+    [VENDOR_CHAR_TAB_WEAR_HTML_NEEDLE, 'char tab wear labels'],
+    [VENDOR_CHAR_EDIT_WEAR_ATTIRE_NEEDLE, 'char edit wear attire'],
+    [VENDOR_CHAR_EDIT_WEAR_ACC_NEEDLE, 'char edit wear accessories'],
+    [VENDOR_CHAR_EDIT_APPEARANCE_LABEL_NEEDLE, 'char edit appearance label'],
+    [VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE, 'char edit lock preset'],
+    [VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE, 'char create lock preset'],
+    [VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, 'char create wear attire'],
+    [VENDOR_CHAR_CREATE_WEAR_ACC_NEEDLE, 'char create wear accessories'],
   ] as const) {
     assertOnce(raw, needle, label);
+  }
+  {
+    let count = 0;
+    let at = raw.indexOf(VENDOR_APPEARANCE_LABEL_SHARED_NEEDLE);
+    while (at !== -1) {
+      count += 1;
+      at = raw.indexOf(VENDOR_APPEARANCE_LABEL_SHARED_NEEDLE, at + VENDOR_APPEARANCE_LABEL_SHARED_NEEDLE.length);
+    }
+    if (count !== 2) {
+      throw new Error(`[build] expected 2× appearance label shared, found ${count}`);
+    }
   }
   return raw
     .replace(VENDOR_VERSION_NEEDLE, `He = "${PLUGIN_VERSION}"`)
     .replace(VENDOR_PROMPT_RESET_NEEDLE, VENDOR_PROMPT_RESET_PATCH)
+    .replace(VENDOR_PROMPT_TAB_HTML_NEEDLE, VENDOR_PROMPT_TAB_HTML_PATCH)
+    .replace(VENDOR_PROMPT_TAB_EVENTS_AFTER_RESET_NEEDLE, VENDOR_PROMPT_TAB_EVENTS_PATCH)
     .replace(VENDOR_NATURAL_BASE_HTML_NEEDLE, VENDOR_NATURAL_BASE_HTML_PATCH)
     .replace(VENDOR_NATURAL_BASE_SAVE_NEEDLE, VENDOR_NATURAL_BASE_SAVE_PATCH)
     .replace(VENDOR_NATURAL_BASE_CT_NEEDLE, VENDOR_NATURAL_BASE_CT_PATCH)
     .replace(VENDOR_NATURAL_BASE_CARD_NEEDLE, VENDOR_NATURAL_BASE_CARD_PATCH)
     .replace(VENDOR_NATURAL_BASE_HELP_NEEDLE, VENDOR_NATURAL_BASE_HELP_PATCH)
+    .replace(VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_HTML_PATCH)
+    .replace(VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_CT_PATCH)
+    .replace(VENDOR_CURATION_TABS_NEEDLE, VENDOR_CURATION_TABS_PATCH)
+    .replace(VENDOR_CURATION_PANEL_NEEDLE, VENDOR_CURATION_PANEL_PATCH)
+    .replace(VENDOR_CURATION_EVENTS_NEEDLE, VENDOR_CURATION_EVENTS_PATCH)
+    .replace(VENDOR_CURATION_TAB_LOAD_NEEDLE, VENDOR_CURATION_TAB_LOAD_PATCH)
     .replace(VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, VENDOR_GLOBAL_TOGGLE_SUMMARY_PATCH)
     .replace(VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE, VENDOR_GLOBAL_TOGGLE_BODY_PATCH)
     .replace(VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, VENDOR_EXPLORER_THUMB_PAINT_PATCH)
@@ -1006,7 +1929,36 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_STICKY_CLOSE_CHAR_NEEDLE, VENDOR_STICKY_CLOSE_CHAR_PATCH)
     .replace(VENDOR_STICKY_OPEN_CHAR_NEEDLE, VENDOR_STICKY_OPEN_CHAR_PATCH)
     .replace(VENDOR_STICKY_CLOSE_CARD_NEEDLE, VENDOR_STICKY_CLOSE_CARD_PATCH)
-    .replace(VENDOR_STICKY_OPEN_CARD_NEEDLE, VENDOR_STICKY_OPEN_CARD_PATCH);
+    .replace(VENDOR_STICKY_OPEN_CARD_NEEDLE, VENDOR_STICKY_OPEN_CARD_PATCH)
+    .replace(VENDOR_CARD_TAG_ROSTER_REFRESH_NEEDLE, VENDOR_CARD_TAG_ROSTER_REFRESH_PATCH)
+    .replace(VENDOR_CARD_TAG_STRIP_PERSON_NEEDLE, VENDOR_CARD_TAG_STRIP_PERSON_PATCH)
+    .replace(VENDOR_CARD_TAG_APPLY_WEIGHT_NEEDLE, VENDOR_CARD_TAG_APPLY_WEIGHT_PATCH)
+    .replace(VENDOR_AUTOTAG_LT_NEEDLE, VENDOR_AUTOTAG_LT_PATCH)
+    .replace(VENDOR_CHAR_CREATE_GENDER_HTML_NEEDLE, VENDOR_CHAR_CREATE_GENDER_HTML_PATCH)
+    .replace(VENDOR_CHAR_CREATE_GENDER_REF_NEEDLE, VENDOR_CHAR_CREATE_GENDER_REF_PATCH)
+    .replace(VENDOR_CHAR_CREATE_GENDER_AUTOTAG_NEEDLE, VENDOR_CHAR_CREATE_GENDER_AUTOTAG_PATCH)
+    .replace(VENDOR_CHAR_CREATE_GENDER_SAVE_NEEDLE, VENDOR_CHAR_CREATE_GENDER_SAVE_PATCH)
+    .replace(VENDOR_CHAR_EDIT_GENDER_HTML_NEEDLE, VENDOR_CHAR_EDIT_GENDER_HTML_PATCH)
+    .replace(VENDOR_CHAR_EDIT_GENDER_REF_NEEDLE, VENDOR_CHAR_EDIT_GENDER_REF_PATCH)
+    .replace(VENDOR_CHAR_EDIT_GENDER_AUTOTAG_NEEDLE, VENDOR_CHAR_EDIT_GENDER_AUTOTAG_PATCH)
+    .replace(VENDOR_CHAR_EDIT_GENDER_SAVE_NEEDLE, VENDOR_CHAR_EDIT_GENDER_SAVE_PATCH)
+    .replace(VENDOR_CHAR_TAB_GENDER_HTML_NEEDLE, VENDOR_CHAR_TAB_GENDER_HTML_PATCH)
+    .replace(VENDOR_CHAR_TAB_GENDER_READ_NEEDLE, VENDOR_CHAR_TAB_GENDER_READ_PATCH)
+    .replace(VENDOR_CHAR_TAB_GENDER_MERGE_NEEDLE, VENDOR_CHAR_TAB_GENDER_MERGE_PATCH)
+    .replace(VENDOR_CHAR_TAB_WEAR_HTML_NEEDLE, VENDOR_CHAR_TAB_WEAR_HTML_PATCH)
+    .replace(VENDOR_CHAR_EDIT_WEAR_ATTIRE_NEEDLE, VENDOR_CHAR_EDIT_WEAR_ATTIRE_PATCH)
+    .replace(VENDOR_CHAR_EDIT_WEAR_ACC_NEEDLE, VENDOR_CHAR_EDIT_WEAR_ACC_PATCH)
+    .replace(VENDOR_CHAR_EDIT_APPEARANCE_LABEL_NEEDLE, VENDOR_CHAR_EDIT_APPEARANCE_LABEL_PATCH)
+    .replace(VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE, VENDOR_CHAR_EDIT_LOCK_PRESET_PATCH)
+    .replace(VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE, VENDOR_CHAR_CREATE_LOCK_PRESET_PATCH)
+    .replace(VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, VENDOR_CHAR_CREATE_WEAR_ATTIRE_PATCH)
+    .replace(VENDOR_CHAR_CREATE_WEAR_ACC_NEEDLE, VENDOR_CHAR_CREATE_WEAR_ACC_PATCH)
+    .replace(VENDOR_EXPLORER_CARD_IMG_NEEDLE, VENDOR_EXPLORER_CARD_IMG_PATCH)
+    .replace(VENDOR_VIEWER_THUMB_SHELL_NEEDLE, VENDOR_VIEWER_THUMB_SHELL_PATCH)
+    .replaceAll(VENDOR_STICKY_COVER_NEEDLE, VENDOR_STICKY_COVER_PATCH)
+    .replaceAll(VENDOR_STICKY_SHELL_BG_NEEDLE, VENDOR_STICKY_SHELL_BG_PATCH)
+    .replace(VENDOR_STICKY_EMPTY_NEEDLE, VENDOR_STICKY_EMPTY_PATCH)
+    .replaceAll(VENDOR_APPEARANCE_LABEL_SHARED_NEEDLE, VENDOR_APPEARANCE_LABEL_SHARED_PATCH);
 };
 
 /** Wraps the emitted chunk in an IIFE, prepends the header, appends the frozen UI. */

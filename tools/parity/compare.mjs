@@ -114,6 +114,16 @@ const normalize = (root) => {
         }
       }
       let out = node.replace(UUID_RE, (m) => idFor(m.toLowerCase())).replace(EMBEDDED_TS_RE, '<TS>');
+      // Wall-clock-ish NAI seeds appear inside probe messages as well as as fields.
+      out = out.replace(/\bseed=\d+/gi, 'seed=<SEED>');
+      // 2.0 wraps Inlay person-count tags as N::1girl, 1boy:: (person_tag_weight).
+      // 1.x emitted plain tags; scenario asserts the wrap on the new side.
+      if (key === 'main_prompt') {
+        out = out.replace(
+          /\b\d+(?:\.\d+)?::((?:\d+\+?(?:girls?|boys?|people|person)|1girl|1boy)(?:,\s*(?:\d+\+?(?:girls?|boys?|people|person)|1girl|1boy))*)::/gi,
+          '$1',
+        );
+      }
       // Long opaque payloads: keep the shape, drop the bytes.
       const dataUrl = /^data:([\w/+.-]+);base64,([A-Za-z0-9+/=]+)$/.exec(out);
       if (dataUrl) return `data:${dataUrl[1]};base64,<${dataUrl[2].length}b>`;
@@ -125,10 +135,36 @@ const normalize = (root) => {
       // Counts collapse to presence for the same window reason as the event log.
       return { [EVENT_LOG_MARKER]: true, stages: Object.keys(node).filter((s) => !s.startsWith('storage.')).sort(), errors: [] };
     }
-    if (Array.isArray(node)) return node.map((v) => walk(v, key));
+    if (Array.isArray(node)) {
+      // New curation_* prompts are 2.0-only; 1.x list length would otherwise fail.
+      if (
+        key === 'prompts'
+        && node.length > 0
+        && node.every((p) => p && typeof p === 'object' && 'key' in p)
+      ) {
+        return node
+          .filter((p) => !String(p.key).startsWith('curation_'))
+          .map((v) => walk(v, key));
+      }
+      return node.map((v) => walk(v, key));
+    }
     if (node && typeof node === 'object') {
       const out = {};
-      for (const k of Object.keys(node).sort()) out[k] = walk(node[k], k);
+      for (const k of Object.keys(node).sort()) {
+        // 2.0 curation tab settings have no 1.x equivalent. Drop from wire compare;
+        // unit tests + scenario assert the new behaviour. composition_curation is
+        // legacy→migrated false and would otherwise spam absent→false diffs.
+        if (k === 'curation' || k === 'composition_curation') continue;
+        // 2.0 person_tag_weight (NAI emphasis on Inlay person tags). No 1.x field;
+        // wrap itself is normalised on main_prompt below; unit/scenario assert weight.
+        if (k === 'person_tag_weight') continue;
+        // 2.0 roster gender (girl|boy|other) + one-shot tag backfill — no 1.x field.
+        if (k === 'gender') continue;
+        // 2.0 wear locks default ON (`!== false`). 1.x/legacy seeds stored false;
+        // compose + unit tests assert lock behaviour — wire presence is not comparable.
+        if (k === 'attire_locked' || k === 'accessories_locked') continue;
+        out[k] = walk(node[k], k);
+      }
       return out;
     }
     return node;
@@ -190,6 +226,33 @@ const newRun = JSON.parse(fs.readFileSync(newPath, 'utf8'));
 const INTENTIONAL_DIFF_STEPS = new Set([
   'presets.reroll_after_swap',
   'presets.reroll_swaps_style',
+  // 2.0 wraps person tags (default weight 3); 1.x emits plain 1boy.
+  'job.person_tag_emphasis',
+  // Short clothing hints use word boundaries ("hat" ≠ inside "chat"), so seed
+  // markers stay in appearance instead of spilling into attire via "chat"⊃"hat".
+  'chars.seed_sess_chat_a',
+  'chars.seed_sess_chat_b',
+]);
+
+/**
+ * Routes with no 1.x concept at all (curation did not exist pre-2.0), so the
+ * old run is expected to fail outright (unknown route) rather than merely
+ * return a different value. We skip the wire diff entirely and assert only
+ * the new side's behaviour, keyed by step name.
+ */
+const NEW_ONLY_STEPS = new Map([
+  [
+    'curation.strict_ids.enable',
+    (v) => (v?.mode === 'two_stage' && v?.strict_ids === true
+      ? null
+      : `2.0 must persist curation.mode=two_stage + strict_ids=true, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'curation.strict_ids.reset',
+    (v) => (v?.mode === 'off' && v?.strict_ids === false
+      ? null
+      : `2.0 must reset curation.mode=off + strict_ids=false, got ${JSON.stringify(v)}`),
+  ],
 ]);
 
 const byName = (run) => new Map(run.transcript.map((t) => [t.name, t]));
@@ -201,6 +264,12 @@ for (const name of oldSteps.keys()) {
   if (!newSteps.has(name)) { findings.push({ at: name, old: '(step present)', new: '(step missing)' }); continue; }
   const oldStep = oldSteps.get(name);
   const newStep = newSteps.get(name);
+  if (NEW_ONLY_STEPS.has(name)) {
+    if (!newStep.ok) { findings.push({ at: name, old: '(no 1.x route)', new: 'failed', note: 'new step errored' }); continue; }
+    const problem = NEW_ONLY_STEPS.get(name)(newStep.value);
+    if (problem) findings.push({ at: name, old: '(no 1.x route)', new: JSON.stringify(newStep.value), note: problem });
+    continue;
+  }
   if (INTENTIONAL_DIFF_STEPS.has(name)) {
     if (!oldStep.ok) findings.push({ at: name, old: 'failed', new: '(intentional)', note: 'old step errored' });
     if (!newStep.ok) findings.push({ at: name, old: '(intentional)', new: 'failed', note: 'new step errored' });
@@ -211,6 +280,25 @@ for (const name of oldSteps.keys()) {
         old: String(oldStep.value?.swapped),
         new: String(newStep.value?.swapped),
         note: '2.0 must report swapped:true after preset change + reroll',
+      });
+    }
+    if (name === 'job.person_tag_emphasis' && newStep.value?.emphasized !== true) {
+      findings.push({
+        at: name,
+        old: String(oldStep.value?.emphasized),
+        new: String(newStep.value?.emphasized),
+        note: '2.0 must wrap person tags with default weight 3',
+      });
+    }
+    if (
+      (name === 'chars.seed_sess_chat_a' || name === 'chars.seed_sess_chat_b')
+      && newStep.value?.wear_ok !== true
+    ) {
+      findings.push({
+        at: name,
+        old: '(legacy hat⊂chat spill)',
+        new: String(newStep.value?.wear_ok),
+        note: '2.0 must keep seed marker in appearance, white dress in attire',
       });
     }
     continue;

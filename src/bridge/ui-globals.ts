@@ -18,11 +18,23 @@
 import * as explorerSelection from '../ui-contract/explorer-selection';
 import * as loreExtra from '../domain/lore/extra';
 import * as llmProviders from '../providers/llm/providers';
+import * as embeddingProviders from '../providers/embedding/client';
 import * as viewerCore from '../ui-contract/viewer-core';
 
 export function installUiContractGlobals(): void {
   Reflect.set(globalThis, '__INLAY_VIEWER_CORE__', { ...viewerCore });
   Reflect.set(globalThis, '__INLAY_LLM__', { ...llmProviders });
+  // Embedding provider helpers for the 큐레이팅 tab (not audited vs 1.x — 2.0-only).
+  Reflect.set(globalThis, '__INLAY_EMBED__', {
+    EMBEDDING_PROVIDERS: embeddingProviders.EMBEDDING_PROVIDERS,
+    normalizeEmbeddingProvider: embeddingProviders.normalizeEmbeddingProvider,
+    defaultEndpointForEmbedding: embeddingProviders.defaultEndpointForEmbedding,
+    defaultModelForEmbedding: embeddingProviders.defaultModelForEmbedding,
+    embeddingModelPlaceholder: embeddingProviders.embeddingModelPlaceholder,
+    shouldAutoReplaceEmbeddingEndpoint: embeddingProviders.shouldAutoReplaceEmbeddingEndpoint,
+    shouldAutoReplaceEmbeddingModel: embeddingProviders.shouldAutoReplaceEmbeddingModel,
+    embeddingProviderNeedsApiKey: embeddingProviders.embeddingProviderNeedsApiKey,
+  });
   Reflect.set(globalThis, '__INLAY_LORE_EXTRA__', { ...loreExtra });
   Reflect.set(globalThis, '__INLAY_EXPLORER__', { ...explorerSelection });
 }

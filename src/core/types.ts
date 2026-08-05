@@ -53,6 +53,11 @@ export interface CardSettings {
   preprocessing: boolean;
   person_tag_mode: PersonTagMode;
   auto_person_tags: boolean;
+  /**
+   * NAI emphasis on Inlay person-count tags (`1girl`, `1boy`, …).
+   * 0 = plain tags; 1–5 = `N::1girl, 1boy::`. Default 3.
+   */
+  person_tag_weight: number;
   /** When true, tagger picks curated composition leaf ids instead of freeform camera/pose. */
   composition_curation?: boolean;
   original_text: string;
@@ -147,6 +152,11 @@ export interface CharacterRecord {
   attire_locked?: boolean;
   accessories_locked?: boolean;
   priority?: number;
+  /**
+   * Explicit sex for curation / person tags / settings UI.
+   * `"girl"` | `"boy"` | `"other"` | `""`. Prefer this over guessing from tags.
+   */
+  gender?: string;
   scope?: Scope;
   schema_version?: number;
   /** Convenience field the UI reads: original + appearance + attire + accessories. */
@@ -165,6 +175,10 @@ export interface ShotCharacter {
   appearance?: string;
   attire?: string;
   accessories?: string;
+  /** When on: caption uses nude + jewelry from attire (no clothes). */
+  nude?: boolean | string | number;
+  /** When on: include accessories (weapons/props) in the caption. */
+  weapon?: boolean | string | number;
   sex?: string;
   center_x?: number;
   center_y?: number;

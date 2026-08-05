@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { mergeSessionAndGlobalRoster } from "../.test-build/roster-merge.mjs";
+import { mergeSessionAndGlobalRoster, normalizeCharacterRecord } from "../.test-build/roster-merge.mjs";
 
 function helpers() {
   const key = (v) => String(v || "").trim().toLowerCase();
@@ -16,7 +16,7 @@ function helpers() {
   };
 }
 
-test("attire-only session overlay keeps filled global appearance", () => {
+test("attire-only session overlay does not rewrite filled global wear", () => {
   const global = [{
     name: "Alice",
     appearance: "long hair, blue eyes",
@@ -33,8 +33,8 @@ test("attire-only session overlay keeps filled global appearance", () => {
   const merged = mergeSessionAndGlobalRoster(session, global, helpers());
   assert.equal(merged.length, 1);
   assert.equal(merged[0].appearance, "long hair, blue eyes");
-  assert.equal(merged[0].attire, "school uniform");
-  assert.equal(merged[0].accessories, "ribbon");
+  assert.equal(merged[0].attire, "dress");
+  assert.equal(merged[0].accessories, "");
   assert.ok(helpers().hasAppearance(merged[0]));
 });
 
@@ -52,6 +52,30 @@ test("empty session does not replace a filled global with blank row", () => {
   const merged = mergeSessionAndGlobalRoster(session, global, helpers());
   assert.equal(merged.length, 1);
   assert.equal(merged[0].appearance, "silver hair");
-  assert.equal(merged[0].attire, "hoodie");
+  assert.equal(merged[0].attire, "coat");
   assert.notEqual(merged[0].appearance, "");
+});
+
+test("normalizeCharacterRecord keeps user attire buckets (no save-time split)", () => {
+  const rec = normalizeCharacterRecord({
+    name: "보민",
+    appearance: "black hair, boy",
+    attire: "2.1::single bare shoulder::, white shirt",
+    accessories: "earrings",
+  });
+  assert.equal(rec.appearance, "black hair, boy");
+  assert.match(rec.attire, /bare shoulder/);
+  assert.match(rec.attire, /white shirt/);
+  assert.equal(rec.accessories, "earrings");
+  assert.equal(rec.appearance.includes("bare shoulder"), false);
+});
+
+test("legacy flat tags dump into appearance without splitting", () => {
+  const rec = normalizeCharacterRecord({
+    name: "Old",
+    tags: "black hair, white shirt, sword",
+  });
+  assert.equal(rec.appearance, "black hair, white shirt, sword");
+  assert.equal(rec.attire, "");
+  assert.equal(rec.accessories, "");
 });

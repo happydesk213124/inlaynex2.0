@@ -97,6 +97,83 @@ export async function listPrompts(): Promise<PromptRow[]> {
   return ordered;
 }
 
+/** Stable JSON for export: `{ version, prompts: { [key]: text } }` in pack order. */
+export async function exportPromptsPack(): Promise<{ version: string; prompts: Record<string, string> }> {
+  const rows = await listPrompts();
+  const prompts: Record<string, string> = {};
+  for (const row of rows) prompts[row.key] = row.text;
+  return { version: VERSION, prompts };
+}
+
+/**
+ * Import a prompts JSON pack. Accepts `{ prompts: { key: text } }`,
+ * `{ prompts: [{ key, text }] }`, or a flat `{ key: text }` map.
+ * Unknown keys are skipped. Returns how many known keys were written.
+ */
+export async function importPromptsPack(raw: unknown): Promise<ApiResult> {
+  const map = parsePromptsImport(raw);
+  let updated = 0;
+  const now = Date.now() / 1000;
+  for (const key of PROMPT_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(map, key)) continue;
+    await idbPut('meta', { key: `prompt:${key}`, text: String(map[key] ?? ''), updated_at: now });
+    updated += 1;
+  }
+  return { ok: true, updated, prompts: await listPrompts() };
+}
+
+/** Reset every shipped prompt to pack default, optionally keeping author_note. */
+export async function resetPromptsToDefaults(opts?: { keep_author_note?: boolean }): Promise<ApiResult> {
+  const keepAuthor = opts?.keep_author_note !== false;
+  const now = Date.now() / 1000;
+  let updated = 0;
+  for (const key of PROMPT_KEYS) {
+    if (keepAuthor && key === 'author_note') continue;
+    await idbPut('meta', { key: `prompt:${key}`, text: promptText(key), updated_at: now });
+    updated += 1;
+  }
+  return { ok: true, updated, keep_author_note: keepAuthor, prompts: await listPrompts() };
+}
+
+function parsePromptsImport(raw: unknown): Record<string, string> {
+  let data: unknown = raw;
+  if (typeof raw === 'string') {
+    const text = raw.trim();
+    if (!text) return {};
+    data = JSON.parse(text);
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+  const obj = data as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  const bag = obj.prompts;
+  if (bag && typeof bag === 'object' && !Array.isArray(bag)) {
+    for (const [k, v] of Object.entries(bag as Record<string, unknown>)) {
+      if (typeof k === 'string') out[k] = String(v ?? '');
+    }
+    return out;
+  }
+  if (Array.isArray(bag)) {
+    for (const item of bag) {
+      if (!item || typeof item !== 'object') continue;
+      const row = item as Record<string, unknown>;
+      const key = String(row.key || '');
+      if (!key) continue;
+      out[key] = String(row.text ?? '');
+    }
+    return out;
+  }
+  // Flat map of key → text (single-prompt export may be `{ key, text }` too).
+  if (typeof obj.key === 'string' && 'text' in obj) {
+    out[obj.key] = String(obj.text ?? '');
+    return out;
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === 'version' || k === 'ok') continue;
+    if (typeof v === 'string') out[k] = v;
+  }
+  return out;
+}
+
 // ── persistence ────────────────────────────────────────────────────────────
 
 /**
@@ -266,6 +343,21 @@ export function publicSettings(): Record<string, unknown> {
   cfg.database_path = 'indexeddb:getLocalPluginStorage';
   cfg.images_dir = 'indexeddb:inx_nximg_*';
   cfg.prompts_dir = 'embedded';
+  // Curation embedding secrets
+  const curation = (cfg.curation && typeof cfg.curation === 'object'
+    ? cfg.curation
+    : {}) as Record<string, unknown>;
+  const emb = (curation.embedding && typeof curation.embedding === 'object'
+    ? { ...(curation.embedding as Record<string, unknown>) }
+    : {}) as Record<string, unknown>;
+  if (emb.api_key) {
+    emb.api_key = '';
+    emb.api_key_configured = true;
+  } else {
+    emb.api_key_configured = false;
+  }
+  curation.embedding = emb;
+  cfg.curation = curation;
   cfg.storage = {
     ...cfg.storage,
     backend: 'indexeddb',
@@ -341,6 +433,11 @@ export async function updateSettings(patch: Record<string, unknown>): Promise<Ap
   }
   if (Object.keys(nai).length) cfg.nai = deepMerge(cfg.nai, nai);
   if (Object.keys(llm).length) cfg.llm = deepMerge(cfg.llm, llm);
+  if (payload.curation && typeof payload.curation === 'object') {
+    const { updateCurationSettings } = await import('./curation');
+    await updateCurationSettings(payload.curation as Record<string, unknown>);
+    // updateCurationSettings already saved; still fall through for other keys
+  }
   for (const key of ['bind_host', 'port', 'auth_token']) {
     if (key in payload) (cfg as Record<string, unknown>)[key] = payload[key];
   }

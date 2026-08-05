@@ -32,6 +32,7 @@ import * as generation from '../services/generation';
 import * as jobs from '../services/jobs';
 import * as naiAssets from '../services/nai-assets';
 import * as settings from '../services/settings';
+import * as curation from '../services/curation';
 import { authorized, parseQuery, q, type Headers, type Query } from './http';
 
 export interface RouteResult {
@@ -99,7 +100,19 @@ function uploadBase64(body: Record<string, unknown>): string {
 const GET_ROUTES: readonly Route[] = [
   { match: exact('/v1/settings/export'), handler: () => ok({ ok: true, json: settings.exportSettingsJson() }) },
   { match: exact('/v1/settings'), handler: () => ok({ ok: true, settings: settings.publicSettings() }) },
+  {
+    match: exact('/v1/curation/status'),
+    handler: async () => ok({ ok: true, status: await curation.curationStatus() }),
+  },
+  {
+    match: exact('/v1/curation/catalog'),
+    handler: async () => ok({ ok: true, catalog: await curation.loadCurationCatalog() }),
+  },
   { match: exact('/v1/prompts'), handler: async () => ok({ ok: true, prompts: await settings.listPrompts() }) },
+  {
+    match: exact('/v1/prompts/export'),
+    handler: async () => ok({ ok: true, ...(await settings.exportPromptsPack()) }),
+  },
   {
     match: under('/v1/prompts/'),
     handler: async ({ param }) => ok({ ok: true, key: param, text: await settings.getPrompt(param) }),
@@ -181,6 +194,43 @@ const WRITE_ROUTES: readonly Route[] = [
   {
     match: exact('/v1/settings', '/v1/settings/update'),
     handler: async ({ body }) => ok(await settings.updateSettings(body)),
+  },
+  {
+    match: exact('/v1/curation/catalog'),
+    handler: async ({ body }) => {
+      const catalog = body.catalog ?? body;
+      return ok(await curation.saveCurationCatalog(catalog));
+    },
+  },
+  {
+    match: exact('/v1/curation/catalog/reset'),
+    handler: async () => ok(await curation.resetCurationCatalog()),
+  },
+  {
+    match: exact('/v1/curation/embed'),
+    handler: async () => ok(await curation.embedCurationCatalog()),
+  },
+  {
+    match: exact('/v1/curation/embed/test'),
+    handler: async () => ok(await curation.testCurationEmbedding()),
+  },
+  {
+    match: exact('/v1/curation/settings'),
+    handler: async ({ body }) => ok(await curation.updateCurationSettings(body)),
+  },
+  {
+    match: exact('/v1/prompts/import'),
+    handler: async ({ body }) =>
+      ok(await settings.importPromptsPack(body?.json != null ? body.json : body?.prompts != null ? body : body)),
+  },
+  {
+    match: exact('/v1/prompts/reset-defaults'),
+    handler: async ({ body }) =>
+      ok(
+        await settings.resetPromptsToDefaults({
+          keep_author_note: body?.keep_author_note !== false && body?.keepAuthorNote !== false,
+        }),
+      ),
   },
   {
     match: wrapped('/v1/prompts/', '/reset'),

@@ -31,10 +31,15 @@ const MODULES = {
   'settings-schema': 'src/config/schema.ts',
   'reroll-setup': 'src/domain/prompt/reroll-setup.ts',
   'character-tags': 'src/domain/character/tags.ts',
+  'text-util': 'src/core/util/text.ts',
   'blob-url-cache': 'src/storage/blob-url-cache.ts',
   'prompt-codec': 'src/config/prompt-codec.ts',
   'style-preset-overrides': 'src/domain/style-preset-overrides.ts',
   'composition-leaves': 'src/domain/composition/leaves.ts',
+  'curation-catalog': 'src/domain/curation/catalog.ts',
+  'curation-presets': 'src/domain/curation/presets.ts',
+  'curation-match': 'src/domain/curation/match.ts',
+  'embedding-client': 'src/providers/embedding/client.ts',
 };
 
 await rm(outdir, { recursive: true, force: true });

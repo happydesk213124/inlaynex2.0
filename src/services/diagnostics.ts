@@ -234,8 +234,8 @@ export async function evaluateAutotag(bytes: ArrayBuffer, threshold: number): Pr
   const dataUrl = `data:${mime};base64,${b64}`;
   const prompt = stripCbs(await getPrompt('autotag')) || [
     'Tag ONE character reference image into Danbooru-style English prompts.',
-    'Return ONE JSON object only: {"appearance":"...","attire":"...","accessories":"..."}.',
-    'appearance = identity/hair/eyes/body (no clothes). attire = clothing only. accessories = jewelry/props/earbuds/etc.',
+    'Return ONE JSON object only: {"gender":"girl|boy","appearance":"...","attire":"...","accessories":"..."}.',
+    'gender must be exactly girl or boy from visual evidence. appearance = identity/hair/eyes/body (no clothes). attire = clothing + permanent jewelry (earrings/glasses/watch/earbuds). accessories = weapons/bags/held props/ID only (not jewelry).',
   ].join('\n');
   dbg('autotag.start', {
     message: `llm-vision ${filename} ${u8.length}B`,
@@ -248,7 +248,7 @@ export async function evaluateAutotag(bytes: ArrayBuffer, threshold: number): Pr
     {
       role: 'user',
       content: [
-        { type: 'text', text: 'Tag this character image. JSON only with appearance, attire, accessories.' },
+        { type: 'text', text: 'Tag this character image. JSON only with gender, appearance, attire, accessories.' },
         { type: 'image_url', image_url: { url: dataUrl } },
       ],
     },
@@ -264,16 +264,17 @@ export async function evaluateAutotag(bytes: ArrayBuffer, threshold: number): Pr
   const appearance = cleanText(parsed.appearance || '', 4000);
   const attire = cleanText(parsed.attire || '', 4000);
   const accessories = cleanText(parsed.accessories || '', 4000);
+  const gender = cleanText(parsed.gender || '', 20);
   const text = cleanText(parsed.text || [appearance, attire, accessories].filter(Boolean).join(', '), 8000);
   if (!appearance && !attire && !accessories) {
     throw new Error('LLM이 외형/의상/악세사리 태그를 반환하지 않았습니다. 비전(이미지) 지원 모델인지 확인하세요.');
   }
   const tags = text.split(',').map((t) => t.trim()).filter(Boolean);
   dbg('autotag.done', {
-    message: `app=${appearance.length} attire=${attire.length} acc=${accessories.length}`,
+    message: `gender=${gender || '-'} app=${appearance.length} attire=${attire.length} acc=${accessories.length}`,
     focus: true,
   });
-  return {
+  const result: Record<string, unknown> = {
     ok: true,
     appearance,
     attire,
@@ -284,4 +285,7 @@ export async function evaluateAutotag(bytes: ArrayBuffer, threshold: number): Pr
     threshold: Number(threshold || 0.2),
     engine: 'llm-vision',
   };
+  // Only surface gender when set — keeps 1.x parity when the mock returns no gender.
+  if (gender) result.gender = gender;
+  return result;
 }

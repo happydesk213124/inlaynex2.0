@@ -16,6 +16,12 @@ prompts/*.txt
 # parity/audit, never publish.
 reference/old-built-plugin.js
 
+# Asset Maid extract (NSFW catalog reference) — local only.
+reference/asset-maid-extract/
+
+# Local peek helpers (dev only)
+tools/_peek-vendor*.mjs
+
 # The built plugin is the artifact users load into RisuAI, so it is committed
 # even though it is generated. Everything else under dist/ is not.
 dist/*

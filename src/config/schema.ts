@@ -3,7 +3,36 @@
 /** NovelAI base natural-language mode (replaces the old boolean toggle). */
 export type NaturalBaseMode = 'off' | 'short' | 'detailed' | 'supplement';
 
+/** Settings-tab curation pipeline mode. */
+export type CurationMode = 'off' | 'two_stage' | 'embed_snap';
+
 const NATURAL_BASE_MODES = new Set<NaturalBaseMode>(['off', 'short', 'detailed', 'supplement']);
+const CURATION_MODES = new Set<CurationMode>(['off', 'two_stage', 'embed_snap']);
+
+/** Clamp card.person_tag_weight to 0–5 (missing/NaN → 3). */
+export function normalizePersonTagWeight(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 3;
+  return Math.max(0, Math.min(5, Math.round(n)));
+}
+
+/**
+ * Normalize `curation.mode` from legacy card.composition_curation / unknown strings.
+ * Missing → `off`. Legacy true/`full` → `two_stage`.
+ */
+export function normalizeCurationMode(value: unknown): CurationMode {
+  if (value === true || value === 'true' || value === 1 || value === '1' || value === 'on' || value === 'full') {
+    return 'two_stage';
+  }
+  if (value === false || value === 'false' || value === 0 || value === '0' || value === 'none') return 'off';
+  if (typeof value === 'string' && CURATION_MODES.has(value as CurationMode)) return value as CurationMode;
+  return 'off';
+}
+
+/** Clamp `curation.strict_ids` to a boolean. Missing/unknown → false. */
+export function normalizeCurationStrictIds(value: unknown): boolean {
+  return value === true || value === 'true' || value === 1 || value === '1' || value === 'on';
+}
 
 /**
  * Normalize `card.natural_base` from legacy booleans / unknown strings.
@@ -86,13 +115,36 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   else card.lore_extra = 'tags';
   // natural_base: legacy boolean → "off" | "short" | "detailed" | "supplement"
   card.natural_base = normalizeNaturalBaseMode(card.natural_base);
-  // composition_curation: LLM picks curated leaf ids instead of freeform camera/pose tags
-  card.composition_curation =
+  // person_tag_weight: NAI emphasis on Inlay person-count tags (0 = plain, 1–5 = N::…::)
+  card.person_tag_weight = normalizePersonTagWeight(card.person_tag_weight);
+  // curation.mode: off | two_stage | embed_snap (legacy card.composition_curation → two_stage)
+  const curationRaw =
+    settings.curation && typeof settings.curation === 'object' && !Array.isArray(settings.curation)
+      ? { ...(settings.curation as Record<string, unknown>) }
+      : {};
+  const legacyOn =
     card.composition_curation === true
     || card.composition_curation === 'true'
     || card.composition_curation === 1
     || card.composition_curation === '1'
     || card.composition_curation === 'on';
+  if (curationRaw.mode == null && legacyOn) curationRaw.mode = 'two_stage';
+  curationRaw.mode = normalizeCurationMode(curationRaw.mode);
+  // strict_ids: two_stage assembles ONLY from catalog option ids (no freeform
+  // camera/situation/natural/action fallback). Meaningless outside two_stage,
+  // but stored as-is so re-enabling two_stage remembers the last choice.
+  curationRaw.strict_ids = normalizeCurationStrictIds(curationRaw.strict_ids);
+  const embRaw =
+    curationRaw.embedding && typeof curationRaw.embedding === 'object' && !Array.isArray(curationRaw.embedding)
+      ? { ...(curationRaw.embedding as Record<string, unknown>) }
+      : {};
+  if (!embRaw.provider) embRaw.provider = 'openai';
+  if (!embRaw.model) embRaw.model = 'text-embedding-3-small';
+  if (!embRaw.endpoint) embRaw.endpoint = 'https://api.openai.com/v1/embeddings';
+  if (embRaw.api_key == null) embRaw.api_key = '';
+  curationRaw.embedding = embRaw;
+  settings.curation = curationRaw;
+  card.composition_curation = false;
   // Left-line overlay + always-on image are one feature: overlay_markers is canonical.
   const overlayOn = card.overlay_markers !== false;
   card.overlay_markers = overlayOn;

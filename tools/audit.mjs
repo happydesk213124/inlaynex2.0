@@ -215,6 +215,8 @@ function auditPromptPack(out) {
     // Base attire/accessories stay fixed on the roster; registered block shows
     // them and shot wear is generation-only override.
     'appearance_inject',
+    // Vision autotag now also returns gender (female|male) for actor routing.
+    'autotag',
   ]);
   const changed = Object.keys(legacy).filter((k) => k in pack && legacy[k] !== pack[k]);
   const unexplained = changed.filter((k) => !INTENTIONAL_PROMPT_DRIFT.has(k));

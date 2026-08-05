@@ -7,10 +7,12 @@ import {
   importSettings,
 } from "../.test-build/settings-schema.mjs";
 
-test("legacy 600 percent migrates to new 100 percent without changing visual size", () => {
-  const migrated = migrateSettings({ card: { inline_thumb_pct: 600 } });
-  assert.equal(migrated.card.inline_thumb_pct, 100);
-  assert.equal(migrated.card.scale_semantics_version, 2);
+test("person_tag_weight migrates to 0–5 (default 3)", () => {
+  assert.equal(migrateSettings({ card: {} }).card.person_tag_weight, 3);
+  assert.equal(migrateSettings({ card: { person_tag_weight: 0 } }).card.person_tag_weight, 0);
+  assert.equal(migrateSettings({ card: { person_tag_weight: 4.6 } }).card.person_tag_weight, 5);
+  assert.equal(migrateSettings({ card: { person_tag_weight: 99 } }).card.person_tag_weight, 5);
+  assert.equal(migrateSettings({ card: { person_tag_weight: "2" } }).card.person_tag_weight, 2);
 });
 
 test("settings export omits API keys and auth tokens", () => {
@@ -47,11 +49,20 @@ test("natural_base migrates boolean and aliases to mode enum", () => {
   assert.equal(migrateSettings({ card: {} }).card.natural_base, "short");
 });
 
-test("composition_curation migrates to boolean", () => {
-  assert.equal(migrateSettings({ card: { composition_curation: true } }).card.composition_curation, true);
-  assert.equal(migrateSettings({ card: { composition_curation: "true" } }).card.composition_curation, true);
-  assert.equal(migrateSettings({ card: { composition_curation: false } }).card.composition_curation, false);
-  assert.equal(migrateSettings({ card: {} }).card.composition_curation, false);
+test("composition_curation legacy true migrates to curation.mode two_stage", () => {
+  const migrated = migrateSettings({ card: { composition_curation: true } });
+  assert.equal(migrated.card.composition_curation, false);
+  assert.equal(migrated.curation.mode, "two_stage");
+  assert.equal(migrateSettings({ card: { composition_curation: false } }).curation.mode, "off");
+  assert.equal(migrateSettings({ curation: { mode: "embed_snap" } }).curation.mode, "embed_snap");
+});
+
+test("curation.strict_ids normalizes to boolean, default false", () => {
+  assert.equal(migrateSettings({ card: {} }).curation.strict_ids, false);
+  assert.equal(migrateSettings({ curation: { strict_ids: true } }).curation.strict_ids, true);
+  assert.equal(migrateSettings({ curation: { strict_ids: "true" } }).curation.strict_ids, true);
+  assert.equal(migrateSettings({ curation: { strict_ids: "nope" } }).curation.strict_ids, false);
+  assert.equal(migrateSettings({ curation: { strict_ids: 1 } }).curation.strict_ids, true);
 });
 
 test("overlay_markers is canonical for left-line overlay + inline previews", () => {

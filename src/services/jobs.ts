@@ -51,7 +51,12 @@ import { flushPersist, idbGet, idbPut } from '../storage/stores';
 import { getConfig, jobEpochByKey, jobRunMeta } from './context';
 import { mergeRosterFromTagged } from './characters';
 import { buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage } from './generation';
-import { buildTaggerMessages, flattenShots } from './tagger';
+import { buildTaggerMessages, extractTaggerChatContext, flattenShots } from './tagger';
+import {
+  getCurationMode,
+  refineShotsWithCuration,
+  snapShotsSceneTags,
+} from './curation';
 import { deleteCard, unlinkCardsForMessage } from './gallery';
 import { busyReplyForRequest, jobKey } from './job-locks';
 import { getPrompt } from './settings';
@@ -336,6 +341,8 @@ async function runJob(jobId: string): Promise<void> {
     });
 
     const messages = await buildTaggerMessages(request);
+    // Same chat user blob as pass 1 — keep byte-identical for LLM prompt cache on pass 2.
+    const chatContext = extractTaggerChatContext(messages);
     dbg('job.tagger.messages', { msgs: messages.length });
     if (getConfig().card?.preprocessing) {
       const pre = stripCbs(await getPrompt('preprocess'));
@@ -359,6 +366,44 @@ async function runJob(jobId: string): Promise<void> {
     const imageMin = Math.max(1, Number(card.image_min ?? 1));
     const imageMax = Math.max(imageMin, Number(card.image_max ?? 3));
     shots = shots.slice(0, imageMax);
+
+    const curationMode = getCurationMode();
+    if (curationMode === 'two_stage') {
+      await setJob(jobId, 'tagging', {
+        phase: 'tagging',
+        progress: 0.35,
+        message: '큐레이션 2단 씬 태그 보강 중…',
+        shot_count: shots.length,
+        shot_done: 0,
+        debug_stage: 'job.curation_refine',
+      });
+      if (await cancelJobIfStale(jobId, 'superseded during curation refine')) return;
+      // One LLM call for all shots — not per image. Chat context = pass-1 user text (cache).
+      await refineShotsWithCuration(shots as unknown as Record<string, unknown>[], { chatContext });
+    } else if (curationMode === 'embed_snap') {
+      await setJob(jobId, 'tagging', {
+        phase: 'tagging',
+        progress: 0.4,
+        message: '씬 태그 임베딩 매칭 중…',
+        shot_count: shots.length,
+        shot_done: 0,
+        debug_stage: 'job.curation_snap',
+      });
+      if (await cancelJobIfStale(jobId, 'superseded during curation snap')) return;
+      // One embedding batch for all shots' scene tags.
+      const result = await snapShotsSceneTags(shots as unknown as Record<string, unknown>[]);
+      if (!result.ok) {
+        dbg('job.curation_snap.fallback', { message: result.reason }, 'warn');
+        await setJob(jobId, 'tagging', {
+          phase: 'tagging',
+          progress: 0.45,
+          message: result.reason || '임베딩 없음 → 큐레이션 없이 생성',
+          shot_count: shots.length,
+          shot_done: 0,
+          debug_stage: 'job.curation_snap_fallback',
+        });
+      }
+    }
 
     const allChars = shots.flatMap((shot) => shot.characters || []);
     const unifiedSessionId = cleanText(request.unified_session_id || '', 200);

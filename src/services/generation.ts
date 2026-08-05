@@ -29,22 +29,27 @@ import { dedupeShotCharacters, resolveCharacter } from '../domain/character/rost
 import {
   characterMaxLimit,
   composeCharacterCaptionTags,
+  emphasizePersonTags,
   normalizePersonTagMode,
   personCountTagsForShot,
   stripPersonCountTags,
 } from '../domain/character/tags';
-import {
-  compositionCurationOn,
-  resolveCompositionForShot,
-} from '../domain/composition/leaves';
 import { resolveGenerationCfgParams } from '../domain/style-preset-overrides';
 import { generateViaComfy, imageBackendKind } from '../providers/comfy/client';
 import { generateT2i } from '../providers/nai/client';
 import { modelToNaia, type CharacterReference, type T2iRequest, type VibeReference } from '../providers/nai/payload';
 import { idbGet, idbPut, imageLocation } from '../storage/stores';
 import { getConfig } from './context';
+import { loadCurationCatalog } from './curation';
 import { ensurePresetVibeEncoded, ensureVibeEncoded, getReferenceImageBytes } from './nai-assets';
 import { getPrompt } from './settings';
+
+/** NAI width/height: accept any positive size up to 5000 (no 832/1216 portrait ceiling). */
+function clampNaiDim(value: unknown, fallback: number): number {
+  const n = Number(value);
+  const base = Number.isFinite(n) && n > 0 ? Math.round(n) : fallback;
+  return Math.max(1, Math.min(5000, base));
+}
 
 /**
  * One NovelAI character caption. Deliberately anonymous — the provider payload
@@ -160,7 +165,11 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   const chars = dedupeShotCharacters(shot.characters || [], roster, charMax).slice(0, charMax);
   const n = Math.max(1, chars.length);
   const personMode = normalizePersonTagMode(card.person_tag_mode, card.auto_person_tags);
-  const person = personCountTagsForShot(chars, roster, personMode);
+  // Only source of person-count tags: cast count, optionally wrapped N::1girl, 1boy::
+  const person = emphasizePersonTags(
+    personCountTagsForShot(chars, roster, personMode),
+    card.person_tag_weight,
+  );
   const [filePos, fileNeg] = extractPreset(await getPrompt('preset_1'));
   const presets: unknown[] = Array.isArray(card.presets) ? card.presets : [];
   const activeId = cleanText(card.active_preset_id, 120);
@@ -183,39 +192,45 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
     styleNeg = joinTags(cleanText(card.custom_neg), fileNeg);
   }
   let situation: unknown = shot.situation || shot.scene;
-  if (personMode !== 'off') situation = stripPersonCountTags(situation || '');
-  const curation = compositionCurationOn(card);
-  const resolvedLeaf = curation ? resolveCompositionForShot(shot) : null;
-  let setup: string;
   const lockedSetup = cleanText(args.lockedSetup || '');
+  let setup: string;
   if (lockedSetup) {
     setup = lockedSetup;
-  } else if (resolvedLeaf) {
-    // Curated leaf: global pose/camera + background only (no freeform camera/situation).
-    setup = joinTags(resolvedLeaf.global, shot.place);
-    if (card.mode === 'asset') setup = joinTags(setup, 'white background', 'simple background', 'looking at viewer', 'portrait');
-    dbg('generation.composition_leaf', {
-      leaf: resolvedLeaf.leafId,
-      variant: resolvedLeaf.variantId,
-      modifiers: resolvedLeaf.modifierIds,
-    });
   } else {
     setup = joinTags(shot.camera, situation, shot.place, shot.action);
-    if (card.mode === 'asset') setup = joinTags(setup, 'white background', 'simple background', 'cowboy shot', 'looking at viewer', 'portrait');
+    if (card.mode === 'asset') {
+      setup = joinTags(setup, 'white background', 'simple background', 'cowboy shot', 'looking at viewer', 'portrait');
+    }
   }
-  // Natural-language base phrase (LLM shots[].natural) — mode from card.natural_base.
-  // Unchanged when composition_curation is on: leaf handles pose; natural stays atmospheric.
   const naturalMode = normalizeNaturalBaseMode(card.natural_base);
   const naturalCap = naturalMode === 'supplement' ? 600 : naturalMode === 'detailed' ? 480 : 400;
   const natural =
     naturalMode === 'off'
       ? ''
       : cleanText(shot.natural || shot.natural_base || shot.nl || '', naturalCap);
-  let main = joinTags(person, stylePos, natural, setup);
+  let fixedPos = '';
+  let fixedNeg = '';
+  if (cleanText(shot.composition_id, 160) || cleanText(shot.curation_fixed_positive, 200)) {
+    try {
+      const cat = await loadCurationCatalog();
+      fixedPos = cleanText(shot.curation_fixed_positive, 800) || cleanText(cat.fixed_positive, 800);
+      fixedNeg = cleanText(cat.fixed_negative, 800);
+    } catch {
+      fixedPos = cleanText(shot.curation_fixed_positive, 800);
+    }
+  }
+  // Cut foreign person-count tags from body, then prepend our ONE wrapped block.
+  // joinTags must not split N::1girl, 1boy:: (see splitTagTokens).
+  let body = joinTags(stylePos, natural, setup, fixedPos);
+  if (personMode !== 'off') {
+    body = stripPersonCountTags(body);
+    setup = stripPersonCountTags(setup);
+  }
+  let main = person ? (body ? `${person}, ${body}` : person) : body;
   const naiaModel = modelToNaia(nai.model || 'nai-diffusion-4-5-full');
   if (nai.apply_quality_tags !== false) main += QUALITY_TAGS[naiaModel] || '';
   const ucPreset = cleanText(nai.uc_preset) || 'human_focus';
-  const neg = joinTags(styleNeg, (UC_PRESETS[naiaModel] || {})[ucPreset] || '');
+  const neg = joinTags(styleNeg, fixedNeg, (UC_PRESETS[naiaModel] || {})[ucPreset] || '');
 
   const captions: NaiCaption[] = [];
   const charMeta: GenerationCharacter[] = [];
@@ -223,14 +238,7 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
     const char = chars[idx];
     const name = cleanText(char.name, 200);
     const stored = name ? resolveCharacter(name, roster) : null;
-    // When curation supplies actor pose tags, drop freeform action so leaf wins.
-    const shotForCaption = resolvedLeaf
-      ? { ...char, action: '' }
-      : char;
-    const prompt = joinTags(
-      composeCharacterCaptionTags(stored, shotForCaption),
-      resolvedLeaf?.actorTags[idx] || '',
-    );
+    const prompt = joinTags(composeCharacterCaptionTags(stored, char));
     const uc = cleanText(char.negative);
     const cx = n === 1 ? 0.5 : Math.round((0.1 + (0.8 * idx) / Math.max(1, n - 1)) * 10) / 10;
     const cy = 0.5;
@@ -311,9 +319,9 @@ export async function generateImage(plan: ImageRequest): Promise<GeneratedImage>
   const req: T2iRequest = {
     prompt: plan.main,
     negative_prompt: plan.neg,
-    // Keep payload small — Risu nativeFetch has no body stream; arrayBuffer() of multi-MB ZIPs often hangs.
-    width: Math.min(Number(nai.width ?? 640) || 640, 832),
-    height: Math.min(Number(nai.height ?? 960) || 960, 1216),
+    // User-chosen NAI size; only clamp absurd values (1–5000). No 832×1216 portrait ceiling.
+    width: clampNaiDim(nai.width, 832),
+    height: clampNaiDim(nai.height, 1216),
     seed: Number(nai.seed ?? 0) || 0,
     steps: Math.min(Number(nai.steps ?? 28) || 28, 28),
     cfg_scale: cfgParams.cfg_scale,
@@ -326,11 +334,6 @@ export async function generateImage(plan: ImageRequest): Promise<GeneratedImage>
     character_refs: characterRefs,
     vibes,
   };
-  // Hard cap pixel count for plugin RPC reliability (~0.8MP).
-  if (req.width * req.height > 832 * 1216) {
-    req.width = 640;
-    req.height = 960;
-  }
   dbg('nai.generate.dims', { message: `${req.width}x${req.height}`, steps: req.steps, focus: true });
   if (!req.seed) req.seed = Math.floor(Math.random() * 4294967295) || 1;
   const apiUrl = cleanText(nai.request_url) || API_URL;

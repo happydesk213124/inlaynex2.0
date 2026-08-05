@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "name": "Inlay default (SFW)",
+  "groups": [
+    {
+      "id": "composition.solo",
+      "label": "솔로 구도",
+      "options": [
+        { "id": "1girl_solo_portrait", "description": "여성 1명 초상·상반신·시청자 응시", "tags": "cowboy shot, looking at viewer" },
+        { "id": "1boy_solo_portrait", "description": "남성 1명 초상·상반신·시청자 응시", "tags": "cowboy shot, looking at viewer" },
+        { "id": "solo_from_side", "description": "혼자 옆모습", "tags": "from side, cowboy shot" },
+        { "id": "solo_upper_body", "description": "혼자 상반신 클로즈업", "tags": "upper body, looking at viewer" }
+      ]
+    },
+    {
+      "id": "composition.duo",
+      "label": "2인 구도",
+      "options": [
+        { "id": "facing_each_other", "description": "남녀가 서로를 향함", "tags": "2::facing another::", "slot": "char", "by_slot": { "female": "2::facing another::", "male": "2::facing another::" } },
+        { "id": "male_behind_female", "description": "남성이 여성 뒤", "tags": "2::from side::, 2::side-by-side::, 2::behind another::" },
+        { "id": "side_by_side", "description": "나란히 서 있음", "tags": "2::side-by-side::, 2::from side::" },
+        { "id": "2girls_facing", "description": "여성 둘이 마주봄", "tags": "2::facing another::" },
+        { "id": "hug_front", "description": "앞에서 안기", "tags": "hug, facing another" }
+      ]
+    },
+    {
+      "id": "camera.framing",
+      "label": "카메라/프레이밍",
+      "options": [
+        { "id": "cowboy_shot", "description": "허리 위", "tags": "cowboy shot" },
+        { "id": "full_body", "description": "전신", "tags": "full body" },
+        { "id": "upper_body", "description": "상반신", "tags": "upper body" },
+        { "id": "close_up", "description": "얼굴 클로즈업", "tags": "close-up, face" },
+        { "id": "from_above", "description": "위에서", "tags": "from above" },
+        { "id": "from_below", "description": "아래에서", "tags": "from below" },
+        { "id": "from_side", "description": "옆에서", "tags": "from side" },
+        { "id": "pov", "description": "1인칭 시점", "tags": "pov, pov hands" }
+      ]
+    },
+    {
+      "id": "pose.hands",
+      "label": "손/포즈",
+      "options": [
+        { "id": "hand_on_own_chest", "description": "자신의 가슴에 손", "tags": "hand on own chest" },
+        { "id": "hands_up", "description": "손 들기", "tags": "hands up" },
+        { "id": "reaching_out", "description": "손 뻗기", "tags": "reaching out" },
+        { "id": "holding_hands", "description": "손잡기", "tags": "holding hands" },
+        { "id": "arm_around_waist", "description": "허리에 팔", "tags": "arm around waist" },
+        { "id": "hug_from_behind", "description": "뒤에서 안기", "tags": "hug from behind" }
+      ]
+    },
+    {
+      "id": "expression.basic",
+      "label": "표정",
+      "options": [
+        { "id": "smile", "description": "미소", "tags": "smile" },
+        { "id": "blush", "description": "홍조", "tags": "blush" },
+        { "id": "serious", "description": "진지", "tags": "serious" },
+        { "id": "open_mouth", "description": "입 벌림", "tags": "open mouth" },
+        { "id": "closed_eyes", "description": "눈 감음", "tags": "closed eyes" },
+        { "id": "looking_at_another", "description": "상대를 봄", "tags": "looking at another" }
+      ]
+    },
+    {
+      "id": "place.indoor",
+      "label": "실내 배경",
+      "options": [
+        { "id": "bedroom", "description": "침실", "tags": "bedroom, indoors" },
+        { "id": "classroom", "description": "교실", "tags": "classroom, indoors" },
+        { "id": "living_room", "description": "거실", "tags": "living room, indoors" },
+        { "id": "bathroom", "description": "욕실", "tags": "bathroom, indoors" },
+        { "id": "cafe", "description": "카페", "tags": "cafe, indoors" }
+      ]
+    },
+    {
+      "id": "place.outdoor",
+      "label": "야외 배경",
+      "options": [
+        { "id": "outdoors_day", "description": "낮 야외", "tags": "outdoors, blue sky" },
+        { "id": "street", "description": "거리", "tags": "street, outdoors" },
+        { "id": "park", "description": "공원", "tags": "park, outdoors, tree" },
+        { "id": "beach", "description": "해변", "tags": "beach, outdoors, ocean" },
+        { "id": "night_city", "description": "밤 도시", "tags": "outdoors, night, cityscape" }
+      ]
+    }
+  ]
+}

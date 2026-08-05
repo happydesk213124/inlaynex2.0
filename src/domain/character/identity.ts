@@ -16,6 +16,42 @@ import type { CharacterRecord } from '../../core/types.ts';
 /** A roster row as it arrives from storage, the UI or an LLM — every field optional. */
 export type CharacterInput = Partial<CharacterRecord>;
 
+/** Normalize stored/API gender to `girl` | `boy` | `other` | `""`. */
+export function normalizeGender(raw: unknown): 'girl' | 'boy' | 'other' | '' {
+  const t = clean(raw).toLowerCase();
+  if (!t) return '';
+  if (['girl', 'female', 'f', 'woman', '여자', '여'].includes(t)) return 'girl';
+  if (['boy', 'male', 'm', 'man', '남자', '남'].includes(t)) return 'boy';
+  if (['other', 'unknown', 'unset', '미정', '기타'].includes(t)) return 'other';
+  return '';
+}
+
+/**
+ * One-shot guess from exact look tokens when roster has no gender yet.
+ * Returns `girl` | `boy` | `""` (never invents `other`).
+ */
+export function inferGenderFromExactTags(...parts: unknown[]): 'girl' | 'boy' | '' {
+  // Local exact-token check — avoid importing tags (cycle).
+  const FEMALE = new Set(['girl', 'woman', 'female']);
+  const MALE = new Set(['boy', 'man', 'male']);
+  let female = 0;
+  let male = 0;
+  for (const part of parts) {
+    for (const raw of String(part ?? '').split(',')) {
+      let tok = raw.trim().toLowerCase();
+      if (!tok) continue;
+      const weighted = tok.match(/^\d+(?:\.\d+)?::(.+)::$/);
+      if (weighted) tok = weighted[1]!.trim().toLowerCase();
+      tok = tok.replace(/_/g, ' ').trim();
+      if (FEMALE.has(tok)) female += 1;
+      if (MALE.has(tok)) male += 1;
+    }
+  }
+  if (female > male) return 'girl';
+  if (male > female) return 'boy';
+  return '';
+}
+
 /** A row after `migrateCharacter`: identity fields are guaranteed present. */
 export type MigratedCharacter = CharacterInput & {
   id: string;
@@ -28,6 +64,7 @@ export type MigratedCharacter = CharacterInput & {
   priority: number;
   attire_locked: boolean;
   accessories_locked: boolean;
+  gender: 'girl' | 'boy' | 'other' | '';
   schema_version: number;
 };
 
@@ -41,6 +78,8 @@ export interface CharacterView {
 const clean = (value: unknown): string => String(value ?? '').trim().replace(/\s+/g, ' ');
 const key = (value: unknown): string =>
   clean(value).normalize('NFKC').toLocaleLowerCase().replace(/[\s_.·•･-]+/g, '');
+/** Default ON — only explicit `false` unlocks wear. */
+const wearLockedField = (value: unknown): boolean => value !== false;
 
 function list(value: unknown): string[] {
   const input = Array.isArray(value) ? value : String(value ?? '').split(/[,/\n]/);
@@ -82,8 +121,9 @@ export function migrateCharacter(raw: CharacterInput = {}): MigratedCharacter {
     surname_variants: list(raw.surname_variants),
     given_name_variants: list(raw.given_name_variants),
     priority: Number.isFinite(Number(raw.priority)) ? Number(raw.priority) : 0,
-    attire_locked: raw.attire_locked === true,
-    accessories_locked: raw.accessories_locked === true,
+    attire_locked: raw.attire_locked !== false,
+    accessories_locked: raw.accessories_locked !== false,
+    gender: normalizeGender(raw.gender ?? raw.sex),
     schema_version: 2,
   };
 }
@@ -197,8 +237,10 @@ function foldGroup(group: MigratedCharacter[]): MigratedCharacter {
     const accessories = clean(entry.accessories || '');
     const original = clean(entry.original || '');
     if (appearance.length > clean(best.appearance || '').length) best.appearance = appearance;
-    if (!best.attire_locked && attire.length > clean(best.attire || '').length) best.attire = attire;
-    if (!best.accessories_locked && accessories.length > clean(best.accessories || '').length) best.accessories = accessories;
+    if (!wearLockedField(best.attire_locked) && attire.length > clean(best.attire || '').length) best.attire = attire;
+    if (!wearLockedField(best.accessories_locked) && accessories.length > clean(best.accessories || '').length) {
+      best.accessories = accessories;
+    }
     if (original && !clean(best.original || '')) best.original = original;
   }
   // Prefer non-empty surname/given from the priority winner, else any member.
@@ -229,19 +271,19 @@ export function mergeCharacterView(characters: CharacterInput[] = []): Character
   return { records, active, groups };
 }
 
-/** Writes a new attire unless the row is attire-locked. */
+/** Writes attire unless the row is attire-locked. */
 export function applyAttireUpdate(character: CharacterInput, nextAttire: unknown): MigratedCharacter {
   const migrated = migrateCharacter(character);
-  if (migrated.attire_locked) return migrated;
+  if (wearLockedField(migrated.attire_locked)) return migrated;
   return { ...migrated, attire: clean(nextAttire) };
 }
 
-/** Writes new accessories unless the row is accessories-locked. */
+/** Writes accessories unless the row is accessories-locked. */
 export function applyAccessoriesUpdate(
   character: CharacterInput,
   nextAccessories: unknown,
 ): MigratedCharacter {
   const migrated = migrateCharacter(character);
-  if (migrated.accessories_locked) return migrated;
+  if (wearLockedField(migrated.accessories_locked)) return migrated;
   return { ...migrated, accessories: clean(nextAccessories) };
 }

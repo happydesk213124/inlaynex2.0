@@ -23,12 +23,30 @@ export function toOptionalFloat(value: unknown): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+/**
+ * Split a tag string on commas, but keep NovelAI `weight::...::` groups intact
+ * so `5::1girl, 1boy::` stays one token (not `5::1girl` + `1boy::`).
+ */
+export function splitTagTokens(text: unknown): string[] {
+  const raw = cleanText(text);
+  if (!raw) return [];
+  const tokens: string[] = [];
+  // Weighted group first; otherwise bare run until the next comma.
+  const re = /-?\d+(?:\.\d+)?::(?:(?!::).)*?::|[^,]+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) {
+    const t = m[0]!.trim();
+    if (t) tokens.push(t);
+  }
+  return tokens;
+}
+
 /** Merges comma-separated tag strings, dropping duplicates case-insensitively. */
 export function joinTags(...parts: unknown[]): string {
   const items: string[] = [];
   const seen = new Set<string>();
   for (const part of parts) {
-    for (const token of cleanText(part).split(',')) {
+    for (const token of splitTagTokens(part)) {
       const t = token.trim();
       if (!t) continue;
       const key = t.toLowerCase();

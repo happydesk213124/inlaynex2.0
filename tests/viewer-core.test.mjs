@@ -32,6 +32,7 @@ import {
   shouldKeepStickyThumbHidden,
   resolveStickyThumbPct,
   stickyThumbBoxFromPct,
+  fitBoxInside,
   composeStickyThumbHtml,
   stickyThumbNeedsHtmlPaint,
   stickyCornerImageBox,
@@ -222,10 +223,30 @@ test("stickyThumbBoxFromPct allows 0 size for hide-by-pct", () => {
   assert.deepEqual(stickyThumbBoxFromPct(50, 200, 160), { pct: 50, w: 100, h: 80 });
 });
 
-test("composeStickyThumbHtml uses a single img (no dual data-URL stack)", () => {
+test("fitBoxInside preserves landscape/square/portrait inside envelope", () => {
+  // landscape 1216x832 in 528x720 envelope
+  assert.deepEqual(fitBoxInside(528, 720, 1216, 832), { w: 528, h: 361 });
+  // square
+  assert.deepEqual(fitBoxInside(528, 720, 1024, 1024), { w: 528, h: 528 });
+  // portrait (fits height-limited)
+  assert.deepEqual(fitBoxInside(528, 720, 832, 1216), { w: 493, h: 720 });
+  // unknown dims → envelope
+  assert.deepEqual(fitBoxInside(528, 720, 0, 0), { w: 528, h: 720 });
+});
+
+test("composeStickyThumbHtml uses contain (full image, no crop)", () => {
   const html = composeStickyThumbHtml("new", "old");
   assert.match(html, /new/);
+  assert.match(html, /object-fit:contain/);
+  assert.match(html, /background:transparent/);
+  assert.doesNotMatch(html, /background:#0b0f18/);
   assert.equal((html.match(/<img/g) || []).length, 1);
+});
+
+test("composeStickyThumbHtml empty placeholder is transparent", () => {
+  const html = composeStickyThumbHtml("", "");
+  assert.match(html, /background:transparent/);
+  assert.doesNotMatch(html, /background:#0b0f18/);
 });
 
 test("stickyThumbNeedsHtmlPaint skips when already painted", () => {
@@ -626,10 +647,11 @@ test("galleryStripContentWidth includes separator and clamps scroll offset", () 
 });
 
 test("parseAutotagLookJson reads fenced JSON look fields", () => {
-  const out = parseAutotagLookJson('```json\n{"appearance":"1girl, blue eyes","attire":"school uniform","accessories":"airpods in one ear"}\n```');
+  const out = parseAutotagLookJson('```json\n{"gender":"girl","appearance":"1girl, blue eyes","attire":"school uniform","accessories":"airpods in one ear"}\n```');
   assert.equal(out.appearance, "1girl, blue eyes");
   assert.equal(out.attire, "school uniform");
   assert.equal(out.accessories, "airpods in one ear");
+  assert.equal(out.gender, "girl");
   assert.match(out.text, /airpods/);
 });
 

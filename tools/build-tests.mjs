@@ -39,6 +39,7 @@ const MODULES = {
   'curation-catalog': 'src/domain/curation/catalog.ts',
   'curation-presets': 'src/domain/curation/presets.ts',
   'curation-match': 'src/domain/curation/match.ts',
+  'curation-focus': 'src/domain/curation/focus.ts',
   'embedding-client': 'src/providers/embedding/client.ts',
 };
 

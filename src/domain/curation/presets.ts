@@ -30,10 +30,17 @@ export interface PresetLeafInfo {
   path: string[];
   /** Top-level composition id (`1girl_1boy`, …). */
   composition: string;
+  /** Category under composition (`general`, `foreplay`, `insertion`, …) when present. */
+  category: string;
   when: string;
   avoid: string;
   variants: string[];
   description: string;
+  /**
+   * Maid-style selection_modifiers: modifier **group** refs this leaf unlocks
+   * (e.g. `interaction.partner.mouth_contact`). Not option ids — those stay in pass 2.
+   */
+  selectionModifiers: string[];
 }
 
 export interface PresetModifierBinding {
@@ -193,15 +200,25 @@ export function listPresetLeaves(catalog: CurationCatalog): PresetLeafInfo[] {
   if (!root) return [];
   const out: PresetLeafInfo[] = [];
 
-  const walk = (node: PresetNode, path: string[], composition: string) => {
+  const walk = (
+    node: PresetNode,
+    path: string[],
+    composition: string,
+    category: string,
+  ) => {
     const id = cleanText(node.id, 160);
+    const type = cleanText(node.type, 40);
     const nextPath = id && id !== 'preset' ? [...path, id] : path;
     const nextComp = !composition && id && id !== 'preset' ? id : composition;
+    const nextCat =
+      type === 'category' && id
+        ? id
+        : category;
     const structuralKids = Array.isArray(node.children)
       ? (node.children.map(asNode).filter(Boolean) as PresetNode[])
       : [];
     const vars = variantNodes(node);
-    const isPosition = cleanText(node.type, 40) === 'position';
+    const isPosition = type === 'position';
     // Category/composition keep walking children; position (or variant-only) is pickable.
     const isPickable =
       id
@@ -209,23 +226,27 @@ export function listPresetLeaves(catalog: CurationCatalog): PresetLeafInfo[] {
       && (isPosition || (vars.length > 0 && structuralKids.length === 0));
 
     if (isPickable) {
+      const mods = modifiersOf(node);
+      const selectionModifiers = [...new Set(mods.map((m) => m.ref).filter(Boolean))];
       out.push({
         id,
         path: nextPath,
         composition: nextComp || id,
+        category: nextCat,
         when: whenText(node),
         avoid: avoidText(node),
         variants: vars.map((v) => cleanText(v.id, 120)).filter(Boolean),
         description: cleanText(node.description, 300) || id,
+        selectionModifiers,
       });
     }
 
     for (const child of structuralKids) {
-      walk(child, nextPath, nextComp);
+      walk(child, nextPath, nextComp, nextCat);
     }
   };
 
-  walk(root, [], '');
+  walk(root, [], '', '');
   return out;
 }
 
@@ -568,9 +589,12 @@ function maidAnalyzerSelectionRules(): string[] {
     '',
     '## Walk the tree',
     'Read the leaf list as composition → category → position.',
-    'For each candidate use description / when / avoid. Prefer the leaf whose when matches the current moment; reject ones whose avoid matches.',
-    'Prefer a leaf that can support the stated action (hug from behind, facing, etc.) over a leaf that only matches vague posture words.',
+    'Categories matter: `general` = non-sexual placement; `foreplay` / `sexual` / `insertion` = intimate contact. If the chat has kissing, licking, sexual touch, or sex, do NOT pick a `general` leaf just because posture when-text matches.',
+    'For each candidate use when / avoid / selection_modifiers. Prefer the leaf whose when matches AND whose selection_modifiers cover the stated actions.',
+    'selection_modifiers are modifier **group ids** this leaf unlocks for pass 2 (e.g. `interaction.partner.mouth_contact`). They are the main reason to prefer one leaf over another when posture is similar.',
+    'CRITICAL: do NOT pick a leaf that only matches vague posture words if it lacks the group needed for the chat action. Example: ear licking / kissing / licking neck need a leaf with `interaction.partner.mouth_contact` (usually under foreplay), not `general/facing_each_other` which only has `interaction.general`.',
     'Pick exactly ONE `composition_id` (position leaf) per shot.',
+    'If the same leaf id appears under multiple compositions/categories (e.g. `free`), set `composition_id` to the full path string `composition / category / leaf` so the host can disambiguate.',
     '',
     '## Variant',
     'If the leaf lists variants, pick `composition_variant` for the camera that fits (from_side, pov, default…).',
@@ -578,12 +602,12 @@ function maidAnalyzerSelectionRules(): string[] {
     '',
     '## What NOT to do in pass 1',
     'Do NOT invent Danbooru camera/pose tags into camera/situation/action.',
-    'Do NOT return modifier option ids here (pass 2 does that).',
+    'Do NOT return modifier option ids here (pass 2 does that — e.g. do not emit `licking_ear` in pass 1).',
     'Do NOT set `curation_groups`.',
   ];
 }
 
-/** Compact leaf catalog for tagger pass 1 (no modifier dump). */
+/** Compact leaf catalog for tagger pass 1 (group-id hints only — no option dump). */
 export function curationPresetsSystemMessage(catalog: CurationCatalog, strictIds = false): string {
   const leaves = listPresetLeaves(catalog);
   // Group by composition so the model walks like Maid's tree.
@@ -598,13 +622,24 @@ export function curationPresetsSystemMessage(catalog: CurationCatalog, strictIds
     blocks.push(`## composition: ${composition}`);
     for (const leaf of comps) {
       const variants = leaf.variants.length ? leaf.variants.join('|') : '(none)';
+      const supports = leaf.selectionModifiers.length
+        ? leaf.selectionModifiers.join(', ')
+        : '(none)';
+      const desc =
+        leaf.description
+        && leaf.description !== leaf.id
+        && leaf.description !== leaf.when
+          ? `description: ${leaf.description}`
+          : '';
       blocks.push(
         [
           `### ${leaf.id}`,
           `path: ${leaf.path.join(' / ')}`,
+          leaf.category ? `category: ${leaf.category}` : '',
           leaf.when ? `when: ${leaf.when}` : '',
           leaf.avoid ? `avoid: ${leaf.avoid}` : '',
-          leaf.description && leaf.description !== leaf.id ? `description: ${leaf.description}` : '',
+          desc,
+          `selection_modifiers: ${supports}`,
           `variants: ${variants}`,
         ]
           .filter(Boolean)
@@ -614,12 +649,12 @@ export function curationPresetsSystemMessage(catalog: CurationCatalog, strictIds
   }
   return [
     'Curation two-stage ON (pass 1 — Asset Maid presets).',
-    'CRITICAL: every shot MUST include `composition_id` (exact leaf id). This overrides the base format schema.',
+    'CRITICAL: every shot MUST include `composition_id` (exact leaf id, or full path if id is ambiguous). This overrides the base format schema.',
     'Also set `composition_variant` when the leaf lists variants.',
     ...maidAnalyzerSelectionRules(),
     '',
     'On every shot set:',
-    '- `composition_id`: exact leaf id ONLY (e.g. `facing_each_other`, `free`) — NOT a path like `1girl_1boy / general / free`',
+    '- `composition_id`: leaf id (e.g. `face_to_face_upright`) OR path `1girl_1boy / foreplay / face_to_face_upright` when ids collide',
     '- `composition_variant`: one variant id for that leaf, or omit if none',
     'Still fill characters (appearance/attire/accessories) as usual.',
     '`place` may stay as a short location hint.',
@@ -635,6 +670,7 @@ export function curationPresetsSystemMessage(catalog: CurationCatalog, strictIds
       ]),
     '',
     '## Preset leaf catalog (do not invent ids)',
+    'selection_modifiers = group ids unlocked for pass 2 (not option ids). Use them to choose the leaf; pass 2 picks concrete options like licking_ear.',
     ...(blocks.length ? blocks : ['(empty presets tree)']),
   ].join('\n');
 }

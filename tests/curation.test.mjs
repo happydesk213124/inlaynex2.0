@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import {
   applyCurationTagsToShot,
   applyPerActorOptionIds,
+  castForRefinePayload,
   catalogHasPresets,
   catalogSha,
   clampOptionIdsByLanes,
   countCatalogOptions,
   curationGroupsSystemMessage,
+  curationPass2ContextRules,
   curationRefineSystemMessage,
   defaultCurationCatalog,
   inferCurationSlot,
@@ -35,6 +37,12 @@ import {
   resolvePresetChain,
 } from '../.test-build/curation-presets.mjs';
 import { cosineSimilarity, matchNearest, snapSceneTokens, splitSceneTagUnits } from '../.test-build/curation-match.mjs';
+import {
+  focusBandsForShots,
+  focusFieldsForShots,
+  percentSpanToOffsets,
+  sliceChatFocusHint,
+} from '../.test-build/curation-focus.mjs';
 import { normalizeCurationMode } from '../.test-build/settings-schema.mjs';
 import {
   defaultEndpointForEmbedding,
@@ -430,6 +438,14 @@ test('curationPresetsSystemMessage includes Maid analyzer actor rules', () => {
     version: 1,
     modifier_library: [
       { id: 'camera.view', options: [{ id: 'from_side', prompt: [[2, 'from side']] }] },
+      {
+        id: 'interaction.partner.mouth_contact',
+        options: [{ id: 'licking_ear', description: 'ear', prompt: [[2, 'licking ear']] }],
+      },
+      {
+        id: 'interaction.general',
+        options: [{ id: 'hug', description: 'hug', prompt: [[2, 'hug']] }],
+      },
     ],
     presets: {
       id: 'preset',
@@ -447,7 +463,26 @@ test('curationPresetsSystemMessage includes Maid analyzer actor rules', () => {
                   type: 'position',
                   when_to_use: ['마주 볼 때'],
                   avoid_when: ['뒤에서 안을 때'],
+                  modifiers: [{ ref: 'interaction.general', include_options: ['hug'] }],
                   variants: [{ id: 'from_side', prompt: { 'global.camera.view': [[2, 'from side']] } }],
+                  children: [],
+                },
+              ],
+            },
+            {
+              id: 'foreplay',
+              type: 'category',
+              children: [
+                {
+                  id: 'face_to_face_upright',
+                  type: 'position',
+                  when_to_use: ['상체 세워 마주볼 때'],
+                  modifiers: [
+                    {
+                      ref: 'interaction.partner.mouth_contact',
+                      include_options: ['licking_ear'],
+                    },
+                  ],
                   children: [],
                 },
               ],
@@ -458,12 +493,57 @@ test('curationPresetsSystemMessage includes Maid analyzer actor rules', () => {
     },
   });
   const msg = curationPresetsSystemMessage(cat);
-  assert.match(msg, /1girl_solo/);
-  assert.match(msg, /when_to_use|when:/);
+  assert.match(msg, /1girl_1boy/);
+  assert.match(msg, /when:/);
   assert.match(msg, /facing_each_other/);
+  assert.match(msg, /face_to_face_upright/);
   assert.match(msg, /Do NOT drop a visible partner/);
+  assert.match(msg, /selection_modifiers:/);
+  assert.match(msg, /interaction\.partner\.mouth_contact/);
+  assert.match(msg, /interaction\.general/);
+  assert.match(msg, /category: foreplay/);
+  // Catalog lines carry group ids only — option ids must not appear as leaf fields.
+  assert.match(msg, /selection_modifiers: interaction\.partner\.mouth_contact/);
+  assert.doesNotMatch(msg, /selection_modifiers:[^\n]*licking_ear/);
+  assert.match(msg, /do NOT pick a `general` leaf/);
 });
 
+test('listPresetLeaves exposes category and selectionModifiers', () => {
+  const cat = normalizeCurationCatalog({
+    version: 1,
+    modifier_library: [
+      { id: 'interaction.partner.mouth_contact', options: [{ id: 'licking_ear', prompt: [[2, 'licking ear']] }] },
+    ],
+    presets: {
+      id: 'preset',
+      children: [
+        {
+          id: '1girl_1boy',
+          type: 'composition',
+          children: [
+            {
+              id: 'foreplay',
+              type: 'category',
+              children: [
+                {
+                  id: 'face_to_face_upright',
+                  type: 'position',
+                  modifiers: [{ ref: 'interaction.partner.mouth_contact' }],
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const leaves = listPresetLeaves(cat);
+  assert.equal(leaves.length, 1);
+  assert.equal(leaves[0].id, 'face_to_face_upright');
+  assert.equal(leaves[0].category, 'foreplay');
+  assert.deepEqual(leaves[0].selectionModifiers, ['interaction.partner.mouth_contact']);
+});
 test('tagsFromOptionIds assembles local tags', () => {
   const cat = defaultCurationCatalog();
   const tags = tagsFromOptionIds(cat, ['cowboy_shot', 'smile']);
@@ -699,6 +779,22 @@ test('parsePerActorOptionIds accepts {index, option_ids} rows and ignores malfor
   ]);
 });
 
+test('castForRefinePayload exposes index/name/gender for pass-2', () => {
+  const cast = castForRefinePayload({
+    characters: [
+      { name: '보민', gender: 'boy', appearance: 'boy, short hair' },
+      { name: 'Serin', gender: 'girl', appearance: 'girl, long hair' },
+      { name: '???', appearance: '' },
+    ],
+  });
+  assert.deepEqual(cast, [
+    { index: 0, name: '보민', gender: 'boy' },
+    { index: 1, name: 'Serin', gender: 'girl' },
+    { index: 2, name: '???', gender: '' },
+  ]);
+  assert.deepEqual(castForRefinePayload({}), []);
+});
+
 test('applyPerActorOptionIds appends to that actor action only, never appearance/attire', () => {
   const cat = defaultCurationCatalog();
   const shot = {
@@ -771,6 +867,8 @@ test('curationPresetsSystemMessage / curationPresetRefineSystemMessage branch on
   const pass2Strict = curationPresetRefineSystemMessage(cat, [chain], { strictIds: true });
   assert.doesNotMatch(pass2Loose, /"characters":/);
   assert.match(pass2Strict, /"characters":/);
+  assert.match(pass2Strict, /cast/);
+  assert.match(pass2Strict, /use name\+gender from `cast`/);
 });
 
 test('resolveMaidPresetSelection orders assembled tags by modifier binding order', () => {
@@ -893,4 +991,64 @@ test('embedding provider defaults swap on provider change', () => {
   assert.equal(shouldAutoReplaceEmbeddingEndpoint('https://my.proxy/v1/embeddings'), false);
   assert.equal(shouldAutoReplaceEmbeddingModel('text-embedding-3-small'), true);
   assert.equal(shouldAutoReplaceEmbeddingModel('my-custom-embed'), false);
+});
+
+test('focusBandsForShots: solo shot uses ±15 clamped', () => {
+  assert.deepEqual(focusBandsForShots([{ y_percent: 15 }]), [
+    { from_percent: 0, to_percent: 30 },
+  ]);
+  assert.deepEqual(focusBandsForShots([{ y_percent: 50 }]), [
+    { from_percent: 35, to_percent: 65 },
+  ]);
+  assert.deepEqual(focusBandsForShots([{ y_percent: 95 }]), [
+    { from_percent: 80, to_percent: 100 },
+  ]);
+});
+
+test('focusBandsForShots: three shots at 20/50/80 use neighbor midpoints', () => {
+  const bands = focusBandsForShots([
+    { y_percent: 20 },
+    { y_percent: 50 },
+    { y_percent: 80 },
+  ]);
+  assert.deepEqual(bands, [
+    { from_percent: 0, to_percent: 35 },
+    { from_percent: 35, to_percent: 65 },
+    { from_percent: 65, to_percent: 100 },
+  ]);
+});
+
+test('focusFieldsForShots: empty chat yields empty hints; offsets clamp', () => {
+  const fields = focusFieldsForShots([{ y_percent: 40 }], '');
+  assert.equal(fields[0].focus_hint, '');
+  assert.ok(fields[0].focus.from_percent <= fields[0].focus.to_percent);
+
+  assert.deepEqual(percentSpanToOffsets('', 10, 90), { start: 0, end: 0 });
+  assert.deepEqual(percentSpanToOffsets('abcdefghij', 0, 100), { start: 0, end: 10 });
+  assert.deepEqual(percentSpanToOffsets('abcdefghij', 50, 50), { start: 5, end: 6 });
+});
+
+test('sliceChatFocusHint snaps to newlines and caps length', () => {
+  const chat = `${'a'.repeat(40)}\nearly band\n${'b'.repeat(40)}\nlate band\n${'c'.repeat(40)}`;
+  const hint = sliceChatFocusHint(chat, 0, 40, 200);
+  assert.match(hint, /early band/);
+  assert.ok(hint.length <= 200);
+
+  const long = 'x'.repeat(2000);
+  const capped = sliceChatFocusHint(long, 0, 100, 600);
+  assert.ok(capped.endsWith('…'));
+  assert.ok(capped.length <= 601);
+});
+
+test('curationPass2ContextRules and refine messages mention focus_hint', () => {
+  const rules = curationPass2ContextRules().join('\n');
+  assert.match(rules, /focus_hint/);
+  assert.match(rules, /PRIMARY evidence/i);
+
+  const cat = defaultCurationCatalog();
+  const refine = curationRefineSystemMessage(cat, cat.groups.slice(0, 2));
+  assert.match(refine, /focus_hint/);
+
+  const presetRefine = curationPresetRefineSystemMessage(cat, []);
+  assert.match(presetRefine, /focus_hint/);
 });

@@ -1,9 +1,11 @@
 /**
  * Curation catalog + embedding store and job-time helpers.
  */
+import { focusFieldsForShots } from '../domain/curation/focus';
 import {
   applyCurationTagsToShot,
   applyPerActorOptionIds,
+  castForRefinePayload,
   catalogHasPresets,
   catalogSha,
   clampOptionIdsByLanes,
@@ -404,10 +406,12 @@ async function refineShotsWithGroups(
   const refineMsg = curationRefineSystemMessage(catalog, unionGroups, { strictIds });
   const systemBase = cleanText(await getPrompt('curation_refine'), 6000) || refineMsg;
   const system = `${systemBase}\n\n${refineMsg}`;
+  const focuses = focusFieldsForShots(shots, chatContext);
   const shotsPayload = {
     shots: shots.map((shot, shot_index) => ({
       shot_index,
       y_percent: shot.y_percent ?? shot.anchor_percent ?? null,
+      ...focuses[shot_index],
       curation_groups: perShotGroups[shot_index],
       camera: shot.camera || '',
       situation: shot.situation || shot.scene || '',
@@ -415,6 +419,7 @@ async function refineShotsWithGroups(
       action: shot.action || '',
       natural: shot.natural || '',
       character_count: Array.isArray(shot.characters) ? shot.characters.length : 0,
+      cast: castForRefinePayload(shot),
     })),
   };
   const raw = await callLlm(
@@ -473,15 +478,18 @@ async function refineShotsWithPresets(
     chains.filter(Boolean) as NonNullable<(typeof chains)[number]>[],
     { strictIds },
   );
+  const focuses = focusFieldsForShots(shots, chatContext);
   const shotsPayload = {
     shots: shots.map((shot, shot_index) => ({
       shot_index,
       y_percent: shot.y_percent ?? shot.anchor_percent ?? null,
+      ...focuses[shot_index],
       composition_id: shot.composition_id || '',
       composition_variant: shot.composition_variant || '',
       place: shot.place || '',
       natural: shot.natural || '',
       character_count: Array.isArray(shot.characters) ? shot.characters.length : 0,
+      cast: castForRefinePayload(shot),
     })),
   };
 

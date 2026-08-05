@@ -673,10 +673,12 @@ export function strictPerActorSchemaRules(): string[] {
   return [
     '## Per-actor ids (strict catalog-id mode)',
     'Add `"characters": [ { "index": 0, "option_ids": ["id", "..."] }, ... ]` to EVERY shot.',
-    '`index` is 0-based and must match that shot\'s `characters` array position (see `character_count`).',
+    'Each shot input includes `cast`: `[{ "index": 0, "name": "...", "gender": "girl|boy|\"\"" }, ...]`.',
+    '`index` MUST match `cast[].index` / Pass-1 `characters` array order — use name+gender from `cast`, not chat mention order.',
+    'Example: if cast says index 0 = 보민 (boy) and index 1 = Serin (girl), put bound/tears on the boy\'s index, not the girl\'s.',
     'Put an option on `characters[].option_ids` when it targets ONE specific actor (pose, contact, expression, gaze).',
     'Put an option on the shot-level `curation_option_ids` instead when it is scene-wide (camera, place, framing) — do not duplicate it into every actor.',
-    'Every actor with `character_count > 0` needs an entry, even if `option_ids` is `[]`.',
+    'Every actor in `cast` needs an entry, even if `option_ids` is `[]`.',
     'This mode has NO freeform camera/situation/action fallback — an unlisted concept is simply omitted, never paraphrased.',
   ];
 }
@@ -728,16 +730,17 @@ export function curationPass2ContextRules(): string[] {
   return [
     '## Chat context (separate user message, READ-ONLY)',
     'A prior user message is the exact chat text from pass 1 (for LLM prompt cache).',
-    'Use it ONLY as evidence for which options fit each shot.',
+    'Use it for continuity only (who the cast is, ongoing scene).',
     'Do NOT rewrite, quote-edit, summarize into the JSON, or invent missing plot beats.',
     'Do NOT change shot count, shot_index, composition_id, composition_variant, or y_percent.',
     '',
-    '## y_percent focus',
-    'Each shot has `y_percent` (0–100): reading position in that chat text (top→bottom).',
-    'For shot_index N, judge actions/contact mainly from the band around that percent',
-    '(e.g. 20 ≈ early fifth, 50 ≈ middle, 80 ≈ late). Do not pull actions from far-away bands into this shot.',
-    'Map every clear visual cue in that band to a listed option id when one exists.',
-    'y_percent is already final — never output a new y_percent.',
+    '## Shot focus bands (PRIMARY evidence)',
+    'Each shot includes `y_percent`, `focus: { from_percent, to_percent }`, and `focus_hint` (a short quote from that band of the chat).',
+    'Pick options primarily from `focus_hint` / the `focus` percent range for THAT shot.',
+    'Do NOT pull actions from far-away bands into this shot. Full chat is background, not a license to copy the same ids onto every shot.',
+    'When focuses differ, prefer distinct `curation_option_ids` / per-actor ids across shots — avoid pasting one identical set on every shot_index.',
+    'Do NOT invent aftermath tags (`after_sex`, `afterglow`, cum_on_*, etc.) unless `focus_hint` explicitly shows that aftermath.',
+    'y_percent / focus are already final — never output new y_percent or focus fields.',
   ];
 }
 
@@ -870,6 +873,29 @@ export function applyCurationTagsToShot(
 export interface PerActorOptionIds {
   index: number;
   option_ids: unknown;
+}
+
+/** Pass-2 input: who is characters[i] so the model can bind option_ids correctly. */
+export function castForRefinePayload(
+  shot: Record<string, unknown> | null | undefined,
+): Array<{ index: number; name: string; gender: string }> {
+  const chars = Array.isArray(shot?.characters) ? shot!.characters! : [];
+  const out: Array<{ index: number; name: string; gender: string }> = [];
+  for (let index = 0; index < chars.length; index++) {
+    const ch = chars[index];
+    if (!ch || typeof ch !== 'object') {
+      out.push({ index, name: '', gender: '' });
+      continue;
+    }
+    const rec = ch as Record<string, unknown>;
+    const g = resolveCharacterGender(rec);
+    out.push({
+      index,
+      name: cleanText(rec.name, 200),
+      gender: g === 'f' ? 'girl' : g === 'm' ? 'boy' : '',
+    });
+  }
+  return out;
 }
 
 /** Parse the strict-mode `characters:[{index, option_ids}]` pass-2 field. */

@@ -115,19 +115,17 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
     if (extraBlocks.length) {
       loreParts.push(
         '## lb-xnai.lb.extra — OFFICIAL PACK (START)\n'
-        + 'Everything until OFFICIAL PACK (END) is the lb-xnai pack only (custom prompt + Character Image Tags). '
-        + 'Headings like `### Character Name` inside this region are pack sections, NOT separate lore entries.\n\n'
+        + 'Until END: lb-xnai pack only (custom prompt + Character Image Tags). '
+        + '`### Name` headings here are pack sections, not separate lore.\n\n'
         + extraBlocks.join('\n\n')
         + '\n\n## lb-xnai.lb.extra — OFFICIAL PACK (END)\n'
-        + '[END OF lb-xnai.lb.extra] The official pack above is finished. '
-        + 'Do NOT treat any heading or text below as lb-xnai image-tag ground truth.',
+        + '[END OF lb-xnai.lb.extra] Pack finished — text below is not lb-xnai ground truth.',
       );
     }
     if (refBlocks.length) {
       loreParts.push(
         '## Reference Lorebook (trigger-matched only)\n'
-        + 'From here down: ordinary matched lore for naming/context only. '
-        + 'Not part of lb-xnai.lb.extra. Do not copy lore prose into appearance/attire/accessories tags.\n\n'
+        + 'Naming/context only. Not lb-xnai. Do not copy lore prose into tags.\n\n'
         + refBlocks.join('\n\n'),
       );
     }
@@ -152,58 +150,58 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
     const incomplete = roster.filter((c) => cleanText(c.name, 200) && !characterHasAppearance(c));
     const matched = matchCharactersInText(assistant, roster);
     if (filled.length || incomplete.length || matched.length) {
-      const registeredBlock = filled.length
-        ? filled
-          .map((c) => {
-            const name = cleanText(c.name, 200);
-            const appearance = cleanText(c.appearance || '', 200);
-            const attire = cleanText(c.attire || '', 160);
-            const accessories = cleanText(c.accessories || '', 120);
-            const parts = [
-              appearance ? `appearance=${appearance}` : '',
-              attire ? `attire=${attire}` : '',
-              accessories ? `accessories=${accessories}` : '',
-            ].filter(Boolean);
-            return parts.length ? `${name} ← ${parts.join(' | ')}` : name;
-          })
-          .filter(Boolean)
+      const formatFilledLine = (c: CharacterRecord): string => {
+        const name = cleanText(c.name, 200);
+        const appearance = cleanText(c.appearance || '', 200);
+        const attire = cleanText(c.attire || '', 160);
+        const accessories = cleanText(c.accessories || '', 120);
+        const parts = [
+          appearance ? `appearance=${appearance}` : '',
+          attire ? `attire=${attire}` : '',
+          accessories ? `accessories=${accessories}` : '',
+        ].filter(Boolean);
+        return parts.length ? `${name} ← ${parts.join(' | ')}` : name;
+      };
+      // Looks only for characters actually hit in this message — not the whole roster.
+      const matchedFilled = matched.filter((c) => characterHasAppearance(c));
+      const matchedIncomplete = matched.filter((c) => !characterHasAppearance(c));
+      const detectedBlock = matchedFilled.length
+        ? matchedFilled.map(formatFilledLine).filter(Boolean).join('\n')
+        : '(none)';
+      const incompleteBlock = matchedIncomplete.length
+        ? matchedIncomplete
+          .map((char) => `- ${char.name} (aliases: ${characterTriggers(char).slice(0, 8).join(', ')}) → empty appearance; full looks required in new_characters`)
           .join('\n')
-        : '(없음)';
-      const incompleteBlock = incomplete.length
-        ? incomplete
-          .map((char) => `- ${char.name} (별칭: ${characterTriggers(char).slice(0, 8).join(', ')}) → appearance 비어 있음, new_characters에 상세 외형 필수`)
-          .join('\n')
-        : '(없음)';
-      const detectedBlock = matched.length
-        ? matched
-          .map((char) => `- ${char.name} [${characterHasAppearance(char) ? '외형OK' : '외형미완성'}] (별칭: ${characterTriggers(char).slice(0, 8).join(', ')})`)
-          .join('\n')
-        : '(이번 메시지에서 등록 캐릭터 트리거 미검출 — 전부 신규일 수 있음)';
+        : '(none)';
       let content = await getPrompt('appearance_inject');
-      content = content.includes('{registered_block}') ? content.replace('{registered_block}', registeredBlock) : `${content}\n\n${registeredBlock}`;
-      content = content.includes('{incomplete_block}') ? content.replace('{incomplete_block}', incompleteBlock) : `${content}\n\n## 외형 미완성\n${incompleteBlock}`;
+      // Legacy templates still had {registered_block}; keep replace so custom prompts do not leak the placeholder.
+      if (content.includes('{registered_block}')) {
+        content = content.replace('{registered_block}', detectedBlock);
+      }
+      content = content.includes('{incomplete_block}') ? content.replace('{incomplete_block}', incompleteBlock) : `${content}\n\n## Incomplete\n${incompleteBlock}`;
       content = content.includes('{detected_block}') ? content.replace('{detected_block}', detectedBlock) : `${content}\n\n${detectedBlock}`;
       messages.push({ role: 'system', content });
       dbg('job.roster.split', {
         filled: filled.map((c) => c.name),
         incomplete: incomplete.map((c) => c.name),
         matched: matched.map((c) => c.name),
+        matched_with_looks: matchedFilled.map((c) => c.name),
         session_id: sessionId,
       });
     }
   }
 
-  // Always ask for y_percent so values are saved. Toggle only affects display (equal bands vs LLM %).
-  messages.push({
-    role: 'system',
-    content:
-      'Every shot MUST include `y_percent` (number 0–100): reading position top→bottom in the message. CRITICAL spread rule: NEVER cluster all shots in the early band. Space them across the whole 0–100 range in reading order (shot0 < shot1 < shot2 …). Aim ~even gaps. Examples — 2 shots: ~25 and ~75; 3 shots: ~20, ~50, ~80; 4 shots: ~15, ~40, ~65, ~90. Forbidden: all values under 40, duplicates, or gaps under ~15 between neighbors unless only 1 shot.',
-  });
-
   const naturalMode = normalizeNaturalBaseMode(card.natural_base);
+  const charMax = characterMaxLimit(card);
+  // One system block: placement + natural mode + cast cap (was three near-duplicate messages).
   messages.push({
     role: 'system',
-    content: naturalBaseSystemMessage(naturalMode),
+    content: [
+      // Always ask for y_percent so values are saved. Toggle only affects display (equal bands vs LLM %).
+      'Every shot MUST include `y_percent` (0–100): reading position top→bottom. Spread across the full range in order (shot0 < shot1 < …); ~even gaps. E.g. 2→~25/~75; 3→~20/~50/~80; 4→~15/~40/~65/~90. Forbidden: all under 40, duplicates, or gaps under ~15 unless 1 shot.',
+      naturalBaseSystemMessage(naturalMode),
+      `CHARACTER CAP: at most ${charMax} characters per shot (char1..char${charMax}). If more are visible, keep the ${charMax} most important; fold extras into situation/place.`,
+    ].join('\n'),
   });
 
   const curationMsg = await curationTaggerSystemMessage();
@@ -213,12 +211,6 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
       content: curationMsg,
     });
   }
-
-  const charMax = characterMaxLimit(card);
-  messages.push({
-    role: 'system',
-    content: `CHARACTER CAP: each shot may include at most ${charMax} characters (char1..char${charMax} only). Never list more than ${charMax} entries in \`characters[]\`. If more people are visible, keep the ${charMax} most important and fold extras into situation/place tags.`,
-  });
 
   const chunks: string[] = [];
   const includeMax = Number(card.include_max || 0);

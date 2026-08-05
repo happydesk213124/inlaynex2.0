@@ -208,13 +208,12 @@ function auditPromptPack(out) {
   // Intentional 2.0 prompt edits vs 1.x — each key needs a justifying comment.
   // Unexplained drift still fails the audit (AGENTS.md §5).
   const INTENTIONAL_PROMPT_DRIFT = new Set([
-    // natural_base is off|short|detailed|supplement; tagger/format defer to the
-    // mode-specific system message instead of a single boolean ON rule.
+    // Compact English prompts: field rules live in tagger; format is schema-only;
+    // appearance/lore injects are short wrappers (token cut, same semantics).
     'tagger',
     'format',
-    // Base attire/accessories stay fixed on the roster; registered block shows
-    // them and shot wear is generation-only override.
     'appearance_inject',
+    'lore_inject',
     // Vision autotag now also returns gender (female|male) for actor routing.
     'autotag',
   ]);

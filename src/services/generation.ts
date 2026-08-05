@@ -33,6 +33,10 @@ import {
   personCountTagsForShot,
   stripPersonCountTags,
 } from '../domain/character/tags';
+import {
+  compositionCurationOn,
+  resolveCompositionForShot,
+} from '../domain/composition/leaves';
 import { resolveGenerationCfgParams } from '../domain/style-preset-overrides';
 import { generateViaComfy, imageBackendKind } from '../providers/comfy/client';
 import { generateT2i } from '../providers/nai/client';
@@ -180,15 +184,27 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   }
   let situation: unknown = shot.situation || shot.scene;
   if (personMode !== 'off') situation = stripPersonCountTags(situation || '');
+  const curation = compositionCurationOn(card);
+  const resolvedLeaf = curation ? resolveCompositionForShot(shot) : null;
   let setup: string;
   const lockedSetup = cleanText(args.lockedSetup || '');
   if (lockedSetup) {
     setup = lockedSetup;
+  } else if (resolvedLeaf) {
+    // Curated leaf: global pose/camera + background only (no freeform camera/situation).
+    setup = joinTags(resolvedLeaf.global, shot.place);
+    if (card.mode === 'asset') setup = joinTags(setup, 'white background', 'simple background', 'looking at viewer', 'portrait');
+    dbg('generation.composition_leaf', {
+      leaf: resolvedLeaf.leafId,
+      variant: resolvedLeaf.variantId,
+      modifiers: resolvedLeaf.modifierIds,
+    });
   } else {
     setup = joinTags(shot.camera, situation, shot.place, shot.action);
     if (card.mode === 'asset') setup = joinTags(setup, 'white background', 'simple background', 'cowboy shot', 'looking at viewer', 'portrait');
   }
   // Natural-language base phrase (LLM shots[].natural) — mode from card.natural_base.
+  // Unchanged when composition_curation is on: leaf handles pose; natural stays atmospheric.
   const naturalMode = normalizeNaturalBaseMode(card.natural_base);
   const naturalCap = naturalMode === 'supplement' ? 600 : naturalMode === 'detailed' ? 480 : 400;
   const natural =
@@ -207,7 +223,14 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
     const char = chars[idx];
     const name = cleanText(char.name, 200);
     const stored = name ? resolveCharacter(name, roster) : null;
-    const prompt = composeCharacterCaptionTags(stored, char);
+    // When curation supplies actor pose tags, drop freeform action so leaf wins.
+    const shotForCaption = resolvedLeaf
+      ? { ...char, action: '' }
+      : char;
+    const prompt = joinTags(
+      composeCharacterCaptionTags(stored, shotForCaption),
+      resolvedLeaf?.actorTags[idx] || '',
+    );
     const uc = cleanText(char.negative);
     const cx = n === 1 ? 0.5 : Math.round((0.1 + (0.8 * idx) / Math.max(1, n - 1)) * 10) / 10;
     const cy = 0.5;

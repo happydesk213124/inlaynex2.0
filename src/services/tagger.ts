@@ -20,6 +20,10 @@ import type { CharacterRecord, JobRequest, TaggedShot, TaggerResult } from '../c
 import { deepMerge } from '../core/util/object';
 import { cleanText, stripCbs } from '../core/util/text';
 import { normalizeNaturalBaseMode, type NaturalBaseMode } from '../config/schema';
+import {
+  compositionCatalogSystemMessage,
+  compositionCurationOn,
+} from '../domain/composition/leaves';
 import { characterTriggers, dedupeShotCharacters, matchCharactersInText } from '../domain/character/roster';
 import { characterHasAppearance, characterMaxLimit } from '../domain/character/tags';
 import {
@@ -188,6 +192,13 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
     role: 'system',
     content: naturalBaseSystemMessage(naturalMode),
   });
+
+  if (compositionCurationOn(card)) {
+    messages.push({
+      role: 'system',
+      content: compositionCatalogSystemMessage(),
+    });
+  }
 
   const charMax = characterMaxLimit(card);
   messages.push({

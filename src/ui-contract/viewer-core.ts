@@ -1053,6 +1053,29 @@ export function shouldRefreshGallery(
   return false;
 }
 
+/**
+ * Claim an already-mounted sticky marker from the active list by card id.
+ *
+ * overlay.place used to create a fresh pin DOM whenever takePooledMarker
+ * missed — and the pool only held *parked* markers, not the ones still in
+ * `markers`. On a partial card-set swap (A,B → A,C) that left the old A pin
+ * orphaned in the layer while a second A pin was appended. Splice the hit
+ * out so the leftover park pass can retire only unused nodes.
+ */
+export function claimStickyMarkerByCardId<T extends { card?: { id?: unknown } | null; thumb?: unknown }>(
+  active: T[] | null | undefined,
+  cardId: unknown,
+): T | null {
+  const id = String(cardId || '');
+  if (!id || !Array.isArray(active) || !active.length) return null;
+  const idx = active.findIndex((m) => String(m?.card?.id || '') === id);
+  if (idx < 0) return null;
+  const m = active[idx];
+  if (!m?.thumb) return null;
+  active.splice(idx, 1);
+  return m;
+}
+
 /** Sticky pin thumb HTML rewrite only when the active card id changes. */
 export function shouldRewriteStickyThumb(
   prevCardId: string | null | undefined,

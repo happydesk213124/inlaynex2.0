@@ -86,6 +86,13 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   else card.lore_extra = 'tags';
   // natural_base: legacy boolean → "off" | "short" | "detailed" | "supplement"
   card.natural_base = normalizeNaturalBaseMode(card.natural_base);
+  // composition_curation: LLM picks curated leaf ids instead of freeform camera/pose tags
+  card.composition_curation =
+    card.composition_curation === true
+    || card.composition_curation === 'true'
+    || card.composition_curation === 1
+    || card.composition_curation === '1'
+    || card.composition_curation === 'on';
   // Left-line overlay + always-on image are one feature: overlay_markers is canonical.
   const overlayOn = card.overlay_markers !== false;
   card.overlay_markers = overlayOn;

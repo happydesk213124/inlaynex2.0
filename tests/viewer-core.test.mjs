@@ -28,6 +28,7 @@ import {
   scaleInlineThumbnail,
   shouldRefreshGallery,
   shouldRewriteStickyThumb,
+  claimStickyMarkerByCardId,
   shouldKeepStickyThumbHidden,
   resolveStickyThumbPct,
   stickyThumbBoxFromPct,
@@ -193,6 +194,18 @@ test("shouldRewriteStickyThumb only when active card id changes", () => {
 test("shouldKeepStickyThumbHidden only for the same card the user hid", () => {
   assert.equal(shouldKeepStickyThumbHidden(true, "a", "a"), true);
   assert.equal(shouldKeepStickyThumbHidden(true, "a", "b"), false);
+});
+
+test("claimStickyMarkerByCardId splices the active pin so partial swaps cannot orphan a duplicate", () => {
+  const a = { card: { id: "a" }, thumb: {} };
+  const b = { card: { id: "b" }, thumb: {} };
+  const active = [a, b];
+  assert.equal(claimStickyMarkerByCardId(active, "a"), a);
+  assert.deepEqual(active, [b]);
+  assert.equal(claimStickyMarkerByCardId(active, "a"), null);
+  assert.equal(claimStickyMarkerByCardId(active, "b"), b);
+  assert.deepEqual(active, []);
+  assert.equal(claimStickyMarkerByCardId([{ card: { id: "x" } }], "x"), null);
 });
 
 test("resolveStickyThumbPct is settings size only when always on and not collapsed/editing", () => {

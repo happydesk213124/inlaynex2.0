@@ -34,6 +34,7 @@ const MODULES = {
   'blob-url-cache': 'src/storage/blob-url-cache.ts',
   'prompt-codec': 'src/config/prompt-codec.ts',
   'style-preset-overrides': 'src/domain/style-preset-overrides.ts',
+  'composition-leaves': 'src/domain/composition/leaves.ts',
 };
 
 await rm(outdir, { recursive: true, force: true });

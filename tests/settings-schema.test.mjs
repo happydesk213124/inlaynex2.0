@@ -47,6 +47,13 @@ test("natural_base migrates boolean and aliases to mode enum", () => {
   assert.equal(migrateSettings({ card: {} }).card.natural_base, "short");
 });
 
+test("composition_curation migrates to boolean", () => {
+  assert.equal(migrateSettings({ card: { composition_curation: true } }).card.composition_curation, true);
+  assert.equal(migrateSettings({ card: { composition_curation: "true" } }).card.composition_curation, true);
+  assert.equal(migrateSettings({ card: { composition_curation: false } }).card.composition_curation, false);
+  assert.equal(migrateSettings({ card: {} }).card.composition_curation, false);
+});
+
 test("overlay_markers is canonical for left-line overlay + inline previews", () => {
   const on = migrateSettings({ card: { overlay_markers: true, inline_previews: false } });
   assert.equal(on.card.overlay_markers, true);

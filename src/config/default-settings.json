@@ -91,6 +91,7 @@
     "overlay_markers": true,
     "llm_anchor_percent": true,
     "natural_base": "short",
+    "composition_curation": false,
     "inline_previews": true,
     "inline_thumb_pct": 100,
     "scale_semantics_version": 2,

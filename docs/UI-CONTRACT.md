@@ -44,7 +44,7 @@ missing, which historically hid bugs — so we publish the full surface.
 
 | Global | Purpose |
 |---|---|
-| `__INLAY_VIEWER_CORE__` | overlay/pin geometry, gallery ordering, DOM↔API message matching; sticky always-image size via `resolveStickyThumbPct` / `stickyThumbBoxFromPct` (hide = 0%, not display:none) |
+| `__INLAY_VIEWER_CORE__` | overlay/pin geometry, gallery ordering, DOM↔API message matching; sticky always-image size via `resolveStickyThumbPct` / `stickyThumbBoxFromPct` (hide = 0%, not display:none); `claimStickyMarkerByCardId` reuses a still-mounted pin on partial card-set swaps so sticky pins do not duplicate |
 | `__INLAY_LLM__` | provider list, endpoint defaults, model placeholders |
 | `__INLAY_LORE_EXTRA__` | `lb-xnai.lb.extra` lorebook trimming |
 | `__INLAY_EXPLORER__` | explorer multi-select state machine |
@@ -86,6 +86,11 @@ settings reset); that confirm is inserted by an asserted build patch in
 `card.natural_base` is a string mode: `off` | `short` | `detailed` | `supplement`
 (legacy booleans migrate in `schema.ts`). The dashboard control is a `<select>`
 patched in at build time (was a checkbox).
+
+`card.composition_curation` (boolean, default false): when ON, the tagger picks a
+curated composition leaf id instead of freeform camera/pose tags; generation
+copies leaf tags into base (global) and char captions (actor). `natural_base`
+still applies. Toggle is an asserted vendor UI patch (`nx-composition-curation`).
 
 Keys: `author_note, tagger, format, prefill, preprocess, preset_1, lore_inject,
 char_inject, appearance_inject, autotag`.

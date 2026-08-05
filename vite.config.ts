@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.0.18';
+const PLUGIN_VERSION = '2.0.19';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -68,7 +68,8 @@ const VENDOR_NATURAL_BASE_CT_NEEDLE =
 
 const VENDOR_NATURAL_BASE_CT_PATCH =
   `      lore_extra: document.getElementById("nx-lore-extra") ? normalizeLoreExtraMode(N("nx-lore-extra")) : normalizeLoreExtraMode(e.lore_extra),
-      natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",`;
+      natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",
+      composition_curation: document.getElementById("nx-composition-curation") ? ee("nx-composition-curation") : !!e.composition_curation,`;
 
 const VENDOR_NATURAL_BASE_CARD_NEEDLE =
   `<label class="wide"><span>사람 태그 자동넣기</span><select id="nx-person-tag-mode">
@@ -102,13 +103,15 @@ const VENDOR_NATURAL_BASE_CARD_PATCH =
               <option value="detailed" \${i.natural_base === "detailed" ? "selected" : ""}>구도·자세히</option>
               <option value="supplement" \${i.natural_base === "supplement" ? "selected" : ""}>태그 보완 자연어</option>
             </select></label>
-            </div>`;
+            </div>
+            <label class="toggle-row wide" data-nx-help-id="nx-composition-curation"><input type="checkbox" id="nx-composition-curation" \${i.composition_curation ? "checked" : ""}><span>구도 큐레이션</span></label>`;
 
 const VENDOR_NATURAL_BASE_HELP_NEEDLE =
   `"nx-natural-base": { title: "자연어 base 태그", body: "이미지 요청에 짧은 자연어 장면도 함께 넣습니다. 태그만 쓸 때보다 분위기가 자연스러워질 수 있습니다." }`;
 
 const VENDOR_NATURAL_BASE_HELP_PATCH =
-  `"nx-natural-base": { title: "자연어 base", body: "NovelAI base에 넣는 자연어 장면을 고릅니다. 안넣기 / 짧게 넣기(머리·나이·성별·행동) / 구도·자세히(구도·표정·옷·조명) / 태그 보완 자연어(태그가 못 담는 문장)." }`;
+  `"nx-natural-base": { title: "자연어 base", body: "NovelAI base에 넣는 자연어 장면을 고릅니다. 안넣기 / 짧게 넣기(머리·나이·성별·행동) / 구도·자세히(구도·표정·옷·조명) / 태그 보완 자연어(태그가 못 담는 문장)." },
+  "nx-composition-curation": { title: "구도 큐레이션", body: "ON이면 LLM이 카메라/포즈 태그를 지어내지 않고, 미리 손질된 구도 메뉴(leaf)에서만 고릅니다. base에는 구도·배경, char에는 캐릭터별 방향/동작 태그가 들어갑니다. 자연어 base 설정은 그대로 적용됩니다." }`;
 
 /**
  * Global character "use in this chat" toggle: compact control left of 오토태그,
@@ -594,6 +597,55 @@ const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), document.getElementById("nx-preset
  * Sticky always-image hide = effective size 0% (not display:none / card-id).
  * Click collapse, 상시 off, and shot/char editors all go through La().
  */
+/**
+ * Partial sticky card-set swaps must reuse the still-mounted marker for the
+ * overlapping id. takePooledMarker only looked at the parked pool, so A,B→A,C
+ * created a second A pin and left the old one visible (duplicate sticky pins).
+ */
+const VENDOR_STICKY_TAKE_NEEDLE = `  function takePooledMarker(card, src) {
+    const pool = stickyPool();
+    const id = String(card?.id || "");
+    if (!pool || !id) return null;
+    const m = pool.get(id);
+    if (!m?.thumb) return null;
+    pool.delete(id);
+    m.card = card;
+    if (src && (!m._thumbSrc || m._thumbSrc !== src)) {
+      m._thumbSrc = src;
+      // Keep painted HTML if same bytes already in the node; else force one paint later.
+      if (m._paintedSrc && m._paintedSrc !== src) m._paintedSrc = "", m._thumbHtmlId = "";
+    }
+    return m;
+  }`;
+
+const VENDOR_STICKY_TAKE_PATCH = `  function takePooledMarker(card, src) {
+    const id = String(card?.id || "");
+    if (!id) return null;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const active = t.overlayUi?.markers;
+    let m = typeof VC?.claimStickyMarkerByCardId == "function"
+      ? VC.claimStickyMarkerByCardId(active, id)
+      : null;
+    if (!m && Array.isArray(active)) {
+      const idx = active.findIndex((x) => String(x?.card?.id || "") === id);
+      if (idx >= 0 && active[idx]?.thumb) m = active.splice(idx, 1)[0] || null;
+    }
+    if (!m) {
+      const pool = stickyPool();
+      if (!pool) return null;
+      m = pool.get(id);
+      if (!m?.thumb) return null;
+      pool.delete(id);
+    } else if (!m?.thumb) return null;
+    m.card = card;
+    if (src && (!m._thumbSrc || m._thumbSrc !== src)) {
+      m._thumbSrc = src;
+      // Keep painted HTML if same bytes already in the node; else force one paint later.
+      if (m._paintedSrc && m._paintedSrc !== src) m._paintedSrc = "", m._thumbHtmlId = "";
+    }
+    return m;
+  }`;
+
 const VENDOR_STICKY_LA_NEEDLE = `  function La() {
     const e = t.backendSettings?.card || {};
     let n = Ne(e.inline_thumb_pct, 0);
@@ -896,6 +948,7 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_PRESET_DEL_NEEDLE, 'preset del clear vibe');
   assertOnce(raw, VENDOR_PRESET_VIBE_EVT_NEEDLE, 'preset vibe upload events');
   for (const [needle, label] of [
+    [VENDOR_STICKY_TAKE_NEEDLE, 'sticky takePooledMarker'],
     [VENDOR_STICKY_LA_NEEDLE, 'sticky La()'],
     [VENDOR_STICKY_KEEP_NEEDLE, 'sticky keepHidden'],
     [VENDOR_STICKY_SHOW_NEEDLE, 'sticky showStickyImg'],
@@ -939,6 +992,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_PRESET_DUP_NEEDLE, VENDOR_PRESET_DUP_PATCH)
     .replace(VENDOR_PRESET_DEL_NEEDLE, VENDOR_PRESET_DEL_PATCH)
     .replace(VENDOR_PRESET_VIBE_EVT_NEEDLE, VENDOR_PRESET_VIBE_EVT_PATCH)
+    .replace(VENDOR_STICKY_TAKE_NEEDLE, VENDOR_STICKY_TAKE_PATCH)
     .replace(VENDOR_STICKY_LA_NEEDLE, VENDOR_STICKY_LA_PATCH)
     .replace(VENDOR_STICKY_KEEP_NEEDLE, VENDOR_STICKY_KEEP_PATCH)
     .replace(VENDOR_STICKY_SHOW_NEEDLE, VENDOR_STICKY_SHOW_PATCH)

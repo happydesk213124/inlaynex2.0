@@ -53,6 +53,8 @@ export interface CardSettings {
   preprocessing: boolean;
   person_tag_mode: PersonTagMode;
   auto_person_tags: boolean;
+  /** When true, tagger picks curated composition leaf ids instead of freeform camera/pose. */
+  composition_curation?: boolean;
   original_text: string;
   custom_pos: string;
   custom_neg: string;

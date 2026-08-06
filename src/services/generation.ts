@@ -34,6 +34,7 @@ import {
   personCountTagsForShot,
   stripPersonCountTags,
 } from '../domain/character/tags';
+import { dimsForAspect } from '../domain/nai-meta/aspect.ts';
 import { resolveGenerationCfgParams } from '../domain/style-preset-overrides';
 import { generateViaComfy, imageBackendKind } from '../providers/comfy/client';
 import { generateT2i } from '../providers/nai/client';
@@ -90,7 +91,11 @@ export interface GenerationPlan {
  * these without ever producing a `GenerationMeta`, so `generateImage` asks for
  * no more than it uses.
  */
-export type ImageRequest = Pick<GenerationPlan, 'main' | 'neg' | 'captions'>;
+export type ImageRequest = Pick<GenerationPlan, 'main' | 'neg' | 'captions'> & {
+  /** Optional per-shot canvas override (auto_aspect). */
+  width?: number;
+  height?: number;
+};
 
 export interface GeneratedImage {
   bytes: ArrayBuffer;
@@ -252,13 +257,18 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
 }
 
 /** Runs one generation on the configured backend and returns the bytes and seed. */
-export async function generateImage(plan: ImageRequest): Promise<GeneratedImage> {
+export async function generateImage(plan: ImageRequest, shotAspect?: unknown): Promise<GeneratedImage> {
   const nai: NaiSettings = getConfig().nai;
+  const autoAspect = Boolean(getConfig().card?.auto_aspect);
+  const dims = plan.width && plan.height
+    ? { width: clampNaiDim(plan.width, 832), height: clampNaiDim(plan.height, 1216), aspect: 'settings' as const }
+    : dimsForAspect(shotAspect, nai, autoAspect);
   // Both providers type their cast as `ShotCharacter`, which requires a `name`;
   // captions carry none and only the four caption fields are ever read.
   const characters = plan.captions as unknown as ShotCharacter[];
   if (imageBackendKind(nai) === 'comfy') {
-    const [comfyBytes, comfySeed] = await generateViaComfy(nai, plan.main, plan.neg, characters);
+    const naiSized = { ...nai, width: dims.width, height: dims.height };
+    const [comfyBytes, comfySeed] = await generateViaComfy(naiSized, plan.main, plan.neg, characters);
     return { bytes: comfyBytes, seed: comfySeed };
   }
   const token = cleanText(nai.api_key);
@@ -322,9 +332,8 @@ export async function generateImage(plan: ImageRequest): Promise<GeneratedImage>
   const req: T2iRequest = {
     prompt: plan.main,
     negative_prompt: plan.neg,
-    // User-chosen NAI size; only clamp absurd values (1–5000). No 832×1216 portrait ceiling.
-    width: clampNaiDim(nai.width, 832),
-    height: clampNaiDim(nai.height, 1216),
+    width: dims.width,
+    height: dims.height,
     seed: Number(nai.seed ?? 0) || 0,
     steps: Math.min(Number(nai.steps ?? 28) || 28, 28),
     cfg_scale: cfgParams.cfg_scale,
@@ -337,7 +346,13 @@ export async function generateImage(plan: ImageRequest): Promise<GeneratedImage>
     character_refs: characterRefs,
     vibes,
   };
-  dbg('nai.generate.dims', { message: `${req.width}x${req.height}`, steps: req.steps, focus: true });
+  dbg('nai.generate.dims', {
+    message: `${req.width}x${req.height}`,
+    aspect: dims.aspect,
+    auto_aspect: autoAspect,
+    steps: req.steps,
+    focus: true,
+  });
   if (!req.seed) req.seed = Math.floor(Math.random() * 4294967295) || 1;
   const apiUrl = cleanText(nai.request_url) || API_URL;
   // `generateT2i` serialises NovelAI generations internally.

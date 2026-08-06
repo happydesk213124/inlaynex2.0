@@ -115,6 +115,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   else card.lore_extra = 'tags';
   // asset_nai_tags: pull NAI metadata from matched Risu assets for new_characters
   card.asset_nai_tags = card.asset_nai_tags === true || card.asset_nai_tags === 'true' || card.asset_nai_tags === 1 || card.asset_nai_tags === '1';
+  card.auto_aspect = card.auto_aspect === true || card.auto_aspect === 'true' || card.auto_aspect === 1 || card.auto_aspect === '1';
   // natural_base: legacy boolean → "off" | "short" | "detailed" | "supplement"
   card.natural_base = normalizeNaturalBaseMode(card.natural_base);
   // person_tag_weight: NAI emphasis on Inlay person-count tags (0 = plain, 1–5 = N::…::)

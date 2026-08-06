@@ -49,6 +49,11 @@ export interface CardSettings {
   lore_extra: LoreExtraMode;
   /** When true, pull NAI metadata tags from matched Risu assets for new_characters. */
   asset_nai_tags: boolean;
+  /**
+   * When true, tagger picks per-shot aspect (portrait/square/landscape) and
+   * generation uses 832×1216 / 1024×1024 / 1216×832 instead of nai.width/height.
+   */
+  auto_aspect: boolean;
   char_info: boolean;
   user_info: boolean;
   char_appearance: boolean;

@@ -362,6 +362,7 @@ const VENDOR_ASSET_NAI_HTML_NEEDLE =
 const VENDOR_ASSET_NAI_HTML_PATCH =
   `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
             <label class="toggle-row" data-nx-help-id="nx-asset-nai-tags"><input type="checkbox" id="nx-asset-nai-tags" \${i.asset_nai_tags ? "checked" : ""}><span>에셋 NAI 태그</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-auto-aspect"><input type="checkbox" id="nx-auto-aspect" \${i.auto_aspect ? "checked" : ""}><span>자동 비율 조절</span></label>
 `;
 
 const VENDOR_ASSET_NAI_SAVE_NEEDLE =
@@ -371,6 +372,7 @@ const VENDOR_ASSET_NAI_SAVE_NEEDLE =
 const VENDOR_ASSET_NAI_SAVE_PATCH =
   `      char_appearance: ee("nx-appearance"),
       asset_nai_tags: ee("nx-asset-nai-tags"),
+      auto_aspect: ee("nx-auto-aspect"),
 `;
 
 const VENDOR_ASSET_NAI_HELP_NEEDLE =
@@ -380,6 +382,7 @@ const VENDOR_ASSET_NAI_HELP_NEEDLE =
 const VENDOR_ASSET_NAI_HELP_PATCH =
   `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
     "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "새 캐릭터 외형을 잡을 때, 로어 트리거와 이름이 맞는 Risu 에셋 이미지(PNG/WebP)의 NovelAI 메타 태그를 최대 4장까지 읽어 태거에 넣습니다. artist·year·품질 태그는 제외합니다." },
+    "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(Asset Maid 기본 사이즈). 끄면 NAI Width/Height 설정을 씁니다." },
 `;
 
 /** Settings nav: add 큐레이팅 tab between models and explorer. */
@@ -994,6 +997,9 @@ const VENDOR_PRESET_HTML_PATCH = `            <label class="wide"><span>프리�
             <div class="ref-preview wide" id="nx-preset-vibe-preview">\${f?.vibe_configured && f?.vibe_preview_url ? \`<img src="\${h(f.vibe_preview_url)}" alt="vibe">\` : '<span class="muted">없음 · 생성 시 NAI 모델설정 vibe 사용</span>'}</div>
           </div>
           <div class="row" style="margin-top:14px">
+            <button type="button" id="nx-preset-from-image" class="secondary\${t.presetImageFocus ? " armed" : ""}" title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">\${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
+            <span class="autotag-badge\${t.presetImageFocus ? " show" : ""}" data-preset-image-badge>\${t.presetImageFocus ? "선택됨 · Ctrl+V" : ""}</span>
+            <input id="nx-preset-from-image-file" type="file" accept="image/*" style="display:none">
             <button id="nx-save-card">카드 설정 저장</button>
             <button type="button" id="nx-preset-export" class="secondary">JSON 내보내기</button>
             <button type="button" id="nx-preset-file" class="secondary">JSON 파일 열기</button>
@@ -1157,7 +1163,66 @@ const VENDOR_PRESET_VIBE_EVT_NEEDLE = `    }), document.getElementById("nx-prese
       document.getElementById("nx-preset-file-input")?.click();
     }), document.getElementById("nx-preset-file-input")?.addEventListener("change", async (a) => {`;
 
-const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), document.getElementById("nx-preset-vibe-pick")?.addEventListener("click", () => {
+const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
+      const runPresetFromImage = async (file) => {
+        if (!file) return;
+        try {
+          const res = await K("/v1/presets/from-image", { method: "POST", body: { image_b64: await It(file) } }, 6e4);
+          const a = _e();
+          Array.isArray(a.presets) || (a.presets = []);
+          const id = mt(res?.name || "이미지 프리셋", a.presets.length);
+          const positive = String(res?.positive || "");
+          const negative = String(res?.negative || "");
+          const cfg = res?.cfg_scale == null || res?.cfg_scale === "" ? null : Number(res.cfg_scale);
+          const rescale = res?.cfg_rescale == null || res?.cfg_rescale === "" ? null : Number(res.cfg_rescale);
+          a.presets.push({
+            id,
+            name: String(res?.name || \`이미지 프리셋 \${a.presets.length + 1}\`),
+            positive,
+            negative,
+            cfg_scale: Number.isFinite(cfg) ? cfg : null,
+            cfg_rescale: Number.isFinite(rescale) ? rescale : null
+          });
+          pinActivePreset(a, id);
+          a.custom_pos = positive;
+          a.custom_neg = negative;
+          t.presetImageFocus = !1;
+          queueSettingsSave({ card: { ...a } });
+          $e("이미지 프리셋 추가됨");
+          await P();
+        } catch (err) {
+          t.uiMessage = { type: "error", text: z(err?.message || err) };
+          await P();
+        }
+      };
+      const btn = document.getElementById("nx-preset-from-image");
+      const fileEl = document.getElementById("nx-preset-from-image-file");
+      btn?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        t.presetImageFocus = !t.presetImageFocus;
+        P();
+      });
+      btn?.addEventListener("dblclick", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        t.presetImageFocus = !0;
+        fileEl?.click();
+      });
+      fileEl?.addEventListener("change", async (ev) => {
+        const f = ev.target?.files?.[0];
+        ev.target.value = "";
+        await runPresetFromImage(f);
+      });
+      t._presetImagePasteBound || (t._presetImagePasteBound = !0, window.addEventListener("paste", async (ev) => {
+        if (!t.presetImageFocus || !t.uiOpen || t.uiTab !== "card") return;
+        const item = Array.from(ev.clipboardData?.items || []).find((x) => x.type.startsWith("image/"));
+        if (!item) return;
+        ev.preventDefault();
+        const f = item.getAsFile();
+        f && await runPresetFromImage(f);
+      }));
+    })(), document.getElementById("nx-preset-vibe-pick")?.addEventListener("click", () => {
       document.getElementById("nx-preset-vibe-file")?.click();
     }), document.getElementById("nx-preset-vibe-file")?.addEventListener("change", async (a) => {
       const r = a.target?.files?.[0], pid = String(t.backendSettings?.card?.active_preset_id || "");

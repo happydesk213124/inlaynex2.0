@@ -256,7 +256,10 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
         : `SHOT COUNT: produce between ${imageMin} and ${imageMax} shots in scenes[].shots (across all scenes). Prefer the count that fits the message; never fewer than ${imageMin} or more than ${imageMax}.`,
       naturalBaseSystemMessage(naturalMode),
       `CHARACTER CAP: at most ${charMax} characters per shot (char1..char${charMax}). If more are visible, keep the ${charMax} most important; fold extras into situation/place.`,
-    ].join('\n'),
+      card.auto_aspect
+        ? 'ASPECT (required on every shot): set `aspect` to exactly one of `portrait` (832×1216 vertical), `square` (1024×1024), or `landscape` (1216×832 horizontal). Pick from the scene framing — tall full-body / standing → portrait; equal crop / face close-up square → square; wide group / side-by-side / scenic → landscape. Like Asset Maid size presets 1/5/2.'
+        : '',
+    ].filter(Boolean).join('\n'),
   });
 
   const curationMsg = await curationTaggerSystemMessage();

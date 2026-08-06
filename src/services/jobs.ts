@@ -510,7 +510,7 @@ async function runJob(jobId: string): Promise<void> {
       try {
         // Not cancelled mid-flight on purpose: the image is already being paid
         // for, so let it land and discard afterwards if the job went stale.
-        ({ bytes: raw, seed } = await generateImage({ main, neg, captions }));
+        ({ bytes: raw, seed } = await generateImage({ main, neg, captions }, shot.aspect));
       } finally {
         clearInterval(hb);
       }
@@ -544,7 +544,10 @@ async function runJob(jobId: string): Promise<void> {
         contentHash,
       });
       await publishImage(cardId, raw, location);
-      const cardMeta = cardMetaFromLocation(meta, location, raw?.byteLength || 0);
+      const cardMeta = {
+        ...cardMetaFromLocation(meta, location, raw?.byteLength || 0),
+        aspect: shot.aspect || undefined,
+      };
       await idbPut('cards', {
         id: cardId,
         job_id: jobId,

@@ -34,6 +34,8 @@ const MODULES = {
   'nai-meta-prompt-tags': 'src/domain/nai-meta/prompt-tags.ts',
   'nai-meta-match': 'src/domain/nai-meta/match.ts',
   'nai-meta-from-metadata': 'src/domain/nai-meta/from-metadata.ts',
+  'nai-meta-aspect': 'src/domain/nai-meta/aspect.ts',
+  'nai-meta-style-preset': 'src/domain/nai-meta/style-preset.ts',
   'text-util': 'src/core/util/text.ts',
   'blob-url-cache': 'src/storage/blob-url-cache.ts',
   'prompt-codec': 'src/config/prompt-codec.ts',

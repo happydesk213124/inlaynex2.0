@@ -192,6 +192,7 @@ then persisted.
 `POST /v1/nai/vibe` `{image_b64, information_extracted, strength}` ·
 `POST /v1/nai/vibe/clear` · `/v1/nai/reference` · `/v1/nai/vibe` ·
 `POST /v1/autotag` `{image_b64, threshold}` → `{ok, appearance, attire, accessories, tags, text}`
+`POST /v1/presets/from-image` `{image_b64}` → `{ok, positive, negative, cfg_scale, cfg_rescale, name}`
 
 ### Debug
 `/v1/debug`, `POST /v1/debug/clear` → `{ events[], by_stage{}, env{} }`

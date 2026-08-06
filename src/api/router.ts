@@ -419,6 +419,15 @@ const WRITE_ROUTES: readonly Route[] = [
       return ok(await diagnostics.evaluateAutotag(u8ToArrayBuffer(bytes), Number(body.threshold ?? 0.2)));
     },
   },
+  {
+    match: exact('/v1/presets/from-image'),
+    handler: async ({ body }) => {
+      const rawB64 = uploadBase64(body).replace(/\s+/g, '');
+      if (!rawB64) throw new Error('image_b64 required');
+      const bytes = base64ToBytes(rawB64);
+      return ok(await diagnostics.evaluatePresetFromImage(u8ToArrayBuffer(bytes)));
+    },
+  },
 ];
 
 /**

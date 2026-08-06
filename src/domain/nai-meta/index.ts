@@ -22,6 +22,12 @@ export {
   type PackedAssetTags,
 } from './prompt-tags.ts';
 export { promptFromNaiMetadata } from './from-metadata.ts';
+export { dimsForAspect, normalizeShotAspect, ASPECT_SIZES, type ShotAspect } from './aspect.ts';
+export {
+  filterStylePresetPositive,
+  styleFieldsFromNaiMetadata,
+  type StylePresetFromMeta,
+} from './style-preset.ts';
 
 function metaFromTextMap(map: Record<string, string>): unknown {
   const comment = map.Comment || map.comment;

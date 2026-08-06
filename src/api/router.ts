@@ -245,6 +245,34 @@ const WRITE_ROUTES: readonly Route[] = [
     handler: async ({ body }) => ({ status: 202, data: await jobs.createJob(body) }),
   },
   {
+    match: exact('/v1/jobs/retarget-hash'),
+    handler: async ({ body }) =>
+      ok(
+        await jobs.retargetJobSaveHash({
+          session_id: String(body.session_id || body.sessionId || ''),
+          character_id: String(body.character_id || body.characterId || ''),
+          chat_id: String(body.chat_id || body.chatId || ''),
+          message_index: body.message_index ?? body.messageIndex ?? body.chatIndex,
+          role: String(body.role || body.message_role || ''),
+          to_hash: String(body.to_hash || body.content_hash || body.hash || ''),
+          assistant_preview: String(body.assistant_preview || body.assistant_text || body.text || ''),
+        }),
+      ),
+  },
+  {
+    match: exact('/v1/jobs/busy-message'),
+    handler: async ({ body }) =>
+      ok(
+        await jobs.busyJobForMessage({
+          session_id: String(body.session_id || body.sessionId || ''),
+          character_id: String(body.character_id || body.characterId || ''),
+          chat_id: String(body.chat_id || body.chatId || ''),
+          message_index: body.message_index ?? body.messageIndex ?? body.chatIndex,
+          role: String(body.role || body.message_role || ''),
+        }),
+      ),
+  },
+  {
     match: exact('/v1/gallery/unlink', '/v1/cards/unlink'),
     handler: async ({ body }) =>
       ok(

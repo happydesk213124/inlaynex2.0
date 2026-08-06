@@ -118,6 +118,8 @@ export interface LocationArgs {
   yPercent: number | null;
   line?: number | null;
   contentHash?: string;
+  /** When set (e.g. inherited after mid-job hash rebind), overrides request.assistant_text. */
+  assistantPreview?: string;
 }
 
 /** Written alongside every image; a type alias so it stays an open record. */
@@ -370,6 +372,7 @@ export function buildImageLocation({
   yPercent,
   line = null,
   contentHash = '',
+  assistantPreview = '',
 }: LocationArgs): ImageLocation {
   const lineN = Math.floor(Number(line));
   return {
@@ -390,7 +393,7 @@ export function buildImageLocation({
     y_percent: yPercent,
     line: Number.isFinite(lineN) && lineN >= 1 ? lineN : null,
     content_hash: cleanText(contentHash || request.content_hash || '', 128),
-    assistant_preview: cleanText(request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT),
+    assistant_preview: cleanText(assistantPreview || request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT),
   };
 }
 

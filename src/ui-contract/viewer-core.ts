@@ -232,9 +232,55 @@ export function linkCardsForMessage<T extends GalleryCard = GalleryCard>(
 }
 
 /**
+ * Same turn as the selected message — char/chat/msg/role only (hash ignored).
+ * Used to skip duplicate auto-gen when images exist but are still unlinked.
+ * Cards without message_role are skipped (no guessed role).
+ */
+export function findCardsForMessageIdentity<T extends GalleryCard = GalleryCard>(
+  cards: T[] | null | undefined,
+  identity: {
+    characterId?: string;
+    chatId?: string;
+    sessionId?: string;
+    messageIndex?: number;
+    role?: string;
+    messageRole?: string;
+  } = {},
+): T[] {
+  const list = Array.isArray(cards) ? cards : [];
+  const characterId = String(identity.characterId || '');
+  const chatId = String(identity.chatId || '');
+  const sessionId = String(identity.sessionId || '');
+  const messageIndex = Number(identity.messageIndex);
+  const role = normalizeMessageRole(identity.role || identity.messageRole || '');
+  if (!characterId || !role || !Number.isFinite(messageIndex) || messageIndex < 0) return [];
+  const out: T[] = [];
+  for (const card of list) {
+    if (!String(card?.content_hash || '')) continue;
+    if (String(card?.character_id || '') !== characterId) continue;
+    const cardChat = String(card?.chat_id || '');
+    const cardSession = String(card?.session_id || '');
+    if (chatId) {
+      if (cardChat !== chatId) continue;
+    } else if (sessionId) {
+      if (cardSession && cardSession !== sessionId) continue;
+    } else {
+      continue;
+    }
+    if (Number(card?.message_index) !== messageIndex) continue;
+    const cardRole = normalizeMessageRole(card?.message_role || card?.role || '');
+    if (!cardRole || cardRole !== role) continue;
+    out.push(card);
+  }
+  return dedupeShotSlots(out);
+}
+
+/**
  * Candidates for one-shot hash rebind after streaming changes content_hash.
  * Requires same character + chat + message_index + role; hash differs; Dice≥60%.
  * Cards without message_role are skipped (no guessed role).
+ * Cards already on `newHash` are skipped per-row — siblings still on the old
+ * streaming hash must remain eligible (mid-job: 3 rebound, 2 still generating).
  */
 export function findHashRebindCandidates<T extends GalleryCard = GalleryCard>(
   cards: T[] | null | undefined,
@@ -249,27 +295,19 @@ export function findHashRebindCandidates<T extends GalleryCard = GalleryCard>(
   const messageIndex = Number(identity.messageIndex);
   const role = normalizeMessageRole(identity.role || identity.messageRole || '');
   if (!newHash || !text || !characterId || !role || !Number.isFinite(messageIndex) || messageIndex < 0) return [];
-  if (list.some((card) => card?.content_hash && card.content_hash === newHash)) return [];
 
   const textNorm = normalizeMatchText(text);
   if (textNorm.length < PREFIX_MATCH_MIN_CHARS) return [];
   const out: Array<{ card: T; score: number }> = [];
-  for (const card of list) {
+  for (const card of findCardsForMessageIdentity(list, {
+    characterId,
+    chatId,
+    sessionId,
+    messageIndex,
+    role,
+  })) {
     const cardHash = String(card?.content_hash || '');
     if (!cardHash || cardHash === newHash) continue;
-    if (String(card?.character_id || '') !== characterId) continue;
-    const cardChat = String(card?.chat_id || '');
-    const cardSession = String(card?.session_id || '');
-    if (chatId) {
-      if (cardChat !== chatId) continue;
-    } else if (sessionId) {
-      if (cardSession && cardSession !== sessionId) continue;
-    } else {
-      continue;
-    }
-    if (Number(card?.message_index) !== messageIndex) continue;
-    const cardRole = normalizeMessageRole(card?.message_role || card?.role || '');
-    if (!cardRole || cardRole !== role) continue;
     const preview = String(card?.assistant_preview || '');
     if (!preview) continue;
     const score = prefixMatchRatio(text, preview);
@@ -278,6 +316,78 @@ export function findHashRebindCandidates<T extends GalleryCard = GalleryCard>(
   }
   out.sort((a, b) => b.score - a.score || finiteNumber(b.card?.created_at) - finiteNumber(a.card?.created_at));
   return dedupeShotSlots(out.map((row) => row.card));
+}
+
+/** Running-job save-hash retarget: same identity + Dice/prefix ≥ threshold. */
+export interface JobSaveHashIdentity {
+  toHash?: string;
+  text?: string;
+  sessionId?: string;
+  characterId?: string;
+  chatId?: string;
+  messageIndex?: number;
+  role?: string;
+}
+
+export interface JobSaveHashMeta {
+  cancelRequested?: boolean;
+  saveContentHash?: string;
+  sourcePreview?: string;
+  sessionId?: string;
+  characterId?: string;
+  chatId?: string;
+  messageIndex?: number;
+  messageRole?: string;
+}
+
+/**
+ * True when meta targets the same char/chat/msg/role turn (hash ignored).
+ * Used to skip duplicate Ka while a job for that turn is still running.
+ */
+export function jobMatchesMessageIdentity(
+  meta: JobSaveHashMeta | null | undefined,
+  identity: {
+    sessionId?: string;
+    characterId?: string;
+    chatId?: string;
+    messageIndex?: number;
+    role?: string;
+  } = {},
+): boolean {
+  if (!meta || meta.cancelRequested) return false;
+  const characterId = String(identity.characterId || '');
+  const chatId = String(identity.chatId || '');
+  const sessionId = String(identity.sessionId || '');
+  const messageIndex = Number(identity.messageIndex);
+  const role = normalizeMessageRole(identity.role || '');
+  if (!characterId || !role || !Number.isFinite(messageIndex) || messageIndex < 0) return false;
+  if (String(meta.characterId || '') !== characterId) return false;
+  if (Number(meta.messageIndex) !== messageIndex) return false;
+  if (normalizeMessageRole(meta.messageRole) !== role) return false;
+  if (chatId) {
+    if (String(meta.chatId || '') !== chatId) return false;
+  } else if (sessionId) {
+    if (meta.sessionId && String(meta.sessionId) !== sessionId) return false;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * True when an in-flight job may rewrite later card saves to `toHash`.
+ * Lock/busy key stays on the original hash — only the save stamp moves.
+ */
+export function canRetargetJobSaveHash(
+  meta: JobSaveHashMeta | null | undefined,
+  identity: JobSaveHashIdentity = {},
+): boolean {
+  if (!jobMatchesMessageIdentity(meta, identity)) return false;
+  const toHash = String(identity.toHash || '').trim();
+  const text = String(identity.text || '');
+  if (!toHash || !text) return false;
+  if (toHash === String(meta?.saveContentHash || '').trim()) return false;
+  return prefixMatchRatio(meta?.sourcePreview || '', text) >= HASH_REBIND_THRESHOLD;
 }
 
 /** Prefer saved y%/anchor%; missing → +Infinity so they sort after placed shots. */

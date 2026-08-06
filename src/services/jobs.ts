@@ -34,7 +34,7 @@ import {
   setJobContext,
 } from '../core/debug';
 import type { ApiResult, JobRequest, JobState, TaggedShot, TaggerResult } from '../core/types';
-import { cleanText, stripCbs, uuid } from '../core/util/text';
+import { cleanText, stripCbs, toInt, uuid } from '../core/util/text';
 import { parseJsonLoose } from '../core/util/object';
 import {
   forceFinishNaiBody,
@@ -50,20 +50,163 @@ import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image
 import { flushPersist, idbGet, idbPut } from '../storage/stores';
 import { getConfig, jobEpochByKey, jobRunMeta } from './context';
 import { mergeRosterFromTagged } from './characters';
-import { buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage } from './generation';
+import { buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage, readImageLocation } from './generation';
 import { buildTaggerMessages, extractTaggerChatContext, flattenShots } from './tagger';
 import {
   getCurationMode,
   refineShotsWithCuration,
   snapShotsSceneTags,
 } from './curation';
-import { deleteCard, unlinkCardsForMessage } from './gallery';
-import { busyReplyForRequest, jobKey } from './job-locks';
+import { deleteCard, rebindCardsHash, unlinkCardsForMessage } from './gallery';
+import { ACTIVE_JOB_STATES, busyReplyForRequest, jobKey } from './job-locks';
 import { getPrompt } from './settings';
+import {
+  canRetargetJobSaveHash,
+  jobMatchesMessageIdentity,
+} from '../ui-contract/viewer-core';
+
+export { canRetargetJobSaveHash, jobMatchesMessageIdentity };
 
 
 /** Progress heartbeat period while waiting on NovelAI. */
 const HEARTBEAT_MS = 5000;
+
+/**
+ * Mid-job streaming can rebind earlier shots to a newer message hash while later
+ * shots are still generating. Prefer (1) an explicit save-hash retarget on the
+ * running job, then (2) a sibling card's rebound hash, so the rest of the job
+ * lands on the same message. Lock key / request.content_hash stay untouched.
+ */
+async function resolveJobContentHash(
+  jobId: string,
+  requestHash: string,
+): Promise<{ contentHash: string; assistantPreview: string }> {
+  const fallback = cleanText(requestHash || '', 128);
+  const meta = jobRunMeta.get(jobId);
+  const saveHash = cleanText(meta?.saveContentHash || '', 128);
+  if (saveHash && fallback && saveHash !== fallback) {
+    return {
+      contentHash: saveHash,
+      assistantPreview: cleanText(meta?.saveAssistantPreview || '', ASSISTANT_PREVIEW_LIMIT),
+    };
+  }
+  const published = meta?.publishedIds || [];
+  for (const id of published) {
+    try {
+      const loc = await readImageLocation(id);
+      const h = cleanText(loc?.content_hash || '', 128);
+      if (h && fallback && h !== fallback) {
+        return {
+          contentHash: h,
+          assistantPreview: cleanText(loc?.assistant_preview || '', ASSISTANT_PREVIEW_LIMIT),
+        };
+      }
+    } catch {
+      /* try next sibling */
+    }
+  }
+  return { contentHash: fallback, assistantPreview: '' };
+}
+
+/**
+ * True when any active job targets the same char/chat/msg/role (hash ignored).
+ * Lets the UI skip Ka while tagging/generating under a streaming hash.
+ */
+export async function busyJobForMessage(args: {
+  session_id?: string;
+  character_id?: string;
+  chat_id?: string;
+  message_index?: unknown;
+  role?: string;
+} = {}): Promise<ApiResult> {
+  const identity = {
+    sessionId: cleanText(args.session_id || '', 200),
+    characterId: cleanText(args.character_id || '', 200),
+    chatId: cleanText(args.chat_id || '', 200),
+    messageIndex: toInt(args.message_index, -1),
+    role: args.role || '',
+  };
+  if (!identity.characterId || identity.messageIndex < 0) {
+    return { ok: true, busy: false };
+  }
+  for (const [jobId, meta] of jobRunMeta.entries()) {
+    if (!jobMatchesMessageIdentity(meta, identity)) continue;
+    const row = await idbGet('jobs', jobId);
+    const state = String(row?.state || '');
+    if (!ACTIVE_JOB_STATES.includes(state)) continue;
+    return {
+      ok: true,
+      busy: true,
+      job_id: jobId,
+      state,
+      content_hash: cleanText(meta.saveContentHash || '', 128),
+    };
+  }
+  return { ok: true, busy: false };
+}
+
+/**
+ * While a job is still running, point later card saves at the finished message
+ * hash — only when identity matches and text is ≥60% similar to the job-start
+ * preview. Does not change the busy/lock key (still the original hash).
+ */
+export async function retargetJobSaveHash(args: {
+  session_id?: string;
+  character_id?: string;
+  chat_id?: string;
+  message_index?: unknown;
+  role?: string;
+  to_hash?: string;
+  assistant_text?: string;
+  assistant_preview?: string;
+} = {}): Promise<ApiResult> {
+  const toHash = cleanText(args.to_hash || '', 128);
+  const text = cleanText(args.assistant_preview || args.assistant_text || '', ASSISTANT_PREVIEW_LIMIT);
+  const identity = {
+    toHash,
+    text,
+    sessionId: cleanText(args.session_id || '', 200),
+    characterId: cleanText(args.character_id || '', 200),
+    chatId: cleanText(args.chat_id || '', 200),
+    messageIndex: toInt(args.message_index, -1),
+    role: args.role || '',
+  };
+  if (!toHash || !text || !identity.characterId || identity.messageIndex < 0) {
+    return { ok: false, error: { code: 'bad_request', message: 'to_hash, text, character_id, message_index required' }, retargeted: false };
+  }
+  for (const [jobId, meta] of jobRunMeta.entries()) {
+    if (!canRetargetJobSaveHash(meta, identity)) continue;
+    const row = await idbGet('jobs', jobId);
+    const state = String(row?.state || '');
+    if (!ACTIVE_JOB_STATES.includes(state)) continue;
+    meta.saveContentHash = toHash;
+    meta.saveAssistantPreview = text;
+    let rebound = 0;
+    if (meta.publishedIds?.length) {
+      try {
+        const res = await rebindCardsHash({
+          session_id: identity.sessionId || meta.sessionId,
+          card_ids: [...meta.publishedIds],
+          to_hash: toHash,
+          assistant_preview: text,
+        });
+        rebound = Number((res as { rebound?: unknown })?.rebound || 0);
+      } catch {
+        /* save-hash still updated; published cards may catch up on next rebind */
+      }
+    }
+    dbg('job.retarget', {
+      job_id: jobId,
+      to: toHash.slice(0, 8),
+      msg: identity.messageIndex,
+      rebound,
+      focus: true,
+    });
+    return { ok: true, retargeted: true, job_id: jobId, content_hash: toHash, rebound };
+  }
+  return { ok: true, retargeted: false, job_id: '', content_hash: toHash };
+}
+
 
 /**
  * NovelAI occasionally delivers the whole ZIP then never closes the stream. Once
@@ -85,7 +228,22 @@ function beginJobEpoch(jobId: string, request: IncomingRequest, sessionId: strin
   // busy-check first, so that a queued duplicate is rejected rather than
   // silently replacing work the user is already waiting on.
   jobEpochByKey.set(key, { epoch, jobId });
-  jobRunMeta.set(jobId, { key, epoch, cancelRequested: false, publishedIds: [] });
+  const preview = cleanText(request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT);
+  const hash = cleanText(request.content_hash || '', 128);
+  jobRunMeta.set(jobId, {
+    key,
+    epoch,
+    cancelRequested: false,
+    publishedIds: [],
+    saveContentHash: hash,
+    saveAssistantPreview: preview,
+    sourcePreview: preview,
+    sessionId,
+    characterId: cleanText(request.character_id || '', 200),
+    chatId: cleanText(request.chat_id || '', 200),
+    messageIndex: toInt(request.message_index, -1),
+    messageRole: cleanText(request.message_role || request.role || '', 40).toLowerCase(),
+  });
   return { key, epoch };
 }
 
@@ -143,6 +301,8 @@ interface ProgressExtra {
   cards_so_far?: number;
   /** Known line slots for bubble inline placeholders (spinner until image ready). */
   pending_inline?: Array<{ shot_index: number; line: number }>;
+  /** Message index the pending rows belong to — UI must not paint them on other turns. */
+  pending_message_index?: number;
 }
 
 /** Small by design: a progress row must never carry the tagged scene. */
@@ -156,6 +316,9 @@ function progressPayload(extra: ProgressExtra = {}): Record<string, unknown> {
     message: extra.message || '',
     cards_so_far: extra.cards_so_far,
     pending_inline: Array.isArray(extra.pending_inline) ? extra.pending_inline : undefined,
+    pending_message_index: Number.isFinite(Number(extra.pending_message_index))
+      ? Number(extra.pending_message_index)
+      : undefined,
     debug_stage: getFocusStage() || getLastStage(),
     debug_error: getLastError()?.message || '',
   };
@@ -272,6 +435,7 @@ export async function getJob(jobId: string): Promise<ApiResult> {
       'message',
       'cards_so_far',
       'pending_inline',
+      'pending_message_index',
       'debug_stage',
       'debug_error',
     ]) {
@@ -430,6 +594,8 @@ async function runJob(jobId: string): Promise<void> {
     }
 
     if (await cancelJobIfStale(jobId, 'superseded before generate')) return;
+    const pendingMessageIndex =
+      request.message_index != null ? toInt(request.message_index, -1) : -1;
     const pendingInline = shots
       .map((shot, i) => {
         const line = Math.floor(Number((shot as { line?: unknown }).line));
@@ -448,6 +614,7 @@ async function runJob(jobId: string): Promise<void> {
         phase: 'generating',
         message: `이미지 1/${shots.length} 생성 준비`,
         pending_inline: pendingInline,
+        pending_message_index: pendingMessageIndex,
       }),
     );
 
@@ -459,7 +626,10 @@ async function runJob(jobId: string): Promise<void> {
       const { main, neg, captions, meta } = await buildGenerationForShot({ shot, roster });
       const cardId = uuid();
       const now = Date.now() / 1000;
-      const contentHash = cleanText(request.content_hash || '');
+      const inherited = await resolveJobContentHash(jobId, cleanText(request.content_hash || ''));
+      const contentHash = inherited.contentHash;
+      const assistantPreview =
+        inherited.assistantPreview || cleanText(request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT);
       // The LLM's anchor is always stored when present; the setting only affects
       // how it is used at display time.
       let yPercent = shotAnchorPercent(shot);
@@ -486,6 +656,7 @@ async function runJob(jobId: string): Promise<void> {
           phase: 'generating',
           message: `NovelAI 요청 중 ${idx + 1}/${shots.length}… [${getFocusStage()}]`,
           pending_inline: pendingInline,
+        pending_message_index: pendingMessageIndex,
         }),
       );
 
@@ -515,6 +686,7 @@ async function runJob(jobId: string): Promise<void> {
               kb ? ` ${Math.round(kb / 1024)}KB` : ''
             }`,
             pending_inline: pendingInline,
+        pending_message_index: pendingMessageIndex,
           }),
         ).catch(() => {});
       }, HEARTBEAT_MS);
@@ -543,6 +715,7 @@ async function runJob(jobId: string): Promise<void> {
           phase: 'generating',
           message: `이미지 저장 중 ${idx + 1}/${shots.length}… [${getFocusStage()}]`,
           pending_inline: pendingInline,
+        pending_message_index: pendingMessageIndex,
         }),
       );
       const location = buildImageLocation({
@@ -557,6 +730,7 @@ async function runJob(jobId: string): Promise<void> {
           return Number.isFinite(n) && n >= 1 ? n : null;
         })(),
         contentHash,
+        assistantPreview,
       });
       await publishImage(cardId, raw, location);
       const cardMeta = {
@@ -594,7 +768,7 @@ async function runJob(jobId: string): Promise<void> {
         chat_name: location.chat_name || '',
         char_index: location.char_index ?? -1,
         chat_index: location.chat_index ?? -1,
-        assistant_preview: cleanText(request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT),
+        assistant_preview: assistantPreview,
         main_prompt: main,
         negative_prompt: neg,
         characters: meta.characters || [],
@@ -616,6 +790,7 @@ async function runJob(jobId: string): Promise<void> {
           message: `이미지 ${idx + 1}/${shots.length} 완료`,
           cards_so_far: cards.length,
           pending_inline: pendingInline,
+        pending_message_index: pendingMessageIndex,
         }),
       );
     }
@@ -628,7 +803,7 @@ async function runJob(jobId: string): Promise<void> {
       progress: 100,
       phase: 'done',
       message: `이미지 ${shots.length}/${shots.length} 완료`,
-      pending_inline: pendingInline,
+      // Done = no spinners. Leaving pending_inline here kept circles on finished bubbles.
     };
     await attachImageUrls(result);
     await setJob(jobId, 'done', result);

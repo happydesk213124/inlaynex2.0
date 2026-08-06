@@ -51,6 +51,19 @@ export interface JobRunMeta {
   epoch: number;
   cancelRequested: boolean;
   publishedIds: string[];
+  /**
+   * Hash written onto new cards. May diverge from the lock `key` hash when the
+   * user re-selects the finished streaming message (Dice≥60% gate).
+   */
+  saveContentHash: string;
+  saveAssistantPreview: string;
+  /** Assistant text captured at job start — soft-match gate for retarget. */
+  sourcePreview: string;
+  sessionId: string;
+  characterId: string;
+  chatId: string;
+  messageIndex: number;
+  messageRole: string;
 }
 
 /**

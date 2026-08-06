@@ -8,7 +8,7 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.1.4';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.1.5';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
@@ -18,7 +18,7 @@ export const PROMPT_PACK = '2026-08-06-inline-line';
 
 export const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'prefill', 'preprocess',
-  'preset_1', 'lore_inject', 'char_inject', 'appearance_inject', 'autotag',
+  'preset_1', 'lore_inject', 'char_inject', 'appearance_inject', 'asset_tags_inject', 'autotag',
   'curation_refine', 'curation_embed_hint',
 ] as const;
 
@@ -26,7 +26,7 @@ export type PromptKey = (typeof PROMPT_KEYS)[number];
 
 /** Prompts that must track the shipped pack even if the user edited them. */
 export const FORCE_PROMPT_KEYS: readonly PromptKey[] = [
-  'tagger', 'format', 'appearance_inject', 'lore_inject', 'autotag',
+  'tagger', 'format', 'appearance_inject', 'lore_inject', 'asset_tags_inject', 'autotag',
   'curation_refine', 'curation_embed_hint',
 ];
 

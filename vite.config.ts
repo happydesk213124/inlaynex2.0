@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.4';
+const PLUGIN_VERSION = '2.1.5';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -354,6 +354,37 @@ const VENDOR_PERSON_TAG_WEIGHT_CT_PATCH =
       person_tag_weight: document.getElementById("nx-person-tag-weight") ? re(N("nx-person-tag-weight"), 0, 5, re(e.person_tag_weight, 0, 5, 3)) : re(e.person_tag_weight, 0, 5, 3),
 `;
 
+/** Dashboard: collect NAI metadata tags from matched Risu assets for new_characters. */
+const VENDOR_ASSET_NAI_HTML_NEEDLE =
+  `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
+`;
+
+const VENDOR_ASSET_NAI_HTML_PATCH =
+  `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-asset-nai-tags"><input type="checkbox" id="nx-asset-nai-tags" \${i.asset_nai_tags ? "checked" : ""}><span>에셋 NAI 태그</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-auto-aspect"><input type="checkbox" id="nx-auto-aspect" \${i.auto_aspect ? "checked" : ""}><span>자동 비율 조절</span></label>
+`;
+
+const VENDOR_ASSET_NAI_SAVE_NEEDLE =
+  `      char_appearance: ee("nx-appearance"),
+`;
+
+const VENDOR_ASSET_NAI_SAVE_PATCH =
+  `      char_appearance: ee("nx-appearance"),
+      asset_nai_tags: ee("nx-asset-nai-tags"),
+      auto_aspect: ee("nx-auto-aspect"),
+`;
+
+const VENDOR_ASSET_NAI_HELP_NEEDLE =
+  `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
+`;
+
+const VENDOR_ASSET_NAI_HELP_PATCH =
+  `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
+    "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "로어 트리거와 이름이 맞는 Risu 에셋 이미지(PNG/WebP)의 NovelAI 메타 태그를 트리거당 최대 2장(normal/default·이름 일치 우선) 읽어 태거 프롬프트에 넣습니다. artist·year·품질 태그는 제외합니다." },
+    "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(Asset Maid 기본 사이즈). 끄면 NAI Width/Height 설정을 씁니다." },
+`;
+
 /** Settings nav: add 큐레이팅 tab between models and explorer. */
 const VENDOR_CURATION_TABS_NEEDLE = `S = {
       dashboard: "대시보드",
@@ -459,9 +490,19 @@ const VENDOR_CURATION_PANEL_PATCH =
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
         </div>
         <div class="card" style="margin-top:14px">
+          <strong>2.1.5</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>에셋 NAI 태그: 로어 트리거↔캐릭터/활성 모듈 에셋 매칭 · 트리거당 ≤2장(이름 일치·normal/default 우선) · 스티스 alpha 컬럼 순서 수정</li>
+            <li>대시보드: 신규 캐릭터 시드에 NAI 에셋 메타 사용 토글</li>
+            <li>이미지→스타일 프리셋 로드(카드 헤드·하단) · 자동 비율(832×1216 / 1024² / 1216×832)</li>
+            <li>스티키 활성 이미지 테두리/그림자 제거 · 스크롤 DOM 선택 후 갤러리 빈칸 수정</li>
+            <li>디버그 탭: 로그 | 태깅 서브탭 · 현재 DOM→로어/에셋 프로브</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
           <strong>2.1.4</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>진행 토스트: 노드 하나 유지, 내용 바뀌면 표시 · 1초간 변화 없으면 눈에서만 숨김 (SafeDOM, risutts식)</li>
+            <li>진행 토스트: 노드 하나 유지, 내용 바뀌면 표시 · 5초간 변화 없으면 눈에서만 숨김 (SafeDOM, risutts식)</li>
             <li>인덱싱 토스트 바 = 민트, 생성/재생성/리롤 = 보라 단일 바</li>
             <li>재생성·리롤 중에도 토스트가 뷰어 진행과 같이 갱신</li>
             <li>접힘 모드 <code>재생성·태그 플로팅</code>: 태그/재생성 + 프리셋, 길게 누르면 펼침</li>
@@ -497,8 +538,106 @@ const VENDOR_CURATION_PANEL_PATCH =
         </div>
       \`) : t.uiTab === "debug" && (u = \``;
 
+/** Debug tab: 로그 / 태깅 sub-panels for asset-NAI probe. */
+const VENDOR_DEBUG_PANEL_NEEDLE = `        <div class="card">
+          <strong>런타임 상태</strong>
+          <pre id="nx-debug-status" style="margin-top:10px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace;color:#c9d4e6;max-height:360px;overflow:auto;background:rgba(0,0,0,.25);padding:12px;border-radius:12px">\${h(Ve())}</pre>
+          <div class="row" style="margin-top:12px">
+            <button id="nx-debug-refresh" class="secondary">새로고침</button>
+            <button id="nx-debug-clear" class="secondary">로그 비우기</button>
+            <button id="nx-debug-copy" class="secondary">로그 복사</button>
+            <button id="nx-debug-ping" class="secondary">핑 로그</button>
+          </div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>이벤트 로그 (최신 \${Math.min(120, t.debugLog.length)} / \${t.debugLog.length})</strong>
+          <pre id="nx-debug-log" style="margin-top:10px;white-space:pre-wrap;font:11.5px/1.45 Consolas,monospace;color:#b8c4d8;max-height:420px;overflow:auto;background:rgba(0,0,0,.28);padding:12px;border-radius:12px">\${h(Ye(120) || "(아직 로그 없음)")}</pre>
+          <div class="notice info" style="margin-top:12px">채팅 화면 좌측 하단 디버그 패널에서도 같은 로그를 볼 수 있습니다. afterRequest → job → gallery → overlay 순서로 찍힙니다.</div>
+        </div>`;
+
+const VENDOR_DEBUG_PANEL_PATCH = `        <div class="nx-seg" style="margin-bottom:12px">
+          <button type="button" data-nx-debug-panel="log" class="\${(t.debugPanelTab || "log") === "log" ? "active" : ""}">로그</button>
+          <button type="button" data-nx-debug-panel="tagging" class="\${(t.debugPanelTab || "log") === "tagging" ? "active" : ""}">태깅</button>
+        </div>
+        \${(t.debugPanelTab || "log") === "tagging" ? \`
+        <div class="card">
+          <strong>에셋 NAI 태그 프로브</strong>
+          <div class="muted" style="margin-top:8px">현재 선택된 채팅 메시지(DOM)로 로어북 트리거를 잡고, 트리거마다 Risu 에셋(캐릭터/활성 모듈) 중 NAI 메타가 있는 이미지를 최대 2장씩(normal/default·이름 일치 우선) 매칭합니다.</div>
+          <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
+            <button type="button" id="nx-debug-asset-tags">현재 선택 DOM → 로어/에셋 체크</button>
+          </div>
+          <pre id="nx-debug-asset-tags-out" style="margin-top:12px;white-space:pre-wrap;font:11.5px/1.45 Consolas,monospace;color:#b8c4d8;max-height:520px;overflow:auto;background:rgba(0,0,0,.28);padding:12px;border-radius:12px">\${h(t.debugAssetTagReport || "(아직 실행 안 함 — 채팅에서 메시지를 선택한 뒤 버튼을 누르세요)")}</pre>
+        </div>
+        \` : \`
+        <div class="card">
+          <strong>런타임 상태</strong>
+          <pre id="nx-debug-status" style="margin-top:10px;white-space:pre-wrap;font:12px/1.5 Consolas,monospace;color:#c9d4e6;max-height:360px;overflow:auto;background:rgba(0,0,0,.25);padding:12px;border-radius:12px">\${h(Ve())}</pre>
+          <div class="row" style="margin-top:12px">
+            <button id="nx-debug-refresh" class="secondary">새로고침</button>
+            <button id="nx-debug-clear" class="secondary">로그 비우기</button>
+            <button id="nx-debug-copy" class="secondary">로그 복사</button>
+            <button id="nx-debug-ping" class="secondary">핑 로그</button>
+          </div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>이벤트 로그 (최신 \${Math.min(120, t.debugLog.length)} / \${t.debugLog.length})</strong>
+          <pre id="nx-debug-log" style="margin-top:10px;white-space:pre-wrap;font:11.5px/1.45 Consolas,monospace;color:#b8c4d8;max-height:420px;overflow:auto;background:rgba(0,0,0,.28);padding:12px;border-radius:12px">\${h(Ye(120) || "(아직 로그 없음)")}</pre>
+          <div class="notice info" style="margin-top:12px">채팅 화면 좌측 하단 디버그 패널에서도 같은 로그를 볼 수 있습니다. afterRequest → job → gallery → overlay 순서로 찍힙니다.</div>
+        </div>
+        \`}`;
+
+const VENDOR_DEBUG_EVENTS_NEEDLE = `document.getElementById("nx-debug-refresh")?.addEventListener("click", async () => {
+      await P();
+    }), document.getElementById("nx-debug-clear")?.addEventListener("click", async () => {`;
+
+const VENDOR_DEBUG_EVENTS_PATCH = `document.querySelectorAll("[data-nx-debug-panel]").forEach((btn) => btn.addEventListener("click", async () => {
+      t.debugPanelTab = btn.getAttribute("data-nx-debug-panel") || "log";
+      await P();
+    })), document.getElementById("nx-debug-asset-tags")?.addEventListener("click", async () => {
+      const btn = document.getElementById("nx-debug-asset-tags");
+      if (btn) btn.disabled = !0;
+      try {
+        const msg = t.selectedMessage;
+        const text = w(msg?.text || "", 2e4);
+        if (!text) throw new Error("채팅에서 메시지를 먼저 선택하세요 (selectedMessage 없음).");
+        const lore = await la();
+        const keys = collectTriggeredLoreKeys(lore, text);
+        t.debugAssetTagReport = "실행 중…";
+        await P();
+        const res = await K("/v1/debug/asset-tags", {
+          method: "POST",
+          body: {
+            message: text,
+            lorebook: lore,
+            lore_trigger_keys: keys,
+            selected: {
+              hash: msg?.hash || "",
+              domIndex: msg?.domIndex,
+              chatIndex: msg?.chatIndex,
+              role: msg?.role || "",
+              preview: w(msg?.preview || text, 120)
+            }
+          }
+        });
+        const report = res?.report || res;
+        t.debugAssetTagReport = JSON.stringify(report, null, 2);
+        y("info", "debug.asset-tags", \`triggers=\${(report?.asset_match_triggers || []).length} matches=\${(report?.name_matches || []).length} picked=\${report?.ok_picked || 0}\`);
+        t.uiMessage = { type: "success", text: "에셋 NAI 태그 프로브 완료" };
+      } catch (err) {
+        t.debugAssetTagReport = String(err?.message || err);
+        t.uiMessage = { type: "error", text: z(err?.message || err) };
+        y("error", "debug.asset-tags", err?.message || err);
+      } finally {
+        if (btn) btn.disabled = !1;
+      }
+      await P();
+    }), document.getElementById("nx-debug-refresh")?.addEventListener("click", async () => {
+      await P();
+    }), document.getElementById("nx-debug-clear")?.addEventListener("click", async () => {`;
+
 const VENDOR_CURATION_EVENTS_NEEDLE =
   `document.getElementById("nx-save-models")?.addEventListener("click", async () => {`;
+
 
 const VENDOR_CURATION_EVENTS_PATCH =
   `document.querySelectorAll("[data-nx-curation-mode]").forEach((btn) => btn.addEventListener("click", async () => {
@@ -829,6 +968,7 @@ const VENDOR_PRESET_HEAD_SAVE_PATCH = `              <div class="prompt-title">�
             </div>
             <div class="row" style="margin:0;gap:8px;align-items:center;flex-shrink:0">
               <span class="badge \${U.length ? "custom" : "default"}">\${U.length}개</span>
+              <button type="button" id="nx-preset-from-image-head" class="secondary\${t.presetImageFocus ? " armed" : ""}" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">\${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
               <button type="button" id="nx-save-card-head">카드 설정 저장</button>
             </div>
           </div>
@@ -966,6 +1106,9 @@ const VENDOR_PRESET_HTML_PATCH = `            <label class="wide"><span>프리�
             <div class="ref-preview wide" id="nx-preset-vibe-preview">\${f?.vibe_configured && f?.vibe_preview_url ? \`<img src="\${h(f.vibe_preview_url)}" alt="vibe">\` : '<span class="muted">없음 · 생성 시 NAI 모델설정 vibe 사용</span>'}</div>
           </div>
           <div class="row" style="margin-top:14px">
+            <button type="button" id="nx-preset-from-image" class="secondary\${t.presetImageFocus ? " armed" : ""}" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">\${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
+            <span class="autotag-badge\${t.presetImageFocus ? " show" : ""}" data-preset-image-badge>\${t.presetImageFocus ? "선택됨 · Ctrl+V" : ""}</span>
+            <input id="nx-preset-from-image-file" type="file" accept="image/*" style="display:none">
             <button id="nx-save-card">카드 설정 저장</button>
             <button type="button" id="nx-preset-export" class="secondary">JSON 내보내기</button>
             <button type="button" id="nx-preset-file" class="secondary">JSON 파일 열기</button>
@@ -1129,7 +1272,67 @@ const VENDOR_PRESET_VIBE_EVT_NEEDLE = `    }), document.getElementById("nx-prese
       document.getElementById("nx-preset-file-input")?.click();
     }), document.getElementById("nx-preset-file-input")?.addEventListener("change", async (a) => {`;
 
-const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), document.getElementById("nx-preset-vibe-pick")?.addEventListener("click", () => {
+const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
+      const runPresetFromImage = async (file) => {
+        if (!file) return;
+        try {
+          const res = await K("/v1/presets/from-image", { method: "POST", body: { image_b64: await It(file) } }, 6e4);
+          const a = _e();
+          Array.isArray(a.presets) || (a.presets = []);
+          const id = mt(res?.name || "이미지 프리셋", a.presets.length);
+          const positive = String(res?.positive || "");
+          const negative = String(res?.negative || "");
+          const cfg = res?.cfg_scale == null || res?.cfg_scale === "" ? null : Number(res.cfg_scale);
+          const rescale = res?.cfg_rescale == null || res?.cfg_rescale === "" ? null : Number(res.cfg_rescale);
+          a.presets.push({
+            id,
+            name: String(res?.name || \`이미지 프리셋 \${a.presets.length + 1}\`),
+            positive,
+            negative,
+            cfg_scale: Number.isFinite(cfg) ? cfg : null,
+            cfg_rescale: Number.isFinite(rescale) ? rescale : null
+          });
+          pinActivePreset(a, id);
+          a.custom_pos = positive;
+          a.custom_neg = negative;
+          t.presetImageFocus = !1;
+          queueSettingsSave({ card: { ...a } });
+          $e("이미지 프리셋 추가됨");
+          await P();
+        } catch (err) {
+          t.uiMessage = { type: "error", text: z(err?.message || err) };
+          await P();
+        }
+      };
+      const fileEl = document.getElementById("nx-preset-from-image-file");
+      document.querySelectorAll("[data-preset-from-image]").forEach((btn) => {
+        btn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          t.presetImageFocus = !t.presetImageFocus;
+          P();
+        });
+        btn.addEventListener("dblclick", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          t.presetImageFocus = !0;
+          fileEl?.click();
+        });
+      });
+      fileEl?.addEventListener("change", async (ev) => {
+        const f = ev.target?.files?.[0];
+        ev.target.value = "";
+        await runPresetFromImage(f);
+      });
+      t._presetImagePasteBound || (t._presetImagePasteBound = !0, window.addEventListener("paste", async (ev) => {
+        if (!t.presetImageFocus || !t.uiOpen || t.uiTab !== "card") return;
+        const item = Array.from(ev.clipboardData?.items || []).find((x) => x.type.startsWith("image/"));
+        if (!item) return;
+        ev.preventDefault();
+        const f = item.getAsFile();
+        f && await runPresetFromImage(f);
+      }));
+    })(), document.getElementById("nx-preset-vibe-pick")?.addEventListener("click", () => {
       document.getElementById("nx-preset-vibe-file")?.click();
     }), document.getElementById("nx-preset-vibe-file")?.addEventListener("change", async (a) => {
       const r = a.target?.files?.[0], pid = String(t.backendSettings?.card?.active_preset_id || "");
@@ -1279,10 +1482,12 @@ const VENDOR_STICKY_LA_PATCH = `  function La() {
 const VENDOR_STICKY_COVER_NEEDLE = 'width:100%;height:100%;object-fit:cover;display:block';
 const VENDOR_STICKY_COVER_PATCH = 'width:100%;height:100%;object-fit:contain;display:block;background:transparent';
 
-/** Sticky always-image shell: no opaque letterbox fill (frame already aspect-fitted). */
-const VENDOR_STICKY_SHELL_BG_NEEDLE = `"box-shadow:0 4px 14px rgba(0,0,0,.35)",
+/** Sticky always-image shell: no border/shadow letterbox (frame already aspect-fitted). */
+const VENDOR_STICKY_SHELL_BG_NEEDLE = `"border:1px solid rgba(255,255,255,.16)",
+      "box-shadow:0 4px 14px rgba(0,0,0,.35)",
       "background:#0b0f18"`;
-const VENDOR_STICKY_SHELL_BG_PATCH = `"box-shadow:0 4px 14px rgba(0,0,0,.35)",
+const VENDOR_STICKY_SHELL_BG_PATCH = `"border:none",
+      "box-shadow:none",
       "background:transparent"`;
 
 /** Sticky marker create: empty placeholder must stay transparent like composeStickyThumbHtml. */
@@ -1835,7 +2040,7 @@ const VENDOR_INLINE_HELP_NEEDLE =
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },
     "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "메시지 클릭·해시 연결 시, 샷의 line 위치에 말풍선 본문에 이미지를 끼워 넣습니다. 오버레이와 별개입니다. Risu가 말풍선을 다시 그리면 사라질 수 있어 다시 클릭해야 합니다." },
-    "nx-progress-toast": { title: "진행 토스트", body: "토스트 노드는 항상 두고, 진행·작업명이 바뀌면 보이게 / 1초간 내용 변화 없으면 눈에서만 숨깁니다. 인덱싱=민트, 그 외=보라. 클릭하면 당장 숨깁니다." },`;
+    "nx-progress-toast": { title: "진행 토스트", body: "토스트 노드는 항상 두고, 진행·작업명이 바뀌면 보이게 / 5초간 내용 변화 없으면 눈에서만 숨깁니다. 인덱싱=민트, 그 외=보라. 클릭하면 당장 숨깁니다." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>`;
@@ -2085,6 +2290,146 @@ const VENDOR_SELECT_SAME_NEEDLE =
 const VENDOR_SELECT_SAME_PATCH =
   `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c && !t.pendingSessionId && t.selectedMessage.sessionId && t.lastScope?.sessionId && t.selectedMessage.sessionId === t.lastScope.sessionId) return !0;`;
 
+/**
+ * Scroll DOM select skipped gallery fetch (`ce`). Empty `t.gallery` → linkedCards=[] →
+ * viewer stuck on placeholder; later click on same hash also skipped content paint.
+ */
+const VENDOR_SCROLL_GALLERY_NEW_NEEDLE = `    if (source !== "scroll") {
+      try {
+        await ce(r.sessionId, !0);
+      } catch {
+      }
+    }
+    u = linkedCards(t.selectedMessage);
+    if (!u.length && source !== "scroll") {
+      try {
+        u = await maybeRebindAndLink(t.selectedMessage, r);
+      } catch {
+      }
+    }
+    t.selectedMessage.hasImage = u.length > 0, t.selectedMessage.cardCount = u.length, t.selectedMessage.paragraphsWithImages = [...new Set(u.map((C) => C.paragraph))].sort((C, S) => Number(C) - Number(S)), t.selectedMessage.matchMode = u.length ? "hash" : "none";
+    if (u.length) {
+      t.lastImagedMessage = {
+        hash: t.selectedMessage.hash,
+        chatIndex: t.selectedMessage.chatIndex,
+        messageIndex: t.selectedMessage.messageIndex,
+        sessionId: t.selectedMessage.sessionId,
+        domIndex: t.selectedMessage.domIndex
+      };
+    } else if (source !== "scroll") {
+      // No hash cards → do not keep another message's images as this selection.
+      t.lastImagedMessage = null;
+    }
+    if (source === "scroll") {
+      // Keep previous sticky markers when the new message has no images (avoids wipe + gallery thrash).
+      if (u.length) {
+        if (t.overlayUi) {
+        t.overlayUi.pinTarget = o, t.overlayUi._pinDomIndex = e;
+        try {
+          const doc = t.overlayUi.doc || t.hostDoc;
+          const els = t._msgElsCache?.doc === doc ? t._msgElsCache.els : null;
+          if (doc && els) rememberNearbyMsgDoms(doc, els, e);
+        } catch {
+        }
+      }
+        scheduleOverlayPlace(40), await onSelectionChanged("content");
+      } else scheduleStickySync(), await onSelectionChanged("chrome");
+      return !0;
+    }`;
+
+const VENDOR_SCROLL_GALLERY_NEW_PATCH = `    {
+      const galleryStale = !Array.isArray(t.gallery) || !t.gallery.length || t._galleryCache?.sessionId !== r.sessionId;
+      if (source !== "scroll" || galleryStale) {
+        try {
+          await ce(r.sessionId, galleryStale || source !== "scroll");
+        } catch {
+        }
+      }
+    }
+    u = linkedCards(t.selectedMessage);
+    if (!u.length && source !== "scroll") {
+      try {
+        u = await maybeRebindAndLink(t.selectedMessage, r);
+      } catch {
+      }
+    }
+    t.selectedMessage.hasImage = u.length > 0, t.selectedMessage.cardCount = u.length, t.selectedMessage.paragraphsWithImages = [...new Set(u.map((C) => C.paragraph))].sort((C, S) => Number(C) - Number(S)), t.selectedMessage.matchMode = u.length ? "hash" : "none";
+    if (u.length) {
+      t.lastImagedMessage = {
+        hash: t.selectedMessage.hash,
+        chatIndex: t.selectedMessage.chatIndex,
+        messageIndex: t.selectedMessage.messageIndex,
+        sessionId: t.selectedMessage.sessionId,
+        domIndex: t.selectedMessage.domIndex
+      };
+    } else if (source !== "scroll") {
+      // No hash cards → do not keep another message's images as this selection.
+      t.lastImagedMessage = null;
+    }
+    if (source === "scroll") {
+      if (u.length) {
+        if (t.overlayUi) {
+        t.overlayUi.pinTarget = o, t.overlayUi._pinDomIndex = e;
+        try {
+          const doc = t.overlayUi.doc || t.hostDoc;
+          const els = t._msgElsCache?.doc === doc ? t._msgElsCache.els : null;
+          if (doc && els) rememberNearbyMsgDoms(doc, els, e);
+        } catch {
+        }
+      }
+        scheduleOverlayPlace(40), await onSelectionChanged("content");
+      } else scheduleStickySync(), await onSelectionChanged("content");
+      return !0;
+    }`;
+
+const VENDOR_SCROLL_GALLERY_SAME_NEEDLE = `      if (source !== "scroll") {
+        try {
+          await ce(r.sessionId);
+        } catch {
+        }
+      }
+      let linked = linkedCards(t.selectedMessage);`;
+
+const VENDOR_SCROLL_GALLERY_SAME_PATCH = `      {
+        const galleryStale = !Array.isArray(t.gallery) || !t.gallery.length || t._galleryCache?.sessionId !== r.sessionId;
+        if (source !== "scroll" || galleryStale) {
+          try {
+            await ce(r.sessionId, galleryStale);
+          } catch {
+          }
+        }
+      }
+      let linked = linkedCards(t.selectedMessage);`;
+
+const VENDOR_SCROLL_GALLERY_SAME_PAINT_NEEDLE = `        } else {
+          Ce();
+          if (linked.length && !(t.overlayUi?.markers?.length)) scheduleOverlayPlace(80);
+        }
+      }
+      if (linked.length) return !0;
+      if (source === "scroll" || source === "provisional") return !0;`;
+
+const VENDOR_SCROLL_GALLERY_SAME_PAINT_PATCH = `        } else {
+          Ce();
+          if (linked.length && !(t.overlayUi?.markers?.length)) scheduleOverlayPlace(80);
+          await onSelectionChanged("content");
+        }
+      }
+      if (linked.length) return !0;
+      if (source === "scroll" || source === "provisional") return !0;`;
+
+const VENDOR_SCROLL_GALLERY_SAME_DOM_NEEDLE = `          linked.length ? scheduleOverlayPlace(40) : scheduleStickySync();
+          await onSelectionChanged(linked.length ? "content" : "chrome");
+        } else {
+          Ce(), scheduleOverlayPlace(80), await onSelectionChanged("content");
+        }`;
+
+const VENDOR_SCROLL_GALLERY_SAME_DOM_PATCH = `          linked.length ? scheduleOverlayPlace(40) : scheduleStickySync();
+          await onSelectionChanged("content");
+        } else {
+          Ce(), scheduleOverlayPlace(80), await onSelectionChanged("content");
+        }`;
+
 const VENDOR_SCOPE_POLL_NEEDLE = `n._scopeTick % 24 === 0 && !(t.jobsInFlight.size`;
 const VENDOR_SCOPE_POLL_PATCH = `n._scopeTick % 4 === 0 && !(t.jobsInFlight.size`;
 
@@ -2153,11 +2498,11 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.1.4",
-    body: "진행 토스트(단일 바·1초 무변화 시 눈숨김), 누드 0–3/성별 태그, 재생성·태그 플로팅 접힘, 말풍선 삽화 중복 방지. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
+    title: "2.1.5",
+    body: "에셋 NAI 태그(모듈·트리거당 ≤2), 이미지→스타일 프리셋·자동 비율, 스티키 테두리 제거, 디버그 태깅 프로브. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
   };`;
 
-/** Top-center progress toast: one bar; show on change; hide 1s after last change. */
+/** Top-center progress toast: one bar; show on change; hide 5s after last change. */
 const VENDOR_PROGRESS_TOAST_FN_NEEDLE = `  async function dismissProgressToast() {
     t.jobProgress = null;
     try {
@@ -2192,7 +2537,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
   }
   function armProgressToastEyeHide() {
     t._progressToastArmed = !0;
-    t._progressToastUntil = Date.now() + 1e3;
+    t._progressToastUntil = Date.now() + 5e3;
     if (t._progressToastHideTimer) clearTimeout(t._progressToastHideTimer);
     t._progressToastHideTimer = setTimeout(() => {
       t._progressToastHideTimer = null;
@@ -2200,7 +2545,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       t._progressToastUntil = 0;
       setProgressToastEye(!1).catch(() => {
       });
-    }, 1e3);
+    }, 5e3);
   }
   function clearProgressToastEyeHide() {
     if (t._progressToastHideTimer) {
@@ -2642,7 +2987,7 @@ const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
 const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
   'char_inject', 'preprocess', 'prefill', 'preset_1', 'autotag',
-  'curation_refine', 'curation_embed_hint',
+  'curation_refine', 'curation_embed_hint', 'asset_tags_inject',
 ] as const;
 
 /**
@@ -2714,7 +3059,7 @@ const loadVendorUi = (): string => {
       at = raw.indexOf(VENDOR_STICKY_SHELL_BG_NEEDLE, at + VENDOR_STICKY_SHELL_BG_NEEDLE.length);
     }
     if (shellBgCount !== 2) {
-      throw new Error(`[build] expected 2× sticky shell background:#0b0f18, found ${shellBgCount}`);
+      throw new Error(`[build] expected 2× sticky shell border+shadow+#0b0f18, found ${shellBgCount}`);
     }
   }
   assertOnce(raw, VENDOR_STICKY_EMPTY_NEEDLE, 'sticky empty placeholder');
@@ -2730,8 +3075,13 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_NATURAL_BASE_HELP_NEEDLE, 'natural_base help entry');
   assertOnce(raw, VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE, 'person_tag_weight HTML');
   assertOnce(raw, VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE, 'person_tag_weight Ct()');
+  assertOnce(raw, VENDOR_ASSET_NAI_HTML_NEEDLE, 'asset_nai_tags HTML');
+  assertOnce(raw, VENDOR_ASSET_NAI_SAVE_NEEDLE, 'asset_nai_tags save');
+  assertOnce(raw, VENDOR_ASSET_NAI_HELP_NEEDLE, 'asset_nai_tags help');
   assertOnce(raw, VENDOR_CURATION_TABS_NEEDLE, 'curation tabs S/E');
   assertOnce(raw, VENDOR_CURATION_PANEL_NEEDLE, 'curation panel insert');
+  assertOnce(raw, VENDOR_DEBUG_PANEL_NEEDLE, 'debug panel 로그/태깅');
+  assertOnce(raw, VENDOR_DEBUG_EVENTS_NEEDLE, 'debug panel events');
   assertOnce(raw, VENDOR_CURATION_EVENTS_NEEDLE, 'curation events insert');
   assertOnce(raw, VENDOR_CURATION_TAB_LOAD_NEEDLE, 'curation tab load');
   assertOnce(raw, VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, 'global toggle summary');
@@ -2813,6 +3163,10 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_CALL_NEEDLE, 'inline inject call'],
     [VENDOR_INLINE_SAME_NEEDLE, 'inline inject same-select'],
     [VENDOR_SELECT_SAME_NEEDLE, 'select same-session early-return'],
+    [VENDOR_SCROLL_GALLERY_NEW_NEEDLE, 'scroll select gallery load'],
+    [VENDOR_SCROLL_GALLERY_SAME_NEEDLE, 'scroll same gallery load'],
+    [VENDOR_SCROLL_GALLERY_SAME_PAINT_NEEDLE, 'scroll same content paint'],
+    [VENDOR_SCROLL_GALLERY_SAME_DOM_NEEDLE, 'scroll same dom content paint'],
     [VENDOR_SCOPE_POLL_NEEDLE, 'scope poll cadence'],
     [VENDOR_SESSION_PENDING_NEEDLE, 'session pending commit'],
     [VENDOR_ACTIONS_HELP_NEEDLE, 'actions minimize help'],
@@ -2855,8 +3209,13 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_NATURAL_BASE_HELP_NEEDLE, VENDOR_NATURAL_BASE_HELP_PATCH)
     .replace(VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_HTML_PATCH)
     .replace(VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_CT_PATCH)
+    .replace(VENDOR_ASSET_NAI_HTML_NEEDLE, VENDOR_ASSET_NAI_HTML_PATCH)
+    .replace(VENDOR_ASSET_NAI_SAVE_NEEDLE, VENDOR_ASSET_NAI_SAVE_PATCH)
+    .replace(VENDOR_ASSET_NAI_HELP_NEEDLE, VENDOR_ASSET_NAI_HELP_PATCH)
     .replace(VENDOR_CURATION_TABS_NEEDLE, VENDOR_CURATION_TABS_PATCH)
     .replace(VENDOR_CURATION_PANEL_NEEDLE, VENDOR_CURATION_PANEL_PATCH)
+    .replace(VENDOR_DEBUG_PANEL_NEEDLE, VENDOR_DEBUG_PANEL_PATCH)
+    .replace(VENDOR_DEBUG_EVENTS_NEEDLE, VENDOR_DEBUG_EVENTS_PATCH)
     .replace(VENDOR_CURATION_EVENTS_NEEDLE, VENDOR_CURATION_EVENTS_PATCH)
     .replace(VENDOR_CURATION_TAB_LOAD_NEEDLE, VENDOR_CURATION_TAB_LOAD_PATCH)
     .replace(VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, VENDOR_GLOBAL_TOGGLE_SUMMARY_PATCH)
@@ -2930,6 +3289,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_CALL_NEEDLE, VENDOR_INLINE_CALL_PATCH)
     .replace(VENDOR_INLINE_SAME_NEEDLE, VENDOR_INLINE_SAME_PATCH)
     .replace(VENDOR_SELECT_SAME_NEEDLE, VENDOR_SELECT_SAME_PATCH)
+    .replace(VENDOR_SCROLL_GALLERY_NEW_NEEDLE, VENDOR_SCROLL_GALLERY_NEW_PATCH)
+    .replace(VENDOR_SCROLL_GALLERY_SAME_NEEDLE, VENDOR_SCROLL_GALLERY_SAME_PATCH)
+    .replace(VENDOR_SCROLL_GALLERY_SAME_PAINT_NEEDLE, VENDOR_SCROLL_GALLERY_SAME_PAINT_PATCH)
+    .replace(VENDOR_SCROLL_GALLERY_SAME_DOM_NEEDLE, VENDOR_SCROLL_GALLERY_SAME_DOM_PATCH)
     .replace(VENDOR_SCOPE_POLL_NEEDLE, VENDOR_SCOPE_POLL_PATCH)
     .replace(VENDOR_SESSION_PENDING_NEEDLE, VENDOR_SESSION_PENDING_PATCH)
     .replace(VENDOR_ACTIONS_HELP_NEEDLE, VENDOR_ACTIONS_HELP_PATCH)

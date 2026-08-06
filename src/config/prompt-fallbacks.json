@@ -1,8 +1,9 @@
 {
   "author_note": "",
   "tagger": "Tag the chat message into Danbooru-style English image prompts. Output ONE JSON object only.",
-  "format": "{\"scenes\":[{\"place\":\"...\",\"shots\":[{\"paragraph\":0,\"y_percent\":50,\"line\":1,\"camera\":\"...\",\"situation\":\"...\",\"characters\":[{\"name\":\"...\",\"action\":\"...\"}]}]}],\"new_characters\":[]}",
+  "format": "{\"scenes\":[{\"place\":\"...\",\"shots\":[{\"paragraph\":0,\"y_percent\":50,\"line\":1,\"aspect\":\"portrait|square|landscape\",\"camera\":\"...\",\"situation\":\"...\",\"characters\":[{\"name\":\"...\",\"action\":\"...\"}]}]}],\"new_characters\":[]}",
   "appearance_inject": "Registered: {registered_block}\nIncomplete: {incomplete_block}\nDetected: {detected_block}",
+  "asset_tags_inject": "NovelAI asset tags for new_characters:\n{asset_tags_block}",
   "lore_inject": "Use matched lorebook context:",
   "char_inject": "Character info:",
   "preprocess": "Summarize visual details from the message.",

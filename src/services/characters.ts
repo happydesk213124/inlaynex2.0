@@ -41,7 +41,9 @@ import {
   fullTags,
   wearLocked,
 } from '../domain/character/tags';
+import { restoreAssetTagWeights } from '../domain/nai-meta/prompt-tags.ts';
 import { idbDelete, idbGet, idbGetAll, idbPut } from '../storage/stores';
+import { getLastAssetWeightMap } from './asset-tags';
 import { getConfig } from './context';
 
 export interface ReplaceOptions {
@@ -714,6 +716,12 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
   for (const raw of newList) {
     const rec = normalizeCharacterRecord(raw);
     if (!rec) continue;
+    const weightMap = getLastAssetWeightMap();
+    if (weightMap.size) {
+      rec.appearance = restoreAssetTagWeights(rec.appearance, weightMap);
+      rec.attire = restoreAssetTagWeights(rec.attire, weightMap);
+      rec.accessories = restoreAssetTagWeights(rec.accessories, weightMap);
+    }
     const existing = resolveCharacter(rec.name, roster);
     const newApp = cleanText(rec.appearance || '');
     const newAttire = cleanText(rec.attire || '');

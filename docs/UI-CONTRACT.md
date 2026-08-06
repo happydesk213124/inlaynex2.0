@@ -129,7 +129,7 @@ LLM-picked. Off, or `mode !== "two_stage"`, behaves exactly as before.
 | `POST /v1/curation/settings` | `{mode?, strict_ids?, embedding?}` |
 
 Keys: `author_note, tagger, format, prefill, preprocess, preset_1, lore_inject,
-char_inject, appearance_inject, autotag, curation_refine, curation_embed_hint`.
+char_inject, appearance_inject, asset_tags_inject, autotag, curation_refine, curation_embed_hint`.
 
 ### Jobs
 | Route | Notes |
@@ -192,6 +192,7 @@ then persisted.
 `POST /v1/nai/vibe` `{image_b64, information_extracted, strength}` ·
 `POST /v1/nai/vibe/clear` · `/v1/nai/reference` · `/v1/nai/vibe` ·
 `POST /v1/autotag` `{image_b64, threshold}` → `{ok, appearance, attire, accessories, tags, text}`
+`POST /v1/presets/from-image` `{image_b64}` → `{ok, positive, negative, cfg_scale, cfg_rescale, name}`
 
 ### Debug
 `/v1/debug`, `POST /v1/debug/clear` → `{ events[], by_stage{}, env{} }`

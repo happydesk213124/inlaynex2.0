@@ -21,6 +21,11 @@ import { prepareAutotagImage } from '../core/util/image';
 import { deepMerge } from '../core/util/object';
 import { cleanText, stripCbs } from '../core/util/text';
 import {
+  extractNaiMetadata,
+  promptFromNaiMetadata,
+  styleFieldsFromNaiMetadata,
+} from '../domain/nai-meta/index.ts';
+import {
   buildComfyPlaceholderValues,
   buildComfyWorkflowFromTemplate,
   comfyBaseUrl,
@@ -289,3 +294,33 @@ export async function evaluateAutotag(bytes: ArrayBuffer, threshold: number): Pr
   if (gender) result.gender = gender;
   return result;
 }
+
+/**
+ * Build a style-preset draft from NovelAI image metadata (not vision).
+ * Positive keeps artist + quality-style tags with emphasis; negative/CFG copied as-is.
+ */
+export async function evaluatePresetFromImage(bytes: ArrayBuffer): Promise<ApiResult> {
+  if (!bytes?.byteLength) throw new Error('image is empty');
+  const meta = await extractNaiMetadata(bytes);
+  if (!meta) throw new Error('이미지에서 NovelAI 메타데이터를 읽지 못했습니다. PNG/WebP NAI 원본인지 확인하세요.');
+  const prompt = promptFromNaiMetadata(meta);
+  if (!cleanText(prompt)) throw new Error('메타데이터에 프롬프트가 없습니다.');
+  const fields = styleFieldsFromNaiMetadata(meta, prompt);
+  if (!fields.positive && !fields.negative) {
+    throw new Error('프리셋에 넣을 artist/품질 태그와 네거티브가 비어 있습니다.');
+  }
+  dbg('preset-from-image.done', {
+    message: `pos=${fields.positive.length} neg=${fields.negative.length} cfg=${fields.cfg_scale}`,
+    focus: true,
+  });
+  return {
+    ok: true,
+    positive: fields.positive,
+    negative: fields.negative,
+    cfg_scale: fields.cfg_scale,
+    cfg_rescale: fields.cfg_rescale,
+    name: '이미지 프리셋',
+  };
+}
+
+export { probeAssetNaiTags } from './asset-tags';

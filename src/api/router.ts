@@ -362,6 +362,10 @@ const WRITE_ROUTES: readonly Route[] = [
     },
   },
   {
+    match: exact('/v1/debug/asset-tags'),
+    handler: async ({ body }) => ok(await diagnostics.probeAssetNaiTags(body)),
+  },
+  {
     match: exact('/v1/nai/reference', '/v1/nai/reference/upload'),
     handler: async ({ body }) => {
       if (body.clear) return ok(await naiAssets.clearReferenceImage());
@@ -417,6 +421,15 @@ const WRITE_ROUTES: readonly Route[] = [
       if (!rawB64) throw new Error('image_b64 required');
       const bytes = base64ToBytes(rawB64);
       return ok(await diagnostics.evaluateAutotag(u8ToArrayBuffer(bytes), Number(body.threshold ?? 0.2)));
+    },
+  },
+  {
+    match: exact('/v1/presets/from-image'),
+    handler: async ({ body }) => {
+      const rawB64 = uploadBase64(body).replace(/\s+/g, '');
+      if (!rawB64) throw new Error('image_b64 required');
+      const bytes = base64ToBytes(rawB64);
+      return ok(await diagnostics.evaluatePresetFromImage(u8ToArrayBuffer(bytes)));
     },
   },
 ];

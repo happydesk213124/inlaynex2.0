@@ -24,11 +24,13 @@ import { characterTriggers, dedupeShotCharacters, matchCharactersInText } from '
 import { characterHasAppearance, characterMaxLimit } from '../domain/character/tags';
 import {
   assembleLorebookForTagger,
+  collectTriggeredLoreKeys,
   filledNamesForLoreExtra,
   normalizeLoreExtraMode,
 } from '../domain/lore/assemble';
 import { isCharacterImageExtraLore } from '../domain/lore/extra';
 import type { LlmMessage } from '../providers/llm/transform';
+import { collectAssetNaiTags, setLastAssetWeightMap } from './asset-tags';
 import { rosterForSession } from './characters';
 import { getConfig } from './context';
 import { curationTaggerSystemMessage } from './curation';
@@ -78,7 +80,7 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
   const sourceSessionIds = Array.isArray(request.source_session_ids)
     ? request.source_session_ids.map((s) => cleanText(s, 200)).filter(Boolean)
     : [];
-  const rosterEarly: CharacterRecord[] = card.lorebook || card.char_appearance !== false
+  const rosterEarly: CharacterRecord[] = card.lorebook || card.char_appearance !== false || card.asset_nai_tags
     ? await rosterForSession(
       sessionId,
       cleanText(request.unified_session_id || '', 200),
@@ -144,6 +146,35 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
     }
   }
 
+  const tryInjectAssetNaiTags = async (reason: string): Promise<void> => {
+    if (!card.asset_nai_tags) return;
+    const triggerPool = [
+      ...(Array.isArray(request.lore_trigger_keys) ? request.lore_trigger_keys : []),
+      ...collectTriggeredLoreKeys(request.lorebook || [], assistant),
+    ];
+    try {
+      const collected = await collectAssetNaiTags(triggerPool);
+      if (collected?.block) {
+        let assetPrompt = await getPrompt('asset_tags_inject');
+        assetPrompt = assetPrompt.includes('{asset_tags_block}')
+          ? assetPrompt.replace('{asset_tags_block}', collected.block)
+          : `${assetPrompt}\n\n${collected.block}`;
+        messages.push({ role: 'system', content: assetPrompt });
+        dbg('asset-tags.inject', {
+          reason,
+          assets: collected.packed.assets.map((a) => a.name),
+          triggers: triggerPool.length,
+        });
+      } else {
+        setLastAssetWeightMap(new Map());
+        dbg('asset-tags.inject.skip', { reason, cause: 'collect_empty', triggers: triggerPool.length });
+      }
+    } catch (err) {
+      setLastAssetWeightMap(new Map());
+      dbg('asset-tags.inject.fail', { reason, message: String((err as Error)?.message || err) }, 'warn');
+    }
+  };
+
   if (card.char_appearance !== false) {
     const roster = rosterEarly;
     const filled = roster.filter((c) => characterHasAppearance(c));
@@ -191,6 +222,11 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
     }
   }
 
+  // Always try when the toggle is on. Previous gate (needsNewCharacters) skipped inject when
+  // the roster already matched filled looks — but the message can still introduce *other*
+  // people as new_characters (debug probe finds assets; the live prompt did not).
+  await tryInjectAssetNaiTags('asset_nai_tags_on');
+
   const naturalMode = normalizeNaturalBaseMode(card.natural_base);
   const charMax = characterMaxLimit(card);
   const imageMin = Math.max(1, Number(card.image_min ?? 1) || 1);
@@ -206,7 +242,10 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
         : `SHOT COUNT: produce between ${imageMin} and ${imageMax} shots in scenes[].shots (across all scenes). Prefer the count that fits the message; never fewer than ${imageMin} or more than ${imageMax}.`,
       naturalBaseSystemMessage(naturalMode),
       `CHARACTER CAP: at most ${charMax} characters per shot (char1..char${charMax}). If more are visible, keep the ${charMax} most important; fold extras into situation/place.`,
-    ].join('\n'),
+      card.auto_aspect
+        ? 'ASPECT (required on every shot): set `aspect` to exactly one of `portrait` (832×1216 vertical), `square` (1024×1024), or `landscape` (1216×832 horizontal). Pick from the scene framing — tall full-body / standing → portrait; equal crop / face close-up square → square; wide group / side-by-side / scenic → landscape. Like Asset Maid size presets 1/5/2.'
+        : '',
+    ].filter(Boolean).join('\n'),
   });
 
   const curationMsg = await curationTaggerSystemMessage();

@@ -348,7 +348,7 @@ export async function rerollCard(
     genMetaExtra = { setup: plan.meta.setup, person: plan.meta.person, characters: charList };
   }
 
-  const { bytes, seed } = await generateImage({ main, neg, captions });
+  const { bytes, seed } = await generateImage({ main, neg, captions }, meta.aspect ?? ov?.aspect);
   const newId = uuid();
   const now = Date.now() / 1000;
   let prevLoc = await readImageLocation(row.id);

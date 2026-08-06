@@ -3210,6 +3210,7 @@ ${(n.assistant_preview || "").slice(0, 120)}`)}">
             </div>
             <div class="row" style="margin:0;gap:8px;align-items:center;flex-shrink:0">
               <span class="badge ${U.length ? "custom" : "default"}">${U.length}개</span>
+              <button type="button" id="nx-preset-from-image-head" class="secondary${t.presetImageFocus ? " armed" : ""}" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
               <button type="button" id="nx-save-card-head">카드 설정 저장</button>
             </div>
           </div>
@@ -3237,7 +3238,7 @@ ${(n.assistant_preview || "").slice(0, 120)}`)}">
             <div class="ref-preview wide" id="nx-preset-vibe-preview">${f?.vibe_configured && f?.vibe_preview_url ? `<img src="${h(f.vibe_preview_url)}" alt="vibe">` : '<span class="muted">없음 · 생성 시 NAI 모델설정 vibe 사용</span>'}</div>
           </div>
           <div class="row" style="margin-top:14px">
-            <button type="button" id="nx-preset-from-image" class="secondary${t.presetImageFocus ? " armed" : ""}" title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
+            <button type="button" id="nx-preset-from-image" class="secondary${t.presetImageFocus ? " armed" : ""}" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
             <span class="autotag-badge${t.presetImageFocus ? " show" : ""}" data-preset-image-badge>${t.presetImageFocus ? "선택됨 · Ctrl+V" : ""}</span>
             <input id="nx-preset-from-image-file" type="file" accept="image/*" style="display:none">
             <button id="nx-save-card">카드 설정 저장</button>
@@ -4171,19 +4172,20 @@ ${(n.assistant_preview || "").slice(0, 120)}`)}">
           await P();
         }
       };
-      const btn = document.getElementById("nx-preset-from-image");
       const fileEl = document.getElementById("nx-preset-from-image-file");
-      btn?.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        t.presetImageFocus = !t.presetImageFocus;
-        P();
-      });
-      btn?.addEventListener("dblclick", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        t.presetImageFocus = !0;
-        fileEl?.click();
+      document.querySelectorAll("[data-preset-from-image]").forEach((btn) => {
+        btn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          t.presetImageFocus = !t.presetImageFocus;
+          P();
+        });
+        btn.addEventListener("dblclick", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          t.presetImageFocus = !0;
+          fileEl?.click();
+        });
       });
       fileEl?.addEventListener("change", async (ev) => {
         const f = ev.target?.files?.[0];

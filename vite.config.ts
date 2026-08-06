@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.5';
+const PLUGIN_VERSION = '2.1.6';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -381,7 +381,7 @@ const VENDOR_ASSET_NAI_HELP_NEEDLE =
 
 const VENDOR_ASSET_NAI_HELP_PATCH =
   `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
-    "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "로어 트리거와 이름이 맞는 Risu 에셋 이미지(PNG/WebP)의 NovelAI 메타 태그를 트리거당 최대 2장(normal/default·이름 일치 우선) 읽어 태거 프롬프트에 넣습니다. artist·year·품질 태그는 제외합니다." },
+    "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "로어 트리거와 이름이 맞는 Risu 에셋 이미지(PNG/WebP)의 NovelAI 메타 태그를 트리거당 최대 2장(normal/default·이름 일치 우선) 읽어 태거 프롬프트에 넣습니다. artist·year·품질·*background·straight-on 태그는 제외합니다." },
     "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(Asset Maid 기본 사이즈). 끄면 NAI Width/Height 설정을 씁니다." },
 `;
 
@@ -488,6 +488,14 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.6</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>샷 <code>line</code>: 메시지에 L1|… 번호 · 1,2,3 샷순서 오입력 시 y%로 재매핑</li>
+            <li>에셋 태그 필터: <code>*background</code> · <code>straight-on</code> 계열 제외 · 우선순위 asset&gt;lore&gt;invent</li>
+            <li>캐릭터 수정/탭 ✕: 외형·옷·악세 비우기(삭제 대신, 다음 태깅 재수집)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.1.5</strong>
@@ -1987,7 +1995,88 @@ const VENDOR_CHAR_EDIT_WEAR_ACC_PATCH =
   `<span>무기·기타</span><label style="display:inline-flex;align-items:center;gap:4px;margin:0;color:#d7deea;font-size:11px;font-weight:550;cursor:pointer;white-space:nowrap"><input data-ce-accessories-locked type="checkbox" \${n.accessories_locked !== false ? "checked" : ""} style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
 
 const VENDOR_CHAR_EDIT_APPEARANCE_LABEL_NEEDLE = `<span>외형 태그 (girl/boy · 옷·악세사리 제외)</span>`;
-const VENDOR_CHAR_EDIT_APPEARANCE_LABEL_PATCH = `<span>외형 태그 (girl/boy · 옷·무기 제외)</span>`;
+const VENDOR_CHAR_EDIT_APPEARANCE_LABEL_PATCH = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>외형 태그 (girl/boy · 옷·무기 제외)</span><button type="button" data-ce-clear-looks title="외형·옷·악세 비우기 (다음 태깅 시 재수집)" style="cursor:pointer;border:0;background:rgba(248,113,113,.2);color:#fecaca;padding:2px 9px;border-radius:8px;font:700 12px Segoe UI,sans-serif;flex-shrink:0">✕</button></div>`;
+
+/** Clear looks (keep identity) — X next to appearance; save so next tag regenerates. */
+const VENDOR_CHAR_EDIT_CLEAR_LOOKS_NEEDLE =
+  `    }), i.querySelector("[data-ce-x]")?.addEventListener("click", (f) => {
+      f.preventDefault(), f.stopPropagation(), U().catch(() => {
+      });
+    }), (() => {`;
+const VENDOR_CHAR_EDIT_CLEAR_LOOKS_PATCH =
+  `    }), i.querySelector("[data-ce-x]")?.addEventListener("click", (f) => {
+      f.preventDefault(), f.stopPropagation(), U().catch(() => {
+      });
+    }), i.querySelector("[data-ce-clear-looks]")?.addEventListener("click", async (f) => {
+      f.preventDefault(), f.stopPropagation();
+      if (!confirm("외형·옷·악세사리를 비울까요?\\n캐릭터는 유지되고, 다음 태깅에서 다시 수집됩니다.")) return;
+      if (p) p.value = "";
+      if (m) m.value = "";
+      if (accEl) accEl.value = "";
+      try {
+        await U(), E("외형 비움·저장됨 · 다음 태깅 시 재수집");
+      } catch {
+      }
+    }), (() => {`;
+
+/** Character tab: ✕ beside 삭제 — clear looks without removing the row. */
+const VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_NEEDLE =
+  `<button type="button" class="secondary" data-char-delete style="min-height:30px;padding:4px 10px;flex-shrink:0">삭제</button>`;
+const VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_PATCH =
+  `<button type="button" class="secondary" data-char-clear-looks title="외형·옷·악세 비우기 (다음 태깅 시 재수집)" style="min-height:30px;padding:4px 10px;flex-shrink:0">✕</button>
+            <button type="button" class="secondary" data-char-delete style="min-height:30px;padding:4px 10px;flex-shrink:0">삭제</button>`;
+
+const VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_NEEDLE =
+  `    }), document.querySelectorAll("[data-char-delete]").forEach((a) => {`;
+const VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_PATCH =
+  `    }), document.querySelectorAll("[data-char-clear-looks]").forEach((a) => {
+      const r = (i) => {
+        i.preventDefault(), i.stopPropagation();
+      };
+      a.addEventListener("pointerdown", r), a.addEventListener("mousedown", r), a.addEventListener("click", async (i) => {
+        r(i);
+        const s = a.closest("[data-char-scope]");
+        if (!s) return;
+        if (!confirm("외형·옷·악세사리를 비울까요?\\n캐릭터는 유지되고, 다음 태깅에서 다시 수집됩니다.")) return;
+        const app = s.querySelector("[data-char-appearance]"), att = s.querySelector("[data-char-attire]"), acc = s.querySelector("[data-char-accessories]");
+        if (app) app.value = "";
+        if (att) att.value = "";
+        if (acc) acc.value = "";
+        t._charsDirty = !0;
+        try {
+          t.charactersSession = oe("session"), t.charactersGlobal = oe("global");
+        } catch {
+        }
+        try {
+          const scope = await Z().catch(() => null);
+          const body = withRootSessions({
+            session_id: scope?.sessionId || "",
+            character_id: scope?.characterId || "",
+            unified_session_id: scope?.unifiedSessionId || ""
+          }, scope);
+          const c = s.getAttribute("data-char-scope");
+          if (c === "session") body.characters = t.charactersSession || [];
+          else body.global = t.charactersGlobal || [];
+          const res = await K("/v1/characters", {
+            method: "POST",
+            body
+          }, 15e3);
+          if (Array.isArray(res?.characters)) t.charactersSession = res.characters;
+          if (Array.isArray(res?.global)) t.charactersGlobal = res.global;
+          t._charsDirty = !1;
+          t.uiMessage = {
+            type: "success",
+            text: "외형 비움·저장됨 · 다음 태깅 시 재수집"
+          };
+          await P();
+        } catch (err) {
+          t.uiMessage = {
+            type: "error",
+            text: \`비우기 저장 실패: \${z(err?.message || err)}\`
+          };
+        }
+      });
+    }), document.querySelectorAll("[data-char-delete]").forEach((a) => {`;
 
 const VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE =
   `attireLockedEl && (attireLockedEl.checked = !!I.attire_locked), accLockedEl && (accLockedEl.checked = !!I.accessories_locked)`;
@@ -2498,8 +2587,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.1.5",
-    body: "에셋 NAI 태그(모듈·트리거당 ≤2), 이미지→스타일 프리셋·자동 비율, 스티키 테두리 제거, 디버그 태깅 프로브. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
+    title: "2.1.6",
+    body: "샷 line L#/1·2·3 보정, 에셋 *background·straight-on 필터, 캐릭터 ✕ 외형 비우기. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
   };`;
 
 /** Top-center progress toast: one bar; show on change; hide 5s after last change. */
@@ -3145,6 +3234,9 @@ const loadVendorUi = (): string => {
     [VENDOR_CHAR_EDIT_WEAR_ATTIRE_NEEDLE, 'char edit wear attire'],
     [VENDOR_CHAR_EDIT_WEAR_ACC_NEEDLE, 'char edit wear accessories'],
     [VENDOR_CHAR_EDIT_APPEARANCE_LABEL_NEEDLE, 'char edit appearance label'],
+    [VENDOR_CHAR_EDIT_CLEAR_LOOKS_NEEDLE, 'char edit clear looks'],
+    [VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_NEEDLE, 'char tab clear looks btn'],
+    [VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_NEEDLE, 'char tab clear looks evt'],
     [VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE, 'char edit lock preset'],
     [VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE, 'char create lock preset'],
     [VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, 'char create wear attire'],
@@ -3271,6 +3363,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHAR_EDIT_WEAR_ATTIRE_NEEDLE, VENDOR_CHAR_EDIT_WEAR_ATTIRE_PATCH)
     .replace(VENDOR_CHAR_EDIT_WEAR_ACC_NEEDLE, VENDOR_CHAR_EDIT_WEAR_ACC_PATCH)
     .replace(VENDOR_CHAR_EDIT_APPEARANCE_LABEL_NEEDLE, VENDOR_CHAR_EDIT_APPEARANCE_LABEL_PATCH)
+    .replace(VENDOR_CHAR_EDIT_CLEAR_LOOKS_NEEDLE, VENDOR_CHAR_EDIT_CLEAR_LOOKS_PATCH)
+    .replace(VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_NEEDLE, VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_PATCH)
+    .replace(VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_NEEDLE, VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_PATCH)
     .replace(VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE, VENDOR_CHAR_EDIT_LOCK_PRESET_PATCH)
     .replace(VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE, VENDOR_CHAR_CREATE_LOCK_PRESET_PATCH)
     .replace(VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, VENDOR_CHAR_CREATE_WEAR_ATTIRE_PATCH)

@@ -48,6 +48,7 @@ const MODULES = {
   'curation-match': 'src/domain/curation/match.ts',
   'curation-focus': 'src/domain/curation/focus.ts',
   'embedding-client': 'src/providers/embedding/client.ts',
+  'shot-line': 'src/domain/tagging/shot-line.ts',
 };
 
 await rm(outdir, { recursive: true, force: true });

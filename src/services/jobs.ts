@@ -359,7 +359,7 @@ async function runJob(jobId: string): Promise<void> {
     const taggedRaw = await callLlm(getConfig().llm, messages);
     if (await cancelJobIfStale(jobId, 'superseded after tagging')) return;
     const tagged = parseJsonLoose(taggedRaw) as TaggerResult;
-    let shots = flattenShots(tagged);
+    let shots = flattenShots(tagged, request.assistant_text);
     dbg('job.tagger.done', { shots: shots.length, raw_len: String(taggedRaw || '').length });
     if (!shots.length) throw new Error('태거가 shot을 반환하지 않았습니다.');
     const card = getConfig().card || {};

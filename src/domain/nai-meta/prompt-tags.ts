@@ -140,6 +140,30 @@ function containsArtist(token: string): boolean {
   return /artist\s*:/i.test(token);
 }
 
+/** Collapse `_` / `-` / spaces so `simple-background` ≡ `white background`. */
+function normalizeTagKey(key: string): string {
+  return key.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Drop `background`, `white background`, `simple-background`, … */
+function isBackgroundTag(key: string): boolean {
+  const n = normalizeTagKey(key);
+  return n === 'background' || n.endsWith(' background');
+}
+
+/** Drop `straight on` / `straight-on` / `straighton`. */
+function isStraightOnTag(key: string): boolean {
+  const n = normalizeTagKey(key);
+  return n === 'straight on' || n.replace(/\s+/g, '') === 'straighton';
+}
+
+function shouldDropPlain(key: string): boolean {
+  if (!key || DROP_EXACT.has(key)) return true;
+  if (isBackgroundTag(key)) return true;
+  if (isStraightOnTag(key)) return true;
+  return false;
+}
+
 /** Peel one layer of matching `{}` or `[]` wrappers; returns null if not wrapped. */
 function peelWrapper(token: string): { kind: 'brace' | 'bracket'; inner: string; depth: number } | null {
   const t = token.trim();
@@ -214,7 +238,7 @@ export function expandTokenPlains(token: string): Array<{ plain: string; restore
   return [{ plain: t, restore: t }];
 }
 
-/** Filter artist / year / quality / negatives; strip emphasis; build weight map. */
+/** Filter artist / year / quality / background / straight-on / negatives; strip emphasis; build weight map. */
 export function filterAssetPromptTags(prompt: unknown): FilteredPromptTags {
   const plains: string[] = [];
   const weightMap = new Map<string, string>();
@@ -225,7 +249,7 @@ export function filterAssetPromptTags(prompt: unknown): FilteredPromptTags {
     if (containsArtist(token)) continue;
     for (const { plain, restore } of expandTokenPlains(token)) {
       const key = plain.toLowerCase();
-      if (!key || DROP_EXACT.has(key)) continue;
+      if (shouldDropPlain(key)) continue;
       if (!weightMap.has(key)) weightMap.set(key, restore);
       if (seen.has(key)) continue;
       seen.add(key);

@@ -47,6 +47,8 @@ export interface CardSettings {
   preset: number;
   lorebook: boolean;
   lore_extra: LoreExtraMode;
+  /** When true, pull NAI metadata tags from matched Risu assets for new_characters. */
+  asset_nai_tags: boolean;
   char_info: boolean;
   user_info: boolean;
   char_appearance: boolean;

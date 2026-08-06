@@ -23,6 +23,7 @@
     "preset": 1,
     "lorebook": true,
     "lore_extra": "tags",
+    "asset_nai_tags": false,
     "char_info": true,
     "user_info": true,
     "char_appearance": true,

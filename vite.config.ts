@@ -354,6 +354,34 @@ const VENDOR_PERSON_TAG_WEIGHT_CT_PATCH =
       person_tag_weight: document.getElementById("nx-person-tag-weight") ? re(N("nx-person-tag-weight"), 0, 5, re(e.person_tag_weight, 0, 5, 3)) : re(e.person_tag_weight, 0, 5, 3),
 `;
 
+/** Dashboard: collect NAI metadata tags from matched Risu assets for new_characters. */
+const VENDOR_ASSET_NAI_HTML_NEEDLE =
+  `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
+`;
+
+const VENDOR_ASSET_NAI_HTML_PATCH =
+  `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-asset-nai-tags"><input type="checkbox" id="nx-asset-nai-tags" \${i.asset_nai_tags ? "checked" : ""}><span>에셋 NAI 태그</span></label>
+`;
+
+const VENDOR_ASSET_NAI_SAVE_NEEDLE =
+  `      char_appearance: ee("nx-appearance"),
+`;
+
+const VENDOR_ASSET_NAI_SAVE_PATCH =
+  `      char_appearance: ee("nx-appearance"),
+      asset_nai_tags: ee("nx-asset-nai-tags"),
+`;
+
+const VENDOR_ASSET_NAI_HELP_NEEDLE =
+  `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
+`;
+
+const VENDOR_ASSET_NAI_HELP_PATCH =
+  `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
+    "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "새 캐릭터 외형을 잡을 때, 로어 트리거와 이름이 맞는 Risu 에셋 이미지(PNG/WebP)의 NovelAI 메타 태그를 최대 4장까지 읽어 태거에 넣습니다. artist·year·품질 태그는 제외합니다." },
+`;
+
 /** Settings nav: add 큐레이팅 tab between models and explorer. */
 const VENDOR_CURATION_TABS_NEEDLE = `S = {
       dashboard: "대시보드",
@@ -2642,7 +2670,7 @@ const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
 const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
   'char_inject', 'preprocess', 'prefill', 'preset_1', 'autotag',
-  'curation_refine', 'curation_embed_hint',
+  'curation_refine', 'curation_embed_hint', 'asset_tags_inject',
 ] as const;
 
 /**
@@ -2730,6 +2758,9 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_NATURAL_BASE_HELP_NEEDLE, 'natural_base help entry');
   assertOnce(raw, VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE, 'person_tag_weight HTML');
   assertOnce(raw, VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE, 'person_tag_weight Ct()');
+  assertOnce(raw, VENDOR_ASSET_NAI_HTML_NEEDLE, 'asset_nai_tags HTML');
+  assertOnce(raw, VENDOR_ASSET_NAI_SAVE_NEEDLE, 'asset_nai_tags save');
+  assertOnce(raw, VENDOR_ASSET_NAI_HELP_NEEDLE, 'asset_nai_tags help');
   assertOnce(raw, VENDOR_CURATION_TABS_NEEDLE, 'curation tabs S/E');
   assertOnce(raw, VENDOR_CURATION_PANEL_NEEDLE, 'curation panel insert');
   assertOnce(raw, VENDOR_CURATION_EVENTS_NEEDLE, 'curation events insert');
@@ -2855,6 +2886,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_NATURAL_BASE_HELP_NEEDLE, VENDOR_NATURAL_BASE_HELP_PATCH)
     .replace(VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_HTML_PATCH)
     .replace(VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_CT_PATCH)
+    .replace(VENDOR_ASSET_NAI_HTML_NEEDLE, VENDOR_ASSET_NAI_HTML_PATCH)
+    .replace(VENDOR_ASSET_NAI_SAVE_NEEDLE, VENDOR_ASSET_NAI_SAVE_PATCH)
+    .replace(VENDOR_ASSET_NAI_HELP_NEEDLE, VENDOR_ASSET_NAI_HELP_PATCH)
     .replace(VENDOR_CURATION_TABS_NEEDLE, VENDOR_CURATION_TABS_PATCH)
     .replace(VENDOR_CURATION_PANEL_NEEDLE, VENDOR_CURATION_PANEL_PATCH)
     .replace(VENDOR_CURATION_EVENTS_NEEDLE, VENDOR_CURATION_EVENTS_PATCH)

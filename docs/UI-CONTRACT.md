@@ -129,7 +129,7 @@ LLM-picked. Off, or `mode !== "two_stage"`, behaves exactly as before.
 | `POST /v1/curation/settings` | `{mode?, strict_ids?, embedding?}` |
 
 Keys: `author_note, tagger, format, prefill, preprocess, preset_1, lore_inject,
-char_inject, appearance_inject, autotag, curation_refine, curation_embed_hint`.
+char_inject, appearance_inject, asset_tags_inject, autotag, curation_refine, curation_embed_hint`.
 
 ### Jobs
 | Route | Notes |

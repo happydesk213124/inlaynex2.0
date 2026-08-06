@@ -14,7 +14,7 @@ export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
  * Only bump it when a prompt change is mandatory for correctness.
  */
-export const PROMPT_PACK = '2026-08-06-inline-line';
+export const PROMPT_PACK = '2026-08-06-asset-priority';
 
 export const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'prefill', 'preprocess',

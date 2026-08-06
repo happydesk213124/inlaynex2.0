@@ -57,11 +57,18 @@ export interface CardSettings {
   char_info: boolean;
   user_info: boolean;
   char_appearance: boolean;
+  /** Unused legacy flag — UI removed; keep so old saves do not break. */
   preprocessing: boolean;
   person_tag_mode: PersonTagMode;
   auto_person_tags: boolean;
   /**
-   * NAI emphasis on Inlay person-count tags (`1girl`, `1boy`, …).
+   * When true and the shot has exactly one character, put `solo` instead of
+   * `1girl`/`1boy` (still emphasized by person_tag_weight). Also applies when
+   * person_tag_mode is `off`.
+   */
+  person_tag_solo: boolean;
+  /**
+   * NAI emphasis on Inlay person-count tags (`1girl`, `1boy`, `solo`, …).
    * 0 = plain tags; 1–5 = `N::1girl, 1boy::`. Default 3.
    */
   person_tag_weight: number;

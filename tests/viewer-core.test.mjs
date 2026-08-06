@@ -20,6 +20,7 @@ import {
   htmlToPlainLn,
   findPlainLineStartOffset,
   injectInlineImagesIntoHtml,
+  markerBlockHtml,
   lineTextOccurrence,
   findElementIndexForLine,
   preferNearbyHostIndex,
@@ -170,12 +171,33 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   assert.match(out, /data-inlay-inline-shot="c1"/);
   assert.match(out, /data-inlay-inline-shot="c2"/);
   assert.match(out, /<b>커피를 마셨다<\/b>/);
-  assert.match(out, /zoom:0\.5/);
+  assert.match(out, /max-width:min\(60%,100%\)/);
   // first coffee line is bold — marker for line 2 sits before <b>
   assert.match(out, /data-inlay-inline-shot="c1"[^>]*>[\s\S]*?<b>커피를 마셨다<\/b>/);
   // duplicate plain "커피를 마셨다" still gets line-3 marker (not string search of first)
   const stripped = stripInlayInlineHtml(out);
   assert.equal(htmlToPlainLn(stripped), htmlToPlainLn(rich));
+});
+
+test("markerBlockHtml pending shows spinner; ready uses responsive max-width", () => {
+  const pending = markerBlockHtml({ line: 2, src: "", shotIndex: 0, pending: true, cardId: "pending-0" });
+  assert.match(pending, /data-inlay-inline-pending="1"/);
+  assert.match(pending, /animateTransform/);
+  assert.match(pending, /<br><br>/);
+  const ready = markerBlockHtml({ line: 2, src: "data:image/png;base64,abc", shotIndex: 0, cardId: "c1" });
+  assert.match(ready, /max-width:min\(60%,100%\)/);
+  assert.doesNotMatch(ready, /zoom:0\.5/);
+});
+
+test("injectInlineImagesIntoHtml hard-dedupes pending circles by line and cardId", () => {
+  const html = "<p>첫 줄</p><p>둘째</p>";
+  const out = injectInlineImagesIntoHtml(html, [
+    { line: 1, pending: true, cardId: "pending-0", shotIndex: 0 },
+    { line: 1, pending: true, cardId: "pending-0", shotIndex: 0 },
+    { line: 1, pending: true, cardId: "pending-1", shotIndex: 1 },
+  ]);
+  assert.equal((out.match(/data-inlay-inline-pending/g) || []).length, 1);
+  assert.equal((out.match(/data-inlay-inline-shot="pending-0"/g) || []).length, 1);
 });
 
 test("pin percent ↔ px truncates decimals and migrates legacy offsets", () => {

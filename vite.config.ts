@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.6';
+const PLUGIN_VERSION = '2.1.7';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -323,7 +323,8 @@ const VENDOR_NATURAL_BASE_HELP_NEEDLE =
 
 const VENDOR_NATURAL_BASE_HELP_PATCH =
   `"nx-natural-base": { title: "자연어 base", body: "NovelAI base에 넣는 자연어 장면을 고릅니다. 안넣기 / 짧게 넣기(머리·나이·성별·행동) / 구도·자세히(구도·표정·옷·조명) / 태그 보완 자연어(태그가 못 담는 문장)." },
-  "nx-person-tag-weight": { title: "사람 태그 강조", body: "메인 프롬프트 맨 앞 인원 태그(1girl, 1boy…)에 NovelAI 강조(N::태그::)를 겁니다. 0=감싸지 않음, 1–5=가중치. 큐레이션 leaf의 composition 인원 태그는 넣지 않습니다." },
+  "nx-person-tag-weight": { title: "사람 태그 강조", body: "메인 프롬프트 맨 앞 인원 태그(1girl, 1boy, solo…)에 NovelAI 강조(N::태그::)를 겁니다. 0=감싸지 않음, 1–5=가중치. 큐레이션 leaf의 composition 인원 태그는 넣지 않습니다." },
+  "nx-person-tag-solo": { title: "캐릭 1명일 때 solo", body: "샷 캐릭터가 1명이면 1girl/1boy 대신 solo를 맨 앞에 넣습니다. 사람 태그 강조 수치가 그대로 적용됩니다. 사람 태그 자동넣기가 「안 넣기」여도 이 토글이 켜져 있으면 solo만은 넣습니다." },
   "nx-curation-mode": { title: "큐레이팅 모드", body: "사용안함: 지금과 동일. 2단: 그룹 선택 후 하위 옵션으로 씬 태그. 임베딩식: 자유 씬 태그를 카탈로그와 유사도 매칭해 교체(캐릭터 태그는 유지)." },
   "nx-curation-strict-ids": { title: "엄격 ID 모드", body: "2단 모드 전용. 켜면 카메라·상황·자연어·동작/표정을 자유 문장으로 쓰지 않고 카탈로그 ID로만 조립합니다. 캐릭터별 ID(characters[].option_ids)도 추가로 받아 배우 index별로 적용하며, 외형/의상은 절대 덮어쓰지 않습니다." },
   "nx-curation-catalog": { title: "큐레이션 카탈로그", body: "Inlay groups JSON 또는 Asset Maid DEFAULT_PRESET_CATALOG(modifier_library)를 불러올 수 있습니다. 기본은 소형 SFW. 거대 카탈로그는 저장소·임베딩 비용이 큽니다." },
@@ -353,6 +354,77 @@ const VENDOR_PERSON_TAG_WEIGHT_CT_PATCH =
   `      include_max: Number(N("nx-include-max") || e.include_max || 0),
       person_tag_weight: document.getElementById("nx-person-tag-weight") ? re(N("nx-person-tag-weight"), 0, 5, re(e.person_tag_weight, 0, 5, 3)) : re(e.person_tag_weight, 0, 5, 3),
 `;
+
+/**
+ * Preprocessing checkbox is unused spaghetti — hide UI, keep card.preprocessing
+ * as a silent dummy. Slot becomes person_tag_solo (1 char → solo tag).
+ */
+const VENDOR_PERSON_TAG_SOLO_HTML_NEEDLE =
+  `<label class="check wide"><input id="nx-preprocess" type="checkbox" \${i.preprocessing ? "checked" : ""}> Preprocessing (토큰 추가 소모)</label>
+`;
+const VENDOR_PERSON_TAG_SOLO_HTML_PATCH =
+  `<label class="check wide" data-nx-help-id="nx-person-tag-solo"><input id="nx-person-tag-solo" type="checkbox" \${i.person_tag_solo ? "checked" : ""}> 캐릭 1명일 때 solo 태그</label>
+`;
+
+const VENDOR_PERSON_TAG_SOLO_CT_NEEDLE =
+  `      preprocessing: document.getElementById("nx-preprocess") ? ee("nx-preprocess") : !!e.preprocessing,
+`;
+const VENDOR_PERSON_TAG_SOLO_CT_PATCH =
+  `      preprocessing: !!e.preprocessing,
+      person_tag_solo: document.getElementById("nx-person-tag-solo") ? ee("nx-person-tag-solo") : !!e.person_tag_solo,
+`;
+
+/** Shot-tag modal: add 안 넣기 + solo-when-one (reads card.person_tag_solo). */
+const VENDOR_CARD_TAG_PERSON_SLOTS_NEEDLE =
+  `}, personTagsForSlots = (Vt, Xt) => {
+      const Yt = (Vt || []).filter((me) => w(me.name || "") || w(me.prompt || "")), Gt = Yt.length;
+      if (!Gt || Xt === "off") return "";
+      if (Xt === "girls") return formatCountTag(Gt, "1girl", "girls", "6+girls");
+      if (Xt === "people") return formatCountTag(Gt, "1person", "people", "6+people");
+      let Kt = 0, Qt = 0;
+      for (const me of Yt) {
+        const nn = w(me.name || "", 200), Le = roster.find((ut) => ut.name.toLowerCase() === nn.toLowerCase()), ut = classifyGender([Le?.appearance, Le?.attire, me.prompt, me.name].filter(Boolean).join(", "));
+        ut === "f" ? Kt += 1 : ut === "m" && (Qt += 1);
+      }
+      return [formatCountTag(Kt, "1girl", "girls", "6+girls"), formatCountTag(Qt, "1boy", "boys", "6+boys")].filter(Boolean).join(", ");
+    };`;
+const VENDOR_CARD_TAG_PERSON_SLOTS_PATCH =
+  `}, personTagsForSlots = (Vt, Xt) => {
+      const Yt = (Vt || []).filter((me) => w(me.name || "") || w(me.prompt || "")), Gt = Yt.length;
+      if (!Gt) return "";
+      // Settings solo toggle: 1 char → solo (even when mode is 안 넣기).
+      if (t.backendSettings?.card?.person_tag_solo === !0 && Gt === 1) return "solo";
+      if (Xt === "off") return "";
+      if (Xt === "girls") return formatCountTag(Gt, "1girl", "girls", "6+girls");
+      if (Xt === "people") return formatCountTag(Gt, "1person", "people", "6+people");
+      let Kt = 0, Qt = 0;
+      for (const me of Yt) {
+        const nn = w(me.name || "", 200), Le = roster.find((ut) => ut.name.toLowerCase() === nn.toLowerCase()), ut = classifyGender([Le?.appearance, Le?.attire, me.prompt, me.name].filter(Boolean).join(", "));
+        ut === "f" ? Kt += 1 : ut === "m" && (Qt += 1);
+      }
+      return [formatCountTag(Kt, "1girl", "girls", "6+girls"), formatCountTag(Qt, "1boy", "boys", "6+boys")].filter(Boolean).join(", ");
+    };`;
+
+const VENDOR_CARD_TAG_PERSON_INIT_NEEDLE =
+  `const root = document.createElement("div"), initMode = settingsMode === "off" ? "gender" : settingsMode, initAuto = settingsMode !== "off";`;
+const VENDOR_CARD_TAG_PERSON_INIT_PATCH =
+  `const root = document.createElement("div"), initMode = ["gender", "girls", "people", "off"].includes(settingsMode) ? settingsMode : "gender", initAuto = settingsMode !== "off";`;
+
+const VENDOR_CARD_TAG_PERSON_SELECT_NEEDLE =
+  `<select data-ct-person-mode style="min-width:150px;\${field}"><option value="gender" \${initMode === "gender" ? "selected" : ""}>성별 1girl/1boy</option><option value="girls" \${initMode === "girls" ? "selected" : ""}>인원 → girls</option><option value="people" \${initMode === "people" ? "selected" : ""}>인원 → people</option></select>`;
+const VENDOR_CARD_TAG_PERSON_SELECT_PATCH =
+  `<select data-ct-person-mode style="min-width:150px;\${field}"><option value="gender" \${initMode === "gender" ? "selected" : ""}>성별 1girl/1boy</option><option value="girls" \${initMode === "girls" ? "selected" : ""}>인원 → girls</option><option value="people" \${initMode === "people" ? "selected" : ""}>인원 → people</option><option value="off" \${initMode === "off" ? "selected" : ""}>안 넣기</option></select>`;
+
+const VENDOR_CARD_TAG_PERSON_MODE_NEEDLE =
+  `}, currentMode = () => {
+      const Vt = String(modeEl?.value || "gender");
+      return ["gender", "girls", "people"].includes(Vt) ? Vt : "gender";
+    }, applyAutoPerson = (Vt = !1) => {`;
+const VENDOR_CARD_TAG_PERSON_MODE_PATCH =
+  `}, currentMode = () => {
+      const Vt = String(modeEl?.value || "gender");
+      return ["gender", "girls", "people", "off"].includes(Vt) ? Vt : "gender";
+    }, applyAutoPerson = (Vt = !1) => {`;
 
 /** Dashboard: collect NAI metadata tags from matched Risu assets for new_characters. */
 const VENDOR_ASSET_NAI_HTML_NEEDLE =
@@ -488,6 +560,15 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.7</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 삽화: 샷마다 스피너→이미지 점진 반영 · 해시 링크된 뒤에 DOM 갱신 · 동그라미/이미지 중복 삽입 방지</li>
+            <li>자동 생성: DOM 텍스트 0.5초 안정 후 시작 · user 말풍선에는 임시 동그라미 미삽입</li>
+            <li>캐릭 1명일 때 <code>solo</code> 토글(Preprocessing UI 대체) · 안 넣기여도 solo만 맨앞 · 사람 태그 강조 적용</li>
+            <li>샷 태그 수정 팝업: 인원수 모드에 「안 넣기」 추가</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.1.6</strong>
@@ -2128,7 +2209,7 @@ const VENDOR_INLINE_HELP_NEEDLE =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },`;
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },
-    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "메시지 클릭·해시 연결 시, 샷의 line 위치에 말풍선 본문에 이미지를 끼워 넣습니다. 오버레이와 별개입니다. Risu가 말풍선을 다시 그리면 사라질 수 있어 다시 클릭해야 합니다." },
+    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "샷 line 위치에 말풍선 이미지를 끼웁니다. 생성 중엔 스피너가 먼저 뜨고, 장마다 착착 채워집니다. 크기는 말풍선 너비의 최대 60%(좁으면 자동 축소). Risu가 말풍선을 다시 그리면 사라질 수 있어 다시 클릭해야 합니다." },
     "nx-progress-toast": { title: "진행 토스트", body: "토스트 노드는 항상 두고, 진행·작업명이 바뀌면 보이게 / 5초간 내용 변화 없으면 눈에서만 숨깁니다. 인덱싱=민트, 그 외=보라. 클릭하면 당장 숨깁니다." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
@@ -2166,19 +2247,33 @@ const VENDOR_DE_STRIP_PATCH =
 const VENDOR_INLINE_INJECT_FN_NEEDLE =
   `  async function ensureMessageInView(el) {`;
 const VENDOR_INLINE_INJECT_FN_PATCH =
-  `  async function injectChatInlineImages(msgEl, cards) {
+  `  async function injectChatInlineImages(msgEl, cards, pendingRows) {
     if (!msgEl || t.backendSettings?.card?.inline_chat_images !== !0) return;
     if (typeof msgEl.querySelectorAll != "function" || typeof msgEl.getInnerHTML != "function") return;
-    if (t._inlineInjectBusy) return;
+    if (t._inlineInjectBusy) {
+      t._inlineInjectQueued = !0;
+      return;
+    }
     t._inlineInjectBusy = !0;
+    t._inlineInjectQueued = !1;
     try {
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     if (typeof VC?.findElementIndexForLineWithFallback != "function" || typeof VC?.markerBlockHtml != "function") return;
     const doc = t.hostDoc;
     if (!doc || typeof doc.createElement != "function") return;
     const list = Array.isArray(cards) ? cards : [];
+    // Pending spinners follow auto-gen roles — never on user bubbles when
+    // "모든 메시지 이미지 생성" is off (same gate as Ka / select).
+    const allowPending = typeof isSelectedCharRole == "function"
+      ? isSelectedCharRole(t.selectedMessage?.role)
+      : !/^(user|human)$/i.test(String(t.selectedMessage?.role || ""));
+    const pending = allowPending
+      ? Array.isArray(pendingRows) ? pendingRows : Array.isArray(t._inlinePending) ? t._inlinePending : []
+      : [];
     const placements = [];
     const seenCard = new Set();
+    const seenLine = new Set();
+    const seenShot = new Set();
     for (const card of list) {
       const line = Number(card?.line);
       if (!Number.isFinite(line) || line < 1) continue;
@@ -2190,9 +2285,21 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       } catch {
       }
       if (!src || !/^data:image\\//i.test(src)) continue;
-      // Hard cap: one marker per card id — kills triple-same-card inject bugs.
       if (cardId) seenCard.add(cardId);
-      placements.push({ line, src, shotIndex: card.shot_index, cardId });
+      seenLine.add(line);
+      placements.push({ line, src, shotIndex: card.shot_index, cardId, pending: !1 });
+    }
+    for (const row of pending) {
+      const line = Number(row?.line);
+      const shotIndex = Number(row?.shot_index);
+      if (!Number.isFinite(line) || line < 1 || seenLine.has(line)) continue;
+      if (Number.isFinite(shotIndex) && seenShot.has(shotIndex)) continue;
+      const cardId = \`pending-\${Number.isFinite(shotIndex) ? shotIndex : line}\`;
+      if (seenCard.has(cardId)) continue;
+      seenLine.add(line);
+      if (Number.isFinite(shotIndex)) seenShot.add(shotIndex);
+      seenCard.add(cardId);
+      placements.push({ line, src: "", shotIndex, cardId, pending: !0 });
     }
     const unwrapSafe = async (arr) => {
       if (!arr) return [];
@@ -2209,7 +2316,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     try {
       const wantIds = placements.map((p) => String(p.cardId || "")).filter(Boolean).sort();
       let prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
-      // Skip only when marker count and card-id set both match (add/remove/replace → update).
       if (prev.length === wantIds.length) {
         if (!wantIds.length) {
           y("info", "inline.inject.skip", "shots=0 already");
@@ -2226,20 +2332,33 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           return;
         }
       }
-      // Drop prior markers without rewriting the bubble (also clears zombie triples).
-      for (const node of prev) {
-        try {
-          if (node && typeof node.remove == "function") await node.remove();
-        } catch {
+      const removeAllMarkers = async () => {
+        for (const sel of ["[data-inlay-inline-shot]", "[data-inlay-inline-pending]"]) {
+          let nodes = [];
+          try {
+            nodes = await unwrapSafe(await msgEl.querySelectorAll(sel));
+          } catch {
+            nodes = [];
+          }
+          for (const node of nodes) {
+            try {
+              if (node && typeof node.remove == "function") await node.remove();
+            } catch {
+            }
+          }
         }
-      }
-      // Second pass — SafeDOM sometimes leaves siblings behind.
-      prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
-      for (const node of prev) {
-        try {
-          if (node && typeof node.remove == "function") await node.remove();
-        } catch {
+      };
+      await removeAllMarkers();
+      await removeAllMarkers();
+      // Nuclear: leftover duplicate circles/images → rewrite bubble HTML without markers.
+      try {
+        const left = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+        if (left.length && typeof msgEl.setInnerHTML == "function") {
+          let htmlLeft = String(await msgEl.getInnerHTML() || "");
+          if (typeof VC.stripInlayInlineHtml == "function") htmlLeft = VC.stripInlayInlineHtml(htmlLeft);
+          await msgEl.setInnerHTML(htmlLeft);
         }
+      } catch {
       }
       if (!placements.length) {
         y("info", "inline.inject", "shots=0 cleared");
@@ -2300,19 +2419,42 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           ? VC.clampShotLine(p.line, messageLines.length)
           : Math.floor(Number(p.line));
         if (!line) continue;
-        // Hard: at most one image per line.
         if (byLine.has(line)) continue;
         byLine.set(line, { ...p, line });
       }
       let placed = 0;
       const placedIds = new Set();
+      const placedHosts = new Set();
       for (const [line, shot] of byLine) {
         const id = String(shot.cardId || "");
         if (id && placedIds.has(id)) continue;
+        // Hard: never double-insert same shot id (image or pending circle).
+        if (id) {
+          let already = [];
+          try {
+            already = await unwrapSafe(await msgEl.querySelectorAll(\`[data-inlay-inline-shot="\${id}"]\`));
+          } catch {
+            already = [];
+          }
+          if (already.length) {
+            placedIds.add(id);
+            continue;
+          }
+        }
         const hit = VC.findElementIndexForLineWithFallback(hostTexts, hostTags, messageLines, line, ["P"]);
         if (!hit || hit.elementIndex < 0 || hit.elementIndex >= hosts.length) continue;
+        if (placedHosts.has(hit.elementIndex)) continue;
         const host = hosts[hit.elementIndex];
         if (!host || typeof host.prepend != "function") continue;
+        // Hard: one marker per host — leftover circle must not stack a second.
+        try {
+          const hostMarks = await unwrapSafe(await host.querySelectorAll("[data-inlay-inline-shot]"));
+          if (hostMarks.length) {
+            placedHosts.add(hit.elementIndex);
+            continue;
+          }
+        } catch {
+        }
         const markerHtml = VC.markerBlockHtml(shot);
         if (!markerHtml) continue;
         try {
@@ -2322,17 +2464,39 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           if (wrap && typeof host.prepend == "function") {
             await host.prepend(wrap);
             placed += 1;
+            placedHosts.add(hit.elementIndex);
             if (id) placedIds.add(id);
           }
         } catch {
         }
       }
-      y("info", "inline.inject", \`shots=\${placements.length} placed=\${placed}\`);
+      y("info", "inline.inject", \`shots=\${placements.length} placed=\${placed} pending=\${placements.filter((p) => p.pending).length}\`);
     } catch (err) {
       y("warn", "inline.inject.fail", z(err?.message || err, 120));
     }
     } finally {
       t._inlineInjectBusy = !1;
+      if (t._inlineInjectQueued) {
+        t._inlineInjectQueued = !1;
+        refreshSelectedInlineImages().catch(() => {
+        });
+      }
+    }
+  }
+  async function refreshSelectedInlineImages() {
+    if (t.backendSettings?.card?.inline_chat_images !== !0) return;
+    const sel = t.selectedMessage;
+    if (!sel) return;
+    try {
+      const doc = await ue().catch(() => t.hostDoc);
+      const els = t._msgElsCache?.doc === doc ? t._msgElsCache.els : null;
+      const idx = Number(sel.domIndex);
+      const msgEl = Number.isFinite(idx) && els?.[idx] ? els[idx] : null;
+      if (!msgEl) return;
+      const cards = linkedCards(sel);
+      await injectChatInlineImages(msgEl, cards, t._inlinePending);
+    } catch (err) {
+      y("warn", "inline.refresh.fail", z(err?.message || err, 100));
     }
   }
   async function ensureMessageInView(el) {`;
@@ -2368,6 +2532,183 @@ const VENDOR_INLINE_SAME_PATCH =
       if (source === "text") return !isSelectedCharRole(l) ? !0 : (y("info", "select.same", \`msg#\${i.chatIndex} noImage → retry\`), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
       return !isSelectedCharRole(l) ? !0 : (y("info", "select.same", \`msg#\${i.chatIndex} noImage → retry\`), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
     }`;
+
+/** Progressive bubble inline: store pending_inline; force gallery reload on shot_done. */
+const VENDOR_INLINE_POLL_NEEDLE =
+  `        const i = Number(r.shot_done ?? 0), s = !!(a.state && a.state !== t.lastJobState), c = i !== Number(t._lastShotDone ?? -1);
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        if (s && (t.lastJobState = a.state, y("info", "job.poll", \`\${n.slice(0, 8)}… → \${a.state}\`)), r.message && r.message !== t._lastJobMsg && (t._lastJobMsg = r.message, y("info", "job.progress", r.message)), r.message && r.message !== t._lastJobMsg && (t._lastJobMsg = r.message, y("info", "job.progress", r.message)), (a.state === "generating" || a.state === "done") && (c || s && (a.state === "generating" || a.state === "done"))) {
+          t._lastShotDone = i;
+          const prevIds = (t.gallery || []).map((card) => String(card?.id || ""));
+          try {
+            if (await ce(e), t.selectedMessage) {`;
+const VENDOR_INLINE_POLL_PATCH =
+  `        const i = Number(r.shot_done ?? 0), s = !!(a.state && a.state !== t.lastJobState), c = i !== Number(t._lastShotDone ?? -1);
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        if (Array.isArray(r.pending_inline)) t._inlinePending = r.pending_inline;
+        else if (a.state === "done" || a.state === "cancelled" || a.state === "error") t._inlinePending = null;
+        if (s && (t.lastJobState = a.state, y("info", "job.poll", \`\${n.slice(0, 8)}… → \${a.state}\`)), r.message && r.message !== t._lastJobMsg && (t._lastJobMsg = r.message, y("info", "job.progress", r.message)), r.message && r.message !== t._lastJobMsg && (t._lastJobMsg = r.message, y("info", "job.progress", r.message)), (a.state === "generating" || a.state === "done") && (c || s && (a.state === "generating" || a.state === "done"))) {
+          t._lastShotDone = i;
+          const prevIds = (t.gallery || []).map((card) => String(card?.id || ""));
+          try {
+            // shot_done tick: bypass 2.2s gallery cache so new hash-linked cards are visible.
+            if (await ce(e, !!c), t.selectedMessage) {`;
+
+const VENDOR_INLINE_POLL_REFRESH_NEEDLE =
+  `          if (idsChanged) {
+            if (c) scheduleOverlayPlace(120);
+            await onSelectionChanged("content");
+          } else if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+          else await onSelectionChanged("chrome");
+        } else if (s || a.state === "generating" || a.state === "tagging" || a.state === "queued") {
+          if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+          else await onSelectionChanged("chrome");
+        }`;
+const VENDOR_INLINE_POLL_REFRESH_PATCH =
+  `          if (idsChanged) {
+            if (c) scheduleOverlayPlace(120);
+            await onSelectionChanged("content");
+          } else if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+          else await onSelectionChanged("chrome");
+          // Inject only after hash-linked cards change (not bare shot_done).
+          if (t.backendSettings?.card?.inline_chat_images === !0) {
+            let linkedChanged = !1;
+            try {
+              const linkedNow = t.selectedMessage ? linkedCards(t.selectedMessage) : [];
+              const linkedIds = linkedNow.map((card) => String(card?.id || "")).filter(Boolean).sort().join("|");
+              linkedChanged = linkedIds !== String(t._inlineLinkedIds || "");
+              if (linkedChanged) t._inlineLinkedIds = linkedIds;
+            } catch {
+            }
+            if (idsChanged || linkedChanged) {
+              try {
+                await refreshSelectedInlineImages();
+              } catch {
+              }
+            }
+          }
+        } else if (s || a.state === "generating" || a.state === "tagging" || a.state === "queued") {
+          if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+          else await onSelectionChanged("chrome");
+          // Pending spinners only — before any card is hash-linked yet.
+          if (a.state === "generating" && t.backendSettings?.card?.inline_chat_images === !0 && Array.isArray(t._inlinePending) && t._inlinePending.length) {
+            const linkedN = t.selectedMessage ? linkedCards(t.selectedMessage).length : 0;
+            if (!linkedN) {
+              try {
+                await refreshSelectedInlineImages();
+              } catch {
+              }
+            }
+          }
+        }`;
+
+/**
+ * Auto-gen (Ka): while selected bubble text is still streaming/changing, wait
+ * until DOM text is quiet for 0.5s, then generate. Resamples DOM on timer fire.
+ */
+const VENDOR_STREAM_SETTLE_KA_NEEDLE =
+  `  async function Ka(e, n) {
+    if (!e || e.length < 8 || t.jobsInFlight.has(n) || !(await ve()).enabled) return;
+    if (ge(n).length) return;
+    try {
+      await le();
+    } catch {
+    }
+    const o = t.backendSettings?.card || {};
+    if (o.power === !1 || o.execute === "manual") return;
+    const a = await Z({ useOverride: !1 }).catch(() => null);
+    if (!a || a.charIndex < 0) return;
+    const rebound = await maybeRebindAndLink({
+      hash: n,
+      text: e,
+      characterId: t.selectedMessage?.characterId || a.characterId,
+      chatId: t.selectedMessage?.chatId || a.chatId,
+      sessionId: t.selectedMessage?.sessionId || a.sessionId,
+      chatIndex: t.selectedMessage?.chatIndex ?? -1,
+      messageIndex: t.selectedMessage?.chatIndex ?? -1,
+      role: t.selectedMessage?.role || "char"
+    }, a);
+    if (rebound.length) return y("info", "overlay.generate.skip", \`rebound hash=\${n.slice(0, 8)} cards=\${rebound.length}\`);
+    y("info", "overlay.generate", \`hash=\${n.slice(0, 8)} chars=\${e.length} session=\${(a.sessionId || "").slice(-8)}\`), await Be(a, e, !1);
+  }`;
+const VENDOR_STREAM_SETTLE_KA_PATCH =
+  `  async function Ka(e, n) {
+    if (!e || e.length < 8 || t.jobsInFlight.has(n) || !(await ve()).enabled) return;
+    if (ge(n).length) return;
+    try {
+      await le();
+    } catch {
+    }
+    const o = t.backendSettings?.card || {};
+    if (o.power === !1 || o.execute === "manual") return;
+    // Streaming lock: selected DOM text still changing → wait 0.5s quiet, then retry.
+    const STREAM_SETTLE_MS = 5e2;
+    const textNow = String(e || "");
+    const lock = t._streamSettle || (t._streamSettle = { hash: "", text: "", changedAt: 0, timer: null, gen: 0 });
+    if (lock.hash !== n || lock.text !== textNow) {
+      lock.hash = n;
+      lock.text = textNow;
+      lock.changedAt = Date.now();
+      lock.gen = (lock.gen || 0) + 1;
+      if (lock.timer) {
+        clearTimeout(lock.timer);
+        lock.timer = null;
+      }
+    }
+    const quietFor = Date.now() - (lock.changedAt || 0);
+    if (quietFor < STREAM_SETTLE_MS) {
+      const wait = Math.max(50, STREAM_SETTLE_MS - quietFor);
+      if (!lock.timer) {
+        const gen = lock.gen;
+        lock.timer = setTimeout(() => {
+          lock.timer = null;
+          if (gen !== lock.gen) return;
+          (async () => {
+            let fresh = lock.text;
+            try {
+              const sel = t.selectedMessage;
+              if (sel && String(sel.hash || "") === String(n)) {
+                const els = t._msgElsCache?.els;
+                const el = Number.isFinite(Number(sel.domIndex)) ? els?.[sel.domIndex] : null;
+                if (el) {
+                  let raw = "";
+                  try {
+                    if (typeof el.getInnerHTML == "function") {
+                      const html = String(await el.getInnerHTML() || "");
+                      raw = typeof ln == "function" ? ln(html) : html;
+                    } else if (typeof el.innerText == "function") raw = String(await el.innerText() || "");
+                    else if (typeof el.textContent == "function") raw = String(await el.textContent() || "");
+                  } catch {
+                    raw = "";
+                  }
+                  fresh = w(raw, 1e5) || String(sel.text || "") || fresh;
+                } else fresh = String(sel.text || "") || fresh;
+              }
+            } catch {
+            }
+            await Ka(fresh, n);
+          })().catch(() => {
+          });
+        }, wait);
+      }
+      y("info", "overlay.generate.stream_wait", \`hash=\${String(n).slice(0, 8)} quiet=\${Math.round(quietFor)}ms need=\${STREAM_SETTLE_MS}ms chars=\${textNow.length}\`);
+      return;
+    }
+    const a = await Z({ useOverride: !1 }).catch(() => null);
+    if (!a || a.charIndex < 0) return;
+    const rebound = await maybeRebindAndLink({
+      hash: n,
+      text: e,
+      characterId: t.selectedMessage?.characterId || a.characterId,
+      chatId: t.selectedMessage?.chatId || a.chatId,
+      sessionId: t.selectedMessage?.sessionId || a.sessionId,
+      chatIndex: t.selectedMessage?.chatIndex ?? -1,
+      messageIndex: t.selectedMessage?.chatIndex ?? -1,
+      role: t.selectedMessage?.role || "char"
+    }, a);
+    if (rebound.length) return y("info", "overlay.generate.skip", \`rebound hash=\${n.slice(0, 8)} cards=\${rebound.length}\`);
+    y("info", "overlay.generate", \`hash=\${n.slice(0, 8)} chars=\${e.length} session=\${(a.sessionId || "").slice(-8)}\`), await Be(a, e, !1);
+  }`;
 
 /**
  * Chat switch: scroll/text "same DOM" early-return ignored sessionId, so a new
@@ -2587,8 +2928,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.1.6",
-    body: "샷 line L#/1·2·3 보정, 에셋 *background·straight-on 필터, 캐릭터 ✕ 외형 비우기. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
+    title: "2.1.7",
+    body: "말풍선 삽화 점진 반영·해시 링크 후 갱신, DOM 0.5초 안정 후 자동생성, solo 토글, 샷 팝업 안 넣기. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
   };`;
 
 /** Top-center progress toast: one bar; show on change; hide 5s after last change. */
@@ -3164,6 +3505,12 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_NATURAL_BASE_HELP_NEEDLE, 'natural_base help entry');
   assertOnce(raw, VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE, 'person_tag_weight HTML');
   assertOnce(raw, VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE, 'person_tag_weight Ct()');
+  assertOnce(raw, VENDOR_PERSON_TAG_SOLO_HTML_NEEDLE, 'person_tag_solo HTML');
+  assertOnce(raw, VENDOR_PERSON_TAG_SOLO_CT_NEEDLE, 'person_tag_solo Ct()');
+  assertOnce(raw, VENDOR_CARD_TAG_PERSON_SLOTS_NEEDLE, 'card tag personTagsForSlots solo');
+  assertOnce(raw, VENDOR_CARD_TAG_PERSON_INIT_NEEDLE, 'card tag person initMode');
+  assertOnce(raw, VENDOR_CARD_TAG_PERSON_SELECT_NEEDLE, 'card tag person select off');
+  assertOnce(raw, VENDOR_CARD_TAG_PERSON_MODE_NEEDLE, 'card tag currentMode off');
   assertOnce(raw, VENDOR_ASSET_NAI_HTML_NEEDLE, 'asset_nai_tags HTML');
   assertOnce(raw, VENDOR_ASSET_NAI_SAVE_NEEDLE, 'asset_nai_tags save');
   assertOnce(raw, VENDOR_ASSET_NAI_HELP_NEEDLE, 'asset_nai_tags help');
@@ -3218,6 +3565,12 @@ const loadVendorUi = (): string => {
     [VENDOR_CARD_TAG_ROSTER_REFRESH_NEEDLE, 'card tag keep stored prompt'],
     [VENDOR_CARD_TAG_STRIP_PERSON_NEEDLE, 'card tag strip person NAI-safe split'],
     [VENDOR_CARD_TAG_APPLY_WEIGHT_NEEDLE, 'card tag apply auto person weight'],
+    [VENDOR_CARD_TAG_PERSON_SLOTS_NEEDLE, 'card tag personTagsForSlots solo'],
+    [VENDOR_CARD_TAG_PERSON_INIT_NEEDLE, 'card tag person initMode'],
+    [VENDOR_CARD_TAG_PERSON_SELECT_NEEDLE, 'card tag person select off'],
+    [VENDOR_CARD_TAG_PERSON_MODE_NEEDLE, 'card tag currentMode off'],
+    [VENDOR_PERSON_TAG_SOLO_HTML_NEEDLE, 'person_tag_solo HTML'],
+    [VENDOR_PERSON_TAG_SOLO_CT_NEEDLE, 'person_tag_solo Ct()'],
     [VENDOR_AUTOTAG_LT_NEEDLE, 'autotag Lt gender'],
     [VENDOR_CHAR_CREATE_GENDER_HTML_NEEDLE, 'char create gender html'],
     [VENDOR_CHAR_CREATE_GENDER_REF_NEEDLE, 'char create gender ref'],
@@ -3254,6 +3607,9 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_INJECT_FN_NEEDLE, 'inline inject fn'],
     [VENDOR_INLINE_CALL_NEEDLE, 'inline inject call'],
     [VENDOR_INLINE_SAME_NEEDLE, 'inline inject same-select'],
+    [VENDOR_INLINE_POLL_NEEDLE, 'inline poll pending'],
+    [VENDOR_INLINE_POLL_REFRESH_NEEDLE, 'inline poll refresh'],
+    [VENDOR_STREAM_SETTLE_KA_NEEDLE, 'stream settle Ka 0.5s'],
     [VENDOR_SELECT_SAME_NEEDLE, 'select same-session early-return'],
     [VENDOR_SCROLL_GALLERY_NEW_NEEDLE, 'scroll select gallery load'],
     [VENDOR_SCROLL_GALLERY_SAME_NEEDLE, 'scroll same gallery load'],
@@ -3301,6 +3657,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_NATURAL_BASE_HELP_NEEDLE, VENDOR_NATURAL_BASE_HELP_PATCH)
     .replace(VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_HTML_PATCH)
     .replace(VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_CT_PATCH)
+    .replace(VENDOR_PERSON_TAG_SOLO_HTML_NEEDLE, VENDOR_PERSON_TAG_SOLO_HTML_PATCH)
+    .replace(VENDOR_PERSON_TAG_SOLO_CT_NEEDLE, VENDOR_PERSON_TAG_SOLO_CT_PATCH)
     .replace(VENDOR_ASSET_NAI_HTML_NEEDLE, VENDOR_ASSET_NAI_HTML_PATCH)
     .replace(VENDOR_ASSET_NAI_SAVE_NEEDLE, VENDOR_ASSET_NAI_SAVE_PATCH)
     .replace(VENDOR_ASSET_NAI_HELP_NEEDLE, VENDOR_ASSET_NAI_HELP_PATCH)
@@ -3347,6 +3705,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CARD_TAG_ROSTER_REFRESH_NEEDLE, VENDOR_CARD_TAG_ROSTER_REFRESH_PATCH)
     .replace(VENDOR_CARD_TAG_STRIP_PERSON_NEEDLE, VENDOR_CARD_TAG_STRIP_PERSON_PATCH)
     .replace(VENDOR_CARD_TAG_APPLY_WEIGHT_NEEDLE, VENDOR_CARD_TAG_APPLY_WEIGHT_PATCH)
+    .replace(VENDOR_CARD_TAG_PERSON_SLOTS_NEEDLE, VENDOR_CARD_TAG_PERSON_SLOTS_PATCH)
+    .replace(VENDOR_CARD_TAG_PERSON_INIT_NEEDLE, VENDOR_CARD_TAG_PERSON_INIT_PATCH)
+    .replace(VENDOR_CARD_TAG_PERSON_SELECT_NEEDLE, VENDOR_CARD_TAG_PERSON_SELECT_PATCH)
+    .replace(VENDOR_CARD_TAG_PERSON_MODE_NEEDLE, VENDOR_CARD_TAG_PERSON_MODE_PATCH)
     .replace(VENDOR_AUTOTAG_LT_NEEDLE, VENDOR_AUTOTAG_LT_PATCH)
     .replace(VENDOR_CHAR_CREATE_GENDER_HTML_NEEDLE, VENDOR_CHAR_CREATE_GENDER_HTML_PATCH)
     .replace(VENDOR_CHAR_CREATE_GENDER_REF_NEEDLE, VENDOR_CHAR_CREATE_GENDER_REF_PATCH)
@@ -3383,6 +3745,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_INJECT_FN_NEEDLE, VENDOR_INLINE_INJECT_FN_PATCH)
     .replace(VENDOR_INLINE_CALL_NEEDLE, VENDOR_INLINE_CALL_PATCH)
     .replace(VENDOR_INLINE_SAME_NEEDLE, VENDOR_INLINE_SAME_PATCH)
+    .replace(VENDOR_INLINE_POLL_NEEDLE, VENDOR_INLINE_POLL_PATCH)
+    .replace(VENDOR_INLINE_POLL_REFRESH_NEEDLE, VENDOR_INLINE_POLL_REFRESH_PATCH)
+    .replace(VENDOR_STREAM_SETTLE_KA_NEEDLE, VENDOR_STREAM_SETTLE_KA_PATCH)
     .replace(VENDOR_SELECT_SAME_NEEDLE, VENDOR_SELECT_SAME_PATCH)
     .replace(VENDOR_SCROLL_GALLERY_NEW_NEEDLE, VENDOR_SCROLL_GALLERY_NEW_PATCH)
     .replace(VENDOR_SCROLL_GALLERY_SAME_NEEDLE, VENDOR_SCROLL_GALLERY_SAME_PATCH)

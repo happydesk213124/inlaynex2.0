@@ -141,6 +141,8 @@ interface ProgressExtra {
   phase?: string;
   message?: string;
   cards_so_far?: number;
+  /** Known line slots for bubble inline placeholders (spinner until image ready). */
+  pending_inline?: Array<{ shot_index: number; line: number }>;
 }
 
 /** Small by design: a progress row must never carry the tagged scene. */
@@ -153,6 +155,7 @@ function progressPayload(extra: ProgressExtra = {}): Record<string, unknown> {
     phase: extra.phase || 'generating',
     message: extra.message || '',
     cards_so_far: extra.cards_so_far,
+    pending_inline: Array.isArray(extra.pending_inline) ? extra.pending_inline : undefined,
     debug_stage: getFocusStage() || getLastStage(),
     debug_error: getLastError()?.message || '',
   };
@@ -268,6 +271,7 @@ export async function getJob(jobId: string): Promise<ApiResult> {
       'phase',
       'message',
       'cards_so_far',
+      'pending_inline',
       'debug_stage',
       'debug_error',
     ]) {
@@ -426,6 +430,13 @@ async function runJob(jobId: string): Promise<void> {
     }
 
     if (await cancelJobIfStale(jobId, 'superseded before generate')) return;
+    const pendingInline = shots
+      .map((shot, i) => {
+        const line = Math.floor(Number((shot as { line?: unknown }).line));
+        if (!Number.isFinite(line) || line < 1) return null;
+        return { shot_index: i, line };
+      })
+      .filter((row): row is { shot_index: number; line: number } => !!row);
     await setJob(
       jobId,
       'generating',
@@ -436,6 +447,7 @@ async function runJob(jobId: string): Promise<void> {
         progress: 0,
         phase: 'generating',
         message: `이미지 1/${shots.length} 생성 준비`,
+        pending_inline: pendingInline,
       }),
     );
 
@@ -473,6 +485,7 @@ async function runJob(jobId: string): Promise<void> {
           progress: Math.round((idx / Math.max(1, shots.length)) * 1000) / 10,
           phase: 'generating',
           message: `NovelAI 요청 중 ${idx + 1}/${shots.length}… [${getFocusStage()}]`,
+          pending_inline: pendingInline,
         }),
       );
 
@@ -501,6 +514,7 @@ async function runJob(jobId: string): Promise<void> {
             message: `NovelAI 대기 ${idx + 1}/${shots.length} (${hbTicks}s) · ${getFocusStage()}${
               kb ? ` ${Math.round(kb / 1024)}KB` : ''
             }`,
+            pending_inline: pendingInline,
           }),
         ).catch(() => {});
       }, HEARTBEAT_MS);
@@ -528,6 +542,7 @@ async function runJob(jobId: string): Promise<void> {
           progress: Math.round(((idx + 0.5) / Math.max(1, shots.length)) * 1000) / 10,
           phase: 'generating',
           message: `이미지 저장 중 ${idx + 1}/${shots.length}… [${getFocusStage()}]`,
+          pending_inline: pendingInline,
         }),
       );
       const location = buildImageLocation({
@@ -600,6 +615,7 @@ async function runJob(jobId: string): Promise<void> {
           phase: 'generating',
           message: `이미지 ${idx + 1}/${shots.length} 완료`,
           cards_so_far: cards.length,
+          pending_inline: pendingInline,
         }),
       );
     }
@@ -612,6 +628,7 @@ async function runJob(jobId: string): Promise<void> {
       progress: 100,
       phase: 'done',
       message: `이미지 ${shots.length}/${shots.length} 완료`,
+      pending_inline: pendingInline,
     };
     await attachImageUrls(result);
     await setJob(jobId, 'done', result);

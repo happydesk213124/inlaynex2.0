@@ -96,6 +96,11 @@ patched in at build time (was a checkbox).
 person-count tags (`0` = plain `1girl, 1boy`; `N` = `N::1girl, 1boy::`). Card
 settings places a number input beside Include Max (asserted vendor patch).
 
+`card.person_tag_solo` (boolean, default `false`): when the shot has exactly one
+character, put `solo` instead of `1girl`/`1boy` (still emphasized by weight).
+Also applies when `person_tag_mode` is `off`. UI replaces the unused Preprocessing
+checkbox (asserted vendor patch); `card.preprocessing` remains a silent dummy.
+
 `curation.mode` (`off` | `two_stage` | `embed_snap`) lives on the **큐레이팅**
 settings tab (asserted vendor patch). Legacy `card.composition_curation: true`
 migrates to `two_stage`. Character appearance/attire tags are never replaced by

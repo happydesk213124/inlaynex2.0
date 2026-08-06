@@ -76,11 +76,17 @@ test('filterAssetPromptTags drops artist/year/quality/negatives and strips empha
     'light smile',
     'hand on own hip',
     'index finger raised',
-    'white background',
   ]);
   assert.equal(weightMap.get('hand on own hip'), '{{{hand on own hip}}}');
   assert.equal(weightMap.get('index finger raised'), '{{{index finger raised}}}');
   assert.equal(weightMap.get('dark green hair'), 'dark green hair');
+});
+
+test('filterAssetPromptTags drops *background and straight-on variants', () => {
+  const { plains } = filterAssetPromptTags(
+    'blonde hair, white background, simple-background, pink background, straight on, straight-on, straighton, blue eyes',
+  );
+  assert.deepEqual(plains, ['blonde hair', 'blue eyes']);
 });
 
 test('restoreAssetTagWeights reapplies brace emphasis', () => {

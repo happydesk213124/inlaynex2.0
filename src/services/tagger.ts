@@ -30,6 +30,7 @@ import {
 } from '../domain/lore/assemble';
 import { isCharacterImageExtraLore } from '../domain/lore/extra';
 import type { LlmMessage } from '../providers/llm/transform';
+import { numberMessageLinesForTagger, repairLazyShotLines } from '../domain/tagging/shot-line';
 import { collectAssetNaiTags, setLastAssetWeightMap } from './asset-tags';
 import { rosterForSession } from './characters';
 import { getConfig } from './context';
@@ -237,6 +238,8 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
     content: [
       // Always ask for y_percent so values are saved. Toggle only affects display (equal bands vs LLM %).
       'Every shot MUST include `y_percent` (0–100): reading position top→bottom. Spread across the full range in order (shot0 < shot1 < …); ~even gaps. E.g. 2→~25/~75; 3→~20/~50/~80; 4→~15/~40/~65/~90. Forbidden: all under 40, duplicates, or gaps under ~15 unless 1 shot.',
+      // Chat user message is L1|… numbered — line must cite those labels, never shot order.
+      'LINE: message lines are labeled `L1|…`, `L2|…`. Set each shot `line` to that L number (illustration sits immediately before that line). Pick the L# whose text matches the shot moment. `paragraph` = shot order (0,1,2…). `line` is NOT shot order. INVALID: emitting line=1,2,3… just because you have 1st/2nd/3rd shots.',
       imageMin === imageMax
         ? `SHOT COUNT: produce exactly ${imageMax} shot(s) in scenes[].shots (across all scenes).`
         : `SHOT COUNT: produce between ${imageMin} and ${imageMax} shots in scenes[].shots (across all scenes). Prefer the count that fits the message; never fewer than ${imageMin} or more than ${imageMax}.`,
@@ -267,8 +270,9 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
       chunks.push(`[${role}]\n${body}`);
     }
   }
-  if (assistant) chunks.push(assistant);
-  const userContent = chunks.length ? chunks.join('\n\n') : assistant;
+  // Number only the tagged message so shot.line can cite L# (recent context stays plain).
+  if (assistant) chunks.push(numberMessageLinesForTagger(assistant));
+  const userContent = chunks.length ? chunks.join('\n\n') : numberMessageLinesForTagger(assistant);
   if (!userContent) throw new Error('태깅할 메시지 텍스트가 없습니다.');
   messages.push({ role: 'user', content: userContent });
 
@@ -286,7 +290,7 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
 }
 
 /** Flattens the tagger's `scenes[].shots[]` reply into a flat shot list. */
-export function flattenShots(tagged: unknown): TaggedShot[] {
+export function flattenShots(tagged: unknown, messageText?: unknown): TaggedShot[] {
   const charMax = characterMaxLimit(getConfig().card);
   const result = tagged as TaggerResult;
   const shots: TaggedShot[] = [];
@@ -303,7 +307,8 @@ export function flattenShots(tagged: unknown): TaggedShot[] {
       shots.push(item);
     }
   }
-  return shots;
+  // Models often emit line=1,2,3 as shot order; remap from y_percent when that pattern appears.
+  return repairLazyShotLines(shots, messageText ?? '');
 }
 
 function naturalBaseSystemMessage(mode: NaturalBaseMode): string {

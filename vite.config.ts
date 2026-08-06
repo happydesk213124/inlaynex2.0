@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.9';
+const PLUGIN_VERSION = '2.1.10';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -454,8 +454,29 @@ const VENDOR_ASSET_NAI_HELP_NEEDLE =
 const VENDOR_ASSET_NAI_HELP_PATCH =
   `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
     "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "로어 트리거와 이름이 맞는 Risu 에셋 이미지(PNG/WebP)의 NovelAI 메타 태그를 트리거당 최대 2장(normal/default·이름 일치 우선) 읽어 태거 프롬프트에 넣습니다. artist·year·품질·*background·straight-on 태그는 제외합니다." },
-    "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(Asset Maid 기본 사이즈). 끄면 NAI Width/Height 설정을 씁니다." },
+    "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(Asset Maid 기본 사이즈). ComfyUI는 워크플로 Empty Latent 등에 [[width]]/[[height]]를 넣어야 반영됩니다. 끄면 NAI Width/Height 설정을 씁니다." },
 `;
+
+/** Models → ComfyUI: document [[width]]/[[height]] (auto_aspect / NAI W·H). */
+const VENDOR_COMFY_MUTED_NEEDLE =
+  `"로컬 ComfyUI API · [[pos]] / [[neg]] / [[char1]]… / [[seed]]"`;
+
+const VENDOR_COMFY_MUTED_PATCH =
+  `"로컬 ComfyUI API · [[pos]] / [[neg]] / [[char1]]… / [[width]] / [[height]] / [[seed]]"`;
+
+const VENDOR_COMFY_HELP_NEEDLE =
+  `              3) JSON 안에서 긍정 프롬프트를 넣는 칸에 <code>[[pos]]</code>, 부정에 <code>[[neg]]</code>, 캐릭터 태그를 넣고 싶은 칸에 <code>[[char1]]</code> / <code>[[char2]]</code> … 를 적어 둡니다.<br>
+              4) 저장 후 생성하면 Inlay가 만든 프롬프트로 그 자리가 치환됩니다.<br><br>
+              <strong>시드 (랜덤)</strong> — API Export의 숫자 seed는 요청마다 Inlay가 새 랜덤 시드로 덮어씁니다.<br>
+              명시적으로 쓰려면 <code>"seed": "[[seed]]"</code>처럼 <strong>따옴표로 감싸서</strong> 넣으세요. (숫자만 남겨둬도 자동 랜덤)<br><br>`;
+
+const VENDOR_COMFY_HELP_PATCH =
+  `              3) JSON 안에서 긍정 프롬프트를 넣는 칸에 <code>[[pos]]</code>, 부정에 <code>[[neg]]</code>, 캐릭터 태그를 넣고 싶은 칸에 <code>[[char1]]</code> / <code>[[char2]]</code> … 를 적어 둡니다.<br>
+              4) Empty Latent Image 등 해상도 칸에는 <code>[[width]]</code> / <code>[[height]]</code>를 넣으세요. (자동 비율 조절·NAI Width/Height와 연동)<br>
+              5) 저장 후 생성하면 Inlay가 만든 값으로 그 자리가 치환됩니다.<br><br>
+              <strong>크기</strong> — <code>"width": "[[width]]"</code>, <code>"height": "[[height]]"</code>처럼 <strong>따옴표로 감싸서</strong> 넣으면 숫자로 치환됩니다. 자동 비율 조절이 켜져 있으면 샷 비율에 맞는 크기, 꺼져 있으면 Models의 NAI Width/Height가 들어갑니다. 같은 방식으로 <code>[[steps]]</code> / <code>[[cfg]]</code>도 쓸 수 있습니다.<br><br>
+              <strong>시드 (랜덤)</strong> — API Export의 숫자 seed는 요청마다 Inlay가 새 랜덤 시드로 덮어씁니다.<br>
+              명시적으로 쓰려면 <code>"seed": "[[seed]]"</code>처럼 <strong>따옴표로 감싸서</strong> 넣으세요. (숫자만 남겨둬도 자동 랜덤)<br><br>`;
 
 /** Settings nav: add 큐레이팅 tab between models and explorer. */
 const VENDOR_CURATION_TABS_NEEDLE = `S = {
@@ -560,6 +581,14 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.10</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 삽화: 선택 DOM + 바로 위·아래 유지(최대 3개)</li>
+            <li>ComfyUI: <code>[[width]]</code>/<code>[[height]]</code> 사용법·자동 비율 도움말 보강</li>
+            <li>큐레이팅 탭: 즉시 전환 후 status 백그라운드 갱신(대용량 카탈로그 대기 제거)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.1.9</strong>
@@ -936,13 +965,15 @@ const VENDOR_CURATION_TAB_LOAD_PATCH =
         }
         t.charEditUi = null, e.querySelectorAll("[data-nx-tab]").forEach((i) => {
           i.classList.toggle("active", i.getAttribute("data-nx-tab") === r);
-        });
+        }), P();
+        // Paint first with cached curationStatus; refresh meta in background.
         if (r === "curation") {
           K("/v1/curation/status").then((st) => {
+            if (t.uiTab !== "curation") return;
             t.curationStatus = st?.status || st;
-            return P();
-          }).catch(() => P());
-        } else P();`;
+            P();
+          }).catch(() => {});
+        }`;
 
 /**
  * Global character "use in this chat" toggle: compact control left of 오토태그,
@@ -2225,7 +2256,7 @@ const VENDOR_INLINE_HELP_NEEDLE =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },`;
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },
-    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택한 말풍선 + 바로 위 char 말풍선(최대 2개)에만 샷 line 이미지를 끼웁니다. 스크롤 선택으로도 갱신되고, 나머지는 지워서 메모리를 막습니다. 생성 중엔 스피너→이미지. 크기 ≤말풍선 60%." },
+    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택한 말풍선 + 바로 위·아래(최대 3개)에만 샷 line 이미지를 끼웁니다. 스크롤 선택으로도 갱신되고, 나머지는 지워서 메모리를 막습니다. 생성 중엔 스피너→이미지. 크기 ≤말풍선 60%." },
     "nx-progress-toast": { title: "진행 토스트", body: "토스트 노드는 항상 두고, 진행·작업명이 바뀌면 보이게 / 5초간 내용 변화 없으면 눈에서만 숨깁니다. 인덱싱=민트, 그 외=보라. 클릭하면 당장 숨깁니다." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
@@ -2528,40 +2559,52 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const selIdx = Number(sel.domIndex);
       const keep = new Set();
       if (Number.isFinite(selIdx) && selIdx >= 0 && selIdx < els.length) keep.add(selIdx);
-      // DOM is newest-first: index+1 is the bubble above (older). Keep at most one char-role neighbor.
+      // DOM newest-first: +1 = above (older), -1 = below (newer). Cap at selected ±1.
+      const neighborIdxs = [];
+      if (Number.isFinite(selIdx)) {
+        if (selIdx + 1 < els.length) neighborIdxs.push(selIdx + 1);
+        if (selIdx - 1 >= 0) neighborIdxs.push(selIdx - 1);
+      }
       const VC = globalThis.__INLAY_VIEWER_CORE__;
-      let neighborIdx = -1;
-      let neighborMsg = null;
-      if (Number.isFinite(selIdx) && selIdx + 1 < els.length) {
+      const neighborMsgs = [];
+      if (neighborIdxs.length) {
         try {
           const scope = await Za().catch(() => null);
           const msgs = scope?.messages || [];
-          const raw = await De(els[selIdx + 1]);
-          const text = w(raw || "");
-          if (text.length >= 4) {
-            const hit = typeof qa == "function"
-              ? qa(text, msgs, selIdx + 1, els.length, {})
-              : typeof VC?.resolveChatMessageMatch == "function"
-                ? VC.resolveChatMessageMatch(text, msgs, selIdx + 1, els.length)
-                : null;
-            const role = w(hit?.role || "");
-            if (role && isSelectedCharRole(role)) {
-              neighborIdx = selIdx + 1;
-              keep.add(neighborIdx);
-              neighborMsg = {
-                domIndex: neighborIdx,
-                chatIndex: hit?.chatIndex,
-                messageIndex: hit?.chatIndex,
-                characterId: sel.characterId,
-                chatId: sel.chatId,
-                sessionId: sel.sessionId,
-                role,
-                text,
-                hash: ye(text)
-              };
+          for (const nIdx of neighborIdxs) {
+            keep.add(nIdx);
+            try {
+              const raw = await De(els[nIdx]);
+              const text = w(raw || "");
+              if (text.length < 4) {
+                neighborMsgs.push({ idx: nIdx, msg: null });
+                continue;
+              }
+              const hit = typeof qa == "function"
+                ? qa(text, msgs, nIdx, els.length, {})
+                : typeof VC?.resolveChatMessageMatch == "function"
+                  ? VC.resolveChatMessageMatch(text, msgs, nIdx, els.length)
+                  : null;
+              neighborMsgs.push({
+                idx: nIdx,
+                msg: {
+                  domIndex: nIdx,
+                  chatIndex: hit?.chatIndex,
+                  messageIndex: hit?.chatIndex,
+                  characterId: sel.characterId,
+                  chatId: sel.chatId,
+                  sessionId: sel.sessionId,
+                  role: w(hit?.role || ""),
+                  text,
+                  hash: ye(text)
+                }
+              });
+            } catch {
+              neighborMsgs.push({ idx: nIdx, msg: null });
             }
           }
         } catch {
+          for (const nIdx of neighborIdxs) keep.add(nIdx);
         }
       }
       const unwrapSafe = async (arr) => {
@@ -2610,12 +2653,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         } catch {
         }
       }
-      y("info", "inline.keep", \`DOM#\${selIdx}\${neighborIdx >= 0 ? "+" + neighborIdx : ""} keep=\${keep.size}/\${els.length}\`);
+      y("info", "inline.keep", \`DOM#\${selIdx}±1 keep=\${[...keep].sort((a, b) => a - b).join(",")}/\${els.length}\`);
       if (Number.isFinite(selIdx) && els[selIdx]) {
         await injectChatInlineImages(els[selIdx], linkedCards(sel), t._inlinePending);
       }
-      if (neighborIdx >= 0 && els[neighborIdx] && neighborMsg) {
-        await injectChatInlineImages(els[neighborIdx], linkedCards(neighborMsg), []);
+      for (const row of neighborMsgs) {
+        if (row?.idx == null || !els[row.idx] || !row.msg) continue;
+        await injectChatInlineImages(els[row.idx], linkedCards(row.msg), []);
       }
     } catch (err) {
       y("warn", "inline.refresh.fail", z(err?.message || err, 100));
@@ -3175,8 +3219,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.1.9",
-    body: "말풍선 삽화는 선택+위 char 최대 2개만 유지, 스크롤 선택으로도 갱신. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
+    title: "2.1.10",
+    body: "말풍선 삽화 최대 3개(선택±1) · Comfy [[width]]/[[height]] · 큐레이팅 탭 즉시 전환. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
   };`;
 
 /** Top-center progress toast: one bar; show on change; hide 5s after last change. */
@@ -3761,6 +3805,8 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_ASSET_NAI_HTML_NEEDLE, 'asset_nai_tags HTML');
   assertOnce(raw, VENDOR_ASSET_NAI_SAVE_NEEDLE, 'asset_nai_tags save');
   assertOnce(raw, VENDOR_ASSET_NAI_HELP_NEEDLE, 'asset_nai_tags help');
+  assertOnce(raw, VENDOR_COMFY_MUTED_NEEDLE, 'comfy muted placeholders');
+  assertOnce(raw, VENDOR_COMFY_HELP_NEEDLE, 'comfy help width/height');
   assertOnce(raw, VENDOR_CURATION_TABS_NEEDLE, 'curation tabs S/E');
   assertOnce(raw, VENDOR_CURATION_PANEL_NEEDLE, 'curation panel insert');
   assertOnce(raw, VENDOR_DEBUG_PANEL_NEEDLE, 'debug panel 로그/태깅');
@@ -3912,6 +3958,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_ASSET_NAI_HTML_NEEDLE, VENDOR_ASSET_NAI_HTML_PATCH)
     .replace(VENDOR_ASSET_NAI_SAVE_NEEDLE, VENDOR_ASSET_NAI_SAVE_PATCH)
     .replace(VENDOR_ASSET_NAI_HELP_NEEDLE, VENDOR_ASSET_NAI_HELP_PATCH)
+    .replace(VENDOR_COMFY_MUTED_NEEDLE, VENDOR_COMFY_MUTED_PATCH)
+    .replace(VENDOR_COMFY_HELP_NEEDLE, VENDOR_COMFY_HELP_PATCH)
     .replace(VENDOR_CURATION_TABS_NEEDLE, VENDOR_CURATION_TABS_PATCH)
     .replace(VENDOR_CURATION_PANEL_NEEDLE, VENDOR_CURATION_PANEL_PATCH)
     .replace(VENDOR_DEBUG_PANEL_NEEDLE, VENDOR_DEBUG_PANEL_PATCH)

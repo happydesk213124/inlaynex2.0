@@ -357,6 +357,7 @@ export function gallerySelectedCount(
 /**
  * Message used for the left "current message images" strip.
  * When the live selection has no images yet, keep the last imaged message so the strip does not collapse/rebuild.
+ * Never fall back across sessions — a chat switch must not keep the previous chat's strip.
  */
 export function galleryFocusMessage(
   selectedMessage: SelectedMessage | null | undefined,
@@ -364,8 +365,13 @@ export function galleryFocusMessage(
   cards: GalleryCard[] | null | undefined,
 ): SelectedMessage | null {
   if (selectedMessage && gallerySelectedCount(cards, selectedMessage) > 0) return selectedMessage;
-  if (lastImagedMessage && gallerySelectedCount(cards, lastImagedMessage) > 0) return lastImagedMessage;
-  return selectedMessage || lastImagedMessage || null;
+  const selSession = String(selectedMessage?.sessionId || selectedMessage?.session_id || '');
+  const lastSession = String(lastImagedMessage?.sessionId || lastImagedMessage?.session_id || '');
+  const lastOk = !!lastImagedMessage
+    && gallerySelectedCount(cards, lastImagedMessage) > 0
+    && (!selSession || !lastSession || selSession === lastSession);
+  if (lastOk) return lastImagedMessage!;
+  return selectedMessage || null;
 }
 
 // ── message role detection ────────────────────────────────────────────────

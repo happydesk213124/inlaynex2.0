@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.1';
+const PLUGIN_VERSION = '2.1.2';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -1694,6 +1694,52 @@ const VENDOR_CHAR_CREATE_WEAR_ACC_PATCH =
 const VENDOR_APPEARANCE_LABEL_SHARED_NEEDLE = `<span>외형 태그 (옷·악세사리 제외)</span>`;
 const VENDOR_APPEARANCE_LABEL_SHARED_PATCH = `<span>외형 태그 (옷·무기 제외)</span>`;
 
+/**
+ * Mobile settings chrome: tabs were wrapping Hangul one syllable per line when
+ * squeezed, and head-actions (닫기) overflowed past the viewport.
+ */
+const VENDOR_TAB_NOWRAP_NEEDLE =
+  `.tab{min-height:38px;padding:8px 17px;border:0;border-radius:10px;background:transparent;color:var(--muted);box-shadow:none}.tab.active{background:var(--accent-soft);color:#dcd7ff}`;
+const VENDOR_TAB_NOWRAP_PATCH =
+  `.tab{min-height:38px;padding:8px 17px;border:0;border-radius:10px;background:transparent;color:var(--muted);box-shadow:none;white-space:nowrap;flex:0 0 auto}.tab.active{background:var(--accent-soft);color:#dcd7ff}`;
+
+const VENDOR_TABS_SCROLL_NEEDLE =
+  `.tabs{display:flex;gap:7px;margin:20px 0 16px;padding:5px;width:max-content;max-width:100%;overflow:auto;background:rgba(17,23,35,.75);border:1px solid var(--border);border-radius:14px}`;
+const VENDOR_TABS_SCROLL_PATCH =
+  `.tabs{display:flex;flex-wrap:nowrap;gap:7px;margin:20px 0 16px;padding:5px;width:max-content;max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;background:rgba(17,23,35,.75);border:1px solid var(--border);border-radius:14px}`;
+
+const VENDOR_MOBILE_CHROME_NEEDLE =
+  `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.head-actions{flex-wrap:wrap;justify-content:flex-end}}`;
+const VENDOR_MOBILE_CHROME_PATCH =
+  `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.wrap{padding:12px 10px 40px;overflow-x:hidden}.head{flex-direction:column;align-items:stretch;gap:8px;padding:10px}.head-actions{display:flex;flex-wrap:wrap;justify-content:stretch;align-items:stretch;width:100%;max-width:100%;flex-shrink:1;gap:6px}.head-actions button{flex:1 1 calc(50% - 6px);min-width:0;max-width:100%}.head-actions #nx-close{flex:1 1 100%;order:99}.tabs{width:100%!important;max-width:100%;box-sizing:border-box}.tab{padding:8px 12px;font-size:13px}}`;
+
+/**
+ * Chat switch: scroll/text "same DOM" early-return ignored sessionId, so a new
+ * character chat with identical greeting text kept the old gallery until a
+ * manual deselect/reselect. Also commit scope faster when live indices change.
+ */
+const VENDOR_SELECT_SAME_NEEDLE =
+  `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c) return !0;`;
+const VENDOR_SELECT_SAME_PATCH =
+  `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c && !t.pendingSessionId && t.selectedMessage.sessionId && t.lastScope?.sessionId && t.selectedMessage.sessionId === t.lastScope.sessionId) return !0;`;
+
+const VENDOR_SCOPE_POLL_NEEDLE = `n._scopeTick % 24 === 0 && !(t.jobsInFlight.size`;
+const VENDOR_SCOPE_POLL_PATCH = `n._scopeTick % 4 === 0 && !(t.jobsInFlight.size`;
+
+const VENDOR_SESSION_PENDING_NEEDLE = `    if (S && S !== b) {
+      if (t.pendingSessionId === b) t.pendingSessionCount += 1;
+      else t.pendingSessionId = b, t.pendingSessionCount = 1;
+      if (t.pendingSessionCount >= 2) return t.pendingSessionId = "", t.pendingSessionCount = 0, t.lastScope = C, await oa(S, b), C;
+      return C;
+    }`;
+const VENDOR_SESSION_PENDING_PATCH = `    if (S && S !== b) {
+      if (t.pendingSessionId === b) t.pendingSessionCount += 1;
+      else t.pendingSessionId = b, t.pendingSessionCount = 1;
+      if (C.liveChar && C.liveChat && t.lastScope && (Number(t.lastScope.charIndex) !== Number(C.charIndex) || Number(t.lastScope.chatIndex) !== Number(C.chatIndex))) t.pendingSessionCount = 2;
+      if (t.pendingSessionCount >= 2) return t.pendingSessionId = "", t.pendingSessionCount = 0, t.lastScope = C, await oa(S, b), C;
+      return C;
+    }`;
+
 const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
 //@display-name Inlay Nexus ${PLUGIN_VERSION}
 //@api 3.0
@@ -1867,6 +1913,12 @@ const loadVendorUi = (): string => {
     [VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE, 'char create lock preset'],
     [VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, 'char create wear attire'],
     [VENDOR_CHAR_CREATE_WEAR_ACC_NEEDLE, 'char create wear accessories'],
+    [VENDOR_TAB_NOWRAP_NEEDLE, 'settings tab nowrap'],
+    [VENDOR_TABS_SCROLL_NEEDLE, 'settings tabs scroll'],
+    [VENDOR_MOBILE_CHROME_NEEDLE, 'mobile settings chrome'],
+    [VENDOR_SELECT_SAME_NEEDLE, 'select same-session early-return'],
+    [VENDOR_SCOPE_POLL_NEEDLE, 'scope poll cadence'],
+    [VENDOR_SESSION_PENDING_NEEDLE, 'session pending commit'],
   ] as const) {
     assertOnce(raw, needle, label);
   }
@@ -1953,6 +2005,12 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE, VENDOR_CHAR_CREATE_LOCK_PRESET_PATCH)
     .replace(VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, VENDOR_CHAR_CREATE_WEAR_ATTIRE_PATCH)
     .replace(VENDOR_CHAR_CREATE_WEAR_ACC_NEEDLE, VENDOR_CHAR_CREATE_WEAR_ACC_PATCH)
+    .replace(VENDOR_TAB_NOWRAP_NEEDLE, VENDOR_TAB_NOWRAP_PATCH)
+    .replace(VENDOR_TABS_SCROLL_NEEDLE, VENDOR_TABS_SCROLL_PATCH)
+    .replace(VENDOR_MOBILE_CHROME_NEEDLE, VENDOR_MOBILE_CHROME_PATCH)
+    .replace(VENDOR_SELECT_SAME_NEEDLE, VENDOR_SELECT_SAME_PATCH)
+    .replace(VENDOR_SCOPE_POLL_NEEDLE, VENDOR_SCOPE_POLL_PATCH)
+    .replace(VENDOR_SESSION_PENDING_NEEDLE, VENDOR_SESSION_PENDING_PATCH)
     .replace(VENDOR_EXPLORER_CARD_IMG_NEEDLE, VENDOR_EXPLORER_CARD_IMG_PATCH)
     .replace(VENDOR_VIEWER_THUMB_SHELL_NEEDLE, VENDOR_VIEWER_THUMB_SHELL_PATCH)
     .replaceAll(VENDOR_STICKY_COVER_NEEDLE, VENDOR_STICKY_COVER_PATCH)

@@ -55,6 +55,7 @@ type ExploreRow = {
   shot_index: number;
   paragraph: number;
   y_percent: number | null;
+  line?: number | null;
   message_index: number;
   message_role: string;
   content_hash: string;
@@ -92,6 +93,7 @@ type GalleryRow = {
   shot_index: number;
   paragraph: number;
   y_percent: number | null;
+  line?: number | null;
   message_index: number;
   message_role: string;
   content_hash: string;
@@ -194,6 +196,7 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
       shot_index: loc.shot_index >= 0 ? loc.shot_index : row.shot_index,
       paragraph: Object.keys(sidecar).length ? loc.paragraph : row.paragraph,
       y_percent: loc.y_percent,
+      line: loc.line,
       message_index: loc.message_index ?? -1,
       message_role: loc.message_role || '',
       content_hash: loc.content_hash || '',
@@ -255,6 +258,7 @@ export async function gallery(sessionId: string, limit = 40): Promise<ApiResult>
       shot_index: loc.shot_index >= 0 ? loc.shot_index : row.shot_index,
       paragraph: Object.keys(sidecar).length ? loc.paragraph : row.paragraph,
       y_percent: loc.y_percent,
+      line: loc.line,
       message_index: loc.message_index ?? -1,
       message_role: loc.message_role || '',
       content_hash: loc.content_hash || '',

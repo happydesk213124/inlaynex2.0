@@ -300,6 +300,8 @@ export interface LoreEntry {
 export interface TaggedShot {
   paragraph?: number;
   y_percent?: number;
+  /** 1-based newline index for beta inline chat illustrations. */
+  line?: number;
   camera?: string;
   situation?: string;
   place?: string;

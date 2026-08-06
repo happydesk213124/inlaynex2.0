@@ -149,6 +149,8 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   const overlayOn = card.overlay_markers !== false;
   card.overlay_markers = overlayOn;
   card.inline_previews = overlayOn;
+  if (card.inline_chat_images == null) card.inline_chat_images = false;
+  else card.inline_chat_images = card.inline_chat_images === true || card.inline_chat_images === 'true' || card.inline_chat_images === 1 || card.inline_chat_images === '1';
   settings.settings_schema_version = 2;
   return settings as MigratedSettings;
 }

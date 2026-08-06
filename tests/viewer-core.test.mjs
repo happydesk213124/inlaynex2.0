@@ -10,6 +10,9 @@ import {
   createSessionChangeGuard,
   evenAnchorPercent,
   findHashRebindCandidates,
+  findCardsForMessageIdentity,
+  jobMatchesMessageIdentity,
+  canRetargetJobSaveHash,
   galleryFocusMessage,
   galleryForMessage,
   gallerySelectedCount,
@@ -622,6 +625,55 @@ test("linkCardsForMessage is exact hash only", () => {
   assert.deepEqual(linkCardsForMessage(cards, { hash: "h-missing", text: full }), []);
 });
 
+test("findCardsForMessageIdentity matches turn without hash/Dice", () => {
+  const base = {
+    id: "c1",
+    content_hash: "h-stream",
+    character_id: "charA",
+    chat_id: "chatA",
+    session_id: "sessA",
+    message_index: 36,
+    message_role: "char",
+    paragraph: 0,
+    shot_index: 0,
+    created_at: 1,
+  };
+  const identity = {
+    characterId: "charA",
+    chatId: "chatA",
+    sessionId: "sessA",
+    messageIndex: 36,
+    role: "assistant",
+  };
+  assert.deepEqual(findCardsForMessageIdentity([base], identity).map((c) => c.id), ["c1"]);
+  assert.deepEqual(findCardsForMessageIdentity([{ ...base, content_hash: "h-final" }], identity).map((c) => c.id), ["c1"]);
+  assert.deepEqual(findCardsForMessageIdentity([{ ...base, character_id: "other" }], identity), []);
+  assert.deepEqual(findCardsForMessageIdentity([{ ...base, message_index: 35 }], identity), []);
+  assert.deepEqual(findCardsForMessageIdentity([{ ...base, message_role: "" }], identity), []);
+});
+
+test("jobMatchesMessageIdentity ignores hash and Dice", () => {
+  const meta = {
+    saveContentHash: "h-stream",
+    sourcePreview: "anything",
+    sessionId: "sessA",
+    characterId: "charA",
+    chatId: "chatA",
+    messageIndex: 36,
+    messageRole: "char",
+  };
+  const identity = {
+    sessionId: "sessA",
+    characterId: "charA",
+    chatId: "chatA",
+    messageIndex: 36,
+    role: "assistant",
+  };
+  assert.equal(jobMatchesMessageIdentity(meta, identity), true);
+  assert.equal(jobMatchesMessageIdentity({ ...meta, messageIndex: 35 }, identity), false);
+  assert.equal(jobMatchesMessageIdentity({ ...meta, cancelRequested: true }, identity), false);
+});
+
 test("findHashRebindCandidates requires same character/chat/msg/role and Dice>=60%", () => {
   const body = "나는천재입니다진짜천재라고요이문장은충분히길어야합니다추가텍스트그리고더길게완성본";
   const preview = body.slice(0, Math.floor(body.length * 0.75));
@@ -654,6 +706,49 @@ test("findHashRebindCandidates requires same character/chat/msg/role and Dice>=6
   assert.deepEqual(findHashRebindCandidates([{ ...base, message_role: "user" }], identity), []);
   assert.deepEqual(findHashRebindCandidates([{ ...base, message_role: "" }], identity), []);
   assert.deepEqual(findHashRebindCandidates([{ ...base, content_hash: "h-final" }], identity), []);
+  // Mid-job: some shots already rebound to h-final — remaining old-hash siblings stay eligible.
+  assert.deepEqual(
+    findHashRebindCandidates(
+      [
+        { ...base, id: "done", content_hash: "h-final", shot_index: 0 },
+        { ...base, id: "late", content_hash: "h-stream", shot_index: 1, created_at: 2 },
+      ],
+      identity,
+    ).map((c) => c.id),
+    ["late"],
+  );
+});
+
+test("canRetargetJobSaveHash requires identity + Dice>=60% and skips already-retargeted", () => {
+  const body = "나는천재입니다진짜천재라고요이문장은충분히길어야합니다추가텍스트그리고더길게완성본";
+  const preview = body.slice(0, Math.floor(body.length * 0.75));
+  const meta = {
+    saveContentHash: "h-stream",
+    sourcePreview: preview,
+    sessionId: "sessA",
+    characterId: "charA",
+    chatId: "chatA",
+    messageIndex: 36,
+    messageRole: "char",
+  };
+  const identity = {
+    toHash: "h-final",
+    text: body,
+    sessionId: "sessA",
+    characterId: "charA",
+    chatId: "chatA",
+    messageIndex: 36,
+    role: "assistant",
+  };
+  assert.equal(canRetargetJobSaveHash(meta, identity), true);
+  assert.equal(canRetargetJobSaveHash({ ...meta, saveContentHash: "h-final" }, identity), false);
+  assert.equal(canRetargetJobSaveHash({ ...meta, characterId: "other" }, identity), false);
+  assert.equal(canRetargetJobSaveHash({ ...meta, messageIndex: 35 }, identity), false);
+  assert.equal(canRetargetJobSaveHash({ ...meta, messageRole: "user" }, identity), false);
+  assert.equal(
+    canRetargetJobSaveHash(meta, { ...identity, text: "완전히다른이야기완전다른이야기완전다른이야기완전다른" }),
+    false,
+  );
 });
 
 test("gallery match ignores stale message_index without content_hash", () => {

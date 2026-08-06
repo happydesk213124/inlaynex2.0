@@ -140,7 +140,11 @@ char_inject, appearance_inject, asset_tags_inject, autotag, curation_refine, cur
 | Route | Notes |
 |---|---|
 | `POST /v1/jobs/create` | → `{ job_id }` (**202**) or `{ busy: true }` / `{ error: { code: "busy" } }` |
+| `POST /v1/jobs/retarget-hash` | While a job runs: if same char/chat/msg/role and text Dice≥60% vs job-start preview, set **save** `content_hash` (lock key unchanged) + rebind published siblings |
+| `POST /v1/jobs/busy-message` | `{session_id, character_id, chat_id, message_index, role}` → `{ busy, job_id? }` — active job for that turn (hash ignored); UI skips Ka |
 | `/v1/jobs/:id` | `{ ok, state, error?, progress? }`, state ∈ `queued\|tagging\|generating\|done\|cancelled\|error` |
+
+Auto-gen (`Ka`): after soft rebind/retarget, skip `Be` when (1) `busy-message` is true, or (2) gallery already has cards for the same char/chat/msg/role (hash may differ). Generate only when neither applies.
 
 Create body: `session_id, character_id, character_name, chat_id, chat_name,
 unified_session_id, source_session_ids[], char_index, chat_index, assistant_text,

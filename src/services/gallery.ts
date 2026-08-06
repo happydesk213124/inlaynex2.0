@@ -290,6 +290,8 @@ export async function gallery(sessionId: string, limit = 40): Promise<ApiResult>
 /**
  * One-shot streaming hash upgrade: rewrite content_hash (+ preview) on chosen cards.
  * Client filters by character/chat/msg/role + Dice; server only writes.
+ * Also upgrades other cards that share a rebound card's job_id (mid-job siblings
+ * that finished on the old streaming hash).
  */
 export async function rebindCardsHash(args: RebindArgs = {}): Promise<ApiResult> {
   const sessionId = cleanText(args.session_id, 200);
@@ -299,13 +301,30 @@ export async function rebindCardsHash(args: RebindArgs = {}): Promise<ApiResult>
   if (!toHash || !ids.length) {
     return { ok: false, ...errorBody('to_hash and card_ids required', 'bad_request'), rebound: 0, ids: [] };
   }
-  const rebound: string[] = [];
+  const want = new Set(ids);
+  const jobIds = new Set<string>();
   for (const cardId of ids) {
+    const row = await idbGet('cards', cardId);
+    const jid = cleanText(row?.job_id || '', 80);
+    if (jid) jobIds.add(jid);
+  }
+  if (jobIds.size && sessionId) {
+    for (const row of await cardsForSession(sessionId)) {
+      const jid = cleanText(row?.job_id || '', 80);
+      if (!jid || !jobIds.has(jid)) continue;
+      const id = cleanText(row?.id || '', 80);
+      if (id) want.add(id);
+    }
+  }
+  const rebound: string[] = [];
+  for (const cardId of want) {
     const row = await idbGet('cards', cardId);
     if (!row) continue;
     if (sessionId && cleanText(row.session_id || '', 200) !== sessionId) continue;
     const meta = parseMeta(row);
     const existing = await readImageLocation(cardId);
+    const already = cleanText(existing.content_hash || meta.content_hash || '', 128);
+    if (already === toHash) continue;
     const nextLoc = {
       ...existing,
       image_id: cardId,

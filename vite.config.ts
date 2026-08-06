@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.7';
+const PLUGIN_VERSION = '2.1.8';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -560,6 +560,15 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.8</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>응답 후 자동 생성: 0.5초 뒤 DOM#0 선택→연결 확인→Ka (훅 텍스트 직 Be 제거)</li>
+            <li>같은 턴 잡/카드 있으면 자동 생성 스킵 · 잡 중 save-hash retarget(Dice≥60%)</li>
+            <li>말풍선 동그라미: 완료 후 pending 제거 · 링크된 샷/줄은 스피너 미표시 · 턴 스코프</li>
+            <li>중도 해시 리바인드: 형제 샷 해시 상속 · 이미 리바인드된 카드가 있어도 나머지 후보 유지</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.1.7</strong>
@@ -2267,7 +2276,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const allowPending = typeof isSelectedCharRole == "function"
       ? isSelectedCharRole(t.selectedMessage?.role)
       : !/^(user|human)$/i.test(String(t.selectedMessage?.role || ""));
-    const pending = allowPending
+    // Only the job's own message may show spinners — never a finished turn.
+    const selMsgIdx = Number(t.selectedMessage?.chatIndex ?? -1);
+    const pendingMsgIdx = Number(t._inlinePendingMsgIndex ?? -1);
+    const pendingForThisMsg = allowPending
+      && Number.isFinite(selMsgIdx) && selMsgIdx >= 0
+      && selMsgIdx === pendingMsgIdx;
+    const pending = pendingForThisMsg
       ? Array.isArray(pendingRows) ? pendingRows : Array.isArray(t._inlinePending) ? t._inlinePending : []
       : [];
     const placements = [];
@@ -2276,17 +2291,21 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const seenShot = new Set();
     for (const card of list) {
       const line = Number(card?.line);
-      if (!Number.isFinite(line) || line < 1) continue;
+      const shotIndex = Number(card?.shot_index);
       const cardId = String(card?.id || "");
       if (cardId && seenCard.has(cardId)) continue;
+      // Claim line/shot as soon as a linked card exists so stale pending cannot
+      // paint a circle on a turn that already has images (even if bytes are slow).
+      if (Number.isFinite(shotIndex) && shotIndex >= 0) seenShot.add(shotIndex);
+      if (Number.isFinite(line) && line >= 1) seenLine.add(line);
       let src = "";
       try {
         src = await ensureStickyCardImage(card) || "";
       } catch {
       }
       if (!src || !/^data:image\\//i.test(src)) continue;
+      if (!Number.isFinite(line) || line < 1) continue;
       if (cardId) seenCard.add(cardId);
-      seenLine.add(line);
       placements.push({ line, src, shotIndex: card.shot_index, cardId, pending: !1 });
     }
     for (const row of pending) {
@@ -2545,8 +2564,14 @@ const VENDOR_INLINE_POLL_NEEDLE =
 const VENDOR_INLINE_POLL_PATCH =
   `        const i = Number(r.shot_done ?? 0), s = !!(a.state && a.state !== t.lastJobState), c = i !== Number(t._lastShotDone ?? -1);
         const VC = globalThis.__INLAY_VIEWER_CORE__;
-        if (Array.isArray(r.pending_inline)) t._inlinePending = r.pending_inline;
-        else if (a.state === "done" || a.state === "cancelled" || a.state === "error") t._inlinePending = null;
+        if (a.state === "done" || a.state === "cancelled" || a.state === "error") {
+          t._inlinePending = null;
+          t._inlinePendingMsgIndex = -1;
+        } else if (Array.isArray(r.pending_inline)) {
+          t._inlinePending = r.pending_inline;
+          const pmi = Number(r.pending_message_index ?? r.message_index);
+          t._inlinePendingMsgIndex = Number.isFinite(pmi) ? pmi : Number(t.selectedMessage?.chatIndex ?? -1);
+        }
         if (s && (t.lastJobState = a.state, y("info", "job.poll", \`\${n.slice(0, 8)}… → \${a.state}\`)), r.message && r.message !== t._lastJobMsg && (t._lastJobMsg = r.message, y("info", "job.progress", r.message)), r.message && r.message !== t._lastJobMsg && (t._lastJobMsg = r.message, y("info", "job.progress", r.message)), (a.state === "generating" || a.state === "done") && (c || s && (a.state === "generating" || a.state === "done"))) {
           t._lastShotDone = i;
           const prevIds = (t.gallery || []).map((card) => String(card?.id || ""));
@@ -2707,8 +2732,123 @@ const VENDOR_STREAM_SETTLE_KA_PATCH =
       role: t.selectedMessage?.role || "char"
     }, a);
     if (rebound.length) return y("info", "overlay.generate.skip", \`rebound hash=\${n.slice(0, 8)} cards=\${rebound.length}\`);
+    // Skip duplicate gen: same-turn job still running, or gallery already has that turn's cards.
+    const turn = {
+      characterId: t.selectedMessage?.characterId || a.characterId || "",
+      chatId: t.selectedMessage?.chatId || a.chatId || "",
+      sessionId: t.selectedMessage?.sessionId || a.sessionId || "",
+      messageIndex: Number(t.selectedMessage?.chatIndex ?? -1),
+      role: t.selectedMessage?.role || "char"
+    };
+    try {
+      const busy = await K("/v1/jobs/busy-message", {
+        method: "POST",
+        body: {
+          session_id: turn.sessionId || a.sessionId || "",
+          character_id: turn.characterId || "",
+          chat_id: turn.chatId || "",
+          message_index: turn.messageIndex,
+          role: turn.role || "char"
+        }
+      });
+      if (busy?.busy) return y("info", "overlay.generate.skip", \`busy_job=\${String(busy.job_id || "").slice(0, 8)} hash=\${n.slice(0, 8)}\`);
+    } catch {
+    }
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const sameTurn = typeof VC?.findCardsForMessageIdentity == "function"
+      ? VC.findCardsForMessageIdentity(Array.isArray(t.gallery) ? t.gallery : [], turn)
+      : [];
+    if (sameTurn.length) return y("info", "overlay.generate.skip", \`same_turn_cards=\${sameTurn.length} hash=\${n.slice(0, 8)}\`);
     y("info", "overlay.generate", \`hash=\${n.slice(0, 8)} chars=\${e.length} session=\${(a.sessionId || "").slice(-8)}\`), await Be(a, e, !1);
   }`;
+
+/**
+ * "응답 후 자동 생성": wait 0.5s, select DOM#0 (newest), reuse select→Ka path
+ * so hash/message_index/role match the real bubble (not raw afterRequest text).
+ */
+const VENDOR_AFTER_REQUEST_DELAY_NEEDLE =
+  `      if (!i.auto_gen_on_reply) return y("info", "afterRequest.skip", "reply-auto-gen-off"), e;
+      y("info", "afterRequest.gen", \`chars=\${a.length} session=\${(r.sessionId || "").slice(-8)}\`);
+      await Be(r, a, !1);
+      return e;`;
+const VENDOR_AFTER_REQUEST_DELAY_PATCH =
+  `      if (!i.auto_gen_on_reply) return y("info", "afterRequest.skip", "reply-auto-gen-off"), e;
+      const AFTER_GEN_DELAY_MS = 5e2;
+      if (t._afterGenTimer) {
+        clearTimeout(t._afterGenTimer);
+        t._afterGenTimer = null;
+      }
+      t._afterGenGen = (t._afterGenGen || 0) + 1;
+      const gen = t._afterGenGen;
+      y("info", "afterRequest.schedule", \`delay=\${AFTER_GEN_DELAY_MS}ms chars=\${a.length} session=\${(r.sessionId || "").slice(-8)}\`);
+      t._afterGenTimer = setTimeout(() => {
+        t._afterGenTimer = null;
+        if (gen !== t._afterGenGen) return;
+        (async () => {
+          const card = t.backendSettings?.card || {};
+          if (card.power === !1 || card.execute === "manual" || !card.auto_gen_on_reply) {
+            y("info", "afterRequest.skip", "toggled-off-during-delay");
+            return;
+          }
+          const doc = await ue().catch(() => t.hostDoc);
+          if (!doc) return y("warn", "afterRequest.skip", "no host doc");
+          t._msgElsCache = null;
+          const els = await getCachedMsgEls(doc);
+          if (!els?.length) return y("warn", "afterRequest.skip", "no message elements");
+          y("info", "afterRequest.select", \`DOM#0 of \${els.length}\`);
+          await Da(0, els, { source: "text" });
+        })().catch((err) => {
+          y("error", "afterRequest.fail", err?.message || err);
+        });
+      }, AFTER_GEN_DELAY_MS);
+      return e;`;
+
+const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
+const VENDOR_AFTER_REQUEST_HELP_PATCH =
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 약 0.5초 뒤 최신 말풍선(DOM#0)을 선택해 연결을 확인한 뒤 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
+
+/**
+ * On select/rebind: retarget in-flight job save-hash when finished DOM matches (≥60%).
+ * Busy lock key stays on the original streaming hash.
+ */
+const VENDOR_REBIND_RETARGET_NEEDLE =
+  `  async function maybeRebindAndLink(message, scope = null) {
+    if (!message?.hash) return linkedCards(message);
+    let linked = linkedCards(message);
+    if (linked.length) return linked;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    if (typeof VC?.findHashRebindCandidates != "function" || !message.text) return [];
+    const sc = scope || t.lastScope || {};
+    const candidates = VC.findHashRebindCandidates(t.gallery || [], {`;
+const VENDOR_REBIND_RETARGET_PATCH =
+  `  async function maybeRebindAndLink(message, scope = null) {
+    if (!message?.hash) return linkedCards(message);
+    const sc = scope || t.lastScope || {};
+    try {
+      const sid = message.sessionId || sc.sessionId || "";
+      if (sid && message.text) {
+        const ret = await K("/v1/jobs/retarget-hash", {
+          method: "POST",
+          body: {
+            session_id: sid,
+            character_id: message.characterId || sc.characterId || "",
+            chat_id: message.chatId || sc.chatId || "",
+            message_index: Number(message.chatIndex ?? message.messageIndex ?? -1),
+            role: message.role || "",
+            to_hash: message.hash,
+            assistant_preview: message.text || ""
+          }
+        }, 8e3);
+        if (ret?.retargeted) y("info", "job.retarget", \`job=\${String(ret.job_id || "").slice(0, 8)} hash=\${String(message.hash).slice(0, 8)} rebound=\${ret.rebound || 0}\`);
+      }
+    } catch {
+    }
+    let linked = linkedCards(message);
+    if (linked.length) return linked;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    if (typeof VC?.findHashRebindCandidates != "function" || !message.text) return [];
+    const candidates = VC.findHashRebindCandidates(t.gallery || [], {`;
 
 /**
  * Chat switch: scroll/text "same DOM" early-return ignored sessionId, so a new
@@ -2928,8 +3068,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.1.7",
-    body: "말풍선 삽화 점진 반영·해시 링크 후 갱신, DOM 0.5초 안정 후 자동생성, solo 토글, 샷 팝업 안 넣기. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
+    title: "2.1.8",
+    body: "응답 후 자동생성=DOM#0 선택, 같은 턴 중복 생성 스킵, 완료 말풍선 동그라미 제거, 잡 중 해시 retarget. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
   };`;
 
 /** Top-center progress toast: one bar; show on change; hide 5s after last change. */
@@ -3610,6 +3750,9 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_POLL_NEEDLE, 'inline poll pending'],
     [VENDOR_INLINE_POLL_REFRESH_NEEDLE, 'inline poll refresh'],
     [VENDOR_STREAM_SETTLE_KA_NEEDLE, 'stream settle Ka 0.5s'],
+    [VENDOR_AFTER_REQUEST_DELAY_NEEDLE, 'afterRequest DOM#0 select'],
+    [VENDOR_AFTER_REQUEST_HELP_NEEDLE, 'afterRequest help DOM#0'],
+    [VENDOR_REBIND_RETARGET_NEEDLE, 'job save-hash retarget on select'],
     [VENDOR_SELECT_SAME_NEEDLE, 'select same-session early-return'],
     [VENDOR_SCROLL_GALLERY_NEW_NEEDLE, 'scroll select gallery load'],
     [VENDOR_SCROLL_GALLERY_SAME_NEEDLE, 'scroll same gallery load'],
@@ -3748,6 +3891,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_POLL_NEEDLE, VENDOR_INLINE_POLL_PATCH)
     .replace(VENDOR_INLINE_POLL_REFRESH_NEEDLE, VENDOR_INLINE_POLL_REFRESH_PATCH)
     .replace(VENDOR_STREAM_SETTLE_KA_NEEDLE, VENDOR_STREAM_SETTLE_KA_PATCH)
+    .replace(VENDOR_AFTER_REQUEST_DELAY_NEEDLE, VENDOR_AFTER_REQUEST_DELAY_PATCH)
+    .replace(VENDOR_AFTER_REQUEST_HELP_NEEDLE, VENDOR_AFTER_REQUEST_HELP_PATCH)
+    .replace(VENDOR_REBIND_RETARGET_NEEDLE, VENDOR_REBIND_RETARGET_PATCH)
     .replace(VENDOR_SELECT_SAME_NEEDLE, VENDOR_SELECT_SAME_PATCH)
     .replace(VENDOR_SCROLL_GALLERY_NEW_NEEDLE, VENDOR_SCROLL_GALLERY_NEW_PATCH)
     .replace(VENDOR_SCROLL_GALLERY_SAME_NEEDLE, VENDOR_SCROLL_GALLERY_SAME_PATCH)

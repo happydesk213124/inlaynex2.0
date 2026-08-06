@@ -1,28 +1,74 @@
 /**
  * NovelAI stealth_pngcomp / stealth_pnginfo LSB extractor (alpha channel).
  * Requires decoded RGBA pixels — callers decode PNG/WebP via canvas/ImageBitmap.
+ *
+ * Bit order matches NovelAI/novelai-image-metadata: alpha is read column-major
+ * (`alpha.T.reshape(-1)` in numpy), then LSB-packed MSB-first (`np.packbits`).
  */
 import { asU8 } from '../../core/util/bytes.ts';
 
-function packAlphaLsb(alpha: Uint8Array): Uint8Array {
-  const usable = Math.floor(alpha.length / 8) * 8;
+/** Walk alpha samples in NovelAI order: column-major, then take LSB of each. */
+export function iterAlphaLsbColumnMajor(
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+): number[] {
+  const bits: number[] = [];
+  for (let x = 0; x < width; x += 1) {
+    for (let y = 0; y < height; y += 1) {
+      const i = y * width + x;
+      bits.push(rgba[i * 4 + 3]! & 1);
+    }
+  }
+  return bits;
+}
+
+/**
+ * Pack alpha LSBs the way NovelAI does: column-major flatten, then 8 LSBs → 1 byte
+ * with the first sample as the MSB (`np.packbits` default).
+ */
+export function packAlphaLsbColumnMajor(rgba: Uint8Array, width: number, height: number): Uint8Array {
+  const bits = iterAlphaLsbColumnMajor(rgba, width, height);
+  const usable = Math.floor(bits.length / 8) * 8;
   const out = new Uint8Array(usable / 8);
   for (let i = 0; i < usable; i += 8) {
     let byte = 0;
     for (let b = 0; b < 8; b += 1) {
-      byte |= (alpha[i + b]! & 1) << (7 - b);
+      byte |= bits[i + b]! << (7 - b);
     }
     out[i / 8] = byte;
   }
   return out;
 }
 
+/** Test helper: write payload bits into alpha LSBs (column-major). */
+export function writeStealthAlphaLsb(
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+  payload: Uint8Array,
+): void {
+  const bits: number[] = [];
+  for (const byte of payload) {
+    for (let b = 7; b >= 0; b -= 1) bits.push((byte >> b) & 1);
+  }
+  let bi = 0;
+  for (let x = 0; x < width && bi < bits.length; x += 1) {
+    for (let y = 0; y < height && bi < bits.length; y += 1) {
+      const i = (y * width + x) * 4 + 3;
+      rgba[i] = (rgba[i]! & 0xfe) | bits[bi]!;
+      bi += 1;
+    }
+  }
+}
+
 async function gunzip(data: Uint8Array): Promise<Uint8Array | null> {
   if (typeof DecompressionStream !== 'function') return null;
   try {
     const ds = new DecompressionStream('gzip');
-    const ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
-    const stream = new Blob([ab]).stream().pipeThrough(ds);
+    const copy = new Uint8Array(data.byteLength);
+    copy.set(data);
+    const stream = new Blob([copy]).stream().pipeThrough(ds);
     return new Uint8Array(await new Response(stream).arrayBuffer());
   } catch {
     return null;
@@ -42,11 +88,7 @@ export async function extractStealthFromRgba(
   const expected = width * height * 4;
   if (rgba.length < expected) return null;
 
-  const alpha = new Uint8Array(width * height);
-  for (let i = 0, p = 3; i < alpha.length; i += 1, p += 4) {
-    alpha[i] = rgba[p]!;
-  }
-  const bytes = packAlphaLsb(alpha);
+  const bytes = packAlphaLsbColumnMajor(rgba, width, height);
   if (bytes.length < 20) return null;
 
   const magicComp = 'stealth_pngcomp';
@@ -77,13 +119,29 @@ export async function extractStealthFromRgba(
   }
   const text = new TextDecoder('utf-8', { fatal: false }).decode(payload);
   try {
-    return JSON.parse(text);
+    const json = JSON.parse(text) as unknown;
+    // Official reader also JSON-parses nested Comment strings.
+    if (json && typeof json === 'object' && !Array.isArray(json)) {
+      const rec = json as Record<string, unknown>;
+      if (typeof rec.Comment === 'string') {
+        try {
+          rec.Comment = JSON.parse(rec.Comment);
+        } catch {
+          /* keep string */
+        }
+      }
+    }
+    return json;
   } catch {
     return null;
   }
 }
 
-/** Decode image bytes to RGBA via createImageBitmap + canvas (browser / recent Node). */
+/**
+ * Decode image bytes to RGBA via createImageBitmap + canvas.
+ * Uses `{ colorSpaceConversion: 'none', premultiplyAlpha: 'none' }` when available
+ * so alpha LSBs are less likely to be mangled by browser color management.
+ */
 export async function decodeImageToRgba(bytes: ArrayBuffer | Uint8Array): Promise<{
   rgba: Uint8Array;
   width: number;
@@ -97,7 +155,15 @@ export async function decodeImageToRgba(bytes: ArrayBuffer | Uint8Array): Promis
     const copy = new Uint8Array(u8.byteLength);
     copy.set(u8);
     const blob = new Blob([copy]);
-    const bitmap = await createImageBitmap(blob);
+    let bitmap: ImageBitmap;
+    try {
+      bitmap = await createImageBitmap(blob, {
+        colorSpaceConversion: 'none',
+        premultiplyAlpha: 'none',
+      } as ImageBitmapOptions);
+    } catch {
+      bitmap = await createImageBitmap(blob);
+    }
     const w = bitmap.width;
     const h = bitmap.height;
     const canvas = typeof OffscreenCanvas === 'function'
@@ -108,8 +174,10 @@ export async function decodeImageToRgba(bytes: ArrayBuffer | Uint8Array): Promis
         c.height = h;
         return c;
       })();
-    const ctx = (canvas as OffscreenCanvas).getContext('2d') as OffscreenCanvasRenderingContext2D | null
-      ?? (canvas as HTMLCanvasElement).getContext('2d');
+    const ctx = (canvas as OffscreenCanvas).getContext('2d', { alpha: true, willReadFrequently: true }) as
+      | OffscreenCanvasRenderingContext2D
+      | null
+      ?? (canvas as HTMLCanvasElement).getContext('2d', { alpha: true, willReadFrequently: true });
     if (!ctx) {
       bitmap.close?.();
       return null;
@@ -117,7 +185,11 @@ export async function decodeImageToRgba(bytes: ArrayBuffer | Uint8Array): Promis
     ctx.drawImage(bitmap, 0, 0);
     const imageData = ctx.getImageData(0, 0, w, h);
     bitmap.close?.();
-    return { rgba: new Uint8Array(imageData.data.buffer, imageData.data.byteOffset, imageData.data.byteLength), width: w, height: h };
+    return {
+      rgba: new Uint8Array(imageData.data.buffer, imageData.data.byteOffset, imageData.data.byteLength),
+      width: w,
+      height: h,
+    };
   } catch {
     return null;
   }

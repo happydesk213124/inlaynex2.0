@@ -11,6 +11,10 @@ import { assetMatchTriggers, assetNameTokens, scoreAssetName } from '../.test-bu
 import { promptFromNaiMetadata } from '../.test-build/nai-meta-from-metadata.mjs';
 import { dimsForAspect, normalizeShotAspect } from '../.test-build/nai-meta-aspect.mjs';
 import { filterStylePresetPositive, styleFieldsFromNaiMetadata } from '../.test-build/nai-meta-style-preset.mjs';
+import {
+  extractStealthFromRgba,
+  writeStealthAlphaLsb,
+} from '../.test-build/nai-meta-stealth.mjs';
 
 const EXAMPLE = [
   '1girl',
@@ -179,4 +183,35 @@ test('styleFieldsFromNaiMetadata reads neg and cfg', () => {
   assert.equal(fields.negative, 'lowres, bad hands');
   assert.equal(fields.cfg_scale, 5.5);
   assert.equal(fields.cfg_rescale, 0.2);
+});
+
+test('extractStealthFromRgba reads column-major alpha LSBs (NovelAI order)', async () => {
+  const width = 64;
+  const height = 64;
+  const rgba = new Uint8Array(width * height * 4);
+  // Opaque white base.
+  for (let i = 0; i < rgba.length; i += 4) {
+    rgba[i] = 255;
+    rgba[i + 1] = 255;
+    rgba[i + 2] = 255;
+    rgba[i + 3] = 255;
+  }
+  const json = JSON.stringify({ prompt: 'stealth ok, dark green hair', Comment: '{"prompt":"nested"}' });
+  const jsonBytes = new TextEncoder().encode(json);
+  const magic = new TextEncoder().encode('stealth_pnginfo');
+  const len = jsonBytes.length * 8;
+  const header = new Uint8Array(4);
+  header[0] = (len >>> 24) & 0xff;
+  header[1] = (len >>> 16) & 0xff;
+  header[2] = (len >>> 8) & 0xff;
+  header[3] = len & 0xff;
+  const payload = new Uint8Array(magic.length + 4 + jsonBytes.length);
+  payload.set(magic, 0);
+  payload.set(header, magic.length);
+  payload.set(jsonBytes, magic.length + 4);
+  writeStealthAlphaLsb(rgba, width, height, payload);
+
+  const meta = await extractStealthFromRgba(rgba, width, height);
+  assert.ok(meta && typeof meta === 'object');
+  assert.match(String(meta.prompt || ''), /stealth ok/);
 });

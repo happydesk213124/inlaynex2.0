@@ -36,6 +36,7 @@ const MODULES = {
   'nai-meta-from-metadata': 'src/domain/nai-meta/from-metadata.ts',
   'nai-meta-aspect': 'src/domain/nai-meta/aspect.ts',
   'nai-meta-style-preset': 'src/domain/nai-meta/style-preset.ts',
+  'nai-meta-stealth': 'src/domain/nai-meta/stealth.ts',
   'text-util': 'src/core/util/text.ts',
   'blob-url-cache': 'src/storage/blob-url-cache.ts',
   'prompt-codec': 'src/config/prompt-codec.ts',

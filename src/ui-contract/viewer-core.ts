@@ -1782,6 +1782,8 @@ export interface InlineImagePlacement {
   src: string;
   shotIndex?: number;
   cardId?: string;
+  /** No image yet — show spinner + br spacing at the line. */
+  pending?: boolean;
 }
 
 export interface InlineInjectOptions {
@@ -2059,14 +2061,23 @@ export function findElementIndexForLineWithFallback(
 
 export function markerBlockHtml(p: InlineImagePlacement, _maxWidthPx?: number): string {
   const shot = Number.isFinite(Number(p.shotIndex)) ? String(Math.floor(Number(p.shotIndex))) : '';
-  const id = escapeHtmlAttr(String(p.cardId || shot || p.line || '0'));
-  // zoom:0.5 ≈ half intrinsic size (Chromium/Risu). Avoid width:100% which fills the bubble.
+  const id = escapeHtmlAttr(String(p.cardId || (p.pending ? `pending-${shot || p.line}` : '') || shot || p.line || '0'));
   void _maxWidthPx;
-  const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0';
-  const imgStyle = 'zoom:0.5;width:auto;height:auto;max-width:none;border-radius:8px;display:inline-block;vertical-align:top';
+  // Centered block; <br> keeps Risu bubble spacing. Size tracks the bubble (≤60%),
+  // so mobile narrow bubbles shrink the image instead of clipping (no fixed zoom).
+  const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box';
+  if (p.pending || !/^data:image\//i.test(String(p.src || ''))) {
+    const spin = '<svg width="28" height="28" viewBox="0 0 28 28" style="display:inline-block;vertical-align:middle" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="#c4b5fd" stroke-width="3" stroke-linecap="round" stroke-dasharray="18 52"><animateTransform attributeName="transform" type="rotate" from="0 14 14" to="360 14 14" dur="0.75s" repeatCount="indefinite"/></circle></svg>';
+    return (
+      `<div ${INLAY_INLINE_ATTR}="${id}" data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
+      + `<br><br><span style="display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:48px;padding:10px;border-radius:12px;background:rgba(124,108,255,.12);border:1px solid rgba(196,181,253,.35)">${spin}</span><br><br>`
+      + `</div>`
+    );
+  }
+  const imgStyle = 'width:auto;height:auto;max-width:min(60%,100%);max-height:min(70vh,900px);object-fit:contain;border-radius:8px;display:inline-block;vertical-align:top';
   return (
     `<div ${INLAY_INLINE_ATTR}="${id}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-    + `<br><img src="${escapeHtmlAttr(p.src)}" alt="" style="${imgStyle}"><br>`
+    + `<br><img src="${escapeHtmlAttr(p.src)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
     + `</div>`
   );
 }
@@ -2095,11 +2106,13 @@ export function injectInlineImagesIntoHtml(
     const line = clampShotLine(p?.line, lineCount);
     const src = String(p?.src || '');
     const cardId = String(p?.cardId || '');
-    if (!line || !/^data:image\//i.test(src)) continue;
+    const pending = p?.pending === true || (!!line && !/^data:image\//i.test(src));
+    if (!line) continue;
+    if (!pending && !/^data:image\//i.test(src)) continue;
     if (cardId && seenCard.has(cardId)) continue;
     if (byLine.has(line)) continue;
     if (cardId) seenCard.add(cardId);
-    byLine.set(line, { ...p, line, src });
+    byLine.set(line, { ...p, line, src, pending });
   }
   if (!byLine.size) return cleaned;
 

@@ -346,18 +346,30 @@ export function normalizePersonTagMode(value: unknown, legacyAuto: unknown = nul
   return 'gender';
 }
 
-/** Person-count tags for one shot's cast, using roster looks to guess each sex. */
+/** Truthy forms for card.person_tag_solo. */
+export function personTagSoloOn(value: unknown): boolean {
+  return value === true || value === 'true' || value === 1 || value === '1' || value === 'on';
+}
+
+/**
+ * Person-count tags for one shot's cast, using roster looks to guess each sex.
+ * When `soloWhenOne` is on and the cast is exactly one character, returns `solo`
+ * instead of `1girl`/`1boy` — including when mode is `off` (안 넣기 still allows solo).
+ */
 export function personCountTagsForShot(
   chars: ShotCharacter[] | null | undefined,
   roster: CharacterInput[] | null | undefined,
   mode: unknown = 'gender',
   legacyAuto: unknown = null,
+  soloWhenOne: unknown = false,
 ): string {
-  const modeKey = normalizePersonTagMode(mode, legacyAuto);
-  if (modeKey === 'off') return '';
   const cast = (chars || []).slice(0, 6);
   const n = cast.length;
   if (n <= 0) return '';
+  // Solo wins over mode=off: one char → `solo` at the front (then emphasized by caller).
+  if (personTagSoloOn(soloWhenOne) && n === 1) return 'solo';
+  const modeKey = normalizePersonTagMode(mode, legacyAuto);
+  if (modeKey === 'off') return '';
   if (modeKey === 'girls') return formatCountTag(n, '1girl', 'girls', '6+girls');
   if (modeKey === 'people') return formatCountTag(n, '1person', 'people', '6+people');
   let female = 0;

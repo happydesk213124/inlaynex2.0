@@ -173,9 +173,9 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   const chars = dedupeShotCharacters(shot.characters || [], roster, charMax).slice(0, charMax);
   const n = Math.max(1, chars.length);
   const personMode = normalizePersonTagMode(card.person_tag_mode, card.auto_person_tags);
-  // Only source of person-count tags: cast count, optionally wrapped N::1girl, 1boy::
+  // Only source of person-count tags: cast count (or solo), optionally wrapped N::…::
   const person = emphasizePersonTags(
-    personCountTagsForShot(chars, roster, personMode),
+    personCountTagsForShot(chars, roster, personMode, null, card.person_tag_solo),
     card.person_tag_weight,
   );
   const [filePos, fileNeg] = extractPreset(await getPrompt('preset_1'));

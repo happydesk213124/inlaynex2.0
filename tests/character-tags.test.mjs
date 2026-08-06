@@ -46,6 +46,42 @@ test("personCountTagsForShot keeps both genders (not just 1boy)", () => {
   assert.equal(emphasizePersonTags(tags, 2), "2::1girl, 1boy::");
 });
 
+test("personCountTagsForShot solo replaces 1girl/1boy when cast is one", () => {
+  assert.equal(
+    personCountTagsForShot([{ name: "A", appearance: "girl, long hair" }], null, "gender", null, true),
+    "solo",
+  );
+  assert.equal(
+    personCountTagsForShot([{ name: "A", appearance: "boy" }], null, "girls", null, true),
+    "solo",
+  );
+  // mode=off still gets solo when toggle on
+  assert.equal(
+    personCountTagsForShot([{ name: "A", appearance: "girl" }], null, "off", null, true),
+    "solo",
+  );
+  // mode=off + solo off → empty
+  assert.equal(
+    personCountTagsForShot([{ name: "A", appearance: "girl" }], null, "off", null, false),
+    "",
+  );
+  // two chars: solo toggle does not apply
+  assert.equal(
+    personCountTagsForShot(
+      [
+        { name: "A", appearance: "girl" },
+        { name: "B", appearance: "boy" },
+      ],
+      null,
+      "gender",
+      null,
+      true,
+    ),
+    "1girl, 1boy",
+  );
+  assert.equal(emphasizePersonTags("solo", 3), "3::solo::");
+});
+
 test("emphasizePersonTags wraps by weight", () => {
   assert.equal(normalizePersonTagWeight(undefined), 3);
   assert.equal(normalizePersonTagWeight(-1), 0);

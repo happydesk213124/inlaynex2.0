@@ -118,6 +118,13 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   card.auto_aspect = card.auto_aspect === true || card.auto_aspect === 'true' || card.auto_aspect === 1 || card.auto_aspect === '1';
   // natural_base: legacy boolean → "off" | "short" | "detailed" | "supplement"
   card.natural_base = normalizeNaturalBaseMode(card.natural_base);
+  // person_tag_solo: one-character shots use `solo` instead of 1girl/1boy
+  card.person_tag_solo =
+    card.person_tag_solo === true
+    || card.person_tag_solo === 'true'
+    || card.person_tag_solo === 1
+    || card.person_tag_solo === '1'
+    || card.person_tag_solo === 'on';
   // person_tag_weight: NAI emphasis on Inlay person-count tags (0 = plain, 1–5 = N::…::)
   card.person_tag_weight = normalizePersonTagWeight(card.person_tag_weight);
   // curation.mode: off | two_stage | embed_snap (legacy card.composition_curation → two_stage)

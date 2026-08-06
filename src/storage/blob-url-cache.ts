@@ -68,6 +68,22 @@ export class BlobUrlCache {
     this.evict();
   }
 
+  /**
+   * Pin `ids` and drop every other cached data-URL immediately (not only when
+   * over budget). Used when the explorer leaves a folder so prior thumbs do
+   * not stay resident and re-lag the next visit.
+   */
+  retainOnly(ids: Iterable<unknown>): void {
+    this.pin(ids);
+    for (const id of [...this.urls.keys()]) {
+      if (this.pinned.has(id)) continue;
+      const url = this.urls.get(id);
+      this.urls.delete(id);
+      if (url !== undefined) this.bytes -= url.length;
+      this.pinned.delete(id);
+    }
+  }
+
   pinnedIds(): string[] {
     return [...this.pinned];
   }

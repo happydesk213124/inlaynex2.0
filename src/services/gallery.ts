@@ -235,7 +235,9 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
     storage: 'indexeddb',
     storage_api: 'getLocalPluginStorage',
   };
-  await attachImageUrls(payload, { cachedOnly: true });
+  // Do not enqueueWarm every miss — explorer warms the visible window only.
+  // Refresh used to queue hundreds of base64 encodes and freeze Chrome.
+  await attachImageUrls(payload, { cachedOnly: true, warmMissing: false });
   return payload;
 }
 

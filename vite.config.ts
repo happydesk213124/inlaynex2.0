@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.8';
+const PLUGIN_VERSION = '2.1.9';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -560,6 +560,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.9</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 삽화: 선택 DOM + 바로 위 char만 유지(최대 2개) · 나머지 data:image 제거로 메모리 폭주 완화</li>
+            <li>스크롤 메시지 추적 시에도 인라인 갱신·해시 연결(rebind) — 클릭만 하던 것 보완</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.1.8</strong>
@@ -2218,7 +2225,7 @@ const VENDOR_INLINE_HELP_NEEDLE =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },`;
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },
-    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "샷 line 위치에 말풍선 이미지를 끼웁니다. 생성 중엔 스피너가 먼저 뜨고, 장마다 착착 채워집니다. 크기는 말풍선 너비의 최대 60%(좁으면 자동 축소). Risu가 말풍선을 다시 그리면 사라질 수 있어 다시 클릭해야 합니다." },
+    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택한 말풍선 + 바로 위 char 말풍선(최대 2개)에만 샷 line 이미지를 끼웁니다. 스크롤 선택으로도 갱신되고, 나머지는 지워서 메모리를 막습니다. 생성 중엔 스피너→이미지. 크기 ≤말풍선 60%." },
     "nx-progress-toast": { title: "진행 토스트", body: "토스트 노드는 항상 두고, 진행·작업명이 바뀌면 보이게 / 5초간 내용 변화 없으면 눈에서만 숨깁니다. 인덱싱=민트, 그 외=보라. 클릭하면 당장 숨깁니다." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
@@ -2508,12 +2515,108 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     if (!sel) return;
     try {
       const doc = await ue().catch(() => t.hostDoc);
-      const els = t._msgElsCache?.doc === doc ? t._msgElsCache.els : null;
-      const idx = Number(sel.domIndex);
-      const msgEl = Number.isFinite(idx) && els?.[idx] ? els[idx] : null;
-      if (!msgEl) return;
-      const cards = linkedCards(sel);
-      await injectChatInlineImages(msgEl, cards, t._inlinePending);
+      if (!doc) return;
+      let els = t._msgElsCache?.doc === doc ? t._msgElsCache.els : null;
+      if (!Array.isArray(els) || !els.length) {
+        try {
+          els = await getCachedMsgEls(doc);
+        } catch {
+          els = [];
+        }
+      }
+      if (!Array.isArray(els) || !els.length) return;
+      const selIdx = Number(sel.domIndex);
+      const keep = new Set();
+      if (Number.isFinite(selIdx) && selIdx >= 0 && selIdx < els.length) keep.add(selIdx);
+      // DOM is newest-first: index+1 is the bubble above (older). Keep at most one char-role neighbor.
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      let neighborIdx = -1;
+      let neighborMsg = null;
+      if (Number.isFinite(selIdx) && selIdx + 1 < els.length) {
+        try {
+          const scope = await Za().catch(() => null);
+          const msgs = scope?.messages || [];
+          const raw = await De(els[selIdx + 1]);
+          const text = w(raw || "");
+          if (text.length >= 4) {
+            const hit = typeof qa == "function"
+              ? qa(text, msgs, selIdx + 1, els.length, {})
+              : typeof VC?.resolveChatMessageMatch == "function"
+                ? VC.resolveChatMessageMatch(text, msgs, selIdx + 1, els.length)
+                : null;
+            const role = w(hit?.role || "");
+            if (role && isSelectedCharRole(role)) {
+              neighborIdx = selIdx + 1;
+              keep.add(neighborIdx);
+              neighborMsg = {
+                domIndex: neighborIdx,
+                chatIndex: hit?.chatIndex,
+                messageIndex: hit?.chatIndex,
+                characterId: sel.characterId,
+                chatId: sel.chatId,
+                sessionId: sel.sessionId,
+                role,
+                text,
+                hash: ye(text)
+              };
+            }
+          }
+        } catch {
+        }
+      }
+      const unwrapSafe = async (arr) => {
+        if (!arr) return [];
+        if (typeof k.unwarpSafeArray == "function") {
+          try {
+            const u = await k.unwarpSafeArray(arr);
+            return Array.isArray(u) ? u : u ? [u] : [];
+          } catch {
+            return [];
+          }
+        }
+        return Array.isArray(arr) ? arr : [arr];
+      };
+      // Drop data:image markers from every bubble we are not keeping (memory bound).
+      for (let i = 0; i < els.length; i += 1) {
+        if (keep.has(i)) continue;
+        const el = els[i];
+        if (!el || typeof el.querySelectorAll != "function") continue;
+        try {
+          let nodes = [];
+          try {
+            nodes = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-shot],[data-inlay-inline-pending]"));
+          } catch {
+            nodes = [];
+          }
+          if (!nodes.length) continue;
+          for (const node of nodes) {
+            try {
+              if (node && typeof node.remove == "function") await node.remove();
+            } catch {
+            }
+          }
+          if (typeof el.setInnerHTML == "function" && typeof VC?.stripInlayInlineHtml == "function") {
+            let left = [];
+            try {
+              left = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-shot]"));
+            } catch {
+              left = [];
+            }
+            if (left.length) {
+              let html = String(await el.getInnerHTML() || "");
+              await el.setInnerHTML(VC.stripInlayInlineHtml(html));
+            }
+          }
+        } catch {
+        }
+      }
+      y("info", "inline.keep", \`DOM#\${selIdx}\${neighborIdx >= 0 ? "+" + neighborIdx : ""} keep=\${keep.size}/\${els.length}\`);
+      if (Number.isFinite(selIdx) && els[selIdx]) {
+        await injectChatInlineImages(els[selIdx], linkedCards(sel), t._inlinePending);
+      }
+      if (neighborIdx >= 0 && els[neighborIdx] && neighborMsg) {
+        await injectChatInlineImages(els[neighborIdx], linkedCards(neighborMsg), []);
+      }
     } catch (err) {
       y("warn", "inline.refresh.fail", z(err?.message || err, 100));
     }
@@ -2524,9 +2627,9 @@ const VENDOR_INLINE_CALL_NEEDLE =
   `    return await onSelectionChanged("content"), scheduleOverlayPlace(80), t.debugUi?.refreshSoon && t.debugUi.refreshSoon(), (source === "click" || source === "text") && await ensureMessageInView(o), source === "provisional" ? !0 : !isSelectedCharRole(l) ? (y("info", "select.user", "유저 메시지 — 자동 생성 안 함"), !0) : u.length ? (y("info", "select.hasImage", \`cards=\${u.length} · 재생성은 뷰어 버튼\`), !0) : (y("info", "select.noImage", "해시 이미지 없음 → 태그부터 생성"), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
   }`;
 const VENDOR_INLINE_CALL_PATCH =
-  `    if (source === "click" || source === "text") {
+  `    if (source === "click" || source === "text" || source === "scroll") {
       try {
-        await injectChatInlineImages(o, u);
+        await refreshSelectedInlineImages();
       } catch {
       }
     }
@@ -2540,9 +2643,9 @@ const VENDOR_INLINE_SAME_NEEDLE =
       return !isSelectedCharRole(l) ? !0 : (y("info", "select.same", \`msg#\${i.chatIndex} noImage → retry\`), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
     }`;
 const VENDOR_INLINE_SAME_PATCH =
-  `      if (source === "click" || source === "text") {
+  `      if (source === "click" || source === "text" || source === "scroll") {
         try {
-          await injectChatInlineImages(o, linked);
+          await refreshSelectedInlineImages();
         } catch {
         }
       }
@@ -2917,7 +3020,7 @@ const VENDOR_SCROLL_GALLERY_NEW_PATCH = `    {
       }
     }
     u = linkedCards(t.selectedMessage);
-    if (!u.length && source !== "scroll") {
+    if (!u.length) {
       try {
         u = await maybeRebindAndLink(t.selectedMessage, r);
       } catch {
@@ -2949,6 +3052,10 @@ const VENDOR_SCROLL_GALLERY_NEW_PATCH = `    {
       }
         scheduleOverlayPlace(40), await onSelectionChanged("content");
       } else scheduleStickySync(), await onSelectionChanged("content");
+      try {
+        await refreshSelectedInlineImages();
+      } catch {
+      }
       return !0;
     }`;
 
@@ -3068,8 +3175,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.1.8",
-    body: "응답 후 자동생성=DOM#0 선택, 같은 턴 중복 생성 스킵, 완료 말풍선 동그라미 제거, 잡 중 해시 retarget. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
+    title: "2.1.9",
+    body: "말풍선 삽화는 선택+위 char 최대 2개만 유지, 스크롤 선택으로도 갱신. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
   };`;
 
 /** Top-center progress toast: one bar; show on change; hide 5s after last change. */

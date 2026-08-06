@@ -537,6 +537,10 @@ async function runJob(jobId: string): Promise<void> {
         shotIndex: idx,
         paragraph: shot.paragraph,
         yPercent,
+        line: (() => {
+          const n = Math.floor(Number((shot as { line?: unknown }).line));
+          return Number.isFinite(n) && n >= 1 ? n : null;
+        })(),
         contentHash,
       });
       await publishImage(cardId, raw, location);
@@ -562,6 +566,7 @@ async function runJob(jobId: string): Promise<void> {
         shot_index: idx,
         paragraph: location.paragraph,
         y_percent: location.y_percent,
+        line: location.line,
         message_index: location.message_index ?? -1,
         message_role: location.message_role || '',
         content_hash: location.content_hash || '',

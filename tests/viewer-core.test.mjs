@@ -14,6 +14,16 @@ import {
   galleryForMessage,
   gallerySelectedCount,
   linkCardsForMessage,
+  stripInlayInlineHtml,
+  splitMessageLines,
+  clampShotLine,
+  htmlToPlainLn,
+  findPlainLineStartOffset,
+  injectInlineImagesIntoHtml,
+  lineTextOccurrence,
+  findElementIndexForLine,
+  preferNearbyHostIndex,
+  findElementIndexForLineWithFallback,
   prefixMatchRatio,
   isMessageSelectionGesture,
   pickMessageIndexNearPoint,
@@ -117,6 +127,54 @@ test("galleryFocusMessage does not keep last imaged across sessions", () => {
     cards,
   );
   assert.equal(focus.hash, "new");
+});
+
+test("stripInlayInlineHtml removes marker blocks", () => {
+  const html = `hello<div data-inlay-inline-shot="0"><br><img src="data:image/png;base64,xx"><br></div>world`;
+  assert.equal(stripInlayInlineHtml(html).replace(/\s/g, ""), "helloworld");
+  assert.deepEqual(splitMessageLines("a\n\nb\nc"), ["a", "b", "c"]);
+  assert.equal(clampShotLine(9, 3), 3);
+  assert.equal(clampShotLine(0, 3), null);
+});
+
+test("findElementIndexForLine matches text + occurrence order", () => {
+  const lines = ["차를 탔다", "커피를 마셨다", "커피를 마셨다", "끝"];
+  assert.deepEqual(lineTextOccurrence(lines, 2), { text: "커피를 마셨다", occurrence: 1 });
+  assert.deepEqual(lineTextOccurrence(lines, 3), { text: "커피를 마셨다", occurrence: 2 });
+  const els = ["차를 탔다", "커피를 마셨다", "커피를 마셨다", "끝"];
+  assert.equal(findElementIndexForLine(els, lines, 2), 1);
+  assert.equal(findElementIndexForLine(els, lines, 3), 2);
+  // multi-line host: both coffee lines live in one element
+  assert.equal(findElementIndexForLine(["차를 탔다", "커피를 마셨다\n커피를 마셨다", "끝"], lines, 3), 1);
+  assert.equal(preferNearbyHostIndex(["P", "DIV", "P"], 1), 0);
+  assert.equal(preferNearbyHostIndex(["H2", "DIV", "P"], 1), 2);
+  assert.equal(preferNearbyHostIndex(["DIV", "H2"], 0), -1);
+  assert.equal(preferNearbyHostIndex(["P", "P"], 0), 0);
+  // line 2 text missing from hosts → fall forward to line 3
+  assert.deepEqual(
+    findElementIndexForLineWithFallback(["a", "c"], ["P", "P"], ["a", "b", "c"], 2),
+    { elementIndex: 1, usedLine: 3 },
+  );
+});
+
+test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => {
+  const src = "data:image/png;base64,abc";
+  assert.equal(htmlToPlainLn("a<br><b>b</b><br>c"), "a\nb\nc");
+  assert.equal(findPlainLineStartOffset("a\nb\nc", 2), 2);
+  const rich = `차를 탔다<br><b>커피를 마셨다</b><br>커피를 마셨다<br>끝`;
+  const out = injectInlineImagesIntoHtml(rich, [
+    { line: 2, src, shotIndex: 0, cardId: "c1" },
+    { line: 3, src, shotIndex: 1, cardId: "c2" },
+  ]);
+  assert.match(out, /data-inlay-inline-shot="c1"/);
+  assert.match(out, /data-inlay-inline-shot="c2"/);
+  assert.match(out, /<b>커피를 마셨다<\/b>/);
+  assert.match(out, /zoom:0\.5/);
+  // first coffee line is bold — marker for line 2 sits before <b>
+  assert.match(out, /data-inlay-inline-shot="c1"[^>]*>[\s\S]*?<b>커피를 마셨다<\/b>/);
+  // duplicate plain "커피를 마셨다" still gets line-3 marker (not string search of first)
+  const stripped = stripInlayInlineHtml(out);
+  assert.equal(htmlToPlainLn(stripped), htmlToPlainLn(rich));
 });
 
 test("pin percent ↔ px truncates decimals and migrates legacy offsets", () => {

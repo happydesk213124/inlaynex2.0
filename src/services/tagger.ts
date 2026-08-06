@@ -150,7 +150,7 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
     const incomplete = roster.filter((c) => cleanText(c.name, 200) && !characterHasAppearance(c));
     const matched = matchCharactersInText(assistant, roster);
     if (filled.length || incomplete.length || matched.length) {
-      const formatFilledLine = (c: CharacterRecord): string => {
+      const formatFilledLine = (c: Partial<CharacterRecord>): string => {
         const name = cleanText(c.name, 200);
         const appearance = cleanText(c.appearance || '', 200);
         const attire = cleanText(c.attire || '', 160);

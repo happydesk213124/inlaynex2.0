@@ -1679,3 +1679,405 @@ export function activeSegmentIndex(markerPercents: number[] | null | undefined, 
   }
   return active;
 }
+
+// ── beta: chat-bubble inline images at newline lines ──────────────────────
+
+const INLAY_INLINE_ATTR = 'data-inlay-inline-shot';
+
+const BLOCK_CLOSE_RE = /^<\/(?:p|div|li|blockquote|h[1-6]|tr)>$/i;
+const BR_RE = /^<br\s*\/?>$/i;
+
+/** Strip our beta illustration blocks so hashing / line splits see original prose. */
+export function stripInlayInlineHtml(html: unknown): string {
+  const raw = String(html || '');
+  if (!raw) return '';
+  return raw
+    .replace(/<div[^>]*\bdata-inlay-inline-shot\b[^>]*>[\s\S]*?<\/div>/gi, '')
+    .replace(/<(?:span|p)[^>]*\bdata-inlay-inline-shot\b[^>]*>[\s\S]*?<\/(?:span|p)>/gi, '');
+}
+
+/** Same newline split as vendor Xt — non-empty trimmed lines. */
+export function splitMessageLines(text: unknown): string[] {
+  return String(text ?? '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** 1-based line clamped into [1, lineCount]; null if missing/invalid or no lines. */
+export function clampShotLine(line: unknown, lineCount: number): number | null {
+  const n = Math.floor(Number(line));
+  const max = Math.max(0, Math.floor(Number(lineCount) || 0));
+  if (!max || !Number.isFinite(n) || n < 1) return null;
+  return Math.max(1, Math.min(max, n));
+}
+
+export interface InlineImagePlacement {
+  line: number;
+  src: string;
+  shotIndex?: number;
+  cardId?: string;
+}
+
+export interface InlineInjectOptions {
+  /** Bubble client width — clamps img so intrinsic size cannot expand the parent. */
+  maxWidthPx?: number;
+}
+
+type MappedChar = { ch: string; htmlIndex: number };
+
+function escapeHtmlAttr(s: string): string {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function decodeHtmlEntity(entity: string): string | null {
+  const e = entity.toLowerCase();
+  if (e === '&nbsp;') return ' ';
+  if (e === '&amp;') return '&';
+  if (e === '&lt;') return '<';
+  if (e === '&gt;') return '>';
+  if (e === '&quot;') return '"';
+  if (e === '&#39;' || e === '&apos;') return "'";
+  const dec = /^&#(\d+);$/.exec(entity);
+  if (dec) {
+    const code = Number(dec[1]);
+    if (Number.isFinite(code) && code > 0 && code < 0x110000) return String.fromCodePoint(code);
+  }
+  const hex = /^&#x([0-9a-f]+);$/i.exec(entity);
+  if (hex) {
+    const code = Number.parseInt(hex[1]!, 16);
+    if (Number.isFinite(code) && code > 0 && code < 0x110000) return String.fromCodePoint(code);
+  }
+  return null;
+}
+
+/**
+ * Prefer inserting before wrapping open tags so we get
+ * `…<div marker/>…<b>line</b>` instead of `…<b><div marker/>…line</b>`.
+ * Stops at text, entities, br, or closing tags.
+ */
+function nudgeInsertBeforeOpenTags(html: string, htmlIndex: number): number {
+  let i = Math.max(0, Math.min(html.length, Math.floor(htmlIndex)));
+  while (i > 0) {
+    let j = i;
+    while (j > 0 && /[ \t\r\n]/.test(html[j - 1]!)) j -= 1;
+    if (j <= 0 || html[j - 1] !== '>') break;
+    const open = html.lastIndexOf('<', j - 1);
+    if (open < 0 || open >= j - 1) break;
+    const tag = html.slice(open, j);
+    if (BR_RE.test(tag) || BLOCK_CLOSE_RE.test(tag) || /^<\//.test(tag)) break;
+    if (!/^<[a-zA-Z][^>]*>$/.test(tag)) break;
+    i = open;
+  }
+  return i;
+}
+
+/**
+ * Match vendor `ln`: HTML → plain, while remembering each plain char's splice
+ * index in the original HTML (insert *before* that index).
+ */
+function mapHtmlToPlain(html: string): MappedChar[] {
+  const raw: MappedChar[] = [];
+  let i = 0;
+  const s = String(html || '');
+  while (i < s.length) {
+    if (s[i] === '<') {
+      const close = s.indexOf('>', i);
+      if (close < 0) break;
+      const tag = s.slice(i, close + 1);
+      if (BR_RE.test(tag) || BLOCK_CLOSE_RE.test(tag)) {
+        raw.push({ ch: '\n', htmlIndex: i });
+      }
+      // open block + other tags dropped (same as vendor ln)
+      i = close + 1;
+      continue;
+    }
+    if (s[i] === '&') {
+      const semi = s.indexOf(';', i);
+      if (semi > i && semi - i < 16) {
+        const ent = s.slice(i, semi + 1);
+        const decoded = decodeHtmlEntity(ent);
+        if (decoded != null) {
+          for (let k = 0; k < decoded.length; k += 1) {
+            raw.push({ ch: decoded[k]!, htmlIndex: i });
+          }
+          i = semi + 1;
+          continue;
+        }
+      }
+    }
+    raw.push({ ch: s[i]!, htmlIndex: i });
+    i += 1;
+  }
+
+  // [^\S\n]+ → single space
+  const spaced: MappedChar[] = [];
+  for (let j = 0; j < raw.length; j += 1) {
+    const c = raw[j]!;
+    if (c.ch !== '\n' && /\s/.test(c.ch)) {
+      spaced.push({ ch: ' ', htmlIndex: c.htmlIndex });
+      while (j + 1 < raw.length && raw[j + 1]!.ch !== '\n' && /\s/.test(raw[j + 1]!.ch)) j += 1;
+      continue;
+    }
+    spaced.push(c);
+  }
+  // *\n* → \n
+  const trimmedNl = spaced.filter((c, j) => {
+    if (c.ch !== ' ') return true;
+    return spaced[j - 1]?.ch !== '\n' && spaced[j + 1]?.ch !== '\n';
+  });
+  // \n{2,} → \n
+  const collapsed: MappedChar[] = [];
+  for (const c of trimmedNl) {
+    if (c.ch === '\n' && collapsed.length && collapsed[collapsed.length - 1]!.ch === '\n') continue;
+    collapsed.push(c);
+  }
+  while (collapsed.length && (collapsed[0]!.ch === '\n' || collapsed[0]!.ch === ' ')) collapsed.shift();
+  while (
+    collapsed.length
+    && (collapsed[collapsed.length - 1]!.ch === '\n' || collapsed[collapsed.length - 1]!.ch === ' ')
+  ) {
+    collapsed.pop();
+  }
+  return collapsed;
+}
+
+/** Vendor `ln` equivalent — plain text used for hashing / line numbers. */
+export function htmlToPlainLn(html: unknown): string {
+  return mapHtmlToPlain(String(html || '')).map((c) => c.ch).join('');
+}
+
+/**
+ * Char offset in ln-plain of the first non-whitespace char of 1-based line N
+ * (Xt numbering: empty lines skipped). Null if out of range.
+ */
+export function findPlainLineStartOffset(plain: unknown, line: unknown): number | null {
+  const text = String(plain ?? '').replace(/\r\n/g, '\n');
+  const want = Math.floor(Number(line));
+  if (!Number.isFinite(want) || want < 1) return null;
+  let lineNo = 0;
+  let i = 0;
+  while (i <= text.length) {
+    const next = text.indexOf('\n', i);
+    const end = next < 0 ? text.length : next;
+    const segment = text.slice(i, end);
+    if (segment.trim()) {
+      lineNo += 1;
+      if (lineNo === want) {
+        const lead = /^\s*/.exec(segment)?.[0].length || 0;
+        return i + lead;
+      }
+    }
+    if (next < 0) break;
+    i = next + 1;
+  }
+  return null;
+}
+
+/** Collapse whitespace for line↔element text matching. */
+export function normalizeInlineMatchText(text: unknown): string {
+  return String(text ?? '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Plain line at 1-based `line` plus how many times that same text has appeared
+ * in lines[1..line] (1-based occurrence). Duplicates resolve by document order.
+ */
+export function lineTextOccurrence(
+  lines: string[] | null | undefined,
+  line1Based: unknown,
+): { text: string; occurrence: number } | null {
+  const list = Array.isArray(lines) ? lines : [];
+  const idx = Math.floor(Number(line1Based)) - 1;
+  if (!Number.isFinite(idx) || idx < 0 || idx >= list.length) return null;
+  const text = normalizeInlineMatchText(list[idx]);
+  if (!text) return null;
+  let occurrence = 0;
+  for (let i = 0; i <= idx; i += 1) {
+    if (normalizeInlineMatchText(list[i]) === text) occurrence += 1;
+  }
+  return { text, occurrence };
+}
+
+/**
+ * Split each host element's plain text into line entries (multi-line `<p>` →
+ * several rows pointing at the same element index).
+ */
+export function expandElementLineEntries(
+  elementTexts: unknown[] | null | undefined,
+): { text: string; elementIndex: number }[] {
+  const out: { text: string; elementIndex: number }[] = [];
+  const list = Array.isArray(elementTexts) ? elementTexts : [];
+  for (let i = 0; i < list.length; i += 1) {
+    for (const line of splitMessageLines(list[i])) {
+      const text = normalizeInlineMatchText(line);
+      if (text) out.push({ text, elementIndex: i });
+    }
+  }
+  return out;
+}
+
+/**
+ * Map a 1-based message `line` onto a text-bearing element index by matching
+ * normalized line text + occurrence order (not unique-string search).
+ */
+export function findElementIndexForLine(
+  elementTexts: unknown[] | null | undefined,
+  messageLines: string[] | null | undefined,
+  line1Based: unknown,
+): number {
+  const key = lineTextOccurrence(messageLines, line1Based);
+  if (!key) return -1;
+  const entries = expandElementLineEntries(elementTexts);
+  let seen = 0;
+  for (const entry of entries) {
+    if (entry.text !== key.text) continue;
+    seen += 1;
+    if (seen === key.occurrence) return entry.elementIndex;
+  }
+  return -1;
+}
+
+/**
+ * If the matched host is a `DIV`, place into the nearest preferred tag (default
+ * `P`) by host-list distance. Returns -1 when no preferred neighbour exists
+ * (caller should skip — do not inject into the div).
+ */
+export function preferNearbyHostIndex(
+  tagNames: unknown[] | null | undefined,
+  matchedIndex: unknown,
+  preferTags: string[] | null | undefined = ['P'],
+): number {
+  const tags = (Array.isArray(tagNames) ? tagNames : []).map((t) => String(t || '').toUpperCase());
+  const idx = Math.floor(Number(matchedIndex));
+  if (!Number.isFinite(idx) || idx < 0 || idx >= tags.length) return -1;
+  const prefer = new Set(
+    (Array.isArray(preferTags) && preferTags.length ? preferTags : ['P']).map((t) => String(t || '').toUpperCase()),
+  );
+  const cur = tags[idx] || '';
+  if (cur !== 'DIV') return idx;
+  for (let dist = 1; dist < tags.length; dist += 1) {
+    const left = idx - dist;
+    const right = idx + dist;
+    if (left >= 0 && prefer.has(tags[left]!)) return left;
+    if (right < tags.length && prefer.has(tags[right]!)) return right;
+  }
+  return -1;
+}
+
+/**
+ * Resolve a placeable host index for `line`, then try line+1, line+2, …
+ * when text match / nearby-`P` redirect fails (common for awkward line-4 cases).
+ */
+export function findElementIndexForLineWithFallback(
+  elementTexts: unknown[] | null | undefined,
+  tagNames: unknown[] | null | undefined,
+  messageLines: string[] | null | undefined,
+  line1Based: unknown,
+  preferTags: string[] | null | undefined = ['P'],
+): { elementIndex: number; usedLine: number } | null {
+  const lines = Array.isArray(messageLines) ? messageLines : [];
+  const start = Math.floor(Number(line1Based));
+  if (!Number.isFinite(start) || start < 1 || !lines.length) return null;
+  const max = lines.length;
+  for (let line = Math.max(1, start); line <= max; line += 1) {
+    const matched = findElementIndexForLine(elementTexts, lines, line);
+    const idx = preferNearbyHostIndex(tagNames, matched, preferTags);
+    if (idx >= 0) return { elementIndex: idx, usedLine: line };
+  }
+  return null;
+}
+
+export function markerBlockHtml(p: InlineImagePlacement, _maxWidthPx?: number): string {
+  const shot = Number.isFinite(Number(p.shotIndex)) ? String(Math.floor(Number(p.shotIndex))) : '';
+  const id = escapeHtmlAttr(String(p.cardId || shot || p.line || '0'));
+  // zoom:0.5 ≈ half intrinsic size (Chromium/Risu). Avoid width:100% which fills the bubble.
+  void _maxWidthPx;
+  const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0';
+  const imgStyle = 'zoom:0.5;width:auto;height:auto;max-width:none;border-radius:8px;display:inline-block;vertical-align:top';
+  return (
+    `<div ${INLAY_INLINE_ATTR}="${id}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
+    + `<br><img src="${escapeHtmlAttr(p.src)}" alt="" style="${imgStyle}"><br>`
+    + `</div>`
+  );
+}
+
+/**
+ * Insert illustration markers into existing bubble HTML without rebuilding
+ * prose from plain text — tags/formatting stay; plain/`line` is position only.
+ */
+export function injectInlineImagesIntoHtml(
+  html: unknown,
+  placements: InlineImagePlacement[] | null | undefined,
+  opts?: InlineInjectOptions | null,
+): string {
+  const cleaned = stripInlayInlineHtml(html);
+  const list = Array.isArray(placements) ? placements : [];
+  if (!cleaned || !list.length) return cleaned;
+
+  const mapped = mapHtmlToPlain(cleaned);
+  const plain = mapped.map((c) => c.ch).join('');
+  const lineCount = splitMessageLines(plain).length;
+  if (!lineCount || !mapped.length) return cleaned;
+
+  const byLine = new Map<number, InlineImagePlacement[]>();
+  for (const p of list) {
+    const line = clampShotLine(p?.line, lineCount);
+    const src = String(p?.src || '');
+    if (!line || !/^data:image\//i.test(src)) continue;
+    const bucket = byLine.get(line) || [];
+    bucket.push({ ...p, line, src });
+    byLine.set(line, bucket);
+  }
+  if (!byLine.size) return cleaned;
+
+  const maxWidthPx = opts?.maxWidthPx;
+  /** htmlIndex → marker HTML (shot order preserved per line, lines merged). */
+  const atIndex = new Map<number, string[]>();
+  for (const [line, shots] of byLine) {
+    shots.sort((a, b) => (Number(a.shotIndex) || 0) - (Number(b.shotIndex) || 0));
+    const offset = findPlainLineStartOffset(plain, line);
+    if (offset == null || offset < 0 || offset >= mapped.length) continue;
+    const htmlIndex = nudgeInsertBeforeOpenTags(cleaned, mapped[offset]!.htmlIndex);
+    const chunks = atIndex.get(htmlIndex) || [];
+    for (const shot of shots) chunks.push(markerBlockHtml(shot, maxWidthPx));
+    atIndex.set(htmlIndex, chunks);
+  }
+  if (!atIndex.size) return cleaned;
+
+  const inserts = [...atIndex.entries()]
+    .map(([htmlIndex, chunks]) => ({ htmlIndex, html: chunks.join('') }))
+    .sort((a, b) => b.htmlIndex - a.htmlIndex);
+
+  let out = cleaned;
+  for (const ins of inserts) {
+    out = out.slice(0, ins.htmlIndex) + ins.html + out.slice(ins.htmlIndex);
+  }
+  return out;
+}
+
+/**
+ * @deprecated Prefer injectInlineImagesIntoHtml — rebuilds from plain and drops formatting.
+ * Kept only so older call sites/tests do not break mid-migrate.
+ */
+export function buildInlineChatHtml(
+  plainText: unknown,
+  placements: InlineImagePlacement[] | null | undefined,
+  opts?: InlineInjectOptions | null,
+): string {
+  const lines = splitMessageLines(plainText);
+  if (!lines.length) return '';
+  const escaped = lines.map((line) =>
+    String(line)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;'),
+  );
+  const body = escaped.join('<br>');
+  return injectInlineImagesIntoHtml(body, placements, opts);
+}

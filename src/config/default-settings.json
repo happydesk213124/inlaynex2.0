@@ -90,6 +90,7 @@
     "gallery_fab": false,
     "floating_viewer": true,
     "overlay_markers": true,
+    "inline_chat_images": false,
     "llm_anchor_percent": true,
     "natural_base": "short",
     "composition_curation": false,

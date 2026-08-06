@@ -111,6 +111,7 @@ export interface LocationArgs {
   shotIndex: number;
   paragraph: unknown;
   yPercent: number | null;
+  line?: number | null;
   contentHash?: string;
 }
 
@@ -131,6 +132,7 @@ export type ImageLocation = {
   shot_index: number;
   paragraph: number;
   y_percent: number | null;
+  line: number | null;
   content_hash: string;
   assistant_preview: string;
 };
@@ -148,6 +150,7 @@ export type CardLocationFields = {
   shot_index: number;
   paragraph: number;
   y_percent: number | null;
+  line: number | null;
   content_hash: string;
   assistant_preview: string;
   unified_session_id: string;
@@ -350,8 +353,10 @@ export function buildImageLocation({
   shotIndex,
   paragraph,
   yPercent,
+  line = null,
   contentHash = '',
 }: LocationArgs): ImageLocation {
+  const lineN = Math.floor(Number(line));
   return {
     version: 1,
     image_id: cleanText(imageId, 80),
@@ -368,6 +373,7 @@ export function buildImageLocation({
     shot_index: toInt(shotIndex, 0),
     paragraph: toInt(paragraph, 0),
     y_percent: yPercent,
+    line: Number.isFinite(lineN) && lineN >= 1 ? lineN : null,
     content_hash: cleanText(contentHash || request.content_hash || '', 128),
     assistant_preview: cleanText(request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT),
   };
@@ -407,6 +413,10 @@ export async function locationFieldsForCard(imageId: string, meta: unknown = {})
     shot_index: toInt(loc.shot_index, -1),
     paragraph: toInt('paragraph' in loc ? loc.paragraph : base.paragraph, 0),
     y_percent: toOptionalFloat(yPercent),
+    line: (() => {
+      const n = Math.floor(Number(loc.line ?? base.line));
+      return Number.isFinite(n) && n >= 1 ? n : null;
+    })(),
     content_hash: cleanText(loc.content_hash || base.content_hash || '', 128),
     assistant_preview: cleanText(loc.assistant_preview || base.assistant_preview || '', ASSISTANT_PREVIEW_LIMIT),
     unified_session_id: cleanText(loc.unified_session_id || base.unified_session_id || '', 200),
@@ -435,6 +445,10 @@ export function cardMetaFromLocation(meta: unknown, location: unknown, pngBytes 
     assistant_preview: cleanText(loc.assistant_preview || base.assistant_preview || '', ASSISTANT_PREVIEW_LIMIT),
     unified_session_id: cleanText(loc.unified_session_id || base.unified_session_id || '', 200),
     y_percent: toOptionalFloat(loc.y_percent ?? base.y_percent),
+    line: (() => {
+      const n = Math.floor(Number(loc.line ?? base.line));
+      return Number.isFinite(n) && n >= 1 ? n : null;
+    })(),
     storage: 'indexeddb',
     // Empty when the location carries no image_id — 1.x emitted the bare prefix
     // here too, and the explorer treats it as "no blob key" rather than a miss.

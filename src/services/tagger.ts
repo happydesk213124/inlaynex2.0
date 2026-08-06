@@ -146,6 +146,35 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
     }
   }
 
+  const tryInjectAssetNaiTags = async (reason: string): Promise<void> => {
+    if (!card.asset_nai_tags) return;
+    const triggerPool = [
+      ...(Array.isArray(request.lore_trigger_keys) ? request.lore_trigger_keys : []),
+      ...collectTriggeredLoreKeys(request.lorebook || [], assistant),
+    ];
+    try {
+      const collected = await collectAssetNaiTags(triggerPool);
+      if (collected?.block) {
+        let assetPrompt = await getPrompt('asset_tags_inject');
+        assetPrompt = assetPrompt.includes('{asset_tags_block}')
+          ? assetPrompt.replace('{asset_tags_block}', collected.block)
+          : `${assetPrompt}\n\n${collected.block}`;
+        messages.push({ role: 'system', content: assetPrompt });
+        dbg('asset-tags.inject', {
+          reason,
+          assets: collected.packed.assets.map((a) => a.name),
+          triggers: triggerPool.length,
+        });
+      } else {
+        setLastAssetWeightMap(new Map());
+        dbg('asset-tags.inject.skip', { reason, cause: 'collect_empty', triggers: triggerPool.length });
+      }
+    } catch (err) {
+      setLastAssetWeightMap(new Map());
+      dbg('asset-tags.inject.fail', { reason, message: String((err as Error)?.message || err) }, 'warn');
+    }
+  };
+
   if (card.char_appearance !== false) {
     const roster = rosterEarly;
     const filled = roster.filter((c) => characterHasAppearance(c));
@@ -190,56 +219,13 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
         matched_with_looks: matchedFilled.map((c) => c.name),
         session_id: sessionId,
       });
-
-      // Asset NAI tags: only when new_characters are needed this message.
-      const needsNewCharacters = matchedIncomplete.length > 0 || matched.length === 0;
-      if (card.asset_nai_tags && needsNewCharacters) {
-        const triggerPool = [
-          ...(Array.isArray(request.lore_trigger_keys) ? request.lore_trigger_keys : []),
-          ...collectTriggeredLoreKeys(request.lorebook || [], assistant),
-        ];
-        try {
-          const collected = await collectAssetNaiTags(triggerPool);
-          if (collected?.block) {
-            let assetPrompt = await getPrompt('asset_tags_inject');
-            assetPrompt = assetPrompt.includes('{asset_tags_block}')
-              ? assetPrompt.replace('{asset_tags_block}', collected.block)
-              : `${assetPrompt}\n\n${collected.block}`;
-            messages.push({ role: 'system', content: assetPrompt });
-          } else {
-            setLastAssetWeightMap(new Map());
-          }
-        } catch (err) {
-          setLastAssetWeightMap(new Map());
-          dbg('asset-tags.inject.fail', { message: String((err as Error)?.message || err) }, 'warn');
-        }
-      }
-    }
-  } else if (card.asset_nai_tags) {
-    // Appearance inject off — still allow asset tags when explicitly enabled and roster empty looks.
-    const roster = rosterEarly;
-    const matched = matchCharactersInText(assistant, roster);
-    const matchedIncomplete = matched.filter((c) => !characterHasAppearance(c));
-    const needsNewCharacters = matchedIncomplete.length > 0 || matched.length === 0;
-    if (needsNewCharacters) {
-      const triggerPool = [
-        ...(Array.isArray(request.lore_trigger_keys) ? request.lore_trigger_keys : []),
-        ...collectTriggeredLoreKeys(request.lorebook || [], assistant),
-      ];
-      try {
-        const collected = await collectAssetNaiTags(triggerPool);
-        if (collected?.block) {
-          let assetPrompt = await getPrompt('asset_tags_inject');
-          assetPrompt = assetPrompt.includes('{asset_tags_block}')
-            ? assetPrompt.replace('{asset_tags_block}', collected.block)
-            : `${assetPrompt}\n\n${collected.block}`;
-          messages.push({ role: 'system', content: assetPrompt });
-        }
-      } catch (err) {
-        dbg('asset-tags.inject.fail', { message: String((err as Error)?.message || err) }, 'warn');
-      }
     }
   }
+
+  // Always try when the toggle is on. Previous gate (needsNewCharacters) skipped inject when
+  // the roster already matched filled looks — but the message can still introduce *other*
+  // people as new_characters (debug probe finds assets; the live prompt did not).
+  await tryInjectAssetNaiTags('asset_nai_tags_on');
 
   const naturalMode = normalizeNaturalBaseMode(card.natural_base);
   const charMax = characterMaxLimit(card);

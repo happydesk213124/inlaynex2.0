@@ -362,6 +362,10 @@ const WRITE_ROUTES: readonly Route[] = [
     },
   },
   {
+    match: exact('/v1/debug/asset-tags'),
+    handler: async ({ body }) => ok(await diagnostics.probeAssetNaiTags(body)),
+  },
+  {
     match: exact('/v1/nai/reference', '/v1/nai/reference/upload'),
     handler: async ({ body }) => {
       if (body.clear) return ok(await naiAssets.clearReferenceImage());

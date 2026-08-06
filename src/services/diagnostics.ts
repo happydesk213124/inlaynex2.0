@@ -322,3 +322,5 @@ export async function evaluatePresetFromImage(bytes: ArrayBuffer): Promise<ApiRe
     name: '이미지 프리셋',
   };
 }
+
+export { probeAssetNaiTags } from './asset-tags';

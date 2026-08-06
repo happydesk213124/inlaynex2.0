@@ -193,12 +193,17 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
 
   const naturalMode = normalizeNaturalBaseMode(card.natural_base);
   const charMax = characterMaxLimit(card);
-  // One system block: placement + natural mode + cast cap (was three near-duplicate messages).
+  const imageMin = Math.max(1, Number(card.image_min ?? 1) || 1);
+  const imageMax = Math.max(imageMin, Number(card.image_max ?? 3) || 3);
+  // One system block: placement + shot count + natural mode + cast cap (was near-duplicate messages).
   messages.push({
     role: 'system',
     content: [
       // Always ask for y_percent so values are saved. Toggle only affects display (equal bands vs LLM %).
       'Every shot MUST include `y_percent` (0–100): reading position top→bottom. Spread across the full range in order (shot0 < shot1 < …); ~even gaps. E.g. 2→~25/~75; 3→~20/~50/~80; 4→~15/~40/~65/~90. Forbidden: all under 40, duplicates, or gaps under ~15 unless 1 shot.',
+      imageMin === imageMax
+        ? `SHOT COUNT: produce exactly ${imageMax} shot(s) in scenes[].shots (across all scenes).`
+        : `SHOT COUNT: produce between ${imageMin} and ${imageMax} shots in scenes[].shots (across all scenes). Prefer the count that fits the message; never fewer than ${imageMin} or more than ${imageMax}.`,
       naturalBaseSystemMessage(naturalMode),
       `CHARACTER CAP: at most ${charMax} characters per shot (char1..char${charMax}). If more are visible, keep the ${charMax} most important; fold extras into situation/place.`,
     ].join('\n'),

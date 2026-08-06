@@ -106,7 +106,17 @@ test("gallery keeps all selected shots even when rest cap is 8", () => {
 
 test("galleryFocusMessage keeps last imaged when selection has no cards", () => {
   const cards = [{ id: "x", content_hash: "old", message_index: 1, paragraph: 0, created_at: 1 }];
-  assert.equal(galleryFocusMessage({ hash: "new", chatIndex: 9 }, { hash: "old", chatIndex: 1 }, cards).hash, "old");
+  assert.equal(galleryFocusMessage({ hash: "new", chatIndex: 9, sessionId: "s1" }, { hash: "old", chatIndex: 1, sessionId: "s1" }, cards).hash, "old");
+});
+
+test("galleryFocusMessage does not keep last imaged across sessions", () => {
+  const cards = [{ id: "x", content_hash: "old", message_index: 1, paragraph: 0, created_at: 1, session_id: "oldS" }];
+  const focus = galleryFocusMessage(
+    { hash: "new", chatIndex: 0, sessionId: "newS" },
+    { hash: "old", chatIndex: 1, sessionId: "oldS" },
+    cards,
+  );
+  assert.equal(focus.hash, "new");
 });
 
 test("pin percent ↔ px truncates decimals and migrates legacy offsets", () => {

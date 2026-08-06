@@ -163,6 +163,12 @@ const normalize = (root) => {
         // 2.0 wear locks default ON (`!== false`). 1.x/legacy seeds stored false;
         // compose + unit tests assert lock behaviour — wire presence is not comparable.
         if (k === 'attire_locked' || k === 'accessories_locked') continue;
+        // 2.0 bubble inline shots + progress toast — no 1.x card fields.
+        // Defaults false; UI/schema + unit tests assert behaviour.
+        if (k === 'inline_chat_images' || k === 'progress_toast') continue;
+        // 2.0 card/gallery `line` (1-based chat line for inline placement). 1.x
+        // has no field; unset serialises as null and would spam absent→null.
+        if (k === 'line') continue;
         out[k] = walk(node[k], k);
       }
       return out;

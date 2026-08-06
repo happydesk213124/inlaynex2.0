@@ -198,34 +198,74 @@ test("accessories_locked false accepts shot accessories when weapon on", () => {
   assert.equal(prompt.includes("katana"), false);
 });
 
-test("nude=on keeps jewelry and drops clothes", () => {
-  const stored = {
+test("nude levels keep attire and append gendered anatomy tags", () => {
+  const male = {
     name: "Han",
     appearance: "black hair, boy",
     attire: "white shirt, black trousers, earrings, necklace",
     accessories: "sword",
   };
-  const prompt = composeCharacterCaptionTags(stored, { nude: true });
-  assert.match(prompt, /nude/);
-  assert.match(prompt, /earrings/);
-  assert.match(prompt, /necklace/);
-  assert.equal(prompt.includes("white shirt"), false);
-  assert.equal(prompt.includes("sword"), false);
-  assert.equal(jewelryFromAttire(stored.attire).includes("earrings"), true);
+  const tornM = composeCharacterCaptionTags(male, { nude: "torn" });
+  assert.match(tornM, /white shirt/);
+  assert.match(tornM, /2::torn clothes::/);
+  assert.match(tornM, /penis/);
+  assert.equal(tornM.includes("nipples"), false);
+
+  const nudeM = composeCharacterCaptionTags(male, { nude: 2 });
+  assert.match(nudeM, /2\.5::nude::/);
+  assert.match(nudeM, /penis/);
+
+  const fullM = composeCharacterCaptionTags(male, { nude: "on" });
+  assert.match(fullM, /white shirt/);
+  assert.match(fullM, /earrings/);
+  assert.match(fullM, /2\.5::completely nude::/);
+  assert.match(fullM, /penis/);
+  assert.equal(fullM.includes("sword"), false);
+
+  const female = {
+    name: "Aya",
+    appearance: "blonde hair, girl",
+    attire: "dress, earrings",
+    accessories: "bag",
+  };
+  const tornF = composeCharacterCaptionTags(female, { nude: "torn" });
+  assert.match(tornF, /dress/);
+  assert.match(tornF, /2::torn clothes::/);
+  assert.match(tornF, /nipples/);
+  assert.match(tornF, /pussy/);
+  assert.equal(tornF.includes("penis"), false);
+
+  const fullF = composeCharacterCaptionTags(female, { nude: "completely" });
+  assert.match(fullF, /2::completely nude::/);
+  assert.match(fullF, /nipples/);
+  assert.match(fullF, /pussy/);
+
+  const unknown = {
+    name: "X",
+    appearance: "silver hair",
+    attire: "cloak",
+    gender: "other",
+  };
+  const unk = composeCharacterCaptionTags(unknown, { nude: 2 });
+  assert.match(unk, /cloak/);
+  assert.match(unk, /2\.5::nude::/);
+  assert.equal(unk.includes("penis"), false);
+  assert.equal(unk.includes("nipples"), false);
 });
 
-test("nude+weapon keeps jewelry and weapons", () => {
+test("nude+weapon keeps clothes and weapons", () => {
   const stored = {
     name: "Han",
     appearance: "black hair, boy",
     attire: "coat, earrings",
     accessories: "rifle",
   };
-  const prompt = composeCharacterCaptionTags(stored, { nude: "on", weapon: 1 });
-  assert.match(prompt, /nude/);
+  const prompt = composeCharacterCaptionTags(stored, { nude: "completely", weapon: 1 });
+  assert.match(prompt, /2\.5::completely nude::/);
+  assert.match(prompt, /penis/);
+  assert.match(prompt, /coat/);
   assert.match(prompt, /earrings/);
   assert.match(prompt, /rifle/);
-  assert.equal(prompt.includes("coat"), false);
 });
 
 test("shot attire overrides base for caption only when unlocked", () => {

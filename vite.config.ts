@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.3';
+const PLUGIN_VERSION = '2.1.4';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -381,7 +381,8 @@ const VENDOR_CURATION_TABS_PATCH = `S = {
       models: "모델 설정",
       curation: "큐레이팅",
       explorer: "이미지 탐색",
-      debug: "디버그"
+      debug: "디버그",
+      changelog: "업데이트 내역"
     }, E = [
       "dashboard",
       "card",
@@ -390,7 +391,8 @@ const VENDOR_CURATION_TABS_PATCH = `S = {
       "models",
       "curation",
       "explorer",
-      "debug"
+      "debug",
+      "changelog"
     ]`;
 
 const VENDOR_CURATION_PANEL_NEEDLE =
@@ -451,7 +453,49 @@ const VENDOR_CURATION_PANEL_PATCH =
           <div class="model-actions" style="margin-top:10px"><button type="button" id="nx-curation-embed-run">임베딩 생성</button></div>
         </article>
       \`;
-    } else t.uiTab === "explorer" ? u = ma() : t.uiTab === "debug" && (u = \``;
+    } else t.uiTab === "explorer" ? u = ma() : t.uiTab === "changelog" ? (u = \`
+        <div class="card">
+          <strong>Inlay Nexus 업데이트 내역</strong>
+          <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.4</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>진행 토스트: 노드 하나 유지, 내용 바뀌면 표시 · 1초간 변화 없으면 눈에서만 숨김 (SafeDOM, risutts식)</li>
+            <li>인덱싱 토스트 바 = 민트, 생성/재생성/리롤 = 보라 단일 바</li>
+            <li>재생성·리롤 중에도 토스트가 뷰어 진행과 같이 갱신</li>
+            <li>접힘 모드 <code>재생성·태그 플로팅</code>: 태그/재생성 + 프리셋, 길게 누르면 펼침</li>
+            <li>누드 단계 0–3 + 성별별 해부 태그 (torn / nude / completely nude)</li>
+            <li>말풍선 삽화(beta): 카드당·줄당 중복 삽입 방지</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.3</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 삽화(beta): line 위치 삽입, 오버레이 OFF여도 클릭 추적</li>
+            <li>인라인 이미지 길게 누르기 → 크게보기/재생성</li>
+            <li>line 매칭 실패 시 다음 줄 폴백, 같은 카드 재삽입 스킵</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.2</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>샷 수 프롬프트 · 채팅 전환 선택 유지 · 모바일 설정 크롬</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.1</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>Pass2 포커스 밴드 · cast 페이로드 · 프롬프트/토큰 절감</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.0</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>큐레이션 · sticky fit · NAI 사이즈 clamp</li>
+          </ul>
+        </div>
+      \`) : t.uiTab === "debug" && (u = \``;
 
 const VENDOR_CURATION_EVENTS_NEEDLE =
   `document.getElementById("nx-save-models")?.addEventListener("click", async () => {`;
@@ -762,6 +806,8 @@ const VENDOR_EXPLORER_WARM_PROGRESS_PATCH = `          N.onWarmProgress(() => {
             Promise.resolve().then(() => {
               t._indexPaintQueued = !1;
               if (t.galleryUi?.paintStatus) t.galleryUi.paintStatus().catch(() => {
+              });
+              else syncProgressToast().catch(() => {
               });
             });
           });`;
@@ -1788,19 +1834,22 @@ const VENDOR_INLINE_HELP_NEEDLE =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },`;
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },
-    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "메시지 클릭·해시 연결 시, 샷의 line 위치에 말풍선 본문에 이미지를 끼워 넣습니다. 오버레이와 별개입니다. Risu가 말풍선을 다시 그리면 사라질 수 있어 다시 클릭해야 합니다." },`;
+    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "메시지 클릭·해시 연결 시, 샷의 line 위치에 말풍선 본문에 이미지를 끼워 넣습니다. 오버레이와 별개입니다. Risu가 말풍선을 다시 그리면 사라질 수 있어 다시 클릭해야 합니다." },
+    "nx-progress-toast": { title: "진행 토스트", body: "토스트 노드는 항상 두고, 진행·작업명이 바뀌면 보이게 / 1초간 내용 변화 없으면 눈에서만 숨깁니다. 인덱싱=민트, 그 외=보라. 클릭하면 당장 숨깁니다." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>`;
 const VENDOR_INLINE_TOGGLE_PATCH =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>
-            <label class="toggle-row" data-nx-help-id="nx-inline-chat"><input type="checkbox" id="nx-inline-chat" \${i.inline_chat_images ? "checked" : ""}><span>말풍선 삽화 (beta)</span></label>`;
+            <label class="toggle-row" data-nx-help-id="nx-inline-chat"><input type="checkbox" id="nx-inline-chat" \${i.inline_chat_images ? "checked" : ""}><span>말풍선 삽화 (beta)</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-progress-toast"><input type="checkbox" id="nx-progress-toast" \${i.progress_toast ? "checked" : ""}><span>진행 토스트</span></label>`;
 
 const VENDOR_INLINE_SAVE_NEEDLE =
   `      overlay_markers: ee("nx-overlay"),`;
 const VENDOR_INLINE_SAVE_PATCH =
   `      overlay_markers: ee("nx-overlay"),
-      inline_chat_images: ee("nx-inline-chat"),`;
+      inline_chat_images: ee("nx-inline-chat"),
+      progress_toast: ee("nx-progress-toast"),`;
 
 const VENDOR_DE_STRIP_NEEDLE =
   `  async function De(e) {
@@ -1826,22 +1875,30 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
   `  async function injectChatInlineImages(msgEl, cards) {
     if (!msgEl || t.backendSettings?.card?.inline_chat_images !== !0) return;
     if (typeof msgEl.querySelectorAll != "function" || typeof msgEl.getInnerHTML != "function") return;
+    if (t._inlineInjectBusy) return;
+    t._inlineInjectBusy = !0;
+    try {
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     if (typeof VC?.findElementIndexForLineWithFallback != "function" || typeof VC?.markerBlockHtml != "function") return;
     const doc = t.hostDoc;
     if (!doc || typeof doc.createElement != "function") return;
     const list = Array.isArray(cards) ? cards : [];
     const placements = [];
+    const seenCard = new Set();
     for (const card of list) {
       const line = Number(card?.line);
       if (!Number.isFinite(line) || line < 1) continue;
+      const cardId = String(card?.id || "");
+      if (cardId && seenCard.has(cardId)) continue;
       let src = "";
       try {
         src = await ensureStickyCardImage(card) || "";
       } catch {
       }
       if (!src || !/^data:image\\//i.test(src)) continue;
-      placements.push({ line, src, shotIndex: card.shot_index, cardId: card.id });
+      // Hard cap: one marker per card id — kills triple-same-card inject bugs.
+      if (cardId) seenCard.add(cardId);
+      placements.push({ line, src, shotIndex: card.shot_index, cardId });
     }
     const unwrapSafe = async (arr) => {
       if (!arr) return [];
@@ -1857,7 +1914,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     };
     try {
       const wantIds = placements.map((p) => String(p.cardId || "")).filter(Boolean).sort();
-      const prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+      let prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
       // Skip only when marker count and card-id set both match (add/remove/replace → update).
       if (prev.length === wantIds.length) {
         if (!wantIds.length) {
@@ -1875,7 +1932,15 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           return;
         }
       }
-      // Drop prior markers without rewriting the bubble.
+      // Drop prior markers without rewriting the bubble (also clears zombie triples).
+      for (const node of prev) {
+        try {
+          if (node && typeof node.remove == "function") await node.remove();
+        } catch {
+        }
+      }
+      // Second pass — SafeDOM sometimes leaves siblings behind.
+      prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
       for (const node of prev) {
         try {
           if (node && typeof node.remove == "function") await node.remove();
@@ -1941,36 +2006,39 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           ? VC.clampShotLine(p.line, messageLines.length)
           : Math.floor(Number(p.line));
         if (!line) continue;
-        const bucket = byLine.get(line) || [];
-        bucket.push({ ...p, line });
-        byLine.set(line, bucket);
+        // Hard: at most one image per line.
+        if (byLine.has(line)) continue;
+        byLine.set(line, { ...p, line });
       }
       let placed = 0;
-      for (const [line, shots] of byLine) {
+      const placedIds = new Set();
+      for (const [line, shot] of byLine) {
+        const id = String(shot.cardId || "");
+        if (id && placedIds.has(id)) continue;
         const hit = VC.findElementIndexForLineWithFallback(hostTexts, hostTags, messageLines, line, ["P"]);
         if (!hit || hit.elementIndex < 0 || hit.elementIndex >= hosts.length) continue;
         const host = hosts[hit.elementIndex];
         if (!host || typeof host.prepend != "function") continue;
-        shots.sort((a, b) => (Number(a.shotIndex) || 0) - (Number(b.shotIndex) || 0));
-        // prepend is LIFO — reverse so shot_index ascending ends up top→bottom.
-        for (let i = shots.length - 1; i >= 0; i -= 1) {
-          const shot = shots[i];
-          const markerHtml = VC.markerBlockHtml(shot);
-          if (!markerHtml) continue;
-          try {
-            // markerBlockHtml is a full <div …>; parse via temp parent so we
-            // prepend that node (not a double-wrapped shell).
-            const tmp = await H(doc, "div", { html: markerHtml });
-            const kids = await unwrapSafe(typeof tmp?.getChildren == "function" ? await tmp.getChildren() : null);
-            const wrap = kids[0];
-            if (wrap && typeof host.prepend == "function") await host.prepend(wrap), placed += 1;
-          } catch {
+        const markerHtml = VC.markerBlockHtml(shot);
+        if (!markerHtml) continue;
+        try {
+          const tmp = await H(doc, "div", { html: markerHtml });
+          const kids = await unwrapSafe(typeof tmp?.getChildren == "function" ? await tmp.getChildren() : null);
+          const wrap = kids[0];
+          if (wrap && typeof host.prepend == "function") {
+            await host.prepend(wrap);
+            placed += 1;
+            if (id) placedIds.add(id);
           }
+        } catch {
         }
       }
       y("info", "inline.inject", \`shots=\${placements.length} placed=\${placed}\`);
     } catch (err) {
       y("warn", "inline.inject.fail", z(err?.message || err, 120));
+    }
+    } finally {
+      t._inlineInjectBusy = !1;
     }
   }
   async function ensureMessageInView(el) {`;
@@ -2085,9 +2153,248 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.1.3",
-    body: "말풍선 삽화(beta): line 위치에 본문 서식 유지한 채 삽입. 오버레이 OFF여도 클릭 추적 유지(화면만 숨김). 인라인 이미지 길게 누르기→크게보기/재생성. line 매칭 실패 시 다음 줄로 폴백. 같은 카드면 재삽입 스킵. 설정에 올리면 항목 설명."
+    title: "2.1.4",
+    body: "진행 토스트(단일 바·1초 무변화 시 눈숨김), 누드 0–3/성별 태그, 재생성·태그 플로팅 접힘, 말풍선 삽화 중복 방지. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
   };`;
+
+/** Top-center progress toast: one bar; show on change; hide 1s after last change. */
+const VENDOR_PROGRESS_TOAST_FN_NEEDLE = `  async function dismissProgressToast() {
+    t.jobProgress = null;
+    try {
+      await Se();
+    } catch {
+    }
+  }
+  async function Se() {
+    try {
+      if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+    } catch {
+    }
+  }`;
+const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() {
+    t.jobProgress = null;
+    try {
+      await Se();
+    } catch {
+    }
+  }
+  /** risutts-style: one SafeDOM toast; eye-hide via display none/block; never recreate while enabled. */
+  const PROGRESS_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:auto;max-width:min(420px,92vw);display:block;";
+  const PROGRESS_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:none;max-width:min(420px,92vw);display:none;";
+  async function setProgressToastEye(visible) {
+    const root = t._progressToastRoot;
+    if (!root) return;
+    t._progressToastShown = !!visible;
+    try {
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(visible ? PROGRESS_TOAST_STYLE_SHOW : PROGRESS_TOAST_STYLE_HIDE);
+    } catch {
+    }
+  }
+  function armProgressToastEyeHide() {
+    t._progressToastArmed = !0;
+    t._progressToastUntil = Date.now() + 1e3;
+    if (t._progressToastHideTimer) clearTimeout(t._progressToastHideTimer);
+    t._progressToastHideTimer = setTimeout(() => {
+      t._progressToastHideTimer = null;
+      t._progressToastArmed = !1;
+      t._progressToastUntil = 0;
+      setProgressToastEye(!1).catch(() => {
+      });
+    }, 1e3);
+  }
+  function clearProgressToastEyeHide() {
+    if (t._progressToastHideTimer) {
+      clearTimeout(t._progressToastHideTimer);
+      t._progressToastHideTimer = null;
+    }
+    t._progressToastArmed = !1;
+    t._progressToastUntil = 0;
+  }
+  function dismissProgressToastUi() {
+    clearProgressToastEyeHide();
+    t._progressToastFp = "";
+    setProgressToastEye(!1).catch(() => {
+    });
+  }
+  async function destroyProgressToast() {
+    clearProgressToastEyeHide();
+    const root = t._progressToastRoot;
+    t._progressToastRoot = null;
+    t._progressToastShown = !1;
+    t._progressToastFp = "";
+    try {
+      root && typeof root.remove == "function" && await root.remove();
+    } catch {
+    }
+  }
+  async function ensureProgressToastRoot() {
+    // Do NOT probe isConnected — SafeDOM lies and caused infinite create + zombies.
+    if (t._progressToastRoot) return t._progressToastRoot;
+    const doc = await ue();
+    if (!doc || typeof doc.createElement != "function") return null;
+    const body = await Ee(doc);
+    if (!body) return null;
+    const root = await H(doc, "div", {
+      style: PROGRESS_TOAST_STYLE_HIDE
+    });
+    try {
+      typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-progress-toast");
+    } catch {
+    }
+    try {
+      typeof root.setAttribute == "function" && await root.setAttribute("data-inlay-progress-toast-root", "1");
+    } catch {
+    }
+    const onDismiss = (ev) => {
+      try {
+        ev && ev.preventDefault && ev.preventDefault();
+        ev && ev.stopPropagation && ev.stopPropagation();
+      } catch {
+      }
+      dismissProgressToastUi();
+    };
+    for (const evName of ["pointerdown", "click", "touchstart"]) {
+      try {
+        typeof root.addEventListener == "function" && root.addEventListener(evName, onDismiss);
+      } catch {
+      }
+    }
+    await body.appendChild(root);
+    t._progressToastRoot = root;
+    t._progressToastShown = !1;
+    return root;
+  }
+  async function syncProgressToast() {
+    if (t._progressToastSyncing) return;
+    t._progressToastSyncing = !0;
+    try {
+      const enabled = t.backendSettings?.card?.progress_toast === !0 || t.backendSettings?.card?.progress_toast === 1 || t.backendSettings?.card?.progress_toast === "true";
+      if (!enabled) {
+        await destroyProgressToast();
+        return;
+      }
+      const B = t.jobProgress;
+      const info = formatViewerJob(B);
+      const idx = readIndexProgress(B);
+      const jobBusy = !!(info && info.busy);
+      const indexBusy = !!idx.busy;
+      const state = info?.state || "";
+      const isError = state === "error";
+      const isTerminal = state === "done" || state === "cancelled" || isError;
+      const liveBusy = jobBusy || indexBusy;
+      const hasPayload = liveBusy || isTerminal && !!B;
+      await ensureProgressToastRoot();
+      if (!hasPayload) return;
+      const indexOnly = !jobBusy && indexBusy;
+      const stage = jobBusy
+        ? info.stage || "작업 중"
+        : indexBusy
+          ? idx.label || "인덱싱"
+          : info?.stage || "작업 중";
+      const pct = jobBusy ? info.pct : indexBusy ? idx.pct : info ? info.pct : 0;
+      const shot = info?.shot || "";
+      const detail = info?.detail ? String(info.detail).slice(0, 80) : "";
+      const meta = shot
+        ? \`\${shot} · \${pct}%\`
+        : detail
+          ? \`\${detail} · \${pct}%\`
+          : \`\${pct}%\`;
+      const tone = indexOnly ? "index" : "job";
+      const fp = \`\${stage}|\${pct}|\${meta}|\${state}|\${tone}|\${isError ? 1 : 0}\`;
+      if (fp === t._progressToastFp) return;
+      t._progressToastFp = fp;
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      const html = typeof VC?.composeProgressToastHtml == "function" ? VC.composeProgressToastHtml({
+        stage,
+        meta,
+        pct,
+        busy: !0,
+        error: isError,
+        tone,
+        escapeHtml: h
+      }) : \`<div data-inlay-progress-toast="1" style="padding:10px 14px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:12px;cursor:pointer">\${h(stage + " " + meta)}</div>\`;
+      if (!html) return;
+      const root = await ensureProgressToastRoot();
+      if (!root) return;
+      try {
+        if (typeof root.setInnerHTML == "function") await root.setInnerHTML(html);
+      } catch {
+        return;
+      }
+      await setProgressToastEye(!0);
+      armProgressToastEyeHide();
+    } finally {
+      t._progressToastSyncing = !1;
+    }
+  }
+  if (!t._progressToastWatchdog) {
+    t._progressToastWatchdog = setInterval(() => {
+      try {
+        const on = t.backendSettings?.card?.progress_toast === !0 || t.backendSettings?.card?.progress_toast === 1 || t.backendSettings?.card?.progress_toast === "true";
+        if (!on) {
+          destroyProgressToast().catch(() => {
+          });
+          return;
+        }
+        if (t._progressToastShown && t._progressToastUntil && Date.now() > t._progressToastUntil + 200) {
+          setProgressToastEye(!1).catch(() => {
+          });
+          t._progressToastUntil = 0;
+          t._progressToastArmed = !1;
+        }
+      } catch {
+      }
+    }, 500);
+  }
+  async function Se() {
+    try {
+      if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+      else await syncProgressToast();
+    } catch {
+    }
+  }`;
+
+/** Reroll fake-progress: always call Se (even at 88% cap) so toast heartbeats keep it visible. */
+const VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE = `    const a = setInterval(() => {
+      if (!t.jobProgress || t.jobProgress.jobId !== "reroll") return;
+      const r = Number(t.jobProgress.progress) || 12;
+      r < 88 && (t.jobProgress = {
+        ...t.jobProgress,
+        progress: Math.min(88, r + 4)
+      }, Se().catch(() => {
+      }));
+    }, 900);`;
+const VENDOR_REROLL_TOAST_HEARTBEAT_PATCH = `    const a = setInterval(() => {
+      if (!t.jobProgress || t.jobProgress.jobId !== "reroll") return;
+      const r = Number(t.jobProgress.progress) || 12;
+      if (r < 88) t.jobProgress = {
+        ...t.jobProgress,
+        progress: Math.min(88, r + 4)
+      };
+      Se().catch(() => {
+      });
+    }, 700);`;
+
+const VENDOR_PROGRESS_TOAST_PAINT_NEEDLE = `    }, paintStatus = async () => {
+      const _ = Array.isArray(d.items) ? d.items : U(), O = t.selectedMessage, B = t.jobProgress, idx = readIndexProgress(B), busy = !!(B || O?.hash && t.jobsInFlight.has(O.hash) || idx.busy), extra = O ? \`\${_.length}장 · DOM#\${O.domIndex}\` : "";
+      try {
+        if (busy && (B || idx.busy)) await C.setInnerHTML(viewerStatusHtml(B || { state: "running", progress: idx.pct, message: idx.label }, extra));
+        else if (O) await C.setInnerHTML(\`<span style="color:#a6b1c2">\${h(\`\${_.length}장 · DOM#\${O.domIndex} · \${O.preview || ""}\`)}</span>\`);
+        else await C.setInnerHTML(\`<span style="color:#a6b1c2">메시지를 클릭해서 선택하세요</span>\`);
+      } catch {
+      }`;
+const VENDOR_PROGRESS_TOAST_PAINT_PATCH = `    }, paintStatus = async () => {
+      const _ = Array.isArray(d.items) ? d.items : U(), O = t.selectedMessage, B = t.jobProgress, idx = readIndexProgress(B), busy = !!(B || O?.hash && t.jobsInFlight.has(O.hash) || idx.busy), extra = O ? \`\${_.length}장 · DOM#\${O.domIndex}\` : "";
+      try {
+        if (busy && (B || idx.busy)) await C.setInnerHTML(viewerStatusHtml(B || { state: "running", progress: idx.pct, message: idx.label }, extra));
+        else if (O) await C.setInnerHTML(\`<span style="color:#a6b1c2">\${h(\`\${_.length}장 · DOM#\${O.domIndex} · \${O.preview || ""}\`)}</span>\`);
+        else await C.setInnerHTML(\`<span style="color:#a6b1c2">메시지를 클릭해서 선택하세요</span>\`);
+      } catch {
+      }
+      try {
+        await syncProgressToast();
+      } catch {
+      }`;
 
 const VENDOR_SESSION_PENDING_NEEDLE = `    if (S && S !== b) {
       if (t.pendingSessionId === b) t.pendingSessionCount += 1;
@@ -2102,6 +2409,214 @@ const VENDOR_SESSION_PENDING_PATCH = `    if (S && S !== b) {
       if (t.pendingSessionCount >= 2) return t.pendingSessionId = "", t.pendingSessionCount = 0, t.lastScope = C, await oa(S, b), C;
       return C;
     }`;
+
+/** Third minimize mode: actions floating (tag/regen + preset); long-press expands. */
+const VENDOR_ACTIONS_HELP_NEEDLE =
+  `"nx-minimize-mode": { title: "접힘 표시 방식", body: "플로팅 아이콘: 접으면 작은 아이콘으로 따로 둔 자리로 갑니다. 상단 툴바 한 줄: 접어도 지금 창 자리 그대로 얇은 바로만 줄어듭니다." },`;
+const VENDOR_ACTIONS_HELP_PATCH =
+  `"nx-minimize-mode": { title: "접힘 표시 방식", body: "플로팅 아이콘: 작은 🖼️, 클릭하면 펼침. 상단 툴바 한 줄: 창 자리에서 얇은 바. 재생성·태그 플로팅: 접으면 태그/재생성 + 프리셋 미니 패널, 길게 누르면 전체 뷰어 펼침." },`;
+
+const VENDOR_ACTIONS_SELECT_NEEDLE =
+  `                <option value="icon" \${(i.viewer_minimize_mode || "icon") === "icon" ? "selected" : ""}>플로팅 아이콘</option>
+                <option value="toolbar" \${i.viewer_minimize_mode === "toolbar" ? "selected" : ""}>상단 툴바 한 줄</option>`;
+const VENDOR_ACTIONS_SELECT_PATCH =
+  `                <option value="icon" \${(i.viewer_minimize_mode || "icon") === "icon" ? "selected" : ""}>플로팅 아이콘</option>
+                <option value="toolbar" \${i.viewer_minimize_mode === "toolbar" ? "selected" : ""}>상단 툴바 한 줄</option>
+                <option value="actions" \${i.viewer_minimize_mode === "actions" ? "selected" : ""}>재생성·태그 플로팅</option>`;
+
+const VENDOR_ACTIONS_SAVE_NEEDLE =
+  `      viewer_minimize_mode: N("nx-minimize-mode") === "toolbar" ? "toolbar" : "icon"`;
+const VENDOR_ACTIONS_SAVE_PATCH =
+  `      viewer_minimize_mode: (() => { const v = N("nx-minimize-mode"); return v === "toolbar" || v === "actions" ? v : "icon"; })()`;
+
+const VENDOR_ACTIONS_MODE_FN_NEEDLE =
+  `  function viewerMinimizeMode() {
+    return (t.backendSettings?.card?.viewer_minimize_mode) === "toolbar" ? "toolbar" : "icon";
+  }`;
+const VENDOR_ACTIONS_MODE_FN_PATCH =
+  `  function viewerMinimizeMode() {
+    const m = String(t.backendSettings?.card?.viewer_minimize_mode || "icon");
+    return m === "toolbar" || m === "actions" ? m : "icon";
+  }`;
+
+const VENDOR_ACTIONS_CLAMP_NEEDLE =
+  `    if (minimized) {
+      if (mode === "toolbar") {
+        dispW = Math.max(280, Math.min(storeW, vw - margin * 2));
+        dispH = 40;
+      } else dispW = 48, dispH = 48;
+    } else {`;
+const VENDOR_ACTIONS_CLAMP_PATCH =
+  `    if (minimized) {
+      if (mode === "toolbar") {
+        dispW = Math.max(280, Math.min(storeW, vw - margin * 2));
+        dispH = 40;
+      } else if (mode === "actions") {
+        dispW = 168;
+        dispH = 76;
+      } else dispW = 48, dispH = 48;
+    } else {`;
+
+const VENDOR_ACTIONS_FT_NEEDLE =
+  `      minimized && mode === "icon" ? "min-width:48px" : minimized ? "min-width:280px" : "min-width:260px",`;
+const VENDOR_ACTIONS_FT_PATCH =
+  `      minimized && mode === "icon" ? "min-width:48px" : minimized && mode === "actions" ? "min-width:168px" : minimized ? "min-width:280px" : "min-width:260px",`;
+
+const VENDOR_ACTIONS_OVERFLOW_NEEDLE =
+  `      if (d.presetMenuOpen && (!d.minimized || viewerMinimizeMode() === "toolbar")) {`;
+const VENDOR_ACTIONS_OVERFLOW_PATCH =
+  `      if (d.presetMenuOpen && (!d.minimized || viewerMinimizeMode() === "toolbar" || viewerMinimizeMode() === "actions")) {`;
+
+const VENDOR_ACTIONS_CHROME_NEEDLE =
+  `    }, applyViewerChrome = async () => {
+      const mode = viewerMinimizeMode(), toolbarMin = d.minimized && mode === "toolbar", iconMin = d.minimized && mode === "icon";
+      try {
+        await s.setInnerHTML(iconMin ? "🖼️" : "Inlay Viewer"), await i.setStyleAttribute(\`height:\${iconMin ? 48 : toolbarMin ? 40 : 36}px;display:flex;align-items:center;justify-content:\${iconMin ? "center" : "space-between"};gap:8px;padding:\${iconMin ? "0" : "0 10px"};background:rgba(255,255,255,.04);border-bottom:\${d.minimized && !toolbarMin ? "0" : "1px solid rgba(255,255,255,.06)"};cursor:move;user-select:none;flex-shrink:0;touch-action:none;\`), await viewerPresetBtn.setStyleAttribute(\`max-width:140px;min-width:88px;flex:0 1 140px;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;font-size:11px;padding:0 8px;cursor:pointer;pointer-events:auto;display:\${iconMin ? "none" : "inline-flex"};align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!iconMin && d.presetMenuOpen ? "block" : "none"};position:absolute;top:34px;left:10px;min-width:140px;max-width:220px;max-height:220px;overflow:auto;z-index:5;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:5px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;\`);
+      } catch {
+      }`;
+const VENDOR_ACTIONS_CHROME_PATCH =
+  `    }, applyViewerChrome = async () => {
+      const mode = viewerMinimizeMode(), toolbarMin = d.minimized && mode === "toolbar", iconMin = d.minimized && mode === "icon", actionsMin = d.minimized && mode === "actions";
+      try {
+        if (actionsMin) {
+          await s.setInnerHTML('<span data-nx-act="tag" style="cursor:pointer;background:#0f766e;color:#fff;padding:5px 10px;border-radius:7px;font-size:11px;line-height:1;font-weight:600;flex:1;text-align:center">태그</span><span data-nx-act="regen" style="cursor:pointer;background:#7c6cff;color:#fff;padding:5px 10px;border-radius:7px;font-size:11px;line-height:1;font-weight:600;flex:1;text-align:center">재생성</span>'), await i.setStyleAttribute("height:76px;display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:6px;padding:8px;background:rgba(255,255,255,.04);border-bottom:0;cursor:move;user-select:none;flex-shrink:0;touch-action:none;"), await s.setStyleAttribute("display:flex;gap:6px;align-items:center;width:100%;flex:0 0 auto;"), await viewerPresetBtn.setStyleAttribute("max-width:none;min-width:0;flex:0 0 auto;width:100%;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;font-size:11px;padding:0 8px;cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;"), await viewerPresetMenu.setStyleAttribute(\`display:\${d.presetMenuOpen ? "block" : "none"};position:absolute;top:72px;left:8px;right:8px;min-width:0;max-width:none;max-height:220px;overflow:auto;z-index:20;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setStyleAttribute("display:none;");
+        } else {
+          await s.setInnerHTML(iconMin ? "🖼️" : "Inlay Viewer"), await s.setStyleAttribute(iconMin ? "font-weight:600;font-size:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;" : "font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;"), await i.setStyleAttribute(\`height:\${iconMin ? 48 : toolbarMin ? 40 : 36}px;display:flex;align-items:center;justify-content:\${iconMin ? "center" : "space-between"};gap:8px;padding:\${iconMin ? "0" : "0 10px"};background:rgba(255,255,255,.04);border-bottom:\${d.minimized && !toolbarMin ? "0" : "1px solid rgba(255,255,255,.06)"};cursor:move;user-select:none;flex-shrink:0;touch-action:none;\`), await viewerPresetBtn.setStyleAttribute(\`max-width:140px;min-width:88px;flex:0 1 140px;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;font-size:11px;padding:0 8px;cursor:pointer;pointer-events:auto;display:\${iconMin ? "none" : "inline-flex"};align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!iconMin && d.presetMenuOpen ? "block" : "none"};position:absolute;top:34px;left:10px;min-width:140px;max-width:220px;max-height:220px;overflow:auto;z-index:5;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:5px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;\`);
+        }
+      } catch {
+      }`;
+
+const VENDOR_ACTIONS_SAVE_ICON_GEO_NEEDLE =
+  `        if (viewerMinimizeMode() === "icon") {
+          d.iconGeo = {
+            left,
+            top
+          }, await saveViewerIconGeo(d.iconGeo);
+        } else {`;
+const VENDOR_ACTIONS_SAVE_ICON_GEO_PATCH =
+  `        if (viewerMinimizeMode() !== "toolbar") {
+          d.iconGeo = {
+            left,
+            top
+          }, await saveViewerIconGeo(d.iconGeo);
+        } else {`;
+
+const VENDOR_ACTIONS_TOGGLE_SAVE_NEEDLE =
+  `        if (mode === "icon") {
+          d.iconGeo = {
+            left: curLeft,
+            top: curTop
+          }, await saveViewerIconGeo(d.iconGeo);
+        }`;
+const VENDOR_ACTIONS_TOGGLE_SAVE_PATCH =
+  `        if (mode !== "toolbar") {
+          d.iconGeo = {
+            left: curLeft,
+            top: curTop
+          }, await saveViewerIconGeo(d.iconGeo);
+        }`;
+
+const VENDOR_ACTIONS_PRESET_LIVE_NEEDLE =
+  `      const presetChromeLive = !d.minimized || viewerMinimizeMode() === "toolbar";`;
+const VENDOR_ACTIONS_PRESET_LIVE_PATCH =
+  `      const presetChromeLive = !d.minimized || viewerMinimizeMode() === "toolbar" || viewerMinimizeMode() === "actions";`;
+
+const VENDOR_ACTIONS_POINTER_NEEDLE =
+  `      // Icon minimize is its own chrome (tap/drag to move/expand).
+      // Toolbar minimize is the SAME header — just hide the body — so keep normal button/preset hit-tests.
+      if (d.minimized && viewerMinimizeMode() === "icon") {
+        await startViewerDrag(A, _, O, !0);
+        return;
+      }`;
+const VENDOR_ACTIONS_POINTER_PATCH =
+  `      // Icon minimize is its own chrome (tap/drag to move/expand).
+      // Actions minimize: short-tap buttons; long-press expands; drag moves.
+      // Toolbar minimize is the SAME header — just hide the body — so keep normal button/preset hit-tests.
+      if (d.minimized && viewerMinimizeMode() === "icon") {
+        await startViewerDrag(A, _, O, !0);
+        return;
+      }
+      if (d.minimized && viewerMinimizeMode() === "actions") {
+        if (d.presetMenuOpen && d.presetMenu && await X(d.presetMenu, _, O)) {
+          try {
+            const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await d.presetMenu.getChildren()) : [];
+            for (let W = 0; W < kids.length; W += 1) {
+              const J = await kids[W].getBoundingClientRect();
+              if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
+                const id = d.viewerPresetIds?.[W] || "";
+                id && await pickViewerPreset(id);
+                return;
+              }
+            }
+          } catch {
+          }
+          return;
+        }
+        if (d.presetSelect && await X(d.presetSelect, _, O)) {
+          d.presetMenuOpen = !d.presetMenuOpen;
+          await syncViewerPresetSelect();
+          return;
+        }
+        if (await X(s, _, O)) {
+          try {
+            const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await s.getChildren()) : [];
+            for (let W = 0; W < kids.length; W += 1) {
+              const J = await kids[W].getBoundingClientRect();
+              if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
+                W === 0 ? await te() : W === 1 && await rerollAllImages();
+                return;
+              }
+            }
+          } catch {
+          }
+        }
+        if (d.presetMenuOpen) {
+          d.presetMenuOpen = !1;
+          try {
+            await syncViewerPresetSelect();
+          } catch {
+          }
+        }
+        await startViewerDrag(A, _, O, !1);
+        if (d._actionsLpTimer) clearTimeout(d._actionsLpTimer);
+        d._actionsLpTimer = setTimeout(() => {
+          d._actionsLpTimer = null;
+          if (!d.drag || d.drag.moved || !d.minimized || viewerMinimizeMode() !== "actions") return;
+          endViewerDrag({ cancelled: !0 }).then(() => toggleMinimizeBtn()).catch(() => {
+          });
+        }, 450);
+        return;
+      }`;
+
+const VENDOR_ACTIONS_DRAG_CLEAR_NEEDLE =
+  `    }, Za = async (A) => {
+      if (!d.drag) return;
+      const cx = Number(A?.clientX), cy = Number(A?.clientY);
+      if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+      const _ = cx - d.drag.startCX, O = cy - d.drag.startCY;
+      !d.drag.moved && Math.abs(_) + Math.abs(O) > 4 && (d.drag.moved = !0);`;
+const VENDOR_ACTIONS_DRAG_CLEAR_PATCH =
+  `    }, Za = async (A) => {
+      if (!d.drag) return;
+      const cx = Number(A?.clientX), cy = Number(A?.clientY);
+      if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+      const _ = cx - d.drag.startCX, O = cy - d.drag.startCY;
+      if (!d.drag.moved && Math.abs(_) + Math.abs(O) > 4) {
+        d.drag.moved = !0;
+        if (d._actionsLpTimer) clearTimeout(d._actionsLpTimer), d._actionsLpTimer = null;
+      }`;
+
+const VENDOR_ACTIONS_END_CLEAR_NEEDLE =
+  `    }, endViewerDrag = async (opts = {}) => {
+      if (!d.drag) return;
+      const { moveId: A, upId: _, cancelId: cancelId, moved: moved, expandOnTap: expandOnTap } = d.drag;
+      d.drag = null;`;
+const VENDOR_ACTIONS_END_CLEAR_PATCH =
+  `    }, endViewerDrag = async (opts = {}) => {
+      if (!d.drag) return;
+      if (d._actionsLpTimer) clearTimeout(d._actionsLpTimer), d._actionsLpTimer = null;
+      const { moveId: A, upId: _, cancelId: cancelId, moved: moved, expandOnTap: expandOnTap } = d.drag;
+      d.drag = null;`;
 
 const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
 //@display-name Inlay Nexus ${PLUGIN_VERSION}
@@ -2290,6 +2805,9 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_HELP_NEEDLE, 'inline chat help'],
     [VENDOR_INLINE_TOGGLE_NEEDLE, 'inline chat toggle'],
     [VENDOR_INLINE_SAVE_NEEDLE, 'inline chat save'],
+    [VENDOR_PROGRESS_TOAST_FN_NEEDLE, 'progress toast sync fn'],
+    [VENDOR_PROGRESS_TOAST_PAINT_NEEDLE, 'progress toast paintStatus'],
+    [VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE, 'reroll toast heartbeat'],
     [VENDOR_DE_STRIP_NEEDLE, 'De strip inline markers'],
     [VENDOR_INLINE_INJECT_FN_NEEDLE, 'inline inject fn'],
     [VENDOR_INLINE_CALL_NEEDLE, 'inline inject call'],
@@ -2297,6 +2815,20 @@ const loadVendorUi = (): string => {
     [VENDOR_SELECT_SAME_NEEDLE, 'select same-session early-return'],
     [VENDOR_SCOPE_POLL_NEEDLE, 'scope poll cadence'],
     [VENDOR_SESSION_PENDING_NEEDLE, 'session pending commit'],
+    [VENDOR_ACTIONS_HELP_NEEDLE, 'actions minimize help'],
+    [VENDOR_ACTIONS_SELECT_NEEDLE, 'actions minimize select'],
+    [VENDOR_ACTIONS_SAVE_NEEDLE, 'actions minimize save'],
+    [VENDOR_ACTIONS_MODE_FN_NEEDLE, 'actions minimize mode fn'],
+    [VENDOR_ACTIONS_CLAMP_NEEDLE, 'actions minimize clamp'],
+    [VENDOR_ACTIONS_FT_NEEDLE, 'actions minimize Ft'],
+    [VENDOR_ACTIONS_OVERFLOW_NEEDLE, 'actions minimize overflow'],
+    [VENDOR_ACTIONS_CHROME_NEEDLE, 'actions minimize chrome'],
+    [VENDOR_ACTIONS_SAVE_ICON_GEO_NEEDLE, 'actions minimize save icon geo'],
+    [VENDOR_ACTIONS_TOGGLE_SAVE_NEEDLE, 'actions minimize toggle save'],
+    [VENDOR_ACTIONS_PRESET_LIVE_NEEDLE, 'actions minimize preset live'],
+    [VENDOR_ACTIONS_POINTER_NEEDLE, 'actions minimize pointer'],
+    [VENDOR_ACTIONS_DRAG_CLEAR_NEEDLE, 'actions minimize drag clear'],
+    [VENDOR_ACTIONS_END_CLEAR_NEEDLE, 'actions minimize end clear'],
   ] as const) {
     assertOnce(raw, needle, label);
   }
@@ -2390,6 +2922,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_HELP_NEEDLE, VENDOR_INLINE_HELP_PATCH)
     .replace(VENDOR_INLINE_TOGGLE_NEEDLE, VENDOR_INLINE_TOGGLE_PATCH)
     .replace(VENDOR_INLINE_SAVE_NEEDLE, VENDOR_INLINE_SAVE_PATCH)
+    .replace(VENDOR_PROGRESS_TOAST_FN_NEEDLE, VENDOR_PROGRESS_TOAST_FN_PATCH)
+    .replace(VENDOR_PROGRESS_TOAST_PAINT_NEEDLE, VENDOR_PROGRESS_TOAST_PAINT_PATCH)
+    .replace(VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE, VENDOR_REROLL_TOAST_HEARTBEAT_PATCH)
     .replace(VENDOR_DE_STRIP_NEEDLE, VENDOR_DE_STRIP_PATCH)
     .replace(VENDOR_INLINE_INJECT_FN_NEEDLE, VENDOR_INLINE_INJECT_FN_PATCH)
     .replace(VENDOR_INLINE_CALL_NEEDLE, VENDOR_INLINE_CALL_PATCH)
@@ -2397,6 +2932,20 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_SELECT_SAME_NEEDLE, VENDOR_SELECT_SAME_PATCH)
     .replace(VENDOR_SCOPE_POLL_NEEDLE, VENDOR_SCOPE_POLL_PATCH)
     .replace(VENDOR_SESSION_PENDING_NEEDLE, VENDOR_SESSION_PENDING_PATCH)
+    .replace(VENDOR_ACTIONS_HELP_NEEDLE, VENDOR_ACTIONS_HELP_PATCH)
+    .replace(VENDOR_ACTIONS_SELECT_NEEDLE, VENDOR_ACTIONS_SELECT_PATCH)
+    .replace(VENDOR_ACTIONS_SAVE_NEEDLE, VENDOR_ACTIONS_SAVE_PATCH)
+    .replace(VENDOR_ACTIONS_MODE_FN_NEEDLE, VENDOR_ACTIONS_MODE_FN_PATCH)
+    .replace(VENDOR_ACTIONS_CLAMP_NEEDLE, VENDOR_ACTIONS_CLAMP_PATCH)
+    .replace(VENDOR_ACTIONS_FT_NEEDLE, VENDOR_ACTIONS_FT_PATCH)
+    .replace(VENDOR_ACTIONS_OVERFLOW_NEEDLE, VENDOR_ACTIONS_OVERFLOW_PATCH)
+    .replace(VENDOR_ACTIONS_CHROME_NEEDLE, VENDOR_ACTIONS_CHROME_PATCH)
+    .replace(VENDOR_ACTIONS_SAVE_ICON_GEO_NEEDLE, VENDOR_ACTIONS_SAVE_ICON_GEO_PATCH)
+    .replace(VENDOR_ACTIONS_TOGGLE_SAVE_NEEDLE, VENDOR_ACTIONS_TOGGLE_SAVE_PATCH)
+    .replace(VENDOR_ACTIONS_PRESET_LIVE_NEEDLE, VENDOR_ACTIONS_PRESET_LIVE_PATCH)
+    .replace(VENDOR_ACTIONS_POINTER_NEEDLE, VENDOR_ACTIONS_POINTER_PATCH)
+    .replace(VENDOR_ACTIONS_DRAG_CLEAR_NEEDLE, VENDOR_ACTIONS_DRAG_CLEAR_PATCH)
+    .replace(VENDOR_ACTIONS_END_CLEAR_NEEDLE, VENDOR_ACTIONS_END_CLEAR_PATCH)
     .replace(VENDOR_OVERLAY_MOUNT_NEEDLE, VENDOR_OVERLAY_MOUNT_PATCH)
     .replace(VENDOR_OVERLAY_WATCH_NEEDLE, VENDOR_OVERLAY_WATCH_PATCH)
     .replace(VENDOR_OVERLAY_RETRY_NEEDLE, VENDOR_OVERLAY_RETRY_PATCH)

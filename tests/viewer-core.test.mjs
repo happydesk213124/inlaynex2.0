@@ -66,6 +66,7 @@ import {
   nearbyDomIndexWindow,
   resolveIndexProgress,
   composeDualProgressBarsHtml,
+  composeProgressToastHtml,
   galleryStripSplitAt,
   galleryIndexFromChildIndex,
   thumbIndexAtStripX,
@@ -500,6 +501,36 @@ test("composeDualProgressBarsHtml stacks purple then mint rails", () => {
   assert.match(html, /width:50%/);
   assert.match(html, /width:25%/);
   assert.match(html, /flex-direction:column/);
+});
+
+test("composeProgressToastHtml shows stage and a single rail when busy", () => {
+  assert.equal(composeProgressToastHtml({}), "");
+  const html = composeProgressToastHtml({
+    stage: "장면 태깅",
+    meta: "2/4 · 30%",
+    pct: 30,
+    busy: true,
+  });
+  assert.match(html, /data-inlay-progress-toast/);
+  assert.match(html, /장면 태깅/);
+  assert.match(html, /2\/4 · 30%/);
+  assert.match(html, /#7c6cff/);
+  assert.match(html, /width:30%/);
+  assert.doesNotMatch(html, /#2dd4bf/);
+  assert.doesNotMatch(html, /flex-direction:column/);
+});
+
+test("composeProgressToastHtml uses mint rail for indexing tone", () => {
+  const html = composeProgressToastHtml({
+    stage: "인덱싱",
+    meta: "45%",
+    pct: 45,
+    busy: true,
+    tone: "index",
+  });
+  assert.match(html, /#2dd4bf/);
+  assert.match(html, /#5eead4/);
+  assert.doesNotMatch(html, /#7c6cff/);
 });
 
 test("mergeViewerPaintJob keeps the fuller pending mode", () => {

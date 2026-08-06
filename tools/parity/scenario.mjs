@@ -128,6 +128,16 @@ export async function runScenario(N, handles) {
     const s = await get('/v1/settings');
     return { natural_base: s?.settings?.card?.natural_base };
   });
+  // 2.0-only card flags (compare drops them vs 1.x). Prove defaults stay off.
+  await rec('settings.card_flags_2x', async () => {
+    const s = await get('/v1/settings');
+    const card = s?.settings?.card ?? {};
+    return {
+      inline_chat_images: card.inline_chat_images === true,
+      progress_toast: card.progress_toast === true,
+      viewer_minimize_mode: String(card.viewer_minimize_mode || 'icon'),
+    };
+  });
   await rec('settings.export', () => get('/v1/settings/export'));
 
   // ── curation.strict_ids (2.0-only surface; 1.x has no curation panel at

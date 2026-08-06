@@ -1577,7 +1577,7 @@ export function resolveIndexProgress(args: {
   return { pct: 0, busy: false, label: '인덱싱' };
 }
 
-/** Two stacked rails: purple job (top) + mint indexing (bottom). */
+/** Two stacked rails: purple job (top) + mint indexing (bottom). Floating viewer status still uses this. */
 export function composeDualProgressBarsHtml(args: {
   jobPct?: unknown;
   indexPct?: unknown;
@@ -1592,8 +1592,72 @@ export function composeDualProgressBarsHtml(args: {
   const jobColor = args.error ? '#f87171' : '#7c6cff';
   const indexColor = '#2dd4bf';
   const rail = (pct: number, color: string) =>
-    `<span style="display:block;height:5px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:${color};border-radius:inherit"></span></span>`;
-  return `<span style="flex:0 0 132px;display:flex;flex-direction:column;gap:3px;justify-content:center">${rail(jobPct, jobColor)}${rail(indexPct, indexColor)}</span>`;
+    `<span style="display:block;height:4px;border-radius:2px;background:#1e2633;overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:${color}"></span></span>`;
+  return `<span style="flex:0 0 120px;display:flex;flex-direction:column;gap:3px;justify-content:center">${rail(jobPct, jobColor)}${rail(indexPct, indexColor)}</span>`;
+}
+
+/** Single progress rail for the unified progress toast. */
+export function composeSingleProgressBarHtml(args: {
+  pct?: unknown;
+  busy?: unknown;
+  error?: unknown;
+  /** `index` = mint (indexing); default purple job/regen */
+  tone?: unknown;
+} = {}): string {
+  const busy = Boolean(args.busy);
+  const pct = Math.max(busy ? 6 : 0, Math.min(100, Math.round(finiteNumber(args.pct, 0))));
+  const tone = String(args.tone || '');
+  const color = args.error ? '#f87171' : tone === 'index' ? '#2dd4bf' : '#7c6cff';
+  return `<span style="flex:0 0 120px;display:block;height:6px;border-radius:3px;background:#1e2633;overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:${color}"></span></span>`;
+}
+
+/**
+ * Top-center progress toast chip HTML (inline styles only — no CSS runtime).
+ * One stage + one bar. Empty string when there is nothing to show.
+ */
+export function composeProgressToastHtml(args: {
+  stage?: unknown;
+  meta?: unknown;
+  pct?: unknown;
+  /** @deprecated dual-bar fields — collapsed into pct when `pct` omitted */
+  jobPct?: unknown;
+  indexPct?: unknown;
+  jobBusy?: unknown;
+  indexBusy?: unknown;
+  busy?: unknown;
+  error?: unknown;
+  /** `index` = mint bar (indexing); otherwise purple */
+  tone?: unknown;
+  escapeHtml?: ((s: string) => string) | null;
+} = {}): string {
+  const jobBusy = Boolean(args.jobBusy);
+  const indexBusy = Boolean(args.indexBusy);
+  const busy = Boolean(args.busy) || jobBusy || indexBusy;
+  if (!busy && !args.error) return '';
+  const esc = typeof args.escapeHtml === 'function'
+    ? args.escapeHtml
+    : (s: string) => String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  const tone = String(args.tone || (!jobBusy && indexBusy ? 'index' : 'job'));
+  const stage = esc(String(args.stage || (tone === 'index' ? '인덱싱' : '작업 중')).slice(0, 80));
+  const meta = esc(String(args.meta || '').slice(0, 160));
+  let pct = args.pct;
+  if (pct == null) {
+    if (jobBusy) pct = args.jobPct;
+    else if (indexBusy) pct = args.indexPct;
+    else pct = Math.max(finiteNumber(args.jobPct, 0), finiteNumber(args.indexPct, 0));
+  }
+  const bar = composeSingleProgressBarHtml({
+    pct,
+    busy: busy || Boolean(args.error),
+    error: args.error,
+    tone,
+  });
+  const accent = args.error ? '#f87171' : tone === 'index' ? '#5eead4' : '#c4b5fd';
+  return `<div data-inlay-progress-toast="1" style="display:flex;align-items:center;gap:10px;min-width:220px;max-width:min(420px,92vw);padding:10px 14px;border-radius:8px;background:#121820;border:1px solid #2a3344;cursor:pointer;user-select:none"><span style="flex:0 0 auto;font-weight:700;color:${accent};font-size:11px;white-space:nowrap">${stage}</span><span style="min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8b97ab;font-size:11px">${meta}</span>${bar}</div>`;
 }
 
 // ── anchor / reading / segment index ──────────────────────────────────────
@@ -2025,33 +2089,34 @@ export function injectInlineImagesIntoHtml(
   const lineCount = splitMessageLines(plain).length;
   if (!lineCount || !mapped.length) return cleaned;
 
-  const byLine = new Map<number, InlineImagePlacement[]>();
+  const byLine = new Map<number, InlineImagePlacement>();
+  const seenCard = new Set<string>();
   for (const p of list) {
     const line = clampShotLine(p?.line, lineCount);
     const src = String(p?.src || '');
+    const cardId = String(p?.cardId || '');
     if (!line || !/^data:image\//i.test(src)) continue;
-    const bucket = byLine.get(line) || [];
-    bucket.push({ ...p, line, src });
-    byLine.set(line, bucket);
+    if (cardId && seenCard.has(cardId)) continue;
+    if (byLine.has(line)) continue;
+    if (cardId) seenCard.add(cardId);
+    byLine.set(line, { ...p, line, src });
   }
   if (!byLine.size) return cleaned;
 
   const maxWidthPx = opts?.maxWidthPx;
-  /** htmlIndex → marker HTML (shot order preserved per line, lines merged). */
-  const atIndex = new Map<number, string[]>();
-  for (const [line, shots] of byLine) {
-    shots.sort((a, b) => (Number(a.shotIndex) || 0) - (Number(b.shotIndex) || 0));
+  /** htmlIndex → marker HTML (one shot per line). */
+  const atIndex = new Map<number, string>();
+  for (const [line, shot] of byLine) {
     const offset = findPlainLineStartOffset(plain, line);
     if (offset == null || offset < 0 || offset >= mapped.length) continue;
     const htmlIndex = nudgeInsertBeforeOpenTags(cleaned, mapped[offset]!.htmlIndex);
-    const chunks = atIndex.get(htmlIndex) || [];
-    for (const shot of shots) chunks.push(markerBlockHtml(shot, maxWidthPx));
-    atIndex.set(htmlIndex, chunks);
+    if (atIndex.has(htmlIndex)) continue;
+    atIndex.set(htmlIndex, markerBlockHtml(shot, maxWidthPx));
   }
   if (!atIndex.size) return cleaned;
 
   const inserts = [...atIndex.entries()]
-    .map(([htmlIndex, chunks]) => ({ htmlIndex, html: chunks.join('') }))
+    .map(([htmlIndex, html]) => ({ htmlIndex, html }))
     .sort((a, b) => b.htmlIndex - a.htmlIndex);
 
   let out = cleaned;

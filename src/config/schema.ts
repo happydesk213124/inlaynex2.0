@@ -151,6 +151,12 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   card.inline_previews = overlayOn;
   if (card.inline_chat_images == null) card.inline_chat_images = false;
   else card.inline_chat_images = card.inline_chat_images === true || card.inline_chat_images === 'true' || card.inline_chat_images === 1 || card.inline_chat_images === '1';
+  if (card.progress_toast == null) card.progress_toast = false;
+  else card.progress_toast = card.progress_toast === true || card.progress_toast === 'true' || card.progress_toast === 1 || card.progress_toast === '1';
+  {
+    const mm = String(card.viewer_minimize_mode || 'icon');
+    card.viewer_minimize_mode = mm === 'toolbar' || mm === 'actions' ? mm : 'icon';
+  }
   settings.settings_schema_version = 2;
   return settings as MigratedSettings;
 }

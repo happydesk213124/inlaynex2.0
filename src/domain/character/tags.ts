@@ -114,6 +114,62 @@ export function flagOn(value: unknown): boolean {
   return text === 'true' || text === 'on' || text === '1';
 }
 
+/**
+ * Nude caption level for a shot character.
+ * 0 off · 1 torn · 2 nude · 3 completely nude.
+ * Legacy `on`/`true` map to 3 (old “fully nude” intent). Bare `1` is torn
+ * under the new scale (prefer `"on"` / `"nude"` / `"completely"` in prompts).
+ */
+export type NudeLevel = 0 | 1 | 2 | 3;
+
+export function parseNudeLevel(value: unknown): NudeLevel {
+  if (value == null || value === false) return 0;
+  if (value === true) return 3;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const n = Math.floor(value);
+    if (n <= 0) return 0;
+    if (n === 1) return 1;
+    if (n === 2) return 2;
+    return 3;
+  }
+  const text = cleanText(value, 40).toLowerCase().replace(/_/g, ' ').trim();
+  if (!text || text === 'off' || text === 'false' || text === '0' || text === 'none') return 0;
+  if (text === '1' || text === 'torn' || text === 'torn clothes') return 1;
+  if (text === '2' || text === 'nude') return 2;
+  if (
+    text === '3'
+    || text === 'on'
+    || text === 'true'
+    || text === 'completely'
+    || text === 'completely nude'
+    || text === 'complete'
+  ) {
+    return 3;
+  }
+  return 0;
+}
+
+/**
+ * Wear tags for a nude level — always keeps base attire; appends weighted state
+ * + gendered anatomy (f: nipples,pussy · m: penis · unknown: state only).
+ */
+export function wearTagsForNudeLevel(
+  attire: unknown,
+  level: NudeLevel,
+  gender: 'f' | 'm' | null = null,
+): string {
+  const base = cleanText(attire, 4000);
+  if (level <= 0) return base;
+  let state = '';
+  if (level === 1) state = '2::torn clothes::';
+  else if (level === 2) state = '2.5::nude::';
+  else if (gender === 'm') state = '2.5::completely nude::';
+  else state = '2::completely nude::';
+  if (gender === 'f') return joinTags(base, state, 'nipples', 'pussy');
+  if (gender === 'm') return joinTags(base, state, 'penis');
+  return joinTags(base, state);
+}
+
 /** `splitLookTags` without the accessories bucket. */
 export function splitIdentityAndAttire(tags: unknown): [string, string] {
   const [identity, attire] = splitLookTags(tags);
@@ -366,7 +422,8 @@ export function wearLocked(value: unknown): boolean {
  * Character caption for one shot.
  *
  * Base: appearance + attire (clothes+jewelry). Weapons only when weapon=on.
- * nude=on → drop clothes, keep jewelry from attire, insert "nude".
+ * nude level: 0 off · 1 torn · 2 nude · 3 completely — always keeps attire
+ * tags and appends weighted state + gendered anatomy (never strips clothes).
  * When attire/accessories are locked (default), shot overrides are ignored —
  * roster base wear is used. Unlocked rows may take non-empty shot wear for
  * this caption only — never persisted back onto the roster.
@@ -385,6 +442,7 @@ export function composeCharacterCaptionTags(
     expression?: unknown;
     action?: unknown;
     sex?: unknown;
+    gender?: unknown;
     nude?: unknown;
     weapon?: unknown;
     negative?: unknown;
@@ -403,11 +461,10 @@ export function composeCharacterCaptionTags(
   const accessories = wearLocked(stored?.accessories_locked)
     ? storedAcc
     : (shotAcc || storedAcc);
-  const nude = flagOn(shot?.nude);
+  const nudeLevel = parseNudeLevel(shot?.nude);
   const weapon = flagOn(shot?.weapon);
-  const wear = nude
-    ? joinTags('nude', jewelryFromAttire(attire))
-    : attire;
+  const gender = resolveCharacterGender(shot, stored);
+  const wear = wearTagsForNudeLevel(attire, nudeLevel, gender);
   const weapons = weapon ? accessories : '';
 
   if (hasLooks) {

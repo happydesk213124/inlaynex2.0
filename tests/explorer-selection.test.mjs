@@ -9,6 +9,14 @@ import {
   sortExplorerItems,
   reorderByIds,
   thumbMinWidth,
+  groupExplorerFolders,
+  defaultExplorerFolderKey,
+  explorerWindowRange,
+  EXPLORER_OVERSCAN_ROWS,
+  parseExplorerCharFolderKey,
+  explorerCharFolderKey,
+  explorerFolderKeysForCharacter,
+  EXPLORER_CHAR_FOLDER_PREFIX,
 } from "../.test-build/explorer-selection.mjs";
 
 test("click selects single", () => {
@@ -59,4 +67,78 @@ test("reorderByIds and thumb size", () => {
   assert.deepEqual(reorderByIds(list, ["c", "a"]).map((x) => x.id), ["c", "a", "b"]);
   assert.equal(thumbMinWidth("s"), 96);
   assert.equal(thumbMinWidth("l"), 200);
+});
+
+test("groupExplorerFolders nests chats under character", () => {
+  const groups = groupExplorerFolders([
+    { key: "c1|a", character_id: "c1", character_name: "한규리", chat_name: "chat1", count: 3 },
+    { key: "c1|b", character_id: "c1", character_name: "한규리", chat_name: "chat2", count: 2 },
+    { key: "c2|a", character_id: "c2", character_name: "다른캐", chat_name: "main", count: 1 },
+  ]);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].characterName, "한규리");
+  assert.equal(groups[0].chats.length, 2);
+  assert.equal(groups[0].count, 5);
+  assert.equal(groups[1].characterKey, "c2");
+});
+
+test("defaultExplorerFolderKey never auto __all__", () => {
+  const folders = [{ key: "c1|a", character_id: "c1", character_name: "한규리" }];
+  assert.equal(defaultExplorerFolderKey(folders, ""), "__pick__");
+  assert.equal(defaultExplorerFolderKey(folders, "__pick__"), "__pick__");
+  assert.equal(defaultExplorerFolderKey(folders, "__all__"), "__all__");
+  assert.equal(defaultExplorerFolderKey(folders, "c1|a"), "c1|a");
+  assert.equal(defaultExplorerFolderKey(folders, "missing"), "__pick__");
+  assert.equal(defaultExplorerFolderKey(folders, "__char__:c1"), "__char__:c1");
+  assert.equal(defaultExplorerFolderKey(folders, "__char__:nope"), "__pick__");
+});
+
+test("parseExplorerCharFolderKey uses full __char__: prefix (not slice 8)", () => {
+  assert.equal(EXPLORER_CHAR_FOLDER_PREFIX.length, 9);
+  assert.equal(parseExplorerCharFolderKey("__char__:abc"), "abc");
+  assert.equal(explorerCharFolderKey("c1"), "__char__:c1");
+  // Old bug: slice(8) left a leading ':' and matched nothing.
+  assert.notEqual("__char__:c1".slice(8), "c1");
+  assert.deepEqual(
+    explorerFolderKeysForCharacter(
+      [
+        { key: "c1|a", character_id: "c1" },
+        { key: "c1|b", character_id: "c1" },
+        { key: "c2|a", character_id: "c2" },
+      ],
+      "c1",
+    ).sort(),
+    ["c1|a", "c1|b"],
+  );
+});
+
+test("explorerWindowRange uses viewport + overscan (not fixed 100)", () => {
+  assert.equal(EXPLORER_OVERSCAN_ROWS, 2);
+  const empty = explorerWindowRange({ itemCount: 0 });
+  assert.equal(empty.start, 0);
+  assert.equal(empty.end, 0);
+  const head = explorerWindowRange({
+    itemCount: 500,
+    scrollTop: 0,
+    clientHeight: 620,
+    gridWidth: 640,
+    thumbMin: 148,
+    overscanRows: 2,
+  });
+  // Only a viewport band should mount — far fewer than the old fixed-100 window.
+  assert.ok(head.end - head.start < 80);
+  assert.ok(head.end - head.start > 0);
+  assert.equal(head.start, 0);
+  assert.ok(head.bottomPad > 0);
+  const mid = explorerWindowRange({
+    itemCount: 500,
+    scrollTop: 8000,
+    clientHeight: 620,
+    gridWidth: 640,
+    thumbMin: 148,
+    overscanRows: 2,
+  });
+  assert.ok(mid.start > 0);
+  assert.ok(mid.end - mid.start < 80);
+  assert.ok(mid.topPad > 0);
 });

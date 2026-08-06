@@ -17,7 +17,7 @@ import { dbg, dbgSpan } from '../core/debug';
 import { abToBase64, abToBase64Async, sniffImageMime } from '../core/util/bytes';
 import { sleep } from '../core/util/async';
 import { encodeWebpQuality } from '../core/util/image';
-import { dropBlobUrl, getBlobUrl, idbGet, idbPut, pinBlobUrls, setBlobUrl } from './stores';
+import { dropBlobUrl, getBlobUrl, idbGet, idbPut, pinBlobUrls, retainBlobUrls, setBlobUrl } from './stores';
 
 /** Encodes an id to a data URL, reusing the cache. Returns '' when absent. */
 export async function ensureBlobUrl(id: string): Promise<string> {
@@ -216,6 +216,28 @@ export function pinImageUrls(ids: unknown[] = []): void {
   pumpWarm();
 }
 
+/**
+ * Explorer folder hops: keep only these data-URLs in memory and cancel warm work
+ * for everything else, so revisiting 통합보기 does not reuse a huge resident set.
+ */
+export function retainImageUrls(ids: unknown[] = []): void {
+  const list = [...new Set((ids || []).map(String).filter(Boolean))];
+  retainBlobUrls(list);
+  const keep = new Set(list);
+  for (const id of warmQueue) {
+    if (!keep.has(id)) warmQueued.delete(id);
+  }
+  const next = warmQueue.filter((id) => keep.has(id));
+  warmQueue.length = 0;
+  warmQueue.push(...next);
+  pinImageUrls(list);
+}
+
+/** Drop one cached data-URL (explorer may release thumbs when leaving a folder). */
+export function dropImageUrl(id: unknown): void {
+  dropBlobUrl(String(id || ''));
+}
+
 /** Warms a batch and returns the URLs that resolved. */
 export async function warmImages(ids: unknown[] = [], { concurrency = WARM_CONCURRENCY } = {}): Promise<string[]> {
   const list = [...new Set((ids || []).map(String).filter(Boolean))];
@@ -255,6 +277,12 @@ export interface AttachUrlOptions {
   ids?: Iterable<unknown>;
   /** Never encode synchronously. The gallery list default. */
   cachedOnly?: boolean;
+  /**
+   * When false, missing URLs stay empty and are NOT queued for background encode.
+   * Explorer lists hundreds of rows and only warms the visible window itself —
+   * enqueueing every miss here freezes Chrome on refresh.
+   */
+  warmMissing?: boolean;
 }
 
 /**
@@ -283,7 +311,7 @@ export async function attachImageUrls<T>(obj: T, opts: AttachUrlOptions = {}): P
       if (url) rec.image_url = url;
     } else {
       rec.image_url = resolveImageUrl(id) || '';
-      if (!rec.image_url) enqueueWarm(id);
+      if (!rec.image_url && opts.warmMissing !== false) enqueueWarm(id);
     }
     return obj;
   }

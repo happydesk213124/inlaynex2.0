@@ -715,6 +715,11 @@ export function pinBlobUrls(ids: Iterable<unknown>): void {
   blobUrlCache.pin(ids);
 }
 
+/** Pin these ids and drop every other cached data-URL (explorer folder hops). */
+export function retainBlobUrls(ids: Iterable<unknown>): void {
+  blobUrlCache.retainOnly(ids);
+}
+
 export function blobUrlCount(): number {
   return blobUrlCache.size;
 }

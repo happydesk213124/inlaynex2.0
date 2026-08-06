@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.10';
+const PLUGIN_VERSION = '2.1.11';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -583,6 +583,16 @@ const VENDOR_CURATION_PANEL_PATCH =
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
         </div>
         <div class="card" style="margin-top:14px">
+          <strong>2.1.11</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>이미지 탐색: 탭 진입 시 통합보기 자동 로드 안 함 · 캐릭터별 접이식 폴더 · 뷰포트+오버스캔 가상 스크롤</li>
+            <li>탐색 UI: 화면 높이에 맞춤(폴더/그리드 내부 스크롤) · 카드 4:5 cover · msg 캡션 오버레이</li>
+            <li>탐색 UX: 호버 툴팁 제거 · 우클릭 메뉴 바깥 클릭/Esc 닫기 · 모바일 롱프레스=메뉴</li>
+            <li>새로고침 렉 수정: explore가 전체 이미지를 warm 큐에 넣지 않음(보이는 창만 로드)</li>
+            <li>폴더 전환 시 썸네일 캐시 정리 · 스크롤로 새로 마운트된 카드 선택/즐겨찾기 재바인딩</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
           <strong>2.1.10</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
             <li>말풍선 삽화: 선택 DOM + 바로 위·아래 유지(최대 3개)</li>
@@ -1023,7 +1033,10 @@ const VENDOR_EXPLORER_THUMB_PAINT_PATCH = `    document.querySelectorAll("[data-
       if (img && id) {
         try {
           const src = Ie({ id });
-          if (typeof src == "string" && /^data:image\\//i.test(src) && img.getAttribute("src") !== src) img.setAttribute("src", src);
+          if (typeof src == "string" && /^data:image\\//i.test(src)) {
+            if (img.getAttribute("src") !== src) img.setAttribute("src", src);
+            img.classList.add("is-ready");
+          }
         } catch {
         }
       }
@@ -1033,33 +1046,13 @@ const VENDOR_EXPLORER_THUMB_PAINT_PATCH = `    document.querySelectorAll("[data-
   }
   function ha(e) {`;
 
+/** Old full-folder warm on ha() — disabled; window warm lives in paintExplorerWindow. */
 const VENDOR_EXPLORER_THUMB_WARM_NEEDLE = `    a && a.style.setProperty("--ex-thumb", \`\${thumb}px\`);
     paintExplorerSelectionUi(), tt();
   }
   function downloadBase64Zip(b64, filename) {`;
 
-const VENDOR_EXPLORER_THUMB_WARM_PATCH = `    a && a.style.setProperty("--ex-thumb", \`\${thumb}px\`);
-    paintExplorerSelectionUi(), tt();
-    try {
-      const N = globalThis.__INLAY_NATIVE__;
-      const ids = [...new Set((n || []).map((x) => x && x.id).filter(Boolean))];
-      if (ids.length) {
-        if (typeof N?.pinImageUrls == "function") N.pinImageUrls(ids);
-        const done = () => {
-          try {
-            paintExplorerSelectionUi();
-          } catch {
-          }
-        };
-        if (typeof N?.warmImages == "function") N.warmImages(ids).then(done).catch(() => {
-        });
-        else if (typeof N?.ensureImageUrl == "function") Promise.all(ids.map((id) => N.ensureImageUrl(id).catch(() => ""))).then(done).catch(() => {
-        });
-      }
-    } catch {
-    }
-  }
-  function downloadBase64Zip(b64, filename) {`;
+const VENDOR_EXPLORER_THUMB_WARM_PATCH = VENDOR_EXPLORER_THUMB_WARM_NEEDLE;
 
 const VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE = `          N.onWarmProgress(() => {
             if (t.uiOpen || t._indexPaintQueued) return;
@@ -1073,7 +1066,17 @@ const VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE = `          N.onWarmProgress(() => {
 
 const VENDOR_EXPLORER_WARM_PROGRESS_PATCH = `          N.onWarmProgress(() => {
             try {
-              if (t.uiOpen && t.uiTab === "explorer") paintExplorerSelectionUi();
+              if (t.uiOpen && t.uiTab === "explorer") {
+                if (!t._explorerWarmPaintRaf) {
+                  t._explorerWarmPaintRaf = requestAnimationFrame(() => {
+                    t._explorerWarmPaintRaf = 0;
+                    try {
+                      paintExplorerSelectionUi();
+                    } catch {
+                    }
+                  });
+                }
+              }
             } catch {
             }
             if (t.uiOpen || t._indexPaintQueued) return;
@@ -1086,6 +1089,584 @@ const VENDOR_EXPLORER_WARM_PROGRESS_PATCH = `          N.onWarmProgress(() => {
               });
             });
           });`;
+
+/** Explorer UX: no auto __all__, character groups, windowed grid + skeletons. */
+const VENDOR_EXPLORER_ET_NEEDLE =
+  `    let r = t.explorer?.folderKey || "";
+    return (r !== "__all__" && (!r || !o.some((i) => i.key === r))) && (r = "__all__"), t.explorer = {
+      ...t.explorer,
+      folders: o,
+      items: a,
+      folderKey: r,`;
+
+const VENDOR_EXPLORER_ET_PATCH =
+  `    let r = t.explorer?.folderKey || "";
+    {
+      const EX = exHelpers();
+      r = typeof EX.defaultExplorerFolderKey == "function" ? EX.defaultExplorerFolderKey(o, r) : r === "__all__" || o.some((i) => i.key === r) ? r || "__pick__" : "__pick__";
+    }
+    return t.explorer = {
+      ...t.explorer,
+      folders: o,
+      items: a,
+      folderKey: r,`;
+
+const VENDOR_EXPLORER_ZE_NEEDLE =
+  `    let a = e.folderKey || "";
+    if (a !== "__all__" && (!a || !o.some((f) => f.key === a))) a = o[0]?.key || "__all__";
+    const allMode = a === "__all__";
+    let r = (e.items || []).filter((i) => allMode || !a || i.folder_key === a);`;
+
+const VENDOR_EXPLORER_ZE_PATCH =
+  `    let a = e.folderKey || "";
+    a = typeof EX.defaultExplorerFolderKey == "function" ? EX.defaultExplorerFolderKey(o, a) : a === "__all__" || o.some((f) => f.key === a) ? a || "__pick__" : "__pick__";
+    const allMode = a === "__all__", pickMode = a === "__pick__";
+    const charKey = typeof EX.parseExplorerCharFolderKey == "function" ? EX.parseExplorerCharFolderKey(a) : (typeof a == "string" && a.startsWith("__char__:") ? a.slice(9) : "");
+    const charFolderKeys = charKey && typeof EX.explorerFolderKeysForCharacter == "function" ? new Set(EX.explorerFolderKeysForCharacter(o, charKey)) : charKey ? new Set(o.filter((f) => String(f.character_id || f.character_name || "").trim() === charKey).map((f) => f.key)) : null;
+    let r = pickMode ? [] : (e.items || []).filter((i) => {
+      if (allMode) return !0;
+      if (charFolderKeys) return charFolderKeys.has(i.folder_key);
+      return !a || i.folder_key === a;
+    });`;
+
+const VENDOR_EXPLORER_ENSURE_NEEDLE =
+  `    if (t.explorer.mobileSelect == null) t.explorer.mobileSelect = !1;
+    return t.explorer;
+  }`;
+
+const VENDOR_EXPLORER_ENSURE_PATCH =
+  `    if (t.explorer.mobileSelect == null) t.explorer.mobileSelect = !1;
+    if (!t.explorer.folderKey) t.explorer.folderKey = "__pick__";
+    if (!t.explorer.expandedChars || typeof t.explorer.expandedChars != "object") t.explorer.expandedChars = {};
+    if (!t.explorer.folderScroll || typeof t.explorer.folderScroll != "object") t.explorer.folderScroll = {};
+    return t.explorer;
+  }`;
+
+const VENDOR_EXPLORER_CSS_NEEDLE =
+  `.explorer-folders{flex:1;overflow:auto;padding:8px}
+.explorer-folder{width:100%;text-align:left;border:0;background:transparent;color:var(--muted);padding:10px 12px;border-radius:10px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.explorer-folder.active,.explorer-folder:hover{background:var(--accent-soft);color:#e8e4ff}
+.explorer-folder strong{font-size:13px;font-weight:700;color:inherit}
+.explorer-folder span{font-size:11px;opacity:.8}`;
+
+const VENDOR_EXPLORER_CSS_PATCH =
+  `/* Fill remaining viewport under chrome; lists scroll inside; foot stays on-screen. */
+body:has(.explorer-shell){overflow:hidden;height:100dvh;max-height:100dvh}
+#nx-shell:has(.explorer-shell){height:100dvh;max-height:100dvh;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;padding-bottom:12px}
+#nx-shell:has(.explorer-shell) #nx-chrome,#nx-shell:has(.explorer-shell) #nx-notices{flex:0 0 auto}
+#nx-shell:has(.explorer-shell) #nx-main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.explorer-shell{flex:1 1 auto;min-height:0;width:100%;display:flex;flex-direction:column;gap:8px;min-width:0;box-sizing:border-box}
+.explorer-layout{flex:1 1 auto;min-height:0;overflow:hidden;display:grid;grid-template-columns:260px minmax(0,1fr);gap:14px}
+.explorer-folders{flex:1 1 auto;min-height:0;overflow:auto;padding:8px}
+.explorer-folder{width:100%;text-align:left;border:0;background:transparent;color:var(--muted);padding:10px 12px;border-radius:10px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.explorer-folder.active,.explorer-folder:hover{background:var(--accent-soft);color:#e8e4ff}
+.explorer-folder strong{font-size:13px;font-weight:700;color:inherit}
+.explorer-folder span{font-size:11px;opacity:.8}
+.explorer-char{margin:4px 0 2px;border-radius:10px}
+.explorer-char-head{width:100%;text-align:left;border:0;background:rgba(255,255,255,.03);color:var(--text);padding:8px 10px;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;font-weight:700}
+.explorer-char-head:hover{background:var(--accent-soft)}
+.explorer-char-chats{padding:2px 0 4px 8px;display:flex;flex-direction:column;gap:2px}
+.explorer-char-chats .explorer-folder{padding:8px 10px}
+.explorer-folder.ex-row{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+.explorer-folder.ex-row strong{flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.explorer-folder.ex-row span{flex:0 0 auto;font-size:11px;opacity:.8;white-space:nowrap}
+.explorer-side,.explorer-main{min-height:0;height:100%;max-height:100%;display:flex;flex-direction:column;overflow:hidden}
+.explorer-pick-hint{padding:28px 18px;color:var(--muted);font-size:13px;line-height:1.55}
+.explorer-card img:not([src]),.explorer-card img[src=""]{background:rgba(255,255,255,.1)}
+.explorer-tip{display:none!important}
+/* Card grid lives on .explorer-win — never put tall spacers in the same CSS grid as cards (that stretched rows). */
+.explorer-win{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--ex-thumb,148px),1fr));gap:12px;align-items:start;align-content:start;box-sizing:border-box}
+.explorer-loading{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(8,12,20,.55);color:#d7e0ef;font-size:13px;pointer-events:none}
+.explorer-loading-spin{width:28px;height:28px;border-radius:999px;border:2px solid rgba(255,255,255,.18);border-top-color:rgba(167,139,250,.95);animation:nxExSpin .7s linear infinite}
+@keyframes nxExSpin{to{transform:rotate(360deg)}}
+.explorer-foot{flex:0 0 auto;margin:0!important;padding:8px 12px!important;font-size:12px;line-height:1.4}
+@media(max-width:900px){.explorer-layout{grid-template-columns:1fr;grid-template-rows:minmax(140px,28%) minmax(0,1fr)}}`;
+
+const VENDOR_EXPLORER_GRID_CSS_NEEDLE =
+  `.explorer-grid{position:relative;display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--ex-thumb,148px),1fr));gap:12px;padding:14px;max-height:620px;overflow:auto;user-select:none}`;
+
+const VENDOR_EXPLORER_GRID_CSS_PATCH =
+  `.explorer-grid{position:relative;display:block;flex:1 1 auto;min-height:0;max-height:none;overflow:auto;user-select:none;padding:14px;box-sizing:border-box}`;
+
+const VENDOR_EXPLORER_SHELL_OPEN_NEEDLE =
+  `    return \`
+      <div class="explorer-layout">`;
+
+const VENDOR_EXPLORER_SHELL_OPEN_PATCH =
+  `    return \`
+      <div class="explorer-shell">
+      <div class="explorer-layout">`;
+
+const VENDOR_EXPLORER_SHELL_FOOT_NEEDLE =
+  `      <div class="notice info" style="margin-top:12px">클릭=선택 · Shift 범위 · Ctrl/⌘ 토글 · 더블클릭=크게보기 · 드래그=박스선택 · Del=삭제 · ZIP에 manifest 포함(불러오기 시 content_hash 재부착).</div>
+      <div id="nx-explorer-ctx" class="explorer-ctx">`;
+
+const VENDOR_EXPLORER_SHELL_FOOT_PATCH =
+  `      <div class="notice info explorer-foot">클릭=선택 · Shift 범위 · Ctrl/⌘ 토글 · 더블클릭=크게보기 · 드래그=박스선택 · Del=삭제 · ZIP에 manifest 포함(불러오기 시 content_hash 재부착).</div>
+      </div>
+      <div id="nx-explorer-ctx" class="explorer-ctx">`;
+
+const VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE =
+  `    const folderButtons = \`
+          <button type="button" class="explorer-folder \${o === "__all__" ? "active" : ""}" data-explorer-folder="__all__">
+            <strong>통합 이미지보기</strong>
+            <span>모든 캐릭터·채팅 · \${totalCount}장</span>
+          </button>\${n.map((r) => \`
+          <button type="button" class="explorer-folder \${r.key === o ? "active" : ""}" data-explorer-folder="\${h(r.key)}">
+            <strong>\${h(r.character_name || "Unknown")}</strong>
+            <span>\${h(r.chat_name || "")} · \${Number(r.count) || 0}장</span>
+          </button>\`).join("")}\`;`;
+
+const VENDOR_EXPLORER_FOLDERS_HTML_PATCH =
+  `    const expanded = e.expandedChars && typeof e.expandedChars == "object" ? e.expandedChars : {};
+    const groups = typeof EX.groupExplorerFolders == "function" ? EX.groupExplorerFolders(n) : (n || []).map((r) => ({ characterKey: r.character_id || r.character_name || r.key, characterName: r.character_name || "Unknown", chats: [r], count: Number(r.count) || 0 }));
+    const folderButtons = \`
+          <button type="button" class="explorer-folder \${o === "__all__" ? "active" : ""}" data-explorer-folder="__all__">
+            <strong>통합 이미지보기</strong>
+            <span>모든 캐릭터·채팅 · \${totalCount}장</span>
+          </button>\${groups.map((g) => {
+            const ck = String(g.characterKey || "");
+            const charAllKey = typeof EX.explorerCharFolderKey == "function" ? EX.explorerCharFolderKey(ck) : "__char__:" + ck;
+            const hasActive = o === charAllKey || (g.chats || []).some((ch) => ch.key === o);
+            const open = expanded[ck] === !0 || hasActive;
+            return \`
+          <div class="explorer-char" data-explorer-char="\${h(ck)}">
+            <button type="button" class="explorer-char-head" data-explorer-char-toggle="\${h(ck)}" aria-expanded="\${open ? "true" : "false"}">
+              <span>\${h(g.characterName || "Unknown")} · \${Number(g.count) || 0}장</span>
+              <span class="muted" style="font-size:11px">\${open ? "▾" : "▸"} \${(g.chats || []).length}</span>
+            </button>
+            <div class="explorer-char-chats" style="display:\${open ? "flex" : "none"}">
+              <button type="button" class="explorer-folder ex-row \${o === charAllKey ? "active" : ""}" data-explorer-folder="\${h(charAllKey)}">
+                <strong>이 캐릭터 전체보기</strong>
+                <span>\${Number(g.count) || 0}장</span>
+              </button>\${(g.chats || []).map((r) => \`
+              <button type="button" class="explorer-folder ex-row \${r.key === o ? "active" : ""}" data-explorer-folder="\${h(r.key)}">
+                <strong>\${h(r.chat_name || "chat")}</strong>
+                <span>\${Number(r.count) || 0}장</span>
+              </button>\`).join("")}</div>
+          </div>\`;
+          }).join("")}\`;`;
+
+const VENDOR_EXPLORER_GRID_HTML_NEEDLE =
+  `          <div class="explorer-grid" style="--ex-thumb:\${thumb}px"><div class="explorer-marquee" id="nx-explorer-marquee"></div>\${et(a)}</div>`;
+
+const VENDOR_EXPLORER_GRID_HTML_PATCH =
+  `          <div class="explorer-grid" id="nx-explorer-grid" style="--ex-thumb:\${thumb}px"><div class="explorer-marquee" id="nx-explorer-marquee"></div>\${o === "__pick__" ? '<div class="explorer-pick-hint">왼쪽에서 캐릭터 채팅을 고르거나<br>통합 이미지보기를 눌러 주세요.</div>' : etWindowed(a, 0)}</div>`;
+
+const VENDOR_EXPLORER_ET_FN_NEEDLE =
+  `  function et(e) {
+    const ex = ensureExplorerState(), sel = ex.selection?.selected || new Set(), fav = new Set(ex.favorites || []), focus = ex.selection?.focusId || "";
+    return e.length ? e.map((n) => \`
+      <div class="explorer-card \${sel.has(n.id) ? "selected" : ""} \${focus === n.id ? "focus" : ""}" data-explorer-id="\${h(n.id)}" tabindex="0"
+        data-tip="\${h(\`\${n.character_name || "?"} / \${n.chat_name || "?"}
+메시지 #\${Number(n.message_index) >= 0 ? n.message_index + 1 : "?"} · 샷 \${Number(n.shot_index) + 1}
+\${(n.assistant_preview || "").slice(0, 120)}\`)}">
+        <div class="ex-check">\${sel.has(n.id) ? "✓" : ""}</div>
+        <button type="button" class="ex-star \${fav.has(n.id) ? "is-on" : ""}" data-explorer-star title="즐겨찾기" aria-label="즐겨찾기">\${fav.has(n.id) ? "★" : "☆"}</button>
+        <img src="\${h(Ie(n))}" alt="" loading="lazy">
+        <div class="cap">msg #\${Number(n.message_index) >= 0 ? n.message_index + 1 : "?"} · shot \${Number(n.shot_index) + 1}<br>\${h((n.assistant_preview || n.main_prompt || "").slice(0, 48))}</div>
+      </div>\`).join("") : '<div class="muted" style="padding:18px">이 폴더에 이미지가 없습니다.</div>';
+  }`;
+
+const VENDOR_EXPLORER_ET_FN_PATCH =
+  `  function etCardHtml(n, sel, fav, focus) {
+    const src = Ie(n), ready = typeof src == "string" && /^data:image\\//i.test(src);
+    return \`
+      <div class="explorer-card \${sel.has(n.id) ? "selected" : ""} \${focus === n.id ? "focus" : ""}" data-explorer-id="\${h(n.id)}" tabindex="0">
+        <div class="ex-check">\${sel.has(n.id) ? "✓" : ""}</div>
+        <button type="button" class="ex-star \${fav.has(n.id) ? "is-on" : ""}" data-explorer-star title="즐겨찾기" aria-label="즐겨찾기">\${fav.has(n.id) ? "★" : "☆"}</button>
+        <img \${ready ? \`src="\${h(src)}" class="is-ready"\` : 'src="" decoding="async"'} alt="" loading="lazy">
+        <div class="cap">msg #\${Number(n.message_index) >= 0 ? n.message_index + 1 : "?"} · shot \${Number(n.shot_index) + 1}<br>\${h((n.assistant_preview || n.main_prompt || "").slice(0, 48))}</div>
+      </div>\`;
+  }
+  function et(e) {
+    const ex = ensureExplorerState(), sel = ex.selection?.selected || new Set(), fav = new Set(ex.favorites || []), focus = ex.selection?.focusId || "";
+    return e.length ? \`<div class="explorer-win">\${e.map((n) => etCardHtml(n, sel, fav, focus)).join("")}</div>\` : '<div class="muted" style="padding:18px">이 폴더에 이미지가 없습니다.</div>';
+  }
+  function etWindowed(items, scrollTop) {
+    const EX = exHelpers(), ex = ensureExplorerState(), sel = ex.selection?.selected || new Set(), fav = new Set(ex.favorites || []), focus = ex.selection?.focusId || "";
+    const list = items || [];
+    if (!list.length) return '<div class="muted" style="padding:18px">이 폴더에 이미지가 없습니다.</div>';
+    const grid = document.getElementById("nx-explorer-grid") || document.querySelector(".explorer-grid");
+    const thumb = EX.thumbMinWidth ? EX.thumbMinWidth(ex.thumb || "m") : 148;
+    const range = typeof EX.explorerWindowRange == "function" ? EX.explorerWindowRange({
+      itemCount: list.length,
+      scrollTop: Number(scrollTop) || 0,
+      clientHeight: grid?.clientHeight || 620,
+      gridWidth: Math.max(1, (grid?.clientWidth || 600) - 28),
+      thumbMin: thumb,
+      gap: 12,
+      overscanRows: EX.EXPLORER_OVERSCAN_ROWS ?? 2
+    }) : { start: 0, end: Math.min(list.length, 24), topPad: 0, bottomPad: 0 };
+    const slice = list.slice(range.start, range.end);
+    t._explorerWindow = { start: range.start, end: range.end, ids: slice.map((x) => x && x.id).filter(Boolean), folderKey: ex.folderKey, scrollTop: Number(scrollTop) || 0 };
+    // Padding on the win wrapper — spacers must NOT be CSS-grid siblings of cards (row stretch bug).
+    return \`<div class="explorer-win" style="padding-top:\${Math.max(0, range.topPad)}px;padding-bottom:\${Math.max(0, range.bottomPad)}px">\${slice.map((n) => etCardHtml(n, sel, fav, focus)).join("")}</div>\`;
+  }
+  function syncExplorerMountedIds(ids) {
+    const N = globalThis.__INLAY_NATIVE__;
+    const list = [...new Set((ids || []).map(String).filter(Boolean))];
+    const folderKey = String(t.explorer?.folderKey || "");
+    if (t._explorerActiveFolder !== folderKey) {
+      for (const id of t._explorerWarmedIds || []) {
+        if (typeof N?.dropImageUrl == "function") N.dropImageUrl(id);
+      }
+      t._explorerWarmedIds = new Set();
+      t._explorerActiveFolder = folderKey;
+    }
+    const prev = t._explorerWarmedIds instanceof Set ? t._explorerWarmedIds : new Set();
+    const keep = new Set(list);
+    for (const id of prev) {
+      if (!keep.has(id) && typeof N?.dropImageUrl == "function") N.dropImageUrl(id);
+    }
+    t._explorerWarmedIds = keep;
+    if (typeof N?.pinImageUrls == "function") N.pinImageUrls(list);
+  }
+  function warmExplorerVisible(ids, opts) {
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      const list = [...new Set((ids || []).map(String).filter(Boolean))];
+      const missing = list.filter((id) => {
+        try {
+          const src = Ie({ id });
+          return !(typeof src == "string" && /^data:image\\//i.test(src));
+        } catch {
+          return !0;
+        }
+      });
+      const done = () => {
+        try {
+          paintExplorerSelectionUi();
+        } catch {
+        }
+        if (opts?.onDone) opts.onDone();
+      };
+      if (!missing.length) {
+        done();
+        return;
+      }
+      if (typeof N?.warmImages == "function") N.warmImages(missing).then(done).catch(done);
+      else if (typeof N?.ensureImageUrl == "function") Promise.all(missing.map((id) => N.ensureImageUrl(id).catch(() => ""))).then(done).catch(done);
+      else done();
+    } catch {
+      if (opts?.onDone) opts.onDone();
+    }
+  }
+  function observeExplorerThumbs(grid) {
+    try {
+      t._explorerIo?.disconnect?.();
+    } catch {
+    }
+    t._explorerIo = null;
+    if (!grid || typeof IntersectionObserver == "undefined") {
+      warmExplorerVisible(t._explorerWindow?.ids || []);
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      const need = [];
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        const id = en.target?.getAttribute?.("data-explorer-id");
+        if (!id) continue;
+        const img = en.target.querySelector?.("img");
+        if (img?.classList?.contains("is-ready")) continue;
+        need.push(id);
+      }
+      if (need.length) warmExplorerVisible(need);
+    }, { root: grid, rootMargin: "120px 0px", threshold: 0.01 });
+    t._explorerIo = io;
+    grid.querySelectorAll("[data-explorer-id]").forEach((el) => io.observe(el));
+  }
+  function warmExplorerWindow(ids, opts) {
+    syncExplorerMountedIds(ids);
+    warmExplorerVisible(ids, opts);
+  }
+  function setExplorerLoading(grid, on) {
+    if (!grid) return;
+    let el = grid.querySelector(".explorer-loading");
+    if (!on) {
+      el?.remove?.();
+      return;
+    }
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "explorer-loading";
+      el.innerHTML = '<div class="explorer-loading-spin" aria-hidden="true"></div><div>로딩 중…</div>';
+      grid.appendChild(el);
+    }
+  }
+  function paintExplorerWindow(preserveScroll) {
+    const { items: n, folderKey: o } = Ze();
+    const a = document.getElementById("nx-explorer-grid") || document.querySelector(".explorer-grid");
+    if (!a) return;
+    const EX = exHelpers();
+    const thumb = EX.thumbMinWidth ? EX.thumbMinWidth(t.explorer?.thumb) : 148;
+    a.style.setProperty("--ex-thumb", \`\${thumb}px\`);
+    const prevScroll = preserveScroll ? a.scrollTop : (t.explorer?.folderScroll?.[o] || 0);
+    if (o === "__pick__") {
+      try {
+        t._explorerIo?.disconnect?.();
+      } catch {
+      }
+      t._explorerIo = null;
+      a.innerHTML = '<div class="explorer-marquee" id="nx-explorer-marquee"></div><div class="explorer-pick-hint">왼쪽에서 캐릭터 채팅을 고르거나<br>통합 이미지보기를 눌러 주세요.</div>';
+      paintExplorerSelectionUi();
+      return;
+    }
+    a.innerHTML = \`<div class="explorer-marquee" id="nx-explorer-marquee"></div>\${etWindowed(n, prevScroll)}\`;
+    a.scrollTop = prevScroll;
+    paintExplorerSelectionUi();
+    const ids = t._explorerWindow?.ids || [];
+    syncExplorerMountedIds(ids);
+    const needLoad = ids.some((id) => {
+      try {
+        const src = Ie({ id });
+        return !(typeof src == "string" && /^data:image\\//i.test(src));
+      } catch {
+        return !0;
+      }
+    });
+    if (needLoad) setExplorerLoading(a, !0);
+    observeExplorerThumbs(a);
+    // First paint: warm whatever is already intersecting; clear overlay shortly after.
+    warmExplorerVisible(ids.slice(0, Math.min(ids.length, 12)), {
+      onDone: () => setExplorerLoading(a, !1)
+    });
+    tt();
+  }
+  function bindExplorerCharToggles() {
+    const root = document.getElementById("nx-explorer-folders");
+    if (!root || root.dataset.nxCharBound) return;
+    root.dataset.nxCharBound = "1";
+    root.addEventListener("click", (ev) => {
+      const btn = ev.target?.closest?.("[data-explorer-char-toggle]");
+      if (!btn || !root.contains(btn)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const ck = btn.getAttribute("data-explorer-char-toggle") || "";
+      if (!ck) return;
+      const ex = ensureExplorerState();
+      if (!ex.expandedChars || typeof ex.expandedChars != "object") ex.expandedChars = {};
+      const wasOpen = ex.expandedChars[ck] === !0;
+      const nowOpen = !wasOpen;
+      ex.expandedChars[ck] = nowOpen;
+      const wrap = root.querySelector(\`[data-explorer-char="\${CSS.escape(ck)}"]\`);
+      const chats = wrap?.querySelector?.(".explorer-char-chats");
+      if (chats) chats.style.display = nowOpen ? "flex" : "none";
+      btn.setAttribute("aria-expanded", nowOpen ? "true" : "false");
+      const mark = btn.querySelector(".muted");
+      if (mark) {
+        const rest = String(mark.textContent || "").replace(/^[▾▸]\\s*/, "");
+        mark.textContent = (nowOpen ? "▾ " : "▸ ") + rest;
+      }
+    });
+  }
+  function bindExplorerGridScroll() {
+    const grid = document.getElementById("nx-explorer-grid") || document.querySelector(".explorer-grid");
+    if (!grid || grid.dataset.nxWinBound) return;
+    grid.dataset.nxWinBound = "1";
+    let raf = 0;
+    grid.addEventListener("scroll", () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (!t.uiOpen || t.uiTab !== "explorer") return;
+        const { items: n, folderKey: fk } = Ze();
+        if (fk === "__pick__") return;
+        const ex = ensureExplorerState();
+        if (!ex.folderScroll) ex.folderScroll = {};
+        const keep = grid.scrollTop || 0;
+        ex.folderScroll[fk] = keep;
+        const prev = t._explorerWindow || {};
+        const html = etWindowed(n, keep);
+        const next = t._explorerWindow || {};
+        if (prev.folderKey === next.folderKey && prev.start === next.start && prev.end === next.end) return;
+        grid.innerHTML = '<div class="explorer-marquee" id="nx-explorer-marquee"></div>' + html;
+        grid.scrollTop = keep;
+        paintExplorerSelectionUi();
+        syncExplorerMountedIds(next.ids || []);
+        observeExplorerThumbs(grid);
+        tt(); // re-bind click/star on newly mounted window cards
+      });
+    }, { passive: !0 });
+  }`;
+
+/** Replace ha() body: optimistic window paint (no full-folder warm). */
+const VENDOR_EXPLORER_HA_NEEDLE =
+  `  function ha(e) {
+    t.explorer = {
+      ...ensureExplorerState(),
+      folderKey: e || ""
+    };
+    const EX = exHelpers();
+    t.explorer.selection = EX.clearSelection ? EX.clearSelection(t.explorer.selection) : { selected: new Set(), anchorId: "", focusId: "" };
+    const { items: n, folderKey: o } = Ze();
+    document.querySelectorAll("[data-explorer-folder]").forEach((i) => {
+      i.classList.toggle("active", i.getAttribute("data-explorer-folder") === o);
+    });
+    const a = document.querySelector(".explorer-grid");
+    a && (a.innerHTML = \`<div class="explorer-marquee" id="nx-explorer-marquee"></div>\${et(n)}\`);
+    const thumb = EX.thumbMinWidth ? EX.thumbMinWidth(t.explorer.thumb) : 148;
+    a && a.style.setProperty("--ex-thumb", \`\${thumb}px\`);
+    paintExplorerSelectionUi(), tt();
+  }
+  function downloadBase64Zip(b64, filename) {`;
+
+const VENDOR_EXPLORER_HA_PATCH =
+  `  function ha(e) {
+    const prev = ensureExplorerState();
+    const grid = document.getElementById("nx-explorer-grid") || document.querySelector(".explorer-grid");
+    if (prev.folderKey && grid) {
+      if (!prev.folderScroll) prev.folderScroll = {};
+      prev.folderScroll[prev.folderKey] = grid.scrollTop || 0;
+    }
+    t.explorer = {
+      ...prev,
+      folderKey: e || "__pick__"
+    };
+    const EX = exHelpers();
+    t.explorer.selection = EX.clearSelection ? EX.clearSelection(t.explorer.selection) : { selected: new Set(), anchorId: "", focusId: "" };
+    const { folderKey: o } = Ze();
+    document.querySelectorAll("[data-explorer-folder]").forEach((i) => {
+      i.classList.toggle("active", i.getAttribute("data-explorer-folder") === o);
+    });
+    paintExplorerWindow(!1);
+    tt();
+    bindExplorerGridScroll();
+  }
+  function downloadBase64Zip(b64, filename) {`;
+
+const VENDOR_EXPLORER_TAB_LOAD_NEEDLE =
+  `    if (t.uiTab === "explorer" && !t._explorerLoading) {
+      const d = !!((t.explorer?.items || []).length || (t.explorer?.folders || []).length);
+      t._explorerLoading = !0, Et(!1).then((U) => {
+        if (!t.uiOpen || t.uiTab !== "explorer") return;
+        const f = !!((U?.items || []).length || (U?.folders || []).length);
+        !d && f && P().catch(() => {
+        });
+      }).catch(() => {
+      }).finally(() => {
+        t._explorerLoading = !1;
+      });
+    }`;
+
+const VENDOR_EXPLORER_TAB_LOAD_PATCH =
+  `    if (t.uiTab === "explorer" && !t._explorerLoading) {
+      const d = !!((t.explorer?.items || []).length || (t.explorer?.folders || []).length);
+      t._explorerLoading = !0, Et(!1).then((U) => {
+        if (!t.uiOpen || t.uiTab !== "explorer") return;
+        const f = !!((U?.items || []).length || (U?.folders || []).length);
+        // Remount only empty→data (avoid Et→P→Et loop). Always rebind scroll/toggles.
+        const after = () => {
+          try {
+            bindExplorerGridScroll();
+            bindExplorerCharToggles();
+          } catch {
+          }
+        };
+        if (!d && f) P().then(after).catch(after);
+        else after();
+      }).catch(() => {
+      }).finally(() => {
+        t._explorerLoading = !1;
+      });
+    }`;
+
+/** Search/sort/thumb/fav must rewindow — raw et() bypassed virtualization and broke the grid. */
+const VENDOR_EXPLORER_FILTER_ET_NEEDLE =
+  `    }), document.getElementById("nx-explorer-q")?.addEventListener("input", (a) => {
+      ensureExplorerState().query = a.target?.value || "";
+      clearTimeout(t._explorerQTimer), t._explorerQTimer = setTimeout(() => {
+        const { items: r } = Ze(), i = document.querySelector(".explorer-grid");
+        i && (i.innerHTML = \`<div class="explorer-marquee" id="nx-explorer-marquee"></div>\${et(r)}\`), paintExplorerSelectionUi(), tt();
+      }, 160);
+    });
+    document.getElementById("nx-explorer-sort")?.addEventListener("change", (a) => {
+      ensureExplorerState().sort = a.target?.value || "newest";
+      const { items: r } = Ze(), i = document.querySelector(".explorer-grid");
+      i && (i.innerHTML = \`<div class="explorer-marquee" id="nx-explorer-marquee"></div>\${et(r)}\`), paintExplorerSelectionUi(), tt();
+    });
+    document.getElementById("nx-explorer-thumb")?.addEventListener("change", (a) => {
+      const EX = exHelpers();
+      ensureExplorerState().thumb = a.target?.value || "m";
+      const grid = document.querySelector(".explorer-grid");
+      grid && grid.style.setProperty("--ex-thumb", \`\${EX.thumbMinWidth ? EX.thumbMinWidth(t.explorer.thumb) : 148}px\`);
+    });
+    document.getElementById("nx-explorer-favonly")?.addEventListener("click", () => {
+      const ex = ensureExplorerState();
+      ex.favOnly = !ex.favOnly;
+      const { items: r } = Ze(), i = document.querySelector(".explorer-grid");
+      i && (i.innerHTML = \`<div class="explorer-marquee" id="nx-explorer-marquee"></div>\${et(r)}\`), paintExplorerSelectionUi(), tt();
+      $e(ex.favOnly ? "즐겨찾기만 보기" : "전체 보기");
+    });`;
+
+const VENDOR_EXPLORER_FILTER_ET_PATCH =
+  `    }), document.getElementById("nx-explorer-q")?.addEventListener("input", (a) => {
+      ensureExplorerState().query = a.target?.value || "";
+      clearTimeout(t._explorerQTimer), t._explorerQTimer = setTimeout(() => {
+        paintExplorerWindow(!0);
+        tt();
+      }, 160);
+    });
+    document.getElementById("nx-explorer-sort")?.addEventListener("change", (a) => {
+      ensureExplorerState().sort = a.target?.value || "newest";
+      paintExplorerWindow(!0);
+      tt();
+    });
+    document.getElementById("nx-explorer-thumb")?.addEventListener("change", (a) => {
+      ensureExplorerState().thumb = a.target?.value || "m";
+      paintExplorerWindow(!0);
+      tt();
+    });
+    document.getElementById("nx-explorer-favonly")?.addEventListener("click", () => {
+      const ex = ensureExplorerState();
+      ex.favOnly = !ex.favOnly;
+      paintExplorerWindow(!0);
+      tt();
+      $e(ex.favOnly ? "즐겨찾기만 보기" : "전체 보기");
+    });`;
+
+const VENDOR_EXPLORER_FOLDER_BIND_NEEDLE =
+  `    const o = document.getElementById("nx-explorer-folders");
+    if (o && !o.dataset.nxBound) {
+      o.dataset.nxBound = "1";
+      let a = 0;
+      const r = (i) => {
+        const s = i.target?.closest?.("[data-explorer-folder]");
+        if (!s || !o.contains(s)) return;
+        i.preventDefault(), i.stopPropagation();
+        const c = Date.now();
+        if (c - a < 200) return;
+        const l = s.getAttribute("data-explorer-folder") || "";
+        if (!l || l === t.explorer?.folderKey) return;
+        a = c, ha(l);
+      };
+      o.addEventListener("pointerdown", r), o.addEventListener("mousedown", r), o.addEventListener("click", (i) => {
+        i.target?.closest?.("[data-explorer-folder]") && (i.preventDefault(), i.stopPropagation());
+      });
+    }`;
+
+const VENDOR_EXPLORER_FOLDER_BIND_PATCH =
+  `    bindExplorerCharToggles();
+    bindExplorerGridScroll();
+    const o = document.getElementById("nx-explorer-folders");
+    if (o && !o.dataset.nxBound) {
+      o.dataset.nxBound = "1";
+      let a = 0;
+      const r = (i) => {
+        const s = i.target?.closest?.("[data-explorer-folder]");
+        if (!s || !o.contains(s)) return;
+        i.preventDefault(), i.stopPropagation();
+        const c = Date.now();
+        if (c - a < 200) return;
+        const l = s.getAttribute("data-explorer-folder") || "";
+        if (!l || l === t.explorer?.folderKey) return;
+        a = c, ha(l);
+      };
+      o.addEventListener("pointerdown", r), o.addEventListener("mousedown", r), o.addEventListener("click", (i) => {
+        i.target?.closest?.("[data-explorer-folder]") && (i.preventDefault(), i.stopPropagation());
+      });
+    }`;
 
 /**
  * Style presets: CFG scale / CFG rescale / vibe per preset; drop paste textarea;
@@ -1632,8 +2213,105 @@ const VENDOR_STICKY_EMPTY_PATCH = '`<div style="width:100%;height:100%;backgroun
 
 const VENDOR_EXPLORER_CARD_IMG_NEEDLE =
   '.explorer-card img{width:100%;aspect-ratio:3/4;object-fit:cover;display:block;background:#0b0f18;pointer-events:none}';
+/** Fixed 4/5 box + cover — tall images crop inside the card; card height never grows with src. */
 const VENDOR_EXPLORER_CARD_IMG_PATCH =
-  '.explorer-card img{width:100%;aspect-ratio:3/4;object-fit:contain;display:block;background:#0b0f18;pointer-events:none}';
+  '.explorer-card img{width:100%;aspect-ratio:4/5;height:auto;object-fit:cover;object-position:center;display:block;background:#0b0f18;pointer-events:none}';
+
+const VENDOR_EXPLORER_CAP_CSS_NEEDLE =
+  '.explorer-card .cap{padding:8px 10px;font-size:11px;color:#c4d0e2;line-height:1.35}';
+const VENDOR_EXPLORER_CAP_CSS_PATCH =
+  '.explorer-card .cap{position:absolute;left:0;right:0;bottom:0;z-index:2;padding:8px 9px 7px;font-size:11px;color:#eef3fb;line-height:1.3;background:linear-gradient(180deg,transparent,rgba(6,10,18,.82) 38%);pointer-events:none;max-height:46%;overflow:hidden}';
+
+/** Hover tip off + long-press state for mobile ctx. */
+const VENDOR_EXPLORER_TIP_BIND_NEEDLE =
+  `      n.dataset.nxBound = "1";
+      n.addEventListener("mouseenter", (a) => {
+        e && (e.style.display = "block", e.textContent = n.getAttribute("data-tip") || "", e.style.left = \`\${Math.min(window.innerWidth - 300, a.clientX + 14)}px\`, e.style.top = \`\${Math.min(window.innerHeight - 120, a.clientY + 14)}px\`);
+      }), n.addEventListener("mousemove", (a) => {
+        !e || e.style.display === "none" || (e.style.left = \`\${Math.min(window.innerWidth - 300, a.clientX + 14)}px\`, e.style.top = \`\${Math.min(window.innerHeight - 120, a.clientY + 14)}px\`);
+      }), n.addEventListener("mouseleave", () => {
+        e && (e.style.display = "none");
+      });
+      n.addEventListener("click", (r) => {
+        if (r.target?.closest?.("[data-explorer-star]")) return;
+        r.preventDefault(), r.stopPropagation();`;
+const VENDOR_EXPLORER_TIP_BIND_PATCH =
+  `      n.dataset.nxBound = "1";
+      let pressTimer = 0, longPressed = !1, pressX = 0, pressY = 0;
+      n.addEventListener("click", (r) => {
+        if (longPressed) {
+          longPressed = !1;
+          r.preventDefault(), r.stopPropagation();
+          return;
+        }
+        if (r.target?.closest?.("[data-explorer-star]")) return;
+        r.preventDefault(), r.stopPropagation();`;
+
+/** Mobile long-press opens ctx menu (was: mobileSelect + synthetic click). */
+const VENDOR_EXPLORER_LONGPRESS_NEEDLE =
+  `      let pressTimer = 0;
+      n.addEventListener("pointerdown", (r) => {
+        if (r.pointerType === "touch") {
+          pressTimer = setTimeout(() => {
+            ensureExplorerState().mobileSelect = !0;
+            n.click();
+            paintExplorerSelectionUi();
+          }, 480);
+        }
+      });
+      n.addEventListener("pointerup", () => clearTimeout(pressTimer));
+      n.addEventListener("pointercancel", () => clearTimeout(pressTimer));`;
+const VENDOR_EXPLORER_LONGPRESS_PATCH =
+  `      n.addEventListener("pointerdown", (r) => {
+        longPressed = !1;
+        if (r.pointerType !== "touch") return;
+        if (r.target?.closest?.("[data-explorer-star]")) return;
+        pressX = r.clientX, pressY = r.clientY;
+        clearTimeout(pressTimer);
+        pressTimer = setTimeout(() => {
+          pressTimer = 0;
+          longPressed = !0;
+          const id = n.getAttribute("data-explorer-id"), ex = ensureExplorerState();
+          if (!ex.selection?.selected?.has(id)) {
+            const { items } = Ze(), ids = items.map((x) => x.id);
+            ex.selection = EX.applyExplorerClick ? EX.applyExplorerClick(ex.selection, id, { ids, index: ids.indexOf(id) }) : ex.selection;
+            paintExplorerSelectionUi();
+          }
+          showExplorerCtx(pressX, pressY, id);
+        }, 480);
+      });
+      n.addEventListener("pointermove", (r) => {
+        if (!pressTimer || r.pointerType !== "touch") return;
+        if (Math.abs(r.clientX - pressX) > 10 || Math.abs(r.clientY - pressY) > 10) clearTimeout(pressTimer), pressTimer = 0;
+      });
+      n.addEventListener("pointerup", () => {
+        clearTimeout(pressTimer), pressTimer = 0;
+      });
+      n.addEventListener("pointercancel", () => {
+        clearTimeout(pressTimer), pressTimer = 0;
+      });`;
+
+/** Card click stopPropagation ate the doc click that should dismiss the ctx menu. */
+const VENDOR_EXPLORER_CTX_DISMISS_NEEDLE =
+  `    if (!t._explorerCtxDocBound) {
+      t._explorerCtxDocBound = !0;
+      document.addEventListener("click", (ev) => {
+        if (!ev.target?.closest?.("#nx-explorer-ctx")) hideExplorerCtx();
+      });
+    }`;
+const VENDOR_EXPLORER_CTX_DISMISS_PATCH =
+  `    if (!t._explorerCtxDocBound) {
+      t._explorerCtxDocBound = !0;
+      const dismissCtx = (ev) => {
+        if (ev?.target?.closest?.("#nx-explorer-ctx")) return;
+        hideExplorerCtx();
+      };
+      // Capture: card handlers stopPropagation on bubble, so outside-click never reached doc before.
+      document.addEventListener("pointerdown", dismissCtx, !0);
+      document.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") hideExplorerCtx();
+      });
+    }`;
 
 const VENDOR_VIEWER_THUMB_SHELL_NEEDLE =
   '}, thumbShellStyle = (on, split) => `width:64px;height:88px;object-fit:cover;border-radius:8px;cursor:pointer;opacity:${on ? 1 : 0.45};outline:${on ? "3px solid #a78bfa" : "1px solid rgba(255,255,255,.08)"};outline-offset:${on ? "1px" : "0"};background:#111827;flex:0 0 auto;transform:${on ? "scale(1.04)" : "none"};box-shadow:${on ? "0 0 0 1px rgba(124,108,255,.55),0 6px 16px rgba(0,0,0,.45)" : "none"};${split ? "margin-left:4px;" : ""}`, refreshThumbsRect = async () => {';
@@ -3219,8 +3897,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.1.10",
-    body: "말풍선 삽화 최대 3개(선택±1) · Comfy [[width]]/[[height]] · 큐레이팅 탭 즉시 전환. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
+    title: "2.1.11",
+    body: "이미지 탐색 가상 스크롤·뷰포트 맞춤 · 새로고침 warm 렉 수정 · 모바일 롱프레스 메뉴. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
   };`;
 
 /** Top-center progress toast: one bar; show on change; hide 5s after last change. */
@@ -3785,6 +4463,10 @@ const loadVendorUi = (): string => {
   }
   assertOnce(raw, VENDOR_STICKY_EMPTY_NEEDLE, 'sticky empty placeholder');
   assertOnce(raw, VENDOR_EXPLORER_CARD_IMG_NEEDLE, 'explorer card img contain');
+  assertOnce(raw, VENDOR_EXPLORER_CAP_CSS_NEEDLE, 'explorer cap overlay');
+  assertOnce(raw, VENDOR_EXPLORER_TIP_BIND_NEEDLE, 'explorer tip bind off');
+  assertOnce(raw, VENDOR_EXPLORER_LONGPRESS_NEEDLE, 'explorer longpress ctx');
+  assertOnce(raw, VENDOR_EXPLORER_CTX_DISMISS_NEEDLE, 'explorer ctx dismiss');
   assertOnce(raw, VENDOR_VIEWER_THUMB_SHELL_NEEDLE, 'viewer thumb shell contain');
   assertOnce(raw, VENDOR_PROMPT_RESET_NEEDLE, 'prompt-reset confirm insertion point');
   assertOnce(raw, VENDOR_PROMPT_TAB_HTML_NEEDLE, 'prompts tab HTML');
@@ -3815,6 +4497,20 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_CURATION_TAB_LOAD_NEEDLE, 'curation tab load');
   assertOnce(raw, VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, 'global toggle summary');
   assertOnce(raw, VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE, 'global toggle body row');
+  assertOnce(raw, VENDOR_EXPLORER_ET_NEEDLE, 'explorer Et no auto all');
+  assertOnce(raw, VENDOR_EXPLORER_ZE_NEEDLE, 'explorer Ze pick mode');
+  assertOnce(raw, VENDOR_EXPLORER_ENSURE_NEEDLE, 'explorer ensure expanded');
+  assertOnce(raw, VENDOR_EXPLORER_CSS_NEEDLE, 'explorer folders css');
+  assertOnce(raw, VENDOR_EXPLORER_GRID_CSS_NEEDLE, 'explorer grid css viewport');
+  assertOnce(raw, VENDOR_EXPLORER_SHELL_OPEN_NEEDLE, 'explorer shell open');
+  assertOnce(raw, VENDOR_EXPLORER_SHELL_FOOT_NEEDLE, 'explorer shell foot');
+  assertOnce(raw, VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE, 'explorer folders html');
+  assertOnce(raw, VENDOR_EXPLORER_GRID_HTML_NEEDLE, 'explorer grid html');
+  assertOnce(raw, VENDOR_EXPLORER_ET_FN_NEEDLE, 'explorer et windowed');
+  assertOnce(raw, VENDOR_EXPLORER_HA_NEEDLE, 'explorer ha window paint');
+  assertOnce(raw, VENDOR_EXPLORER_TAB_LOAD_NEEDLE, 'explorer tab load optimistic');
+  assertOnce(raw, VENDOR_EXPLORER_FOLDER_BIND_NEEDLE, 'explorer folder bind');
+  assertOnce(raw, VENDOR_EXPLORER_FILTER_ET_NEEDLE, 'explorer filter rewindow');
   assertOnce(raw, VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, 'explorer thumb paint');
   assertOnce(raw, VENDOR_EXPLORER_THUMB_WARM_NEEDLE, 'explorer thumb warm');
   assertOnce(raw, VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE, 'explorer warm progress');
@@ -3969,8 +4665,22 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, VENDOR_GLOBAL_TOGGLE_SUMMARY_PATCH)
     .replace(VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE, VENDOR_GLOBAL_TOGGLE_BODY_PATCH)
     .replace(VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, VENDOR_EXPLORER_THUMB_PAINT_PATCH)
+    .replace(VENDOR_EXPLORER_HA_NEEDLE, VENDOR_EXPLORER_HA_PATCH)
     .replace(VENDOR_EXPLORER_THUMB_WARM_NEEDLE, VENDOR_EXPLORER_THUMB_WARM_PATCH)
     .replace(VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE, VENDOR_EXPLORER_WARM_PROGRESS_PATCH)
+    .replace(VENDOR_EXPLORER_ET_NEEDLE, VENDOR_EXPLORER_ET_PATCH)
+    .replace(VENDOR_EXPLORER_ZE_NEEDLE, VENDOR_EXPLORER_ZE_PATCH)
+    .replace(VENDOR_EXPLORER_ENSURE_NEEDLE, VENDOR_EXPLORER_ENSURE_PATCH)
+    .replace(VENDOR_EXPLORER_CSS_NEEDLE, VENDOR_EXPLORER_CSS_PATCH)
+    .replace(VENDOR_EXPLORER_GRID_CSS_NEEDLE, VENDOR_EXPLORER_GRID_CSS_PATCH)
+    .replace(VENDOR_EXPLORER_SHELL_OPEN_NEEDLE, VENDOR_EXPLORER_SHELL_OPEN_PATCH)
+    .replace(VENDOR_EXPLORER_SHELL_FOOT_NEEDLE, VENDOR_EXPLORER_SHELL_FOOT_PATCH)
+    .replace(VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE, VENDOR_EXPLORER_FOLDERS_HTML_PATCH)
+    .replace(VENDOR_EXPLORER_GRID_HTML_NEEDLE, VENDOR_EXPLORER_GRID_HTML_PATCH)
+    .replace(VENDOR_EXPLORER_ET_FN_NEEDLE, VENDOR_EXPLORER_ET_FN_PATCH)
+    .replace(VENDOR_EXPLORER_TAB_LOAD_NEEDLE, VENDOR_EXPLORER_TAB_LOAD_PATCH)
+    .replace(VENDOR_EXPLORER_FOLDER_BIND_NEEDLE, VENDOR_EXPLORER_FOLDER_BIND_PATCH)
+    .replace(VENDOR_EXPLORER_FILTER_ET_NEEDLE, VENDOR_EXPLORER_FILTER_ET_PATCH)
     .replace(VENDOR_PRESET_QT_NEEDLE, VENDOR_PRESET_QT_PATCH)
     .replace(VENDOR_PRESET_UN_NEEDLE, VENDOR_PRESET_UN_PATCH)
     .replace(VENDOR_PRESET_HTML_NEEDLE, VENDOR_PRESET_HTML_PATCH)
@@ -4078,6 +4788,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_OVERLAY_HELP_NEEDLE, VENDOR_OVERLAY_HELP_PATCH)
     .replace(VENDOR_HEAD_HELP_DEFAULT_NEEDLE, VENDOR_HEAD_HELP_DEFAULT_PATCH)
     .replace(VENDOR_EXPLORER_CARD_IMG_NEEDLE, VENDOR_EXPLORER_CARD_IMG_PATCH)
+    .replace(VENDOR_EXPLORER_CAP_CSS_NEEDLE, VENDOR_EXPLORER_CAP_CSS_PATCH)
+    .replace(VENDOR_EXPLORER_TIP_BIND_NEEDLE, VENDOR_EXPLORER_TIP_BIND_PATCH)
+    .replace(VENDOR_EXPLORER_LONGPRESS_NEEDLE, VENDOR_EXPLORER_LONGPRESS_PATCH)
+    .replace(VENDOR_EXPLORER_CTX_DISMISS_NEEDLE, VENDOR_EXPLORER_CTX_DISMISS_PATCH)
     .replace(VENDOR_VIEWER_THUMB_SHELL_NEEDLE, VENDOR_VIEWER_THUMB_SHELL_PATCH)
     .replaceAll(VENDOR_STICKY_COVER_NEEDLE, VENDOR_STICKY_COVER_PATCH)
     .replaceAll(VENDOR_STICKY_SHELL_BG_NEEDLE, VENDOR_STICKY_SHELL_BG_PATCH)

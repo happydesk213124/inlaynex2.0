@@ -146,6 +146,174 @@ export function thumbMinWidth(size: ThumbSize = 'm'): number {
   return 148;
 }
 
+/** How many explorer cards to keep mounted around the scroll position. */
+export const EXPLORER_WINDOW_SIZE = 100;
+
+/**
+ * Extra grid rows above/below the visible viewport (react-window style overscan).
+ * Visible cells + overscan is what real galleries mount — not a fixed “100 around center”.
+ */
+export const EXPLORER_OVERSCAN_ROWS = 2;
+
+/** One character×chat folder row from `/v1/gallery/explore`. */
+export interface ExplorerFolderRow {
+  key?: string;
+  character_id?: string;
+  character_name?: string;
+  chat_id?: string;
+  chat_name?: string;
+  count?: number;
+  [key: string]: unknown;
+}
+
+/** Character-grouped sidebar node (chats nested under one name). */
+export interface ExplorerFolderGroup {
+  characterKey: string;
+  characterName: string;
+  chats: ExplorerFolderRow[];
+  count: number;
+}
+
+/** Nest explore folders by character_id (fallback: character_name). */
+export function groupExplorerFolders(folders: ExplorerFolderRow[] = []): ExplorerFolderGroup[] {
+  const map = new Map<string, ExplorerFolderGroup>();
+  const order: string[] = [];
+  for (const folder of folders || []) {
+    if (!folder || typeof folder !== 'object') continue;
+    const characterKey =
+      String(folder.character_id || folder.character_name || 'unknown').trim() || 'unknown';
+    const characterName =
+      String(folder.character_name || characterKey).trim() || characterKey;
+    let group = map.get(characterKey);
+    if (!group) {
+      group = { characterKey, characterName, chats: [], count: 0 };
+      map.set(characterKey, group);
+      order.push(characterKey);
+    }
+    group.chats.push(folder);
+    group.count += Number(folder.count) || 0;
+  }
+  return order.map((key) => map.get(key)!);
+}
+
+/** Prefix for “이 캐릭터 전체보기” folder keys (`__char__:<characterKey>`). */
+export const EXPLORER_CHAR_FOLDER_PREFIX = '__char__:';
+
+export function explorerCharFolderKey(characterKey: string): string {
+  return `${EXPLORER_CHAR_FOLDER_PREFIX}${String(characterKey || '').trim()}`;
+}
+
+export function parseExplorerCharFolderKey(folderKey: unknown): string {
+  const cur = String(folderKey || '');
+  if (!cur.startsWith(EXPLORER_CHAR_FOLDER_PREFIX)) return '';
+  return cur.slice(EXPLORER_CHAR_FOLDER_PREFIX.length).trim();
+}
+
+/**
+ * Never auto-open 통합보기. Keep `__all__` / `__char__:…` only if valid;
+ * empty/invalid → `__pick__` (idle empty grid).
+ */
+export function defaultExplorerFolderKey(
+  folders: Array<{ key?: string; character_id?: string; character_name?: string } | null | undefined> = [],
+  current: unknown = '',
+): string {
+  const cur = String(current || '');
+  if (cur === '__all__') return '__all__';
+  if (cur === '__pick__' || !cur) return '__pick__';
+  const charKey = parseExplorerCharFolderKey(cur);
+  if (charKey) {
+    if (
+      (folders || []).some((f) => {
+        if (!f) return false;
+        const key = String(f.character_id || f.character_name || '').trim();
+        return key === charKey;
+      })
+    ) {
+      return explorerCharFolderKey(charKey);
+    }
+    return '__pick__';
+  }
+  if ((folders || []).some((f) => f && String(f.key || '') === cur)) return cur;
+  return '__pick__';
+}
+
+/** Folder keys belonging to one character group (for 전체보기 filter). */
+export function explorerFolderKeysForCharacter(
+  folders: Array<{ key?: string; character_id?: string; character_name?: string } | null | undefined> = [],
+  characterKey: string,
+): string[] {
+  const ck = String(characterKey || '').trim();
+  if (!ck) return [];
+  return (folders || [])
+    .filter((f) => f && String(f.character_id || f.character_name || '').trim() === ck)
+    .map((f) => String(f?.key || ''))
+    .filter(Boolean);
+}
+
+export interface ExplorerWindowRangeInput {
+  itemCount?: number;
+  scrollTop?: number;
+  clientHeight?: number;
+  gridWidth?: number;
+  thumbMin?: number;
+  gap?: number;
+  /** @deprecated Ignored — window is viewport + overscanRows (kept for call-site compat). */
+  windowSize?: number;
+  /** Rows above/below the visible band to keep mounted. */
+  overscanRows?: number;
+  /** Caption is overlaid on the thumb — no extra row height below the image. */
+  cardExtra?: number;
+}
+
+export interface ExplorerWindowRange {
+  start: number;
+  end: number;
+  topPad: number;
+  bottomPad: number;
+  cols: number;
+  rowH: number;
+}
+
+/**
+ * Viewport virtualization for the explorer CSS grid (3:4 thumbs).
+ * Mounts only visible rows ± `overscanRows` — the usual gallery pattern
+ * (same idea as react-window / virtuoso), not a fixed center batch of 100.
+ */
+export function explorerWindowRange(input: ExplorerWindowRangeInput = {}): ExplorerWindowRange {
+  const count = Math.max(0, Math.floor(Number(input.itemCount) || 0));
+  const gap = Math.max(0, Number(input.gap) || 12);
+  const thumbMin = Math.max(48, Number(input.thumbMin) || 148);
+  const cardExtra = Math.max(0, Number(input.cardExtra) || 0);
+  const gridWidth = Math.max(thumbMin, Number(input.gridWidth) || 600);
+  const clientHeight = Math.max(1, Number(input.clientHeight) || 620);
+  const scrollTop = Math.max(0, Number(input.scrollTop) || 0);
+  const overscan = Math.max(0, Math.floor(Number(input.overscanRows) || EXPLORER_OVERSCAN_ROWS));
+
+  const cols = Math.max(1, Math.floor((gridWidth + gap) / (thumbMin + gap)));
+  // Match .explorer-card img aspect-ratio:4/5 → height = width * 5/4.
+  const thumbH = thumbMin * (5 / 4);
+  const rowH = thumbH + cardExtra + gap;
+  const totalRows = count ? Math.ceil(count / cols) : 0;
+  const totalH = totalRows * rowH;
+
+  if (!count) {
+    return { start: 0, end: 0, topPad: 0, bottomPad: 0, cols, rowH };
+  }
+
+  const firstVisibleRow = Math.min(
+    Math.max(0, totalRows - 1),
+    Math.floor(scrollTop / rowH),
+  );
+  const visibleRows = Math.max(1, Math.ceil(clientHeight / rowH) + 1);
+  const startRow = Math.max(0, firstVisibleRow - overscan);
+  const endRow = Math.min(totalRows, firstVisibleRow + visibleRows + overscan);
+  const start = startRow * cols;
+  const end = Math.min(count, endRow * cols);
+  const topPad = startRow * rowH;
+  const bottomPad = Math.max(0, totalH - endRow * rowH);
+  return { start, end, topPad, bottomPad, cols, rowH };
+}
+
 /** Reorder by an explicit id list; anything not named keeps its relative order at the end. */
 export function reorderByIds<T>(list: T[] = [], orderedIds: Array<string | number> = []): T[] {
   // Entries may be card objects or bare ids, so key on `.id` when there is one.

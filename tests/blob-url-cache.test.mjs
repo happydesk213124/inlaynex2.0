@@ -34,3 +34,15 @@ test("BlobUrlCache get touches LRU order", () => {
   assert.ok(cache.get("a"));
   assert.equal(cache.get("b"), undefined);
 });
+
+test("BlobUrlCache retainOnly drops unpinned immediately", () => {
+  const cache = new BlobUrlCache(1000);
+  cache.set("a", "a".repeat(10));
+  cache.set("b", "b".repeat(10));
+  cache.set("c", "c".repeat(10));
+  cache.retainOnly(["b"]);
+  assert.equal(cache.get("a"), undefined);
+  assert.ok(cache.get("b"));
+  assert.equal(cache.get("c"), undefined);
+  assert.deepEqual(cache.pinnedIds(), ["b"]);
+});

@@ -175,7 +175,7 @@ export interface ShotCharacter {
   appearance?: string;
   attire?: string;
   accessories?: string;
-  /** When on: caption uses nude + jewelry from attire (no clothes). */
+  /** Nude level: 0/off · 1/torn · 2/nude · 3/completely (keeps attire tags). */
   nude?: boolean | string | number;
   /** When on: include accessories (weapons/props) in the caption. */
   weapon?: boolean | string | number;

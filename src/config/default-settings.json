@@ -91,6 +91,7 @@
     "floating_viewer": true,
     "overlay_markers": true,
     "inline_chat_images": false,
+    "progress_toast": false,
     "llm_anchor_percent": true,
     "natural_base": "short",
     "composition_curation": false,

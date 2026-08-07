@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.2';
+const PLUGIN_VERSION = '2.2.3';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -623,6 +623,15 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.3</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>설정 패널 열 때 샷/캐릭 수정과 같이 스티키 0%·핀/화살표 숨김·플로팅 뷰어 숨김 · 닫으면 복원</li>
+            <li>재생성·태그 플로팅 프리셋 목록: 패널 밖 클릭도 선택 가능</li>
+            <li>뷰어 썸네일 스트립: 네이티브 스크롤 대신 transform 자체 스크롤(터치·휠·중클릭 드래그)</li>
+            <li>썸네일 선택 후 스크롤 위치 유지 · 뷰어 본문 네이티브 스크롤 차단 · img 드래그 가로채기 방지</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.2</strong>
@@ -2429,7 +2438,8 @@ const VENDOR_STICKY_LA_PATCH = `  function La() {
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     const alwaysOn = Nt();
     const userCollapsed = !!ov._stickyThumbCollapsed;
-    const editorOpen = !!ov._stickyEditorOpen || !!t.cardTagUi || !!t.charEditUi;
+    // Settings panel (t.uiOpen) same as shot/char edit: collapse always-image to 0%.
+    const editorOpen = !!ov._stickyEditorOpen || !!t.uiOpen || !!t.cardTagUi || !!t.charEditUi;
     const pct = typeof VC?.resolveStickyThumbPct == "function"
       ? VC.resolveStickyThumbPct({ settingsPct: n, alwaysOn, userCollapsed, editorOpen })
       : alwaysOn && !userCollapsed && !editorOpen ? Math.max(0, n) : 0;
@@ -2608,7 +2618,7 @@ const VENDOR_EXPLORER_CTX_DISMISS_PATCH =
 const VENDOR_VIEWER_THUMB_SHELL_NEEDLE =
   '}, thumbShellStyle = (on, split) => `width:64px;height:88px;object-fit:cover;border-radius:8px;cursor:pointer;opacity:${on ? 1 : 0.45};outline:${on ? "3px solid #a78bfa" : "1px solid rgba(255,255,255,.08)"};outline-offset:${on ? "1px" : "0"};background:#111827;flex:0 0 auto;transform:${on ? "scale(1.04)" : "none"};box-shadow:${on ? "0 0 0 1px rgba(124,108,255,.55),0 6px 16px rgba(0,0,0,.45)" : "none"};${split ? "margin-left:4px;" : ""}`, refreshThumbsRect = async () => {';
 const VENDOR_VIEWER_THUMB_SHELL_PATCH =
-  '}, thumbShellStyle = (on, split) => `width:64px;height:88px;object-fit:contain;border-radius:8px;cursor:pointer;opacity:${on ? 1 : 0.45};outline:${on ? "3px solid #a78bfa" : "1px solid rgba(255,255,255,.08)"};outline-offset:${on ? "1px" : "0"};background:#111827;flex:0 0 auto;transform:${on ? "scale(1.04)" : "none"};box-shadow:${on ? "0 0 0 1px rgba(124,108,255,.55),0 6px 16px rgba(0,0,0,.45)" : "none"};${split ? "margin-left:4px;" : ""}`, refreshThumbsRect = async () => {';
+  '}, thumbShellStyle = (on, split) => `width:64px;height:88px;object-fit:contain;border-radius:8px;cursor:grab;opacity:${on ? 1 : 0.45};outline:${on ? "3px solid #a78bfa" : "1px solid rgba(255,255,255,.08)"};outline-offset:${on ? "1px" : "0"};background:#111827;flex:0 0 auto;transform:${on ? "scale(1.04)" : "none"};box-shadow:${on ? "0 0 0 1px rgba(124,108,255,.55),0 6px 16px rgba(0,0,0,.45)" : "none"};-webkit-user-drag:none;user-drag:none;user-select:none;${split ? "margin-left:4px;" : ""}`, refreshThumbsRect = async () => {';
 
 
 const VENDOR_STICKY_KEEP_NEEDLE = `    const keepHidden = typeof VC?.shouldKeepStickyThumbHidden == "function" ? VC.shouldKeepStickyThumbHidden(!!e._stickyThumbUserHidden, e._stickyThumbHiddenId, activeIdNow) : !!(e._stickyThumbUserHidden && String(e._stickyThumbHiddenId || "") === String(activeIdNow || "") && activeIdNow);
@@ -3242,11 +3252,12 @@ const VENDOR_STICKY_CLOSE_CARD_PATCH = `  async function closeCardTagEdit() {
       await k.hideContainer();
     } catch {
     }
-    if (t.overlayUi && !t.charEditUi) {
+    // Settings open calls xe()/close helpers while hiding viewer — do not undo that.
+    if (t.overlayUi && !t.charEditUi && !t.uiOpen) {
       t.overlayUi._stickyEditorOpen = !1;
       try { await Ht(); } catch {}
     }
-    if (!t.charEditUi) try { await restoreFloatingViewerAfterModal(); } catch {}
+    if (!t.charEditUi && !t.uiOpen) try { await restoreFloatingViewerAfterModal(); } catch {}
   }`;
 
 const VENDOR_STICKY_CLOSE_CHAR_NEEDLE = `    if (t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), o && !t.uiOpen && typeof k.hideContainer == "function") try {
@@ -3269,13 +3280,106 @@ const VENDOR_STICKY_CLOSE_CHAR_PATCH = `    if (t.charEditUi = null, t.autotagFo
       await t.galleryUi.renderCast();
     } catch {
     }
-    if (t.overlayUi && !t.cardTagUi) {
+    // At() always calls xe() after hideFloatingViewerForModal — skip restore while settings open.
+    if (t.overlayUi && !t.cardTagUi && !t.uiOpen) {
       t.overlayUi._stickyEditorOpen = !1;
       try { await Ht(); } catch {}
     }
-    if (!t.cardTagUi) try { await restoreFloatingViewerAfterModal(); } catch {}
+    if (!t.cardTagUi && !t.uiOpen) try { await restoreFloatingViewerAfterModal(); } catch {}
   }
   async function Ua(e) {`;
+
+/** Settings open: same sticky 0% + viewer hide as shot/char edit (markers live outside overlay root). */
+const VENDOR_SETTINGS_OPEN_STICKY_NEEDLE = `  async function At() {
+    t.uiOpen = !0;
+    // Re-open settings with whatever the viewer last selected.`;
+const VENDOR_SETTINGS_OPEN_STICKY_PATCH = `  async function At() {
+    if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
+    try { await hideFloatingViewerForModal(); } catch {}
+    try { await Ht(); } catch {}
+    t.uiOpen = !0;
+    // Re-open settings with whatever the viewer last selected.`;
+
+/** After xe() cleanup in At(), re-hide viewer+panel (xe used to restore them). */
+const VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE = `      const hide = "position:fixed;left:0;top:0;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden;";
+      for (const ui of [t.galleryUi?.root, t.overlayUi?.root, t.debugUi?.root, t.overlayUi?.pinned, t.overlayUi?.preview, t.overlayUi?.fullscreen]) {
+        if (ui && typeof ui.setStyleAttribute == "function") ui.setStyleAttribute(hide).catch(() => {
+        });
+      }
+    } catch {
+    }
+    armSettingsCloseWatch();
+    try {
+      await xe();
+    } catch {
+      t.charEditUi = null;
+    }
+    try {
+      document.body.innerHTML = "";
+    } catch {
+    }
+    t.charEditUi = null;
+    try {
+      await ia();
+    } catch {
+    }
+    typeof k.showContainer == "function" && await k.showContainer("fullscreen");`;
+const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH = `      const hide = "position:fixed;left:0;top:0;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden;";
+      // Panel is position:fixed — must hide it too (root alone does not cover it).
+      for (const ui of [t.galleryUi?.root, t.galleryUi?.panel, t.overlayUi?.root, t.debugUi?.root, t.overlayUi?.pinned, t.overlayUi?.preview, t.overlayUi?.fullscreen]) {
+        if (ui && typeof ui.setStyleAttribute == "function") ui.setStyleAttribute(hide).catch(() => {
+        });
+      }
+    } catch {
+    }
+    armSettingsCloseWatch();
+    try {
+      await xe();
+    } catch {
+      t.charEditUi = null;
+    }
+    try {
+      document.body.innerHTML = "";
+    } catch {
+    }
+    t.charEditUi = null;
+    try {
+      await ia();
+    } catch {
+    }
+    typeof k.showContainer == "function" && await k.showContainer("fullscreen");
+    // xe() must not restore viewer while settings stay open; re-assert hide after showContainer.
+    if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
+    try { await hideFloatingViewerForModal(); } catch {}
+    try { await Ht(); } catch {}`;
+
+/** Settings close (nx-close): clear sticky editor flag + restore floating viewer before remount. */
+const VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE = `      t.uiOpen = !1, t._debugTabTimer && (clearInterval(t._debugTabTimer), t._debugTabTimer = null), t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), t._settingsWatch && (clearInterval(t._settingsWatch), t._settingsWatch = null);
+      try {
+        await blockHostChrome(!1);
+      } catch {
+      }
+      typeof k.hideContainer == "function" && await k.hideContainer(), invalidateOverlayLayoutCache();`;
+const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `      t.uiOpen = !1, t._debugTabTimer && (clearInterval(t._debugTabTimer), t._debugTabTimer = null), t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), t._settingsWatch && (clearInterval(t._settingsWatch), t._settingsWatch = null);
+      if (t.overlayUi) t.overlayUi._stickyEditorOpen = !1;
+      try { await restoreFloatingViewerAfterModal(); } catch {}
+      try {
+        await blockHostChrome(!1);
+      } catch {
+      }
+      typeof k.hideContainer == "function" && await k.hideContainer(), invalidateOverlayLayoutCache();`;
+
+/** Settings shell vanished (host closed UI): same sticky/viewer restore as nx-close. */
+const VENDOR_SETTINGS_WATCH_STICKY_NEEDLE = `        t.uiOpen = !1, t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), clearInterval(t._settingsWatch), t._settingsWatch = null;
+        flushSettingsSave().catch(() => {
+        }), blockHostChrome(!1).catch(() => {
+        }), y("info", "settings.closed", "host ui restore");`;
+const VENDOR_SETTINGS_WATCH_STICKY_PATCH = `        t.uiOpen = !1, t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), clearInterval(t._settingsWatch), t._settingsWatch = null;
+        if (t.overlayUi) t.overlayUi._stickyEditorOpen = !1;
+        restoreFloatingViewerAfterModal().catch(() => {}), Ht().catch(() => {});
+        flushSettingsSave().catch(() => {
+        }), blockHostChrome(!1).catch(() => {
+        }), y("info", "settings.closed", "host ui restore");`;
 
 /** Char create/edit: gender select + autotag gender (asserted vendor patches). */
 const VENDOR_AUTOTAG_LT_NEEDLE = `    return o(\`LLM 태그 완료 · 외형/의상/악세 \${count ? \`\${count}토큰\` : "반영"}\`, "ok"), {
@@ -4967,15 +5071,19 @@ const VENDOR_PIN_OFFSCREEN_NEEDLE = `  /** Sticky pin left = viewport-width % fr
   }`;
 const VENDOR_PIN_OFFSCREEN_PATCH = `  /** Sticky pin left = viewport-width % from left (host viewport, not plugin iframe). */
   function resolvePinLeftX() {
-    // Overlay OFF: park far off-screen instead of tearing down markers (avoids lag).
-    if (typeof overlayVisualOn == "function" ? !overlayVisualOn() : t.backendSettings?.card?.overlay_markers === !1) return -99999;
+    // Overlay OFF / settings / shot·char edit: park pin+arrows off-screen (opacity alone still hit-tests).
+    const chromeHidden = (typeof overlayVisualOn == "function" ? !overlayVisualOn() : t.backendSettings?.card?.overlay_markers === !1)
+      || !!t.uiOpen || !!t.overlayUi?._stickyEditorOpen || !!t.cardTagUi || !!t.charEditUi;
+    if (chromeHidden) return -99999;
     const VC = globalThis.__INLAY_VIEWER_CORE__, pinW = Pt, vw = viewerViewport().vw, pct = getPinXPct();
     if (typeof VC?.pinPercentToPx == "function") return VC.pinPercentToPx(pct, vw, pinW, 4);
     return Math.max(4, Math.min(vw - pinW - 4, Math.round(vw * pct / 100)));
   }
   /** Sticky pin top = viewport-height % from bottom (CSS top; host viewport). */
   function resolvePinTopY(pinSize = Pt) {
-    if (typeof overlayVisualOn == "function" ? !overlayVisualOn() : t.backendSettings?.card?.overlay_markers === !1) return -99999;
+    const chromeHidden = (typeof overlayVisualOn == "function" ? !overlayVisualOn() : t.backendSettings?.card?.overlay_markers === !1)
+      || !!t.uiOpen || !!t.overlayUi?._stickyEditorOpen || !!t.cardTagUi || !!t.charEditUi;
+    if (chromeHidden) return -99999;
     const VC = globalThis.__INLAY_VIEWER_CORE__, vh = viewerViewport().vh, pct = getPinYPct();
     if (typeof VC?.pinPercentToPxFromBottom == "function") return VC.pinPercentToPxFromBottom(pct, vh, pinSize, 8);
     const fromBottom = Math.floor(vh * pct / 100);
@@ -5050,8 +5158,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.2",
-    body: "LLM 역할별 모델 탭 · 명령수정 · 상시 0%/오버레이 OFF 가림 · 말풍선 시 스티키 포인터 추적. 업데이트 내역 탭 참고."
+    title: "2.2.3",
+    body: "설정 열 때 뷰어/스티키 숨김 · 썸네일 transform 스크롤(휠·중클릭·터치) · 프리셋 목록 클릭 수정. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -5804,6 +5912,344 @@ const VENDOR_ACTIONS_PRESET_LIVE_NEEDLE =
 const VENDOR_ACTIONS_PRESET_LIVE_PATCH =
   `      const presetChromeLive = !d.minimized || viewerMinimizeMode() === "toolbar" || viewerMinimizeMode() === "actions";`;
 
+const VENDOR_PRESET_MENU_HIT_NEEDLE =
+  `      // Ignore non-primary buttons (middle-click message jump removed — never reliable on SafeDOM).
+      if (Number(A?.button) != null && Number(A.button) !== 0) return;
+      const _ = A.clientX, O = A.clientY;
+      if (!await X(r, _, O)) return;`;
+const VENDOR_PRESET_MENU_HIT_PATCH =
+  `      // Left = normal UI; middle (wheel) button = thumb-strip drag scroll on desktop.
+      const btn = Number(A?.button);
+      const _ = A.clientX, O = A.clientY;
+      if (Number.isFinite(btn) && btn !== 0) {
+        if (btn === 1 && !t.uiOpen && !t._hostChromeBlocked && !d.minimized && await X(r, _, O) && await X(E, _, O)) {
+          try { A.preventDefault?.(); } catch {}
+          await startThumbsDrag(A, _, O, { scrollOnly: !0 });
+        }
+        return;
+      }
+      // Dropdown uses overflow:visible under a short minimized panel — menu rect can sit outside \`r\`.
+      if (!(await X(r, _, O) || d.presetMenuOpen && d.presetMenu && await X(d.presetMenu, _, O))) return;`;
+
+/** Thumb strip: custom transform scroll (SafeDOM scrollLeft/rects drift; mobile drag + wheel). */
+const VENDOR_THUMBS_MOUNT_NEEDLE =
+  `    // Native overflow-x so browser wheel / middle-drag autoscroll can move the strip.
+    // (JS scrollLeft via SafeDOM is unreliable; custom window.wheel was also bound to the wrong window.)
+    }), E = await H(e, "div", { style: "display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding-bottom:2px;flex-shrink:0;min-height:92px;max-height:92px;align-items:center;width:100%;box-sizing:border-box;" }), j = await H(e, "div", { style: "display:flex;flex-wrap:nowrap;gap:6px;align-items:center;color:#a6b1c2;font-size:11px;flex:0 0 auto;min-height:34px;height:34px;max-height:34px;overflow:hidden;cursor:pointer;pointer-events:auto;box-sizing:border-box;" });
+    await b.appendChild(S), await b.appendChild(C), await b.appendChild(E), await b.appendChild(j), await r.appendChild(i), await r.appendChild(viewerPresetMenu), await r.appendChild(p), await r.appendChild(b), await a.appendChild(r);`;
+const VENDOR_THUMBS_MOUNT_PATCH =
+  `    // Custom transform scroll — we own the offset (native scrollLeft is untrustworthy in SafeDOM).
+    }), E = await H(e, "div", { style: "overflow:hidden;position:relative;padding-bottom:2px;flex-shrink:0;min-height:92px;max-height:92px;width:100%;box-sizing:border-box;touch-action:none;cursor:grab;" }), thumbsTrack = await H(e, "div", { style: "display:flex;gap:8px;align-items:center;width:max-content;max-width:none;transform:translate3d(0,0,0);will-change:transform;touch-action:none;" }), j = await H(e, "div", { style: "display:flex;flex-wrap:nowrap;gap:6px;align-items:center;color:#a6b1c2;font-size:11px;flex:0 0 auto;min-height:34px;height:34px;max-height:34px;overflow:hidden;cursor:pointer;pointer-events:auto;box-sizing:border-box;" });
+    await b.appendChild(S), await b.appendChild(C), await E.appendChild(thumbsTrack), await b.appendChild(E), await b.appendChild(j), await r.appendChild(i), await r.appendChild(viewerPresetMenu), await r.appendChild(p), await r.appendChild(b), await a.appendChild(r);`;
+
+const VENDOR_THUMBS_STATE_NEEDLE =
+  `      preview: S,
+      thumbs: E,
+      meta: j,`;
+const VENDOR_THUMBS_STATE_PATCH =
+  `      preview: S,
+      thumbs: E,
+      thumbsTrack,
+      meta: j,`;
+
+const VENDOR_THUMBS_HELPERS_NEEDLE =
+  `refreshThumbsRect = async () => {
+      try {
+        d._thumbsRect = await E.getBoundingClientRect(), d._thumbsRectAt = Date.now();
+      } catch {
+        d._thumbsRect = null;
+      }
+    }, paintThumbsChrome = async (items, idx) => {`;
+const VENDOR_THUMBS_HELPERS_PATCH =
+  `refreshThumbsRect = async () => {
+      try {
+        d._thumbsRect = await E.getBoundingClientRect(), d._thumbsRectAt = Date.now();
+      } catch {
+        d._thumbsRect = null;
+      }
+    }, thumbsPaintEl = () => d.thumbsTrack || E, thumbsMaxOffset = () => {
+      const items = Array.isArray(d.items) && d.items.length ? d.items : U(), VC = globalThis.__INLAY_VIEWER_CORE__;
+      const contentW = typeof VC?.galleryStripContentWidth == "function" ? VC.galleryStripContentWidth({ count: items.length, selectedCount: d.selectedCount || selectedCountOf(items) || 0 }) : 0;
+      return Math.max(0, contentW - Math.max(1, Number(d._thumbsRect?.width) || 1));
+    }, applyThumbsOffset = async () => {
+      const el = thumbsPaintEl(), x = Math.max(0, Number(d._thumbsScrollLeft) || 0);
+      d._thumbsScrollLeft = x;
+      try {
+        el && typeof el.setStyleAttribute == "function" && await el.setStyleAttribute(\`display:flex;gap:8px;align-items:center;width:max-content;max-width:none;transform:translate3d(\${-x}px,0,0);will-change:transform;touch-action:none;\`);
+      } catch {
+      }
+    }, setThumbsOffset = async (next, opts = {}) => {
+      if (opts.refresh) await refreshThumbsRect();
+      d._thumbsScrollLeft = Math.max(0, Math.min(thumbsMaxOffset(), Number(next) || 0));
+      await applyThumbsOffset();
+      return d._thumbsScrollLeft;
+    }, paintThumbsChrome = async (items, idx) => {`;
+
+const VENDOR_THUMB_HIT_NEEDLE =
+  `    }, hitThumbAt = async (x, y) => {
+      // Geometry hit-test — SafeDOM getBoundingClientRect on setInnerHTML <img> drifts past \`|\`.
+      const items = Array.isArray(d.items) && d.items.length ? d.items : U();
+      if (!items.length) return -1;
+      try {
+        await refreshThumbsRect();
+        const strip = d._thumbsRect;
+        if (!strip || x < strip.left || x > strip.right || y < strip.top || y > strip.bottom) return -1;
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const scrollLeft = await getScrollLeftSafe(E);
+        const localX = x - strip.left + scrollLeft;
+        if (typeof VC?.thumbIndexAtStripX == "function") {
+          return VC.thumbIndexAtStripX(localX, {
+            count: items.length,
+            selectedCount: d.selectedCount || selectedCountOf(items) || 0
+          });
+        }
+      } catch {
+      }
+      return -1;
+    }, T = async (mode = "full") => {`;
+const VENDOR_THUMB_HIT_PATCH =
+  `    }, hitThumbAt = async (x, y) => {
+      // Same owned offset as transform scroll — never read SafeDOM scrollLeft.
+      const items = Array.isArray(d.items) && d.items.length ? d.items : U();
+      if (!items.length) return -1;
+      try {
+        await refreshThumbsRect();
+        const strip = d._thumbsRect;
+        if (!strip || x < strip.left || x > strip.right || y < strip.top || y > strip.bottom) return -1;
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const scrollLeft = Math.max(0, Number(d._thumbsScrollLeft) || 0);
+        const localX = x - strip.left + scrollLeft;
+        if (typeof VC?.thumbIndexAtStripX == "function") {
+          return VC.thumbIndexAtStripX(localX, {
+            count: items.length,
+            selectedCount: d.selectedCount || selectedCountOf(items) || 0
+          });
+        }
+      } catch {
+      }
+      return -1;
+    }, T = async (mode = "full") => {`;
+
+const VENDOR_THUMB_SCROLL_INIT_NEEDLE =
+  `    d._thumbsRect = null;
+    d._thumbsRectAt = 0;
+    d._thumbWheelTargets = [];`;
+const VENDOR_THUMB_SCROLL_INIT_PATCH =
+  `    d._thumbsRect = null;
+    d._thumbsRectAt = 0;
+    d._thumbsScrollLeft = 0;
+    d.thumbsDrag = null;
+    d._thumbWheelTargets = [];`;
+
+const VENDOR_THUMB_SCROLL_WHEEL_NEEDLE =
+  `    d._thumbWheel = (ev) => {
+      if (t.uiOpen || t._hostChromeBlocked || d.minimized || d.drag) return;
+      const x = ev?.clientX, y = ev?.clientY;
+      if (typeof x != "number" || typeof y != "number") return;
+      const dx = Number(ev.deltaX) || 0, dy = Number(ev.deltaY) || 0, delta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+      if (!delta) return;
+      const rect = d._thumbsRect;
+      // Fast sync reject when we have a fresh rect; otherwise refresh async and nudge.
+      if (rect && (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom)) return;
+      (async () => {
+        await refreshThumbsRect();
+        const live = d._thumbsRect;
+        if (!live || x < live.left || x > live.right || y < live.top || y > live.bottom) return;
+        const before = await getScrollLeftSafe(E);
+        const ok = await setScrollLeftSafe(E, before + delta);
+        const after = await getScrollLeftSafe(E);
+        if (ok && Math.abs(after - before) >= 0.5) {
+          try {
+            ev.preventDefault?.(), ev.stopPropagation?.();
+          } catch {
+          }
+          return;
+        }
+        // Native overflow may still handle the event if we did not cancel it.
+        // If scroll is stuck at an edge, step the selected thumbnail.
+        if (Math.abs(after - before) < 0.5) await selectGalIndex(d.index + (delta > 0 ? 1 : -1));
+      })().catch(() => {
+      });
+    };`;
+const VENDOR_THUMB_SCROLL_WHEEL_PATCH =
+  `    d._thumbWheel = (ev) => {
+      if (t.uiOpen || t._hostChromeBlocked || d.minimized || d.drag || d.thumbsDrag) return;
+      const x = ev?.clientX, y = ev?.clientY;
+      if (typeof x != "number" || typeof y != "number") return;
+      const dx = Number(ev.deltaX) || 0, dy = Number(ev.deltaY) || 0, delta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+      if (!delta) return;
+      const rect = d._thumbsRect;
+      // Sync reject + preventDefault BEFORE await — otherwise viewer body native-scrolls first.
+      if (rect && (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom)) return;
+      try {
+        ev.preventDefault?.(), ev.stopPropagation?.();
+      } catch {
+      }
+      (async () => {
+        await refreshThumbsRect();
+        const live = d._thumbsRect;
+        if (!live || x < live.left || x > live.right || y < live.top || y > live.bottom) return;
+        const before = Math.max(0, Number(d._thumbsScrollLeft) || 0);
+        const next = await setThumbsOffset(before + delta, { refresh: !1 });
+        if (Math.abs(next - before) < 0.5) await selectGalIndex(d.index + (delta > 0 ? 1 : -1));
+      })().catch(() => {
+      });
+    };`;
+
+/** Viewer body must not native-scroll — steals wheel/touch from the transform thumb strip. */
+const VENDOR_VIEWER_BODY_OVERFLOW_NEEDLE =
+  `const b = await H(e, "div", { style: \`flex:1;min-height:0;overflow:auto;padding:8px 10px;display:\${minimizedInit ? "none" : "flex"};flex-direction:column;gap:6px;\` })`;
+const VENDOR_VIEWER_BODY_OVERFLOW_PATCH =
+  `const b = await H(e, "div", { style: \`flex:1;min-height:0;overflow:hidden;padding:8px 10px;display:\${minimizedInit ? "none" : "flex"};flex-direction:column;gap:6px;\` })`;
+
+const VENDOR_VIEWER_BODY_OVERFLOW_CHROME_NEEDLE =
+  `await b.setStyleAttribute(\`flex:1;min-height:0;overflow:auto;padding:8px 10px;display:\${d.minimized ? "none" : "flex"};flex-direction:column;gap:6px;\`);`;
+const VENDOR_VIEWER_BODY_OVERFLOW_CHROME_PATCH =
+  `await b.setStyleAttribute(\`flex:1;min-height:0;overflow:hidden;padding:8px 10px;display:\${d.minimized ? "none" : "flex"};flex-direction:column;gap:6px;\`);`;
+
+const VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE =
+  `        thumbBits.push(\`<img data-gal-idx="\${ut}" src="\${src}" style="\${thumbShellStyle(on, split)}" loading="lazy" decoding="async" />\`);
+      }
+      await E.setInnerHTML(thumbBits.join(""));
+      await refreshThumbsRect();
+    }, paintThumbsQuick = async (idx) => {`;
+const VENDOR_THUMB_SCROLL_RESET_CHROME_PATCH =
+  `        thumbBits.push(\`<img data-gal-idx="\${ut}" draggable="false" src="\${src}" style="\${thumbShellStyle(on, split)}" loading="lazy" decoding="async" />\`);
+      }
+      const keepOff = Math.max(0, Number(d._thumbsScrollLeft) || 0);
+      await thumbsPaintEl().setInnerHTML(thumbBits.join(""));
+      await refreshThumbsRect();
+      await setThumbsOffset(keepOff);
+    }, paintThumbsQuick = async (idx) => {`;
+
+const VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE =
+  `        thumbBits.push(\`<img data-gal-idx="\${ut}" src="\${src || THUMB_PLACEHOLDER}" style="\${shell}" loading="lazy" decoding="async" />\`);
+      }
+      await E.setInnerHTML(thumbBits.join(""));
+      await refreshThumbsRect();
+    }, hitThumbAt = async (x, y) => {`;
+const VENDOR_THUMB_SCROLL_RESET_STRIP_PATCH =
+  `        thumbBits.push(\`<img data-gal-idx="\${ut}" draggable="false" src="\${src || THUMB_PLACEHOLDER}" style="\${shell}" loading="lazy" decoding="async" />\`);
+      }
+      const keepOff = Math.max(0, Number(d._thumbsScrollLeft) || 0);
+      await thumbsPaintEl().setInnerHTML(thumbBits.join(""));
+      await refreshThumbsRect();
+      await setThumbsOffset(keepOff);
+    }, hitThumbAt = async (x, y) => {`;
+
+const VENDOR_THUMBS_KIDS_NEEDLE =
+  `await k.unwarpSafeArray(await E.getChildren())`;
+const VENDOR_THUMBS_KIDS_PATCH =
+  `await k.unwarpSafeArray(await thumbsPaintEl().getChildren())`;
+
+const VENDOR_THUMBS_CLEAR_NEEDLE =
+  `await S.setInnerHTML(Le), await E.setInnerHTML(""), d.metaHits = [], d._metaCardId = "", await j.setInnerHTML(""), await paintStatus(), await g();`;
+const VENDOR_THUMBS_CLEAR_PATCH =
+  `await S.setInnerHTML(Le), await thumbsPaintEl().setInnerHTML(""), d._thumbsScrollLeft = 0, await applyThumbsOffset(), d.metaHits = [], d._metaCardId = "", await j.setInnerHTML(""), await paintStatus(), await g();`;
+
+const VENDOR_THUMBS_POINTER_NEEDLE =
+  `        {
+          const galIdx = await hitThumbAt(_, O);
+          if (galIdx >= 0) {
+            await selectGalIndex(galIdx);
+            return;
+          }
+        }`;
+const VENDOR_THUMBS_POINTER_PATCH =
+  `        if (await X(E, _, O)) {
+          try { A.preventDefault?.(); } catch {}
+          await startThumbsDrag(A, _, O);
+          return;
+        }`;
+
+const VENDOR_THUMBS_DRAG_NEEDLE =
+  `    }, startViewerDrag = async (A, _, O, expandOnTap) => {
+      if (!expandOnTap) await v();
+      const B = await e.addEventListener("pointermove", Za), W = await e.addEventListener("pointerup", en), cancelId = await e.addEventListener("pointercancel", onViewerDragCancel);
+      d.drag = {
+        startCX: _,
+        startCY: O,
+        originX: d.geo.left,
+        originY: d.geo.top,
+        moved: !1,
+        expandOnTap: !!expandOnTap,
+        moveId: B,
+        upId: W,
+        cancelId,
+        lastApply: 0
+      };
+    }, tn = async (A) => {`;
+const VENDOR_THUMBS_DRAG_PATCH =
+  `    }, onThumbsDragMove = async (A) => {
+      if (!d.thumbsDrag || d.drag) return;
+      const cx = Number(A?.clientX), cy = Number(A?.clientY);
+      if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+      const dx = cx - d.thumbsDrag.startX, dy = cy - d.thumbsDrag.startY;
+      // Middle-button / intentional strip drag: move immediately. Left-tap keeps a small slop for click-select.
+      const slop = d.thumbsDrag.scrollOnly ? 1 : 6;
+      if (!d.thumbsDrag.moved && Math.abs(dx) + Math.abs(dy) > slop) d.thumbsDrag.moved = !0;
+      if (!d.thumbsDrag.moved) return;
+      try {
+        A.preventDefault?.();
+      } catch {
+      }
+      await setThumbsOffset(d.thumbsDrag.origin - dx);
+    }, endThumbsDrag = async () => {
+      if (!d.thumbsDrag) return;
+      const { moveId, upId, cancelId, moved, pickX, pickY, scrollOnly } = d.thumbsDrag;
+      d.thumbsDrag = null;
+      try {
+        moveId != null && await e.removeEventListener(moveId);
+      } catch {
+      }
+      try {
+        upId != null && await e.removeEventListener(upId);
+      } catch {
+      }
+      try {
+        cancelId != null && await e.removeEventListener(cancelId);
+      } catch {
+      }
+      if (!moved && !scrollOnly) {
+        const galIdx = await hitThumbAt(pickX, pickY);
+        if (galIdx >= 0) await selectGalIndex(galIdx);
+      }
+    }, startThumbsDrag = async (A, startX, startY, opts = {}) => {
+      if (d.thumbsDrag) await endThumbsDrag();
+      try {
+        A.preventDefault?.();
+      } catch {
+      }
+      const moveId = await e.addEventListener("pointermove", onThumbsDragMove), upId = await e.addEventListener("pointerup", endThumbsDrag), cancelId = await e.addEventListener("pointercancel", endThumbsDrag);
+      d.thumbsDrag = {
+        startX,
+        startY,
+        origin: Math.max(0, Number(d._thumbsScrollLeft) || 0),
+        moved: !1,
+        scrollOnly: !!opts.scrollOnly || Number(A?.button) === 1,
+        pickX: startX,
+        pickY: startY,
+        moveId,
+        upId,
+        cancelId
+      };
+    }, startViewerDrag = async (A, _, O, expandOnTap) => {
+      if (!expandOnTap) await v();
+      const B = await e.addEventListener("pointermove", Za), W = await e.addEventListener("pointerup", en), cancelId = await e.addEventListener("pointercancel", onViewerDragCancel);
+      d.drag = {
+        startCX: _,
+        startCY: O,
+        originX: d.geo.left,
+        originY: d.geo.top,
+        moved: !1,
+        expandOnTap: !!expandOnTap,
+        moveId: B,
+        upId: W,
+        cancelId,
+        lastApply: 0
+      };
+    }, tn = async (A) => {`;
+
 const VENDOR_ACTIONS_POINTER_NEEDLE =
   `      // Icon minimize is its own chrome (tap/drag to move/expand).
       // Toolbar minimize is the SAME header — just hide the body — so keep normal button/preset hit-tests.
@@ -6109,6 +6555,10 @@ const loadVendorUi = (): string => {
     [VENDOR_STICKY_OPEN_CHAR_NEEDLE, 'sticky open char edit'],
     [VENDOR_STICKY_CLOSE_CARD_NEEDLE, 'sticky close card edit'],
     [VENDOR_STICKY_CLOSE_CHAR_NEEDLE, 'sticky close char edit'],
+    [VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, 'settings open sticky hide'],
+    [VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, 'settings At hide panel + rehide'],
+    [VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, 'settings close sticky restore'],
+    [VENDOR_SETTINGS_WATCH_STICKY_NEEDLE, 'settings watch sticky restore'],
     [VENDOR_OVERLAY_MOUNT_NEEDLE, 'overlay keep Ya shell'],
     [VENDOR_OVERLAY_WATCH_NEEDLE, 'overlay watchdog always shell'],
     [VENDOR_OVERLAY_RETRY_NEEDLE, 'overlay retry always shell'],
@@ -6220,6 +6670,20 @@ const loadVendorUi = (): string => {
     [VENDOR_ACTIONS_SAVE_ICON_GEO_NEEDLE, 'actions minimize save icon geo'],
     [VENDOR_ACTIONS_TOGGLE_SAVE_NEEDLE, 'actions minimize toggle save'],
     [VENDOR_ACTIONS_PRESET_LIVE_NEEDLE, 'actions minimize preset live'],
+    [VENDOR_PRESET_MENU_HIT_NEEDLE, 'preset menu hit outside panel'],
+    [VENDOR_THUMBS_MOUNT_NEEDLE, 'thumbs transform mount'],
+    [VENDOR_THUMBS_STATE_NEEDLE, 'thumbs transform state'],
+    [VENDOR_THUMBS_HELPERS_NEEDLE, 'thumbs transform helpers'],
+    [VENDOR_THUMB_HIT_NEEDLE, 'thumb hit owned offset'],
+    [VENDOR_THUMB_SCROLL_INIT_NEEDLE, 'thumb offset init'],
+    [VENDOR_THUMB_SCROLL_WHEEL_NEEDLE, 'thumb transform wheel'],
+    [VENDOR_VIEWER_BODY_OVERFLOW_NEEDLE, 'viewer body overflow hidden'],
+    [VENDOR_VIEWER_BODY_OVERFLOW_CHROME_NEEDLE, 'viewer body chrome overflow hidden'],
+    [VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE, 'thumb paint chrome track'],
+    [VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE, 'thumb paint strip track'],
+    [VENDOR_THUMBS_CLEAR_NEEDLE, 'thumbs clear track'],
+    [VENDOR_THUMBS_POINTER_NEEDLE, 'thumbs pointer drag start'],
+    [VENDOR_THUMBS_DRAG_NEEDLE, 'thumbs drag handlers'],
     [VENDOR_ACTIONS_POINTER_NEEDLE, 'actions minimize pointer'],
     [VENDOR_ACTIONS_DRAG_CLEAR_NEEDLE, 'actions minimize drag clear'],
     [VENDOR_ACTIONS_END_CLEAR_NEEDLE, 'actions minimize end clear'],
@@ -6340,6 +6804,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_STICKY_OPEN_CHAR_NEEDLE, VENDOR_STICKY_OPEN_CHAR_PATCH)
     .replace(VENDOR_STICKY_CLOSE_CARD_NEEDLE, VENDOR_STICKY_CLOSE_CARD_PATCH)
     .replace(VENDOR_STICKY_OPEN_CARD_NEEDLE, VENDOR_STICKY_OPEN_CARD_PATCH)
+    .replace(VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, VENDOR_SETTINGS_OPEN_STICKY_PATCH)
+    .replace(VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH)
+    .replace(VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, VENDOR_SETTINGS_CLOSE_STICKY_PATCH)
+    .replace(VENDOR_SETTINGS_WATCH_STICKY_NEEDLE, VENDOR_SETTINGS_WATCH_STICKY_PATCH)
     .replace(VENDOR_CARD_TAG_ROSTER_REFRESH_NEEDLE, VENDOR_CARD_TAG_ROSTER_REFRESH_PATCH)
     .replace(VENDOR_CARD_TAG_STRIP_PERSON_NEEDLE, VENDOR_CARD_TAG_STRIP_PERSON_PATCH)
     .replace(VENDOR_CARD_TAG_APPLY_WEIGHT_NEEDLE, VENDOR_CARD_TAG_APPLY_WEIGHT_PATCH)
@@ -6435,6 +6903,21 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_ACTIONS_SAVE_ICON_GEO_NEEDLE, VENDOR_ACTIONS_SAVE_ICON_GEO_PATCH)
     .replace(VENDOR_ACTIONS_TOGGLE_SAVE_NEEDLE, VENDOR_ACTIONS_TOGGLE_SAVE_PATCH)
     .replace(VENDOR_ACTIONS_PRESET_LIVE_NEEDLE, VENDOR_ACTIONS_PRESET_LIVE_PATCH)
+    .replace(VENDOR_PRESET_MENU_HIT_NEEDLE, VENDOR_PRESET_MENU_HIT_PATCH)
+    .replace(VENDOR_THUMBS_MOUNT_NEEDLE, VENDOR_THUMBS_MOUNT_PATCH)
+    .replace(VENDOR_THUMBS_STATE_NEEDLE, VENDOR_THUMBS_STATE_PATCH)
+    .replace(VENDOR_THUMBS_HELPERS_NEEDLE, VENDOR_THUMBS_HELPERS_PATCH)
+    .replace(VENDOR_THUMB_HIT_NEEDLE, VENDOR_THUMB_HIT_PATCH)
+    .replace(VENDOR_THUMB_SCROLL_INIT_NEEDLE, VENDOR_THUMB_SCROLL_INIT_PATCH)
+    .replace(VENDOR_THUMB_SCROLL_WHEEL_NEEDLE, VENDOR_THUMB_SCROLL_WHEEL_PATCH)
+    .replace(VENDOR_VIEWER_BODY_OVERFLOW_NEEDLE, VENDOR_VIEWER_BODY_OVERFLOW_PATCH)
+    .replace(VENDOR_VIEWER_BODY_OVERFLOW_CHROME_NEEDLE, VENDOR_VIEWER_BODY_OVERFLOW_CHROME_PATCH)
+    .replace(VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE, VENDOR_THUMB_SCROLL_RESET_CHROME_PATCH)
+    .replace(VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE, VENDOR_THUMB_SCROLL_RESET_STRIP_PATCH)
+    .replaceAll(VENDOR_THUMBS_KIDS_NEEDLE, VENDOR_THUMBS_KIDS_PATCH)
+    .replace(VENDOR_THUMBS_CLEAR_NEEDLE, VENDOR_THUMBS_CLEAR_PATCH)
+    .replace(VENDOR_THUMBS_POINTER_NEEDLE, VENDOR_THUMBS_POINTER_PATCH)
+    .replace(VENDOR_THUMBS_DRAG_NEEDLE, VENDOR_THUMBS_DRAG_PATCH)
     .replace(VENDOR_ACTIONS_POINTER_NEEDLE, VENDOR_ACTIONS_POINTER_PATCH)
     .replace(VENDOR_ACTIONS_DRAG_CLEAR_NEEDLE, VENDOR_ACTIONS_DRAG_CLEAR_PATCH)
     .replace(VENDOR_ACTIONS_END_CLEAR_NEEDLE, VENDOR_ACTIONS_END_CLEAR_PATCH)

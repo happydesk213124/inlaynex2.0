@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.4';
+const PLUGIN_VERSION = '2.2.5';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -623,6 +623,14 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.5</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>성별(girl/boy/other) → 외형 태그 자동 맞춤·카드 저장(완전 일치 토큰 · pretty girl 제외)</li>
+            <li>응답 완료 0.5초 후 선택 말풍선 해시 rebind(스트리밍 중 생성 이미지가 완성본에 자동 연결)</li>
+            <li>성능: data URL 헤더만 probe · 세션 gallery warmMissing off · idle sticky Ce 스킵 · Ce rAF · 스크롤 조상 8 · location hydrate 제거 · 삽화 keep skip</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.4</strong>
@@ -3430,6 +3438,12 @@ const VENDOR_CHAR_CREATE_GENDER_AUTOTAG_PATCH =
         attireEl && (attireEl.value = tags.attire || "");
         accessoriesEl && (accessoriesEl.value = tags.accessories || "");
         genderEl && tags.gender && (genderEl.value = tags.gender);
+        {
+          const VC = globalThis.__INLAY_VIEWER_CORE__;
+          if (appearanceEl && genderEl?.value && typeof VC?.syncGenderIntoAppearance == "function") {
+            appearanceEl.value = VC.syncGenderIntoAppearance(appearanceEl.value, genderEl.value);
+          }
+        }
         setStatus("오토태그 반영됨 · 외형/의상/악세/성별 · 저장하세요"), setAutotagFocus(!0, "완료");`;
 
 const VENDOR_CHAR_CREATE_GENDER_SAVE_NEEDLE =
@@ -3470,6 +3484,12 @@ const VENDOR_CHAR_EDIT_GENDER_AUTOTAG_PATCH =
           m && (m.value = x.attire || "");
           accEl && (accEl.value = x.accessories || "");
           genderEl && x.gender && (genderEl.value = x.gender);
+          {
+            const VC = globalThis.__INLAY_VIEWER_CORE__;
+            if (p && genderEl?.value && typeof VC?.syncGenderIntoAppearance == "function") {
+              p.value = VC.syncGenderIntoAppearance(p.value, genderEl.value);
+            }
+          }
           j(!0, "완료"), b && (b.textContent = "오토태그"), E("오토태그 반영됨 · 외형/의상/악세/성별 · 저장을 누르세요");`;
 
 const VENDOR_CHAR_EDIT_GENDER_SAVE_NEEDLE =
@@ -4537,15 +4557,32 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // Full non-keep sweep only when the message DOM list remounts/resizes —
       // otherwise every scroll would SafeDOM-scan the whole chat.
       const prevKeep = Array.isArray(t._inlineKeepIdxs) ? t._inlineKeepIdxs : [];
+      const nextKeepArr = [...keep].sort((a, b) => a - b);
       const elsRemounted = !fromCache || t._inlineKeepDoc !== doc || Number(t._inlineKeepElsLen) !== els.length;
+      const pendingKey = Array.isArray(t._inlinePending)
+        ? t._inlinePending.map((p) => String(p?.cardId || p?.id || "")).filter(Boolean).sort().join(",")
+        : "";
+      const sameKeep = !elsRemounted
+        && Number(t._inlineKeepSelIdx) === selIdx
+        && prevKeep.length === nextKeepArr.length
+        && prevKeep.every((v, i) => Number(v) === Number(nextKeepArr[i]))
+        && String(t._inlineKeepPendingKey || "") === pendingKey;
+      if (sameKeep) {
+        y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeepArr.join(",")}\`);
+        return;
+      }
       if (elsRemounted) {
         for (let i = 0; i < els.length; i += 1) await stripInlineMarkersAt(i);
       } else {
-        for (const i of prevKeep) await stripInlineMarkersAt(i);
+        for (const i of prevKeep) {
+          if (!keep.has(Number(i))) await stripInlineMarkersAt(i);
+        }
       }
-      t._inlineKeepIdxs = [...keep].sort((a, b) => a - b);
+      t._inlineKeepIdxs = nextKeepArr;
       t._inlineKeepDoc = doc;
       t._inlineKeepElsLen = els.length;
+      t._inlineKeepSelIdx = selIdx;
+      t._inlineKeepPendingKey = pendingKey;
       const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
       y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=\${elsRemounted ? "full" : "diff"}\`);
       if (keep.has(selIdx) && els[selIdx]) {
@@ -4949,21 +4986,98 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       });
     }, AFTER_GEN_DELAY_MS);
   }
+  // Streaming finish (last chunk + 0.5s) / chat output / afterRequest → rebind selected msg hash.
+  // Independent of auto_gen_on_reply — fixes "must click away and back to see images".
+  async function relinkSelectedMessageHash(source) {
+    if (t._hashRelinkRunning) return;
+    t._hashRelinkRunning = !0;
+    try {
+      const o = await ve();
+      if (!o.enabled) return;
+      if (!t.selectedMessage) return;
+      const doc = await ue().catch(() => t.hostDoc);
+      if (!doc) return;
+      t._msgElsCache = null;
+      const els = await getCachedMsgEls(doc);
+      if (!els?.length) return;
+      let idx = Number(t.selectedMessage.domIndex);
+      if (!Number.isFinite(idx) || idx < 0 || idx >= els.length) idx = 0;
+      // provisional: refresh DOM text/hash without click auto-gen side effects.
+      await Da(idx, els, { source: "provisional" });
+      const msg = t.selectedMessage;
+      if (!msg?.hash) return;
+      const scope = t.lastScope || await Z({ useOverride: !1 }).catch(() => null);
+      let linked = [];
+      try {
+        linked = await maybeRebindAndLink(msg, scope) || [];
+      } catch {
+        linked = [];
+      }
+      if (!linked.length) {
+        try {
+          linked = linkedCards(msg) || [];
+        } catch {
+          linked = [];
+        }
+      }
+      msg.hasImage = linked.length > 0;
+      msg.cardCount = linked.length;
+      msg.paragraphsWithImages = [...new Set(linked.map((C) => C.paragraph))].sort((C, S) => Number(C) - Number(S));
+      msg.matchMode = linked.length ? "hash" : "none";
+      if (!linked.length) {
+        y("info", "hashRelink.none", \`src=\${source} hash=\${String(msg.hash || "").slice(0, 8)}\`);
+        return;
+      }
+      t.lastImagedMessage = {
+        hash: msg.hash,
+        chatIndex: msg.chatIndex,
+        messageIndex: msg.messageIndex,
+        sessionId: msg.sessionId,
+        domIndex: msg.domIndex
+      };
+      try {
+        await ce(msg.sessionId || scope?.sessionId || "");
+      } catch {
+      }
+      scheduleOverlayPlace(80);
+      await onSelectionChanged("content");
+      y("info", "hashRelink.ok", \`src=\${source} cards=\${linked.length} hash=\${String(msg.hash || "").slice(0, 8)}\`);
+    } finally {
+      t._hashRelinkRunning = !1;
+    }
+  }
+  function scheduleHashRelinkAfterReply(source) {
+    const RELINK_MS = 5e2;
+    if (t._hashRelinkTimer) {
+      clearTimeout(t._hashRelinkTimer);
+      t._hashRelinkTimer = null;
+    }
+    t._hashRelinkGen = (t._hashRelinkGen || 0) + 1;
+    const gen = t._hashRelinkGen;
+    t._hashRelinkTimer = setTimeout(() => {
+      t._hashRelinkTimer = null;
+      if (gen !== t._hashRelinkGen) return;
+      relinkSelectedMessageHash(source).catch((err) => {
+        y("error", "hashRelink.fail", err?.message || err);
+      });
+    }, RELINK_MS);
+  }
   async function onChatOutput(arg) {
     try {
       const o = await ve();
       if (!o.enabled) return;
-      const card = t.backendSettings?.card || {};
-      if (card.power === !1 || !card.auto_gen_on_reply) return;
       const idx = Number(arg?.messageIndex);
       const msgs = arg?.chat?.message;
       const msg = Number.isFinite(idx) && idx >= 0 && Array.isArray(msgs) ? msgs[idx] : null;
       const role = w(msg?.role ?? "", 40);
+      const text = w(msg?.data ?? msg?.content ?? "", 5e4);
+      if (text && text.length > 8) scheduleHashRelinkAfterReply("chatOutput");
+      const card = t.backendSettings?.card || {};
+      if (card.power === !1 || !card.auto_gen_on_reply) return;
       if (role && !isSelectedCharRole(role)) {
         y("info", "chatOutput.skip", "user message");
         return;
       }
-      const text = w(msg?.data ?? msg?.content ?? "", 5e4);
       if (!text || text.length <= 30) {
         y("info", "chatOutput.skip", "text too short");
         return;
@@ -4974,12 +5088,15 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
     }
   }
   // Streaming: (A) 5s quiet → gen  (B) 훅 문장이 DOM에 1초 확인×5회 연속 미부착 → gen
-  // 생성 텍스트는 항상 DOM 연결 message.
+  // 생성 텍스트는 항상 DOM 연결 message. Hash relink: last chunk + 0.5s.
   async function onScriptOutput(content) {
     try {
+      const o = await ve();
+      if (!o.enabled) return content;
+      const text = w(content, 5e4);
+      if (text && text.length > 8) scheduleHashRelinkAfterReply("scriptOutput");
       const card = t.backendSettings?.card || {};
       if (card.power === !1 || !card.auto_gen_on_reply) return content;
-      const text = w(content, 5e4);
       if (!text || text.length <= 30) return content;
       t._scriptHint = text;
       // (A) 청크 5초 무음 = 스트림 끝 → DOM 기준 생성
@@ -5037,6 +5154,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       if (!o.enabled)
         return y("info", "afterRequest.skip", "plugin disabled"), e;
       const a = w(e, 5e4);
+      if (a && a.length > 8) scheduleHashRelinkAfterReply("afterRequest");
       if (!a || a.length <= 30)
         return y("info", "afterRequest.skip", "text too short"), e;
       const i = t.backendSettings?.card || {};
@@ -5288,7 +5406,76 @@ const VENDOR_SCROLL_GALLERY_SAME_DOM_PATCH = `          linked.length ? schedule
         }`;
 
 const VENDOR_SCOPE_POLL_NEEDLE = `n._scopeTick % 24 === 0 && !(t.jobsInFlight.size`;
-const VENDOR_SCOPE_POLL_PATCH = `n._scopeTick % 4 === 0 && !(t.jobsInFlight.size`;
+// Was patched to %4 (≈1s) — that made idle scope thrash worse. Keep vendor ~6s cadence.
+const VENDOR_SCOPE_POLL_PATCH = `n._scopeTick % 24 === 0 && !(t.jobsInFlight.size`;
+
+const VENDOR_SEGMENT_CE_NEEDLE = `        n.markers?.length && Ce();
+      }
+    }, 250));
+  }`;
+const VENDOR_SEGMENT_CE_PATCH = `        // Idle: only resync sticky when reading% moved (skip no-op Ce every 250ms).
+        if (n.markers?.length) {
+          const read = Number(n._lastReading);
+          const prev = Number(n._idleCeReading);
+          const moved = !Number.isFinite(prev) || !Number.isFinite(read) || Math.abs(read - prev) >= 0.5;
+          if (moved) {
+            n._idleCeReading = read;
+            Ce();
+          }
+        }
+      }
+    }, 400));
+  }`;
+
+const VENDOR_CE_RAF_NEEDLE = `  function Ce() {
+    if (t.uiOpen) return;
+    if (!t.overlayUi?.markers?.length) return;
+    if (t.overlaySyncing) {
+      t.overlaySyncPending = !0;
+      return;
+    }
+    const wantFull = !!t.overlayUi._stickyWantFull;
+    t.overlayUi._stickyWantFull = !1;
+    t.overlaySyncing = !0, Ht({ light: !wantFull }).catch(() => {
+    }).finally(() => {
+      t.overlaySyncing = !1, t.overlaySyncPending && (t.overlaySyncPending = !1, Ce());
+    });
+  }`;
+const VENDOR_CE_RAF_PATCH = `  function Ce() {
+    if (t.uiOpen) return;
+    if (!t.overlayUi?.markers?.length) return;
+    // Coalesce bursty scroll/ancestor listeners to one sticky sync per frame.
+    if (t._stickyCeRaf) {
+      t._stickyCeWanted = !0;
+      return;
+    }
+    t._stickyCeWanted = !0;
+    const kick = () => {
+      t._stickyCeRaf = 0;
+      if (!t._stickyCeWanted) return;
+      t._stickyCeWanted = !1;
+      if (t.uiOpen || !t.overlayUi?.markers?.length) return;
+      if (t.overlaySyncing) {
+        t.overlaySyncPending = !0;
+        return;
+      }
+      const wantFull = !!t.overlayUi._stickyWantFull;
+      t.overlayUi._stickyWantFull = !1;
+      t.overlaySyncing = !0, Ht({ light: !wantFull }).catch(() => {
+      }).finally(() => {
+        t.overlaySyncing = !1;
+        if (t.overlaySyncPending) {
+          t.overlaySyncPending = !1;
+          Ce();
+        } else if (t._stickyCeWanted) Ce();
+      });
+    };
+    t._stickyCeRaf = typeof requestAnimationFrame == "function" ? requestAnimationFrame(kick) : (kick(), 0);
+  }`;
+
+const VENDOR_HA_ANCESTOR_NEEDLE = `    for (let i = 0; r && i < 18; i += 1) {`;
+const VENDOR_HA_ANCESTOR_PATCH = `    // 18 ancestors × scroll+scrollend was a sticky thrash multiplier; chat rarely needs deeper.
+    for (let i = 0; r && i < 8; i += 1) {`;
 
 /** Overlay OFF: keep sticky sync alive; hide via 0% thumb + off-screen pin (no hideStickyMarker thrash). */
 const VENDOR_NT_NEEDLE = `  function Nt() {
@@ -5411,8 +5598,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.4",
-    body: "응답 후 자동생성 스트리밍(script output 5초 무음·DOM 미부착 5회) · 삽화 keep diff strip. 업데이트 내역 탭 참고."
+    title: "2.2.5",
+    body: "성별→외형 태그 동기화 · 응답 완료 후 해시 자동 연결 · 스크롤/스티키 렉 완화. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -6912,6 +7099,9 @@ const loadVendorUi = (): string => {
     [VENDOR_SCROLL_GALLERY_SAME_PAINT_NEEDLE, 'scroll same content paint'],
     [VENDOR_SCROLL_GALLERY_SAME_DOM_NEEDLE, 'scroll same dom content paint'],
     [VENDOR_SCOPE_POLL_NEEDLE, 'scope poll cadence'],
+    [VENDOR_SEGMENT_CE_NEEDLE, 'idle segment Ce skip'],
+    [VENDOR_CE_RAF_NEEDLE, 'sticky Ce rAF coalesce'],
+    [VENDOR_HA_ANCESTOR_NEEDLE, 'sticky scroll ancestor cap'],
     [VENDOR_SESSION_PENDING_NEEDLE, 'session pending commit'],
     [VENDOR_ACTIONS_HELP_NEEDLE, 'actions minimize help'],
     [VENDOR_ACTIONS_SELECT_NEEDLE, 'actions minimize select'],
@@ -7146,6 +7336,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_SCROLL_GALLERY_SAME_PAINT_NEEDLE, VENDOR_SCROLL_GALLERY_SAME_PAINT_PATCH)
     .replace(VENDOR_SCROLL_GALLERY_SAME_DOM_NEEDLE, VENDOR_SCROLL_GALLERY_SAME_DOM_PATCH)
     .replace(VENDOR_SCOPE_POLL_NEEDLE, VENDOR_SCOPE_POLL_PATCH)
+    .replace(VENDOR_SEGMENT_CE_NEEDLE, VENDOR_SEGMENT_CE_PATCH)
+    .replace(VENDOR_CE_RAF_NEEDLE, VENDOR_CE_RAF_PATCH)
+    .replace(VENDOR_HA_ANCESTOR_NEEDLE, VENDOR_HA_ANCESTOR_PATCH)
     .replace(VENDOR_SESSION_PENDING_NEEDLE, VENDOR_SESSION_PENDING_PATCH)
     .replace(VENDOR_ACTIONS_HELP_NEEDLE, VENDOR_ACTIONS_HELP_PATCH)
     .replace(VENDOR_ACTIONS_SELECT_NEEDLE, VENDOR_ACTIONS_SELECT_PATCH)

@@ -452,6 +452,19 @@ test("probeDataUrlPixelSize reads PNG IHDR", () => {
   assert.deepEqual(probeDataUrlPixelSize(url), { w: 10, h: 20 });
 });
 
+test("probeDataUrlPixelSize ignores huge payload tail (header-only parse)", () => {
+  const ihdr = new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x14,
+  ]);
+  const b64 = Buffer.from(ihdr).toString("base64") + "A".repeat(2_000_000);
+  const url = `data:image/png;base64,${b64}`;
+  const t0 = Date.now();
+  assert.deepEqual(probeDataUrlPixelSize(url), { w: 10, h: 20 });
+  assert.ok(Date.now() - t0 < 200, "header probe must not scan multi-MB payload");
+});
+
 test("stickyCornerImageBox places image in viewport corners with pad", () => {
   const box = stickyCornerImageBox("bottom-right", { w: 200, h: 160 }, { width: 1000, height: 800 }, 8);
   assert.ok(box.left > 0);

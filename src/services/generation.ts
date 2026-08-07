@@ -40,7 +40,7 @@ import { resolveGenerationCfgParams } from '../domain/style-preset-overrides';
 import { generateViaComfy, imageBackendKind } from '../providers/comfy/client';
 import { generateT2i } from '../providers/nai/client';
 import { modelToNaia, type CharacterReference, type T2iRequest, type VibeReference } from '../providers/nai/payload';
-import { idbGet, idbPut, imageLocation } from '../storage/stores';
+import { imageLocation, putImageLocation } from '../storage/stores';
 import { getConfig } from './context';
 import { loadCurationCatalog } from './curation';
 import { ensurePresetVibeEncoded, ensureVibeEncoded, getReferenceImageBytes } from './nai-assets';
@@ -411,11 +411,12 @@ export async function readImageLocation(imageId: string): Promise<Record<string,
 }
 
 export async function writeImageLocation(imageId: string, location: unknown): Promise<void> {
-  const rec = await idbGet('images', imageId);
-  const next: Record<string, unknown> = rec ? { ...rec } : { id: imageId };
   const loc = (location || {}) as Record<string, unknown>;
-  next.location = { ...loc, version: Number(loc.version || 1), image_id: cleanText(imageId, 80) };
-  await idbPut('images', next);
+  await putImageLocation(cleanText(imageId, 80), {
+    ...loc,
+    version: Number(loc.version || 1),
+    image_id: cleanText(imageId, 80),
+  });
 }
 
 /** Location fields for a card response, filling gaps from the card's own meta. */

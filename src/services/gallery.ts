@@ -285,7 +285,8 @@ export async function gallery(sessionId: string, limit = 40): Promise<ApiResult>
     });
   }
   const payload = { ok: true, session_id: sessionId, items, storage: 'indexeddb' };
-  await attachImageUrls(payload, { cachedOnly: true });
+  // Same as explorer: do not enqueue every miss. UI `ce()` warms the visible strip.
+  await attachImageUrls(payload, { cachedOnly: true, warmMissing: false });
   return payload;
 }
 

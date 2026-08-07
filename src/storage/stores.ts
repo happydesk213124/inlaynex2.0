@@ -694,6 +694,31 @@ export async function imageLocation(id: string): Promise<Record<string, unknown>
   return loc && typeof loc === 'object' ? (loc as Record<string, unknown>) : {};
 }
 
+/**
+ * Updates placement metadata without hydrating PNG bytes.
+ * `idbGet`+`idbPut` would decode base64 just to rewrite `location`.
+ */
+export async function putImageLocation(id: string, location: Record<string, unknown>): Promise<void> {
+  await openDb();
+  const k = String(id);
+  const row = memStores.images.get(k);
+  if (row) {
+    row.location = location;
+    schedulePersist('images');
+    return;
+  }
+  memStores.images.set(k, {
+    id: k,
+    location,
+    png: null,
+    has_png: false,
+    png_bytes: 0,
+    hydrated: true,
+    durable: true,
+  });
+  schedulePersist('images');
+}
+
 // ---------------------------------------------------------------------------
 // Data-URL cache (the UI's synchronous image source)
 // ---------------------------------------------------------------------------

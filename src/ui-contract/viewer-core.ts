@@ -1397,24 +1397,25 @@ function readU16BE(bytes: Uint8Array, offset: number): number {
 
 /** Decode only the leading bytes of a data-URL (enough for image headers). */
 function dataUrlHeaderBytes(src: string, maxBytes = 96): Uint8Array | null {
-  const m = /^data:([^;,]+)?(;base64)?,(.*)$/i.exec(src);
-  if (!m) return null;
-  const isB64 = Boolean(m[2]);
-  const payload = m[3] || '';
+  // Never regex-capture the whole base64 payload — multi-MB data URLs made sticky
+  // sizing O(n) on every scroll flash. Header needs only the first ~maxBytes.
+  const comma = src.indexOf(',');
+  if (comma < 0) return null;
+  const meta = src.slice(0, comma);
+  if (!/^data:/i.test(meta) || !/;base64$/i.test(meta.replace(/\s+$/, ''))) return null;
+  const payload = src;
   try {
-    if (isB64) {
-      const needChars = Math.ceil(maxBytes / 3) * 4 + 4;
-      const slice = payload.slice(0, needChars).replace(/\s/g, '');
-      const bin = atob(slice);
-      const n = Math.min(bin.length, maxBytes);
-      const out = new Uint8Array(n);
-      for (let i = 0; i < n; i++) out[i] = bin.charCodeAt(i);
-      return out;
-    }
+    const needChars = Math.ceil(maxBytes / 3) * 4 + 4;
+    const slice = payload.slice(comma + 1, comma + 1 + needChars).replace(/\s/g, '');
+    if (!slice) return null;
+    const bin = atob(slice);
+    const n = Math.min(bin.length, maxBytes);
+    const out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) out[i] = bin.charCodeAt(i);
+    return out;
   } catch {
     return null;
   }
-  return null;
 }
 
 function probePngSize(bytes: Uint8Array): { w: number; h: number } | null {
@@ -2629,3 +2630,5 @@ export function buildInlineChatHtml(
   const body = escaped.join('<br>');
   return injectInlineImagesIntoHtml(body, placements, opts);
 }
+
+export { syncGenderIntoAppearance } from '../domain/character/tags';

@@ -205,6 +205,83 @@ export function exactTagTokens(...parts: unknown[]): string[] {
   return out;
 }
 
+/** Exact gender markers we manage on the appearance field (not `pretty girl`). */
+const GENDER_APPEARANCE_TOKENS = new Set(['girl', '1girl', 'boy', '1boy', 'other']);
+
+function normalizeAppearanceAtomic(tag: string): string {
+  return tag.trim().toLowerCase().replace(/_/g, ' ').trim();
+}
+
+function genderAppearancePresence(gender: 'girl' | 'boy' | 'other'): Set<string> {
+  if (gender === 'girl') return new Set(['girl', '1girl']);
+  if (gender === 'boy') return new Set(['boy', '1boy']);
+  return new Set(['other']);
+}
+
+function appearanceTokenHasGenderMark(token: string, marks: Set<string>): boolean {
+  const m = token.match(/^(-?\d+(?:\.\d+)?)::(.+)::$/i);
+  if (m) {
+    return m[2]!
+      .split(',')
+      .map((s) => normalizeAppearanceAtomic(s))
+      .some((k) => marks.has(k));
+  }
+  return marks.has(normalizeAppearanceAtomic(token));
+}
+
+/** Drop managed gender atomics; keep other tags (including inside weight groups). */
+function stripManagedGenderFromAppearanceToken(token: string, keep: Set<string>): string | null {
+  const m = token.match(/^(-?\d+(?:\.\d+)?)::(.+)::$/i);
+  if (m) {
+    const next = m[2]!
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .filter((inner) => {
+        const key = normalizeAppearanceAtomic(inner);
+        if (keep.has(key)) return true;
+        return !GENDER_APPEARANCE_TOKENS.has(key);
+      });
+    if (!next.length) return null;
+    return `${m[1]}::${next.join(', ')}::`;
+  }
+  const key = normalizeAppearanceAtomic(token);
+  if (keep.has(key)) return token.trim();
+  if (GENDER_APPEARANCE_TOKENS.has(key)) return null;
+  return token.trim();
+}
+
+/**
+ * Keep roster appearance's leading gender tag aligned with explicit `gender`.
+ *
+ * - gender empty/미정 → appearance unchanged
+ * - girl → ensure exact `girl` or `1girl` (insert `girl` at front if neither)
+ * - boy → `boy` / `1boy` (insert `boy`); other → `other`
+ * - `pretty girl` is NOT `girl`. Weight groups are scanned for exact inners.
+ * - Opposite gender markers are removed when syncing.
+ */
+export function syncGenderIntoAppearance(appearance: unknown, genderRaw: unknown): string {
+  const gender = normalizeGender(genderRaw);
+  const text = cleanText(appearance, 4000);
+  if (!gender) return text;
+  const keep = genderAppearancePresence(gender);
+  const tokens = splitTagTokens(text);
+  let hasPresence = false;
+  for (const token of tokens) {
+    if (appearanceTokenHasGenderMark(token, keep)) {
+      hasPresence = true;
+      break;
+    }
+  }
+  const kept: string[] = [];
+  for (const token of tokens) {
+    const next = stripManagedGenderFromAppearanceToken(token, keep);
+    if (next) kept.push(next);
+  }
+  if (!hasPresence) kept.unshift(gender);
+  return kept.join(', ');
+}
+
 /**
  * Guess sex from exact tokens only: girl|woman|female vs boy|man|male,
  * plus count tags `1girl` / `2boys` (not substrings like girlyboy).
@@ -496,12 +573,15 @@ export function composeCharacterCaptionTags(
   const gender = resolveCharacterGender(shot, stored);
   const wear = wearTagsForNudeLevel(attire, nudeLevel, gender);
   const weapons = weapon ? accessories : '';
+  const explicitGender = normalizeGender(shot?.gender ?? stored?.gender ?? stored?.sex);
+  const storedAppearance = syncGenderIntoAppearance(stored?.appearance, explicitGender);
+  const shotAppearance = syncGenderIntoAppearance(shot?.appearance, explicitGender);
 
   if (hasLooks) {
     return normalizeCharacterCaptionTags(
       joinTags(
         storedOriginal || shotOriginal,
-        stored?.appearance,
+        storedAppearance,
         wear,
         weapons,
         shot?.expression,
@@ -515,7 +595,7 @@ export function composeCharacterCaptionTags(
       storedOriginal ? '' : shotOriginal,
       shot?.label,
       shot?.age,
-      shot?.appearance,
+      shotAppearance,
       shot?.body,
       wear,
       weapons,

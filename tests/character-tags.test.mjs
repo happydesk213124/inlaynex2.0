@@ -13,7 +13,48 @@ import {
   resolveCharacterGender,
   splitLookTags,
   stripPersonCountTags,
+  syncGenderIntoAppearance,
 } from "../.test-build/character-tags.mjs";
+
+test("syncGenderIntoAppearance inserts girl unless girl/1girl exact token exists", () => {
+  assert.equal(
+    syncGenderIntoAppearance("happy, shirts, pretty girl", "girl"),
+    "girl, happy, shirts, pretty girl",
+  );
+  assert.equal(
+    syncGenderIntoAppearance("1girl, happy, shirts, pretty girl", "girl"),
+    "1girl, happy, shirts, pretty girl",
+  );
+  assert.equal(
+    syncGenderIntoAppearance("girl, long hair", "girl"),
+    "girl, long hair",
+  );
+  assert.equal(syncGenderIntoAppearance("happy", ""), "happy");
+  assert.equal(syncGenderIntoAppearance("", "girl"), "girl");
+});
+
+test("syncGenderIntoAppearance swaps markers when gender changes", () => {
+  assert.equal(
+    syncGenderIntoAppearance("girl, happy, shirts", "boy"),
+    "boy, happy, shirts",
+  );
+  assert.equal(
+    syncGenderIntoAppearance("1girl, long hair", "boy"),
+    "boy, long hair",
+  );
+  assert.equal(
+    syncGenderIntoAppearance("boy, short hair", "other"),
+    "other, short hair",
+  );
+  assert.equal(
+    syncGenderIntoAppearance("3::1girl, solo::, smile", "boy"),
+    "boy, 3::solo::, smile",
+  );
+  assert.equal(
+    syncGenderIntoAppearance("3::girl::, smile", "girl"),
+    "3::girl::, smile",
+  );
+});
 
 test("classifyGenderFromTags uses exact tokens only", () => {
   assert.equal(classifyGenderFromTags("black hair, girl, long hair"), "f");

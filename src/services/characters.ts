@@ -39,6 +39,7 @@ import {
 import {
   characterHasAppearance,
   fullTags,
+  syncGenderIntoAppearance,
   wearLocked,
 } from '../domain/character/tags';
 import {
@@ -115,7 +116,7 @@ export async function listCharacters(scope: string): Promise<CharacterRecord[]> 
         aliases = parseAliasList(aliases);
       }
     }
-    const appearance = row.appearance || '';
+    let appearance = cleanText(row.appearance || '', 4000);
     const attire = row.attire || '';
     const accessories = row.accessories || '';
     let gender = normalizeGender(row.gender ?? row.sex);
@@ -124,9 +125,23 @@ export async function listCharacters(scope: string): Promise<CharacterRecord[]> 
       const inferred = inferGenderFromExactTags(appearance, attire, accessories);
       if (inferred) {
         gender = inferred;
+        appearance = syncGenderIntoAppearance(appearance, inferred);
         await idbPut('characters', {
           ...row,
           gender: inferred,
+          appearance,
+          schema_version: Math.max(2, Number(row.schema_version || 1)),
+          updated_at: Date.now() / 1000,
+        });
+      }
+    } else {
+      const syncedAppearance = syncGenderIntoAppearance(appearance, gender);
+      if (syncedAppearance !== appearance) {
+        appearance = syncedAppearance;
+        await idbPut('characters', {
+          ...row,
+          gender,
+          appearance,
           schema_version: Math.max(2, Number(row.schema_version || 1)),
           updated_at: Date.now() / 1000,
         });
@@ -387,6 +402,10 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
   }
 
   const now = Date.now() / 1000;
+  const gender = normalizeGender(rec.gender ?? rec.sex);
+  const appearance = gender
+    ? syncGenderIntoAppearance(rec.appearance, gender)
+    : cleanText(rec.appearance || '', 4000);
   await idbPut('characters', {
     scope: scopeKey,
     id: rec.id,
@@ -400,15 +419,17 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
     attire_locked: wearLocked(rec.attire_locked),
     accessories_locked: wearLocked(rec.accessories_locked),
     schema_version: 2,
-    appearance: rec.appearance,
+    appearance,
     attire: rec.attire,
     accessories: rec.accessories || '',
     costumes: rec.costumes || [],
     active_costume: Number(rec.active_costume || 0),
     original: rec.original || '',
-    gender: normalizeGender(rec.gender ?? rec.sex),
+    gender,
     updated_at: now,
   });
+  rec.appearance = appearance;
+  rec.gender = gender;
   if (scopeKey !== GLOBAL_SCOPE) {
     const appKey = `appearance:${scopeKey}`;
     const existing = ((await idbGet('meta', appKey))?.value || {}) as Record<string, unknown>;

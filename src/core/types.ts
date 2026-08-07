@@ -47,8 +47,11 @@ export interface CardSettings {
   preset: number;
   lorebook: boolean;
   lore_extra: LoreExtraMode;
-  /** When true, pull NAI metadata tags from matched Risu assets for new_characters. */
-  asset_nai_tags: boolean;
+  /**
+   * Matched Risu asset NAI tags for new_characters:
+   * off | inline | prepass | prepass_vision (legacy bool migrated in schema).
+   */
+  asset_nai_tags: 'off' | 'inline' | 'prepass' | 'prepass_vision';
   /**
    * When true, tagger picks per-shot aspect (portrait/square/landscape) and
    * generation uses 832×1216 / 1024×1024 / 1216×832 instead of nai.width/height.

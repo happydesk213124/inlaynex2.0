@@ -16,10 +16,9 @@ import { API_URL } from '../core/constants';
 import { dbg, dbgSpan, debugSnapshot, setJobContext } from '../core/debug';
 import { hostHas } from '../core/host';
 import type { ApiResult } from '../core/types';
-import { asU8, bytesToBase64Async, isPngBytes } from '../core/util/bytes';
-import { prepareAutotagImage } from '../core/util/image';
+import { asU8, isPngBytes } from '../core/util/bytes';
 import { deepMerge } from '../core/util/object';
-import { cleanText, stripCbs } from '../core/util/text';
+import { cleanText } from '../core/util/text';
 import {
   extractNaiMetadata,
   promptFromNaiMetadata,
@@ -35,12 +34,12 @@ import {
 } from '../providers/comfy/client';
 import { callLlm } from '../providers/llm/client';
 import { normalizeLlmProvider } from '../providers/llm/providers';
-import { llmConfigured, normalizeLlmSource, type LlmMessage } from '../providers/llm/transform';
+import { llmConfigured, normalizeLlmSource } from '../providers/llm/transform';
 import { generateT2i, getAnlas } from '../providers/nai/client';
 import { modelToNaia, type T2iRequest } from '../providers/nai/payload';
-import { parseAutotagLookJson } from '../ui-contract/viewer-core';
 import { getConfig } from './context';
-import { getPrompt, saveConfig } from './settings';
+import { saveConfig } from './settings';
+import { runVisionAutotagLook } from './vision-autotag';
 
 /** The fields of ComfyUI's `/system_stats` the connection test reports back. */
 interface ComfySystemStats {
@@ -231,41 +230,7 @@ export async function probeNaiGenerate(): Promise<ApiResult> {
  */
 export async function evaluateAutotag(bytes: ArrayBuffer, threshold: number): Promise<ApiResult> {
   if (!bytes?.byteLength) throw new Error('image is empty');
-  const prepared = await prepareAutotagImage(bytes);
-  const u8 = prepared.bytes;
-  const mime = prepared.mime || 'image/png';
-  const filename = prepared.filename || 'image.png';
-  const b64 = await bytesToBase64Async(u8);
-  const dataUrl = `data:${mime};base64,${b64}`;
-  const prompt = stripCbs(await getPrompt('autotag')) || [
-    'Tag ONE character reference image into Danbooru-style English prompts.',
-    'Return ONE JSON object only: {"gender":"girl|boy","appearance":"...","attire":"...","accessories":"..."}.',
-    'gender must be exactly girl or boy from visual evidence. appearance = identity/hair/eyes/body (no clothes). attire = clothing + permanent jewelry (earrings/glasses/watch/earbuds). accessories = weapons/bags/held props/ID only (not jewelry).',
-  ].join('\n');
-  dbg('autotag.start', {
-    message: `llm-vision ${filename} ${u8.length}B`,
-    bytes: u8.length,
-    focus: true,
-    source: normalizeLlmSource(getConfig().llm.source),
-  });
-  const messages: LlmMessage[] = [
-    { role: 'system', content: prompt },
-    {
-      role: 'user',
-      content: [
-        { type: 'text', text: 'Tag this character image. JSON only with gender, appearance, attire, accessories.' },
-        { type: 'image_url', image_url: { url: dataUrl } },
-      ],
-    },
-  ];
-  let raw = '';
-  try {
-    raw = await callLlm(getConfig().llm, messages);
-  } catch (err) {
-    dbg('autotag.llm.fail', { message: String((err as Error)?.message || err) }, 'error');
-    throw new Error(`오토태그 LLM 실패: ${String((err as Error)?.message || err).slice(0, 240)}`);
-  }
-  const parsed = parseAutotagLookJson(raw);
+  const parsed = await runVisionAutotagLook(bytes);
   const appearance = cleanText(parsed.appearance || '', 4000);
   const attire = cleanText(parsed.attire || '', 4000);
   const accessories = cleanText(parsed.accessories || '', 4000);

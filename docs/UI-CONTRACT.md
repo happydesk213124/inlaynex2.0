@@ -92,6 +92,13 @@ asks `globalThis.confirm` first.
 (legacy booleans migrate in `schema.ts`). The dashboard control is a `<select>`
 patched in at build time (was a checkbox).
 
+`card.asset_nai_tags` is a string mode: `off` | `inline` | `prepass` |
+`prepass_vision` (legacy `true` → `prepass_vision`, `false` → `off`). Card
+settings places a `<select>` under the natural_base options row (asserted
+vendor patch); dashboard checkbox was removed. `prepass` / `prepass_vision`
+use a slim looks LLM (asset tags + Character Image lore only; no chat body,
+no filled-roster dump, no story lore). `prepass_vision` also attaches up to
+one representative image per matched character (max 5).
 `card.person_tag_weight` is `0`–`5` (default `3`): NAI emphasis on Inlay
 person-count tags (`0` = plain `1girl, 1boy`; `N` = `N::1girl, 1boy::`). Card
 settings places a number input beside Include Max (asserted vendor patch).

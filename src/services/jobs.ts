@@ -23,6 +23,7 @@
  */
 
 import { ASSISTANT_PREVIEW_LIMIT } from '../core/constants';
+import { normalizeAssetNaiTagsMode } from '../config/schema';
 import {
   dbg,
   dbgSpan,
@@ -44,14 +45,14 @@ import {
   hasNaiBodyControl,
 } from '../providers/nai/http';
 import { callLlm } from '../providers/llm/client';
-import { characterMaxLimit } from '../domain/character/tags';
+import { characterHasAppearance, characterMaxLimit } from '../domain/character/tags';
 import { dedupeShotCharacters } from '../domain/character/roster';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
 import { flushPersist, idbGet, idbPut } from '../storage/stores';
 import { getConfig, jobEpochByKey, jobRunMeta } from './context';
 import { mergeRosterFromTagged } from './characters';
 import { buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage, readImageLocation } from './generation';
-import { buildTaggerMessages, extractTaggerChatContext, flattenShots } from './tagger';
+import { buildCharacterLooksMessages, buildTaggerMessages, collectAssetTagsForTagger, extractTaggerChatContext, flattenShots } from './tagger';
 import {
   getCurationMode,
   refineShotsWithCuration,
@@ -508,10 +509,84 @@ async function runJob(jobId: string): Promise<void> {
       debug_stage: 'job.tagging',
     });
 
-    const messages = await buildTaggerMessages(request);
+    const unifiedSessionId = cleanText(request.unified_session_id || '', 200);
+    const characterId = cleanText(request.character_id || '', 200);
+    const sourceSessionIds = Array.isArray(request.source_session_ids)
+      ? request.source_session_ids.map((s) => cleanText(s, 200)).filter(Boolean)
+      : [];
+
+    // Asset NAI modes: off | inline (soup on main) | prepass | prepass_vision.
+    // Prepass fills roster looks first; lore Character Image auto-drops when filled.
+    // prepass_vision attaches ≤1 image per character (max 5) on the looks call.
+    // Fail → fall back to inline soup on the main tagger.
+    const assetMode = normalizeAssetNaiTagsMode(getConfig().card?.asset_nai_tags);
+    let skipAssetInject = false;
+    if (assetMode === 'prepass' || assetMode === 'prepass_vision') {
+      const assetCollected = await collectAssetTagsForTagger(request, {
+        withPreviews: assetMode === 'prepass_vision',
+      });
+      if (assetCollected?.block) {
+        await setJob(jobId, 'tagging', {
+          phase: 'tagging',
+          progress: 0.05,
+          message: '에셋 캐릭터 룩 태깅 중…',
+          shot_count: 0,
+          shot_done: 0,
+          debug_stage: 'job.char_looks',
+        });
+        if (await cancelJobIfStale(jobId, 'superseded before char looks')) return;
+        try {
+          const lookAssetNames = assetCollected.packed.groups.flatMap((g) => g.assets.map((a) => a.name));
+          const lookMessages = await buildCharacterLooksMessages(
+            request,
+            assetCollected.block,
+            lookAssetNames,
+            assetMode === 'prepass_vision' ? (assetCollected.previews || []) : [],
+          );
+          dbg('job.char_looks.messages', {
+            mode: assetMode,
+            msgs: lookMessages.length,
+            assets: lookAssetNames,
+            groups: assetCollected.packed.groups.map((g) => g.trigger),
+            previews: (assetCollected.previews || []).map((p) => p.name),
+          });
+          const lookRaw = await callLlm(getConfig().llm, lookMessages);
+          if (await cancelJobIfStale(jobId, 'superseded after char looks')) return;
+          const lookTagged = parseJsonLoose(lookRaw) as TaggerResult;
+          const newChars = Array.isArray(lookTagged?.new_characters) ? lookTagged.new_characters : [];
+          if (newChars.length) {
+            await mergeRosterFromTagged({
+              sessionId,
+              tagged: { new_characters: newChars, scenes: [] },
+              shotChars: [],
+              unifiedSessionId,
+              characterId,
+              sourceSessionIds,
+            });
+          }
+          const filledLooks = newChars.filter((c) => characterHasAppearance(c)).length;
+          skipAssetInject = true;
+          dbg('job.char_looks.done', {
+            mode: assetMode,
+            new_characters: newChars.length,
+            filled_looks: filledLooks,
+            raw_len: String(lookRaw || '').length,
+          });
+        } catch (err) {
+          skipAssetInject = false;
+          dbg(
+            'job.char_looks.fail',
+            { mode: assetMode, message: String((err as Error)?.message || err) },
+            'warn',
+          );
+        }
+      }
+    }
+
+    const messages = await buildTaggerMessages(request, { skipAssetInject });
     // Same chat user blob as pass 1 — keep byte-identical for LLM prompt cache on pass 2.
     const chatContext = extractTaggerChatContext(messages);
-    dbg('job.tagger.messages', { msgs: messages.length });
+    dbg('job.tagger.messages', { msgs: messages.length, skip_asset_inject: skipAssetInject });
     if (getConfig().card?.preprocessing) {
       const pre = stripCbs(await getPrompt('preprocess'));
       if (pre) {
@@ -574,11 +649,6 @@ async function runJob(jobId: string): Promise<void> {
     }
 
     const allChars = shots.flatMap((shot) => shot.characters || []);
-    const unifiedSessionId = cleanText(request.unified_session_id || '', 200);
-    const characterId = cleanText(request.character_id || '', 200);
-    const sourceSessionIds = Array.isArray(request.source_session_ids)
-      ? request.source_session_ids.map((s) => cleanText(s, 200)).filter(Boolean)
-      : [];
     const roster = await mergeRosterFromTagged({
       sessionId,
       tagged,

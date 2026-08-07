@@ -1,34 +1,59 @@
 /**
- * Match lore trigger keys to Risu additionalAssets names (token-exact).
+ * Match lore trigger keys to Risu additionalAssets names.
  *
- * Hangul triggers may be 1–2 chars (나루, 이한). Latin/Hanja-only keys still
- * need length ≥3 so noise like "an" / single letters do not match.
+ * Matching is case-insensitive **substring contains** after compacting both
+ * sides: space, `-`, `_`, and `.` are dropped (not split delimiters) so the
+ * remaining characters are concatenated. e.g. `sen_oy-default` ↔ `senoy`.
  *
- * Selection prefers exact/near-exact names and `normal`/`default` outfit tokens,
- * and allocates up to {@link ASSETS_PER_TRIGGER} assets per trigger so one
- * character cannot fill the whole inject budget.
+ * Hangul triggers may be short; Latin/Hanja-only keys still need length ≥3
+ * on the compact form.
+ *
+ * Per-trigger pick order (higher first), up to {@link ASSETS_PER_TRIGGER}:
+ * 1. Exact compact basename == compact trigger (e.g. `Senoy.webp`)
+ * 2. Contains trigger + preferred look word (default/normal/profile/smile); shorter wins
+ * 3. Contains trigger; shorter name wins
  */
 import { cleanText } from '../../core/util/text.ts';
+import type { CharacterInput } from '../character/identity.ts';
+import { characterTriggers } from '../character/roster.ts';
+import { characterHasAppearance } from '../character/tags.ts';
 
 const MIN_LATIN_HANJA_LEN = 3;
 /** Hangul syllables + jamo (covers NFD names before NFC normalize). */
 const HANGUL_RE = /[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]/;
 
-/** Preferred “default look” tokens in asset filenames. */
-const PREFERRED_OUTFIT = new Set([
-  'normal',
-  'default',
-  'base',
-  'neutral',
-  'profile',
-  '프로필',
-]);
+/** Preferred look keywords in the filename (rank 2). Checked on compact text. */
+const PREFERRED_LOOK = ['default', 'normal', 'profile', 'smile'] as const;
 
 /** Max assets kept per lore trigger (with NAI meta). */
 export const ASSETS_PER_TRIGGER = 2;
 
-function foldAssetText(value: unknown, max: number): string {
-  return cleanText(value, max).normalize('NFC').toLowerCase();
+/**
+ * Fold + drop separators that users treat as absent (space / - / _ / .).
+ * Remaining characters are joined — do not use these as split points.
+ */
+export function compactAssetKey(value: unknown, max = 400): string {
+  return cleanText(value, max)
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/[\s_\-.]/g, '');
+}
+
+/** Basename without extension, then compacted. */
+export function assetBasenameCompact(name: unknown): string {
+  const folded = cleanText(name, 400)
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{2,5}$/i, '');
+  return folded.replace(/[\s_\-.]/g, '');
+}
+
+/** @deprecated Prefer {@link assetBasenameCompact}. */
+export function assetBasename(name: unknown): string {
+  return cleanText(name, 400)
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{2,5}$/i, '');
 }
 
 /** True when the key has Hangul — short Korean names are allowed. */
@@ -36,35 +61,131 @@ export function triggerHasHangul(key: string): boolean {
   return HANGUL_RE.test(key);
 }
 
-/** Lore trigger eligible for asset name matching. */
+/** Lore trigger eligible for asset name matching (length checked after compact). */
 export function isAssetMatchTrigger(key: unknown): boolean {
-  const t = foldAssetText(key, 200);
+  const t = compactAssetKey(key, 200);
   if (!t) return false;
   if (triggerHasHangul(t)) return true;
   return t.length >= MIN_LATIN_HANJA_LEN;
 }
 
-/** Split an asset display name into matchable tokens. */
+/**
+ * Drop lore triggers that belong to characters who already have looks.
+ * Keep incomplete-character triggers and triggers that match nobody on the roster
+ * (possible new cast). Empty roster → no filtering.
+ */
+export function filterAssetTriggersForUnfilledLooks(
+  triggers: readonly unknown[],
+  roster: readonly CharacterInput[] | null | undefined,
+): string[] {
+  const eligible = assetMatchTriggers(triggers);
+  if (!roster?.length) return eligible;
+
+  const filledKeys = new Set<string>();
+  const incompleteKeys = new Set<string>();
+  for (const char of roster) {
+    const keys = characterTriggers(char)
+      .map((t) => compactAssetKey(t, 200))
+      .filter((k) => k.length >= 2);
+    if (characterHasAppearance(char)) {
+      for (const k of keys) filledKeys.add(k);
+    } else if (cleanText(char.name, 200)) {
+      for (const k of keys) incompleteKeys.add(k);
+    }
+  }
+
+  return eligible.filter((tr) => {
+    const k = compactAssetKey(tr, 200);
+    if (!k) return false;
+    if (incompleteKeys.has(k)) return true;
+    if (filledKeys.has(k)) return false;
+    return true;
+  });
+}
+
+/**
+ * @deprecated Kept for older tests — matching no longer uses tokens.
+ * Splits a folded basename on common separators (does not drive scoring).
+ */
 export function assetNameTokens(name: unknown): string[] {
-  const base = foldAssetText(name, 400).replace(/\.[a-z0-9]{2,5}$/i, '');
+  const base = assetBasename(name);
   if (!base) return [];
   return base
-    .split(/[\s_\-/\\.|]+/)
+    .split(/[\s_\-/\\.|()]+/)
     .map((t) => t.trim())
     .filter(Boolean);
 }
 
-/** Lore trigger keys eligible for asset matching. */
+/** Lore trigger keys eligible for asset matching (returned compacted + deduped). */
 export function assetMatchTriggers(triggers: readonly unknown[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const raw of triggers) {
     if (!isAssetMatchTrigger(raw)) continue;
-    const t = foldAssetText(raw, 200);
+    const t = compactAssetKey(raw, 200);
     if (seen.has(t)) continue;
     seen.add(t);
     out.push(t);
   }
+  return out;
+}
+
+/**
+ * For each compact match trigger, collect original lore spellings for the inject block.
+ *
+ * 1. Raw keys that compact to the trigger (e.g. `Senoy` / `sen-oy` → `senoy`).
+ * 2. If a fired lore entry contains any key that compacts to the trigger, **all** keys
+ *    of that entry are included (so `Senoy` pulls `세노이` / `추기경` from the same row).
+ */
+export function loreKeysByCompactTrigger(
+  rawTriggers: readonly unknown[],
+  compactTriggers: readonly string[],
+  relatedKeyGroups: readonly (readonly unknown[])[] = [],
+): Map<string, string[]> {
+  const allowed = new Set(
+    compactTriggers.map((t) => compactAssetKey(t, 200)).filter(Boolean),
+  );
+  const out = new Map<string, string[]>();
+  const seen = new Map<string, Set<string>>();
+
+  const add = (compact: string, displayRaw: unknown) => {
+    if (!allowed.has(compact)) return;
+    const display = cleanText(displayRaw, 200);
+    if (!display) return;
+    let list = out.get(compact);
+    let seenSet = seen.get(compact);
+    if (!list) {
+      list = [];
+      seenSet = new Set();
+      out.set(compact, list);
+      seen.set(compact, seenSet!);
+    }
+    const fold = display.normalize('NFC').toLowerCase();
+    if (seenSet!.has(fold)) return;
+    seenSet!.add(fold);
+    list.push(display);
+  };
+
+  for (const raw of rawTriggers) {
+    const display = cleanText(raw, 200);
+    if (!display) continue;
+    const compact = compactAssetKey(display, 200);
+    if (!compact) continue;
+    add(compact, display);
+  }
+
+  for (const group of relatedKeyGroups) {
+    const displays = (group || []).map((k) => cleanText(k, 200)).filter(Boolean);
+    if (!displays.length) continue;
+    const groupCompacts = new Set(
+      displays.map((d) => compactAssetKey(d, 200)).filter((c) => c && allowed.has(c)),
+    );
+    if (!groupCompacts.size) continue;
+    for (const compact of groupCompacts) {
+      for (const display of displays) add(compact, display);
+    }
+  }
+
   return out;
 }
 
@@ -83,44 +204,42 @@ export interface AssetMatchScore {
   hits: string[];
 }
 
-/**
- * Priority within one trigger's candidate pool (higher = better).
- * Exact name / trigger+normal|default beat long outfit suffixes.
- */
-export function assetPriorityForTrigger(name: unknown, trigger: string): number {
-  const tr = foldAssetText(trigger, 200);
-  if (!tr) return -1;
-  const tokens = assetNameTokens(name);
-  if (!tokens.includes(tr)) return -1;
-
-  const extras = tokens.filter((t) => t !== tr);
-  const preferred = extras.filter((t) => PREFERRED_OUTFIT.has(t));
-  const other = extras.filter((t) => !PREFERRED_OUTFIT.has(t));
-
-  let score = tr.length * 10;
-  // Bare `Juwon.png` / `나루.webp`
-  if (tokens.length === 1) score += 100_000;
-  // `Juwon_normal` / `나루_default` / `Juwon_프로필`
-  if (preferred.length && other.length === 0) score += 50_000 + preferred.length * 1_000;
-  else if (preferred.length) score += 20_000 + preferred.length * 500;
-  // Fewer unrelated outfit tokens → closer to the trigger
-  score += Math.max(0, 5_000 - other.length * 400);
-  return score;
+function hasPreferredLook(compactBase: string): boolean {
+  return PREFERRED_LOOK.some((w) => compactBase.includes(w));
 }
 
-/** Score how well an asset name matches trigger tokens (exact token hits). */
+/**
+ * Priority within one trigger's candidate pool (higher = better).
+ * 1 exact → 2 preferred look words → 3 shorter contains → 4 longer contains.
+ */
+export function assetPriorityForTrigger(name: unknown, trigger: string): number {
+  const tr = compactAssetKey(trigger, 200);
+  if (!tr) return -1;
+  const base = assetBasenameCompact(name);
+  if (!base.includes(tr)) return -1;
+
+  const exact = base === tr;
+  const preferred = hasPreferredLook(base);
+  // Shorter basename wins among the same tier (cap length so scores stay ordered).
+  const shortBonus = Math.max(0, 2_000 - base.length);
+
+  if (exact) return 3_000_000 + shortBonus;
+  if (preferred) return 2_000_000 + shortBonus;
+  return 1_000_000 + shortBonus;
+}
+
+/** Score asset name vs triggers: compact contains, best trigger priority. */
 export function scoreAssetName(name: unknown, triggers: readonly string[]): AssetMatchScore | null {
   const display = cleanText(name, 400);
   if (!display) return null;
-  const tokens = new Set(assetNameTokens(display));
-  if (!tokens.size) return null;
+  const base = assetBasenameCompact(display);
+  if (!base) return null;
   const hits: string[] = [];
   for (const tr of triggers) {
-    const folded = foldAssetText(tr, 200);
-    if (tokens.has(folded)) hits.push(folded);
+    const folded = compactAssetKey(tr, 200);
+    if (folded && base.includes(folded)) hits.push(folded);
   }
   if (!hits.length) return null;
-  // Prefer the best single-trigger priority among hits as the global sort key.
   const bestPri = Math.max(...hits.map((h) => assetPriorityForTrigger(display, h)));
   return {
     name: display,

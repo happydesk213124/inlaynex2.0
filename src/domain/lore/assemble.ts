@@ -64,16 +64,29 @@ export function loreKeyHitsMessage(key: unknown, hay: string, hayCompact: string
   return Math.max(countOcc(hay, nk), countOcc(hayCompact, ck));
 }
 
-/** All trigger keys from lore entries that hit the message (not only the hitting key). */
-export function collectTriggeredLoreKeys(
+export interface TriggeredLoreEntryExplain {
+  /** Lore comment / title if present. */
+  comment: string;
+  /** Every key on the entry (exported to asset matching when any key hits). */
+  keys: string[];
+  /** Subset of keys that actually appear in the message. */
+  keys_hit_in_message: string[];
+  /**
+   * Sibling keys that did NOT appear in the message but still become asset-match
+   * triggers because the entry fired. This is how `Fallen`/`MISC` sneak in.
+   */
+  sibling_keys_not_in_message: string[];
+}
+
+/** Fired lore entries with sibling-key breakdown (debug / asset-tag probe). */
+export function explainTriggeredLoreEntries(
   entries: LoreEntry[] | null | undefined,
   message: unknown,
-): string[] {
+): TriggeredLoreEntryExplain[] {
   const hay = cleanText(message).toLowerCase();
   const hayCompact = compactText(message);
   if (!hay) return [];
-  const out: string[] = [];
-  const seen = new Set<string>();
+  const out: TriggeredLoreEntryExplain[] = [];
   for (const entry of entries || []) {
     if (typeof entry !== 'object' || isCharacterImageExtraLore(entry)) continue;
     const mode = cleanText(entry.mode || '', 40).toLowerCase();
@@ -81,10 +94,39 @@ export function collectTriggeredLoreKeys(
     if (mode === 'folder' || keyRaw.startsWith('\uf000folder:')) continue;
     const keys = loreEntryKeys(entry);
     if (!keys.length) continue;
-    let hits = 0;
-    for (const key of keys) hits += loreKeyHitsMessage(key, hay, hayCompact);
-    if (hits <= 0) continue;
+    const hitKeys: string[] = [];
     for (const key of keys) {
+      if (loreKeyHitsMessage(key, hay, hayCompact) > 0) hitKeys.push(key);
+    }
+    if (!hitKeys.length) continue;
+    const hitNorm = new Set(hitKeys.map((k) => normalizeAlias(k)));
+    const siblings = keys.filter((k) => !hitNorm.has(normalizeAlias(k)));
+    const comment = cleanText(
+      (entry as { comment?: unknown; name?: unknown }).comment
+        ?? (entry as { name?: unknown }).name
+        ?? '',
+      200,
+    );
+    out.push({
+      comment,
+      keys,
+      keys_hit_in_message: hitKeys,
+      sibling_keys_not_in_message: siblings,
+    });
+  }
+  return out;
+}
+
+/** All trigger keys from lore entries that hit the message (not only the hitting key). */
+export function collectTriggeredLoreKeys(
+  entries: LoreEntry[] | null | undefined,
+  message: unknown,
+): string[] {
+  const explained = explainTriggeredLoreEntries(entries, message);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const row of explained) {
+    for (const key of row.keys) {
       const nk = normalizeAlias(key);
       if (!nk || seen.has(nk)) continue;
       seen.add(nk);
@@ -123,6 +165,28 @@ export function filledNamesForLoreExtra(roster: CharacterInput[] | null | undefi
     }
   }
   return out;
+}
+
+/**
+ * True when any lore entry trigger equals a character trigger (normalized alias).
+ * Used to skip story lore that only exists because a filled character's name fired.
+ */
+export function loreEntrySharesCharacterTrigger(
+  entry: LoreEntry | null | undefined,
+  characterTriggersList: readonly string[] | null | undefined,
+): boolean {
+  if (!entry || typeof entry !== 'object') return false;
+  const charKeys = new Set<string>();
+  for (const token of characterTriggersList || []) {
+    const key = normalizeAlias(token);
+    if (key) charKeys.add(key);
+  }
+  if (!charKeys.size) return false;
+  for (const key of loreEntryKeys(entry)) {
+    const nk = normalizeAlias(key);
+    if (nk && charKeys.has(nk)) return true;
+  }
+  return false;
 }
 
 /** Normalize card.lore_extra → "tags" | "full" | "off". */
@@ -186,6 +250,8 @@ export function assembleLorebookForTagger(
     }
   }
   for (const entry of matched) {
+    // Filled character name/alias as lore key → skip (looks already on roster; burns tokens).
+    if (loreEntrySharesCharacterTrigger(entry, filledNames)) continue;
     // Belt-and-suspenders: never let a normal lore slot carry the full dump.
     const content = cleanText(entry.content || entry.data || '', contentLimit);
     if (isUntrimmedCharacterImageTagDump(content, [])) continue;

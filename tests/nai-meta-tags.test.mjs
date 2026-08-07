@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 
 import {
   filterAssetPromptTags,
+  formatAssetTagsInjectBlock,
   packAssetTagGroups,
   restoreAssetTagWeights,
   splitNaiPromptTokens,
 } from '../.test-build/nai-meta-prompt-tags.mjs';
-import { assetMatchTriggers, assetNameTokens, scoreAssetName, assetPriorityForTrigger, pickAssetsPerTrigger } from '../.test-build/nai-meta-match.mjs';
+import { assetMatchTriggers, assetNameTokens, scoreAssetName, assetPriorityForTrigger, pickAssetsPerTrigger, filterAssetTriggersForUnfilledLooks, loreKeysByCompactTrigger } from '../.test-build/nai-meta-match.mjs';
 import { promptFromNaiMetadata } from '../.test-build/nai-meta-from-metadata.mjs';
 import { dimsForAspect, normalizeShotAspect } from '../.test-build/nai-meta-aspect.mjs';
 import { filterStylePresetPositive, styleFieldsFromNaiMetadata } from '../.test-build/nai-meta-style-preset.mjs';
@@ -101,19 +102,48 @@ test('restoreAssetTagWeights reapplies brace emphasis', () => {
   assert.match(restored, /witch hat/);
 });
 
-test('packAssetTagGroups computes common and unique', () => {
+test('packAssetTagGroups computes common and unique per trigger', () => {
   const a = filterAssetPromptTags('blonde hair, blue eyes, school uniform');
   const b = filterAssetPromptTags('blonde hair, blue eyes, hoodie');
-  const packed = packAssetTagGroups([
-    { name: 'yuki_school', plains: a.plains, weightMap: a.weightMap },
-    { name: 'yuki_casual', plains: b.plains, weightMap: b.weightMap },
-  ]);
-  assert.deepEqual(packed.common, ['blonde hair', 'blue eyes']);
-  assert.deepEqual(packed.assets[0].unique, ['school uniform']);
-  assert.deepEqual(packed.assets[1].unique, ['hoodie']);
+  const c = filterAssetPromptTags('black hair, red eyes, armor');
+  const d = filterAssetPromptTags('black hair, green eyes, armor');
+  const loreKeys = loreKeysByCompactTrigger(
+    ['Yuki', '유키', 'yuki', 'Awa', '아와'],
+    ['yuki', 'awa'],
+    [
+      ['Yuki', '유키', 'Cardinal Yuki'],
+      ['Awa', '아와'],
+    ],
+  );
+  const packed = packAssetTagGroups(
+    [
+      { name: 'yuki_school', plains: a.plains, weightMap: a.weightMap, trigger: 'yuki' },
+      { name: 'yuki_casual', plains: b.plains, weightMap: b.weightMap, trigger: 'yuki' },
+      { name: 'awa_a', plains: c.plains, weightMap: c.weightMap, trigger: 'awa' },
+      { name: 'awa_b', plains: d.plains, weightMap: d.weightMap, trigger: 'awa' },
+    ],
+    loreKeys,
+  );
+  assert.equal(packed.groups.length, 2);
+  assert.deepEqual(packed.groups[0].common, ['blonde hair', 'blue eyes']);
+  assert.deepEqual(packed.groups[0].assets[0].unique, ['school uniform']);
+  assert.deepEqual(packed.groups[0].assets[1].unique, ['hoodie']);
+  assert.ok(packed.groups[0].lore_keys.includes('Yuki'));
+  assert.ok(packed.groups[0].lore_keys.includes('유키'));
+  assert.ok(packed.groups[0].lore_keys.includes('Cardinal Yuki'));
+  // Not polluted by yuki — awa keeps its own common
+  assert.deepEqual(packed.groups[1].common, ['black hair', 'armor']);
+  assert.deepEqual(packed.groups[1].assets[0].unique, ['red eyes']);
+  assert.deepEqual(packed.groups[1].assets[1].unique, ['green eyes']);
+  const block = formatAssetTagsInjectBlock(packed);
+  assert.match(block, /## trigger `yuki`/);
+  assert.match(block, /lore_keys:.*유키/);
+  assert.match(block, /common: blonde hair, blue eyes/);
+  assert.match(block, /asset `yuki_school`:/);
+  assert.doesNotMatch(block, /공통|에셋/);
 });
 
-test('asset matching allows short Hangul triggers; Latin/Hanja still need length ≥3', () => {
+test('asset matching uses compact contains (drop space/-/_/. then join)', () => {
   assert.deepEqual(assetMatchTriggers(['h', 'yu', 'yuki', 'witch', '나루', '이한', '주']), [
     'yuki',
     'witch',
@@ -121,44 +151,66 @@ test('asset matching allows short Hangul triggers; Latin/Hanja still need length
     '이한',
     '주',
   ]);
+  assert.deepEqual(assetMatchTriggers(['sen-oy', 'sen_oy', 'Senoy']), ['senoy']);
   assert.deepEqual(assetMatchTriggers(['安', '漢', '漢字']), []);
   assert.deepEqual(assetMatchTriggers(['大漢字', 'abc']), ['大漢字', 'abc']);
-  assert.ok(scoreAssetName('양나루_프로필.png', ['나루']) === null);
+  // compact contains
+  assert.ok(scoreAssetName('양나루_프로필.png', ['나루']));
   assert.ok(scoreAssetName('나루_smile.png', ['나루']));
   assert.ok(scoreAssetName('Juwon_happy.png', ['juwon']));
-  assert.equal(scoreAssetName('Leehan_happy.png', ['han']), null);
-  assert.deepEqual(assetNameTokens('양나루_test.PNG'), assetNameTokens('양나루_test.png'));
-  assert.deepEqual(assetNameTokens('Yuki_witch_hat.png'), ['yuki', 'witch', 'hat']);
+  assert.ok(scoreAssetName('Senoy(Fallen).webp', ['senoy']));
+  assert.ok(scoreAssetName('senoy-normal.webp', ['senoy']));
+  assert.ok(scoreAssetName('sen_oy-default.webp', ['senoy']));
+  assert.ok(scoreAssetName('세노이(P).webp', ['세노이']));
+  assert.ok(scoreAssetName('Senoy.webp', ['sen-oy']));
+  assert.deepEqual(assetMatchTriggers(['ha', 'han']), ['han']);
 });
 
-test('asset priority prefers exact / normal / default over long outfit names', () => {
-  const tr = 'juwon';
-  assert.ok(assetPriorityForTrigger('Juwon.png', tr) > assetPriorityForTrigger('Juwon_normal.png', tr));
-  assert.ok(assetPriorityForTrigger('Juwon_normal.png', tr) > assetPriorityForTrigger('Juwon_default.png', tr) - 1);
-  assert.ok(assetPriorityForTrigger('Juwon_normal.png', tr) > assetPriorityForTrigger('Juwon_casual_angry.png', tr));
-  assert.ok(assetPriorityForTrigger('Juwon_default.png', tr) > assetPriorityForTrigger('Juwon_armpit.png', tr));
+test('filterAssetTriggersForUnfilledLooks drops filled character triggers only', () => {
+  const roster = [
+    { name: '보민', aliases: ['Bomin'], appearance: 'boy, black hair', attire: 'sweater' },
+    { name: '세노이', aliases: ['Senoy'], appearance: '', attire: '' },
+  ];
+  const out = filterAssetTriggersForUnfilledLooks(
+    ['보민', '세노이', '성당', 'Senoy', 'Bomin'],
+    roster,
+  );
+  assert.deepEqual([...out].sort(), ['성당', '세노이', 'senoy'].sort());
 });
 
-test('pickAssetsPerTrigger takes 2 per trigger so one cast cannot fill the budget', () => {
+test('asset priority: exact > preferred look > shorter contains', () => {
+  const tr = 'senoy';
+  assert.ok(assetPriorityForTrigger('Senoy.webp', tr) > assetPriorityForTrigger('Senoy-normal.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy-normal.webp', tr) > assetPriorityForTrigger('Senoy-angry.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy-default.webp', tr) > assetPriorityForTrigger('Senoy-angry-pregnant.webp', tr));
+  assert.ok(assetPriorityForTrigger('senoyii.webp', tr) > assetPriorityForTrigger('senoyjdflkajdflkadjsl.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy(Fallen).webp', tr) > 0);
+});
+
+test('pickAssetsPerTrigger takes 2 per trigger preferring exact/normal/short', () => {
   const scored = [
-    { name: 'Juwon_armpit.png', key: 'a1', score: 1, hits: ['juwon'] },
-    { name: 'Juwon_normal.png', key: 'a2', score: 1, hits: ['juwon'] },
-    { name: 'Juwon_casual.png', key: 'a3', score: 1, hits: ['juwon'] },
-    { name: 'Juwon_sad.png', key: 'a4', score: 1, hits: ['juwon'] },
+    { name: 'Juwon.png', key: 'a0', score: 1, hits: ['juwon'] },
+    { name: 'Juwon_normal.png', key: 'a1', score: 1, hits: ['juwon'] },
+    { name: 'Juwon_default.png', key: 'a2', score: 1, hits: ['juwon'] },
+    { name: 'Juwon_armpit.png', key: 'a3', score: 1, hits: ['juwon'] },
+    { name: 'Juwon_casual.png', key: 'a4', score: 1, hits: ['juwon'] },
+    { name: 'Juwon_sad.png', key: 'a5', score: 1, hits: ['juwon'] },
     { name: 'naru_default.png', key: 'b1', score: 1, hits: ['naru'] },
     { name: 'naru_angry.png', key: 'b2', score: 1, hits: ['naru'] },
     { name: 'naru_smile.png', key: 'b3', score: 1, hits: ['naru'] },
-  ];
+    { name: 'naru_normal.png', key: 'b4', score: 1, hits: ['naru'] },
+    { name: 'naru_cry.png', key: 'b5', score: 1, hits: ['naru'] },
+  ].map((row) => ({
+    ...row,
+    score: assetPriorityForTrigger(row.name, row.hits[0]),
+  }));
   const picked = pickAssetsPerTrigger(scored, ['juwon', 'naru'], 2);
   assert.equal(picked.length, 4);
-  assert.deepEqual(
-    picked.map((p) => p.name),
-    ['Juwon_normal.png', 'Juwon_armpit.png', 'naru_default.png', 'naru_angry.png'],
-  );
-  // normal beat armpit for juwon — wait, armpit is alphabetically first among non-preferred after normal?
-  // Priority: normal > default > fewer extras. armpit has 1 other token, casual has 1, sad has 1.
-  // Sort: normal first, then by fewer others (all 1), then localeCompare: armpit, casual, sad.
-  // So juwon: normal, armpit. naru: default, angry. Good.
+  // juwon: exact, then preferred (default/normal)
+  assert.equal(picked[0].name, 'Juwon.png');
+  assert.ok(['Juwon_default.png', 'Juwon_normal.png'].includes(picked[1].name));
+  // naru: preferred default/normal/smile before angry/cry
+  assert.ok(picked.slice(2, 4).some((p) => p.name === 'naru_default.png' || p.name === 'naru_normal.png' || p.name === 'naru_smile.png'));
 });
 
 test('promptFromNaiMetadata merges base and char captions', () => {

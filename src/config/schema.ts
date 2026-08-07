@@ -6,14 +6,46 @@ export type NaturalBaseMode = 'off' | 'short' | 'detailed' | 'supplement';
 /** Settings-tab curation pipeline mode. */
 export type CurationMode = 'off' | 'two_stage' | 'embed_snap';
 
+/** How matched Risu asset NAI tags are fed to the tagger. */
+export type AssetNaiTagsMode = 'off' | 'inline' | 'prepass' | 'prepass_vision';
+
 const NATURAL_BASE_MODES = new Set<NaturalBaseMode>(['off', 'short', 'detailed', 'supplement']);
 const CURATION_MODES = new Set<CurationMode>(['off', 'two_stage', 'embed_snap']);
+const ASSET_NAI_TAGS_MODES = new Set<AssetNaiTagsMode>(['off', 'inline', 'prepass', 'prepass_vision']);
 
 /** Clamp card.person_tag_weight to 0–5 (missing/NaN → 3). */
 export function normalizePersonTagWeight(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return 3;
   return Math.max(0, Math.min(5, Math.round(n)));
+}
+
+/**
+ * Normalize `card.asset_nai_tags` from legacy booleans / unknown strings.
+ * Legacy true → `prepass_vision` (previous default when the toggle was on).
+ */
+export function normalizeAssetNaiTagsMode(value: unknown): AssetNaiTagsMode {
+  if (value === true || value === 'true' || value === 1 || value === '1' || value === 'on') {
+    return 'prepass_vision';
+  }
+  if (
+    value === false
+    || value === 'false'
+    || value === 0
+    || value === '0'
+    || value === 'off'
+    || value === 'none'
+    || value == null
+    || value === ''
+  ) {
+    return 'off';
+  }
+  const s = String(value).toLowerCase().trim();
+  if (s === 'legacy' || s === 'together' || s === 'single') return 'inline';
+  if (s === 'split' || s === 'looks') return 'prepass';
+  if (s === 'vision' || s === 'split_vision' || s === 'prepass+vision') return 'prepass_vision';
+  if (ASSET_NAI_TAGS_MODES.has(s as AssetNaiTagsMode)) return s as AssetNaiTagsMode;
+  return 'off';
 }
 
 /**
@@ -113,8 +145,8 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   else if (loreExtra === false || loreExtra === 'false' || loreExtra === 'none') card.lore_extra = 'off';
   else if (loreExtra === 'full' || loreExtra === 'tags' || loreExtra === 'off') card.lore_extra = loreExtra;
   else card.lore_extra = 'tags';
-  // asset_nai_tags: pull NAI metadata from matched Risu assets for new_characters
-  card.asset_nai_tags = card.asset_nai_tags === true || card.asset_nai_tags === 'true' || card.asset_nai_tags === 1 || card.asset_nai_tags === '1';
+  // asset_nai_tags: off | inline | prepass | prepass_vision (legacy bool → off / prepass_vision)
+  card.asset_nai_tags = normalizeAssetNaiTagsMode(card.asset_nai_tags);
   card.auto_aspect = card.auto_aspect === true || card.auto_aspect === 'true' || card.auto_aspect === 1 || card.auto_aspect === '1';
   // natural_base: legacy boolean → "off" | "short" | "detailed" | "supplement"
   card.natural_base = normalizeNaturalBaseMode(card.natural_base);

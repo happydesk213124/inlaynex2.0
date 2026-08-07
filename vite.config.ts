@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.3';
+const PLUGIN_VERSION = '2.2.4';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -623,6 +623,14 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.4</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>응답 후 자동 생성: 스트리밍은 scriptHandler(output) — 5초 무음 또는 훅 문장 DOM 미부착 1초×5회 연속이면 DOM#0 연결 메시지로 생성</li>
+            <li>비스트리밍: chat output / afterRequest(폴백) · 클릭 생성과 같이 캐릭·이미지 없을 때만</li>
+            <li>말풍선 삽화 keep: 스크롤 시 전체 strip 대신 빠진 말풍선만 정리(렉 완화)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.3</strong>
@@ -4348,13 +4356,15 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     try {
       const doc = await ue().catch(() => t.hostDoc);
       if (!doc) return;
-      let els = t._msgElsCache?.doc === doc ? t._msgElsCache.els : null;
+      let fromCache = !!(t._msgElsCache?.doc === doc && Array.isArray(t._msgElsCache.els) && t._msgElsCache.els.length);
+      let els = fromCache ? t._msgElsCache.els : null;
       if (!Array.isArray(els) || !els.length) {
         try {
           els = await getCachedMsgEls(doc);
         } catch {
           els = [];
         }
+        fromCache = !1;
       }
       if (!Array.isArray(els) || !els.length) return;
       const selIdx = Number(sel.domIndex);
@@ -4490,11 +4500,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         return Array.isArray(arr) ? arr : [arr];
       };
-      // Drop data:image markers from every bubble we are not keeping (memory bound).
-      for (let i = 0; i < els.length; i += 1) {
-        if (keep.has(i)) continue;
-        const el = els[i];
-        if (!el || typeof el.querySelectorAll != "function") continue;
+      const stripInlineMarkersAt = async (idx) => {
+        if (!Number.isFinite(idx) || idx < 0 || idx >= els.length || keep.has(idx)) return;
+        const el = els[idx];
+        if (!el || typeof el.querySelectorAll != "function") return;
         try {
           let nodes = [];
           try {
@@ -4502,7 +4511,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           } catch {
             nodes = [];
           }
-          if (!nodes.length) continue;
+          if (!nodes.length) return;
           for (const node of nodes) {
             try {
               if (node && typeof node.remove == "function") await node.remove();
@@ -4523,9 +4532,22 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         } catch {
         }
+      };
+      // Diff strip: only drop markers leaving the keep window (prev − keep).
+      // Full non-keep sweep only when the message DOM list remounts/resizes —
+      // otherwise every scroll would SafeDOM-scan the whole chat.
+      const prevKeep = Array.isArray(t._inlineKeepIdxs) ? t._inlineKeepIdxs : [];
+      const elsRemounted = !fromCache || t._inlineKeepDoc !== doc || Number(t._inlineKeepElsLen) !== els.length;
+      if (elsRemounted) {
+        for (let i = 0; i < els.length; i += 1) await stripInlineMarkersAt(i);
+      } else {
+        for (const i of prevKeep) await stripInlineMarkersAt(i);
       }
+      t._inlineKeepIdxs = [...keep].sort((a, b) => a - b);
+      t._inlineKeepDoc = doc;
+      t._inlineKeepElsLen = els.length;
       const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
-      y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${[...keep].sort((a, b) => a - b).join(",")}/\${els.length}\`);
+      y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=\${elsRemounted ? "full" : "diff"}\`);
       if (keep.has(selIdx) && els[selIdx]) {
         await injectChatInlineImages(els[selIdx], linkedCards(sel), t._inlinePending);
       }
@@ -4783,60 +4805,291 @@ const VENDOR_STREAM_SETTLE_KA_PATCH =
   }`;
 
 /**
- * Auto-gen afterRequest: skip short AI replies (≤30 chars) — was <8 in vendor.
+ * "응답 후 자동 생성":
+ * Primary = addRisuChatListener('output') (streaming + non-streaming).
+ * Fallback = afterRequest when chat listener unavailable.
+ * Shared path: 0.5s → DOM#0 select → Be(..., true) like 태그 재생성.
  */
-const VENDOR_AFTER_REQUEST_MINLEN_NEEDLE =
-  `      if (!a || a.length < 8)
-        return y("info", "afterRequest.skip", "text too short"), e;`;
-const VENDOR_AFTER_REQUEST_MINLEN_PATCH =
-  `      if (!a || a.length <= 30)
-        return y("info", "afterRequest.skip", "text too short"), e;`;
-
-/**
- * "응답 후 자동 생성": wait 0.5s, select DOM#0 (newest), reuse select→Ka path
- * so hash/message_index/role match the real bubble (not raw afterRequest text).
- */
-const VENDOR_AFTER_REQUEST_DELAY_NEEDLE =
-  `      if (!i.auto_gen_on_reply) return y("info", "afterRequest.skip", "reply-auto-gen-off"), e;
+const VENDOR_AFTER_REPLY_FN_NEEDLE =
+  `  async function _t(e, n = "") {
+    try {
+      const o = await ve();
+      if (!o.enabled)
+        return y("info", "afterRequest.skip", "plugin disabled"), e;
+      const a = w(e, 5e4);
+      if (!a || a.length < 8)
+        return y("info", "afterRequest.skip", "text too short"), e;
+      const r = await Z({ useOverride: !1 });
+      if (!r || r.charIndex < 0)
+        return y("warn", "afterRequest.skip", "no scope"), e;
+      try {
+        await le();
+      } catch {
+      }
+      try {
+        if (!t.galleryUi?.root || !t.overlayUi?.root) await it();
+      } catch {
+      }
+      const i = t.backendSettings?.card || {};
+      if (i.power === !1) return y("info", "afterRequest.skip", "power off"), e;
+      if (i.execute === "manual") return y("info", "afterRequest.skip", "execute=manual"), e;
+      if (!i.auto_gen_on_reply) return y("info", "afterRequest.skip", "reply-auto-gen-off"), e;
       y("info", "afterRequest.gen", \`chars=\${a.length} session=\${(r.sessionId || "").slice(-8)}\`);
       await Be(r, a, !1);
-      return e;`;
-const VENDOR_AFTER_REQUEST_DELAY_PATCH =
-  `      if (!i.auto_gen_on_reply) return y("info", "afterRequest.skip", "reply-auto-gen-off"), e;
-      const AFTER_GEN_DELAY_MS = 5e2;
-      if (t._afterGenTimer) {
-        clearTimeout(t._afterGenTimer);
-        t._afterGenTimer = null;
+      return e;
+    } catch (o) {
+      y("error", "afterRequest.fail", o?.message || o);
+    }
+    return e;
+  }`;
+const VENDOR_AFTER_REPLY_FN_PATCH =
+  `  function normAfterReplyText(s) {
+    return String(s || "").replace(/\\s+/g, " ").trim().toLowerCase();
+  }
+  function domHasScriptHint(domText, hint) {
+    const d = normAfterReplyText(domText);
+    const h = normAfterReplyText(hint);
+    if (!d || !h) return !1;
+    if (d.includes(h) || h.includes(d)) return !0;
+    const tail = h.length > 120 ? h.slice(-120) : h;
+    return tail.length >= 20 && d.includes(tail);
+  }
+  function clearScriptOutputTimers() {
+    if (t._scriptQuietTimer) {
+      clearTimeout(t._scriptQuietTimer);
+      t._scriptQuietTimer = null;
+    }
+    if (t._scriptMissTimer) {
+      clearTimeout(t._scriptMissTimer);
+      t._scriptMissTimer = null;
+    }
+  }
+  // 생성 본문은 항상 DOM#0에 연결된 message 텍스트 (훅 원문 아님).
+  async function runAutoGenFromDom(source) {
+    if (t._afterGenRunning) {
+      y("info", "afterReply.skip", \`\${source} already running\`);
+      return;
+    }
+    t._afterGenRunning = !0;
+    clearScriptOutputTimers();
+    if (t._afterGenTimer) {
+      clearTimeout(t._afterGenTimer);
+      t._afterGenTimer = null;
+    }
+    t._scriptMissStreak = 0;
+    t._afterGenGen = (t._afterGenGen || 0) + 1;
+    try {
+      const card = t.backendSettings?.card || {};
+      if (card.power === !1 || !card.auto_gen_on_reply) {
+        y("info", "afterReply.skip", "toggled-off");
+        return;
       }
-      t._afterGenGen = (t._afterGenGen || 0) + 1;
-      const gen = t._afterGenGen;
-      y("info", "afterRequest.schedule", \`delay=\${AFTER_GEN_DELAY_MS}ms chars=\${a.length} session=\${(r.sessionId || "").slice(-8)}\`);
-      t._afterGenTimer = setTimeout(() => {
-        t._afterGenTimer = null;
-        if (gen !== t._afterGenGen) return;
+      const o = await ve();
+      if (!o.enabled) return y("info", "afterReply.skip", "plugin disabled");
+      try {
+        await le();
+      } catch {
+      }
+      try {
+        if (!t.galleryUi?.root || !t.overlayUi?.root) await it();
+      } catch {
+      }
+      const doc = await ue().catch(() => t.hostDoc);
+      if (!doc) return y("warn", "afterReply.skip", "no host doc");
+      t._msgElsCache = null;
+      const els = await getCachedMsgEls(doc);
+      if (!els?.length) return y("warn", "afterReply.skip", "no message elements");
+      y("info", "afterReply.select", \`src=\${source} DOM#0 of \${els.length}\`);
+      await Da(0, els, { source: "provisional" });
+      const sel = t.selectedMessage;
+      if (!sel?.text) return y("warn", "afterReply.skip", "no selected text");
+      if (String(sel.text).length <= 30) return y("info", "afterReply.skip", "selected text too short");
+      if (!isSelectedCharRole(sel.role)) {
+        y("info", "afterReply.skip", \`src=\${source} user message\`);
+        return;
+      }
+      let linked = [];
+      try {
+        linked = linkedCards(sel) || [];
+      } catch {
+        linked = [];
+      }
+      if (linked.length) {
+        y("info", "afterReply.skip", \`src=\${source} hasImage cards=\${linked.length}\`);
+        return;
+      }
+      const scope = await Z({ useOverride: !1 }).catch(() => null);
+      if (!scope || scope.charIndex < 0) return y("warn", "afterReply.skip", "no scope");
+      y("info", "afterReply.gen", \`src=\${source} chars=\${String(sel.text).length} hash=\${String(sel.hash || "").slice(0, 8)}\`);
+      await Ka(sel.text, sel.hash);
+    } finally {
+      t._afterGenRunning = !1;
+    }
+  }
+  async function scheduleAutoGenOnReply(source, textHint) {
+    const hint = w(textHint, 5e4);
+    if (hint && hint.length <= 30) {
+      y("info", "afterReply.skip", \`\${source} text too short\`);
+      return;
+    }
+    // chatOutput/afterRequest only (scriptOutput has its own quiet/miss path).
+    const AFTER_GEN_DELAY_MS = 5e2;
+    if (t._afterGenTimer) {
+      clearTimeout(t._afterGenTimer);
+      t._afterGenTimer = null;
+    }
+    t._afterGenGen = (t._afterGenGen || 0) + 1;
+    const gen = t._afterGenGen;
+    y("info", "afterReply.schedule", \`src=\${source} delay=\${AFTER_GEN_DELAY_MS}ms chars=\${hint ? hint.length : "?"}\`);
+    t._afterGenTimer = setTimeout(() => {
+      t._afterGenTimer = null;
+      if (gen !== t._afterGenGen) return;
+      runAutoGenFromDom(source).catch((err) => {
+        y("error", "afterReply.fail", err?.message || err);
+      });
+    }, AFTER_GEN_DELAY_MS);
+  }
+  async function onChatOutput(arg) {
+    try {
+      const o = await ve();
+      if (!o.enabled) return;
+      const card = t.backendSettings?.card || {};
+      if (card.power === !1 || !card.auto_gen_on_reply) return;
+      const idx = Number(arg?.messageIndex);
+      const msgs = arg?.chat?.message;
+      const msg = Number.isFinite(idx) && idx >= 0 && Array.isArray(msgs) ? msgs[idx] : null;
+      const role = w(msg?.role ?? "", 40);
+      if (role && !isSelectedCharRole(role)) {
+        y("info", "chatOutput.skip", "user message");
+        return;
+      }
+      const text = w(msg?.data ?? msg?.content ?? "", 5e4);
+      if (!text || text.length <= 30) {
+        y("info", "chatOutput.skip", "text too short");
+        return;
+      }
+      await scheduleAutoGenOnReply("chatOutput", text);
+    } catch (err) {
+      y("error", "chatOutput.fail", err?.message || err);
+    }
+  }
+  // Streaming: (A) 5s quiet → gen  (B) 훅 문장이 DOM에 1초 확인×5회 연속 미부착 → gen
+  // 생성 텍스트는 항상 DOM 연결 message.
+  async function onScriptOutput(content) {
+    try {
+      const card = t.backendSettings?.card || {};
+      if (card.power === !1 || !card.auto_gen_on_reply) return content;
+      const text = w(content, 5e4);
+      if (!text || text.length <= 30) return content;
+      t._scriptHint = text;
+      // (A) 청크 5초 무음 = 스트림 끝 → DOM 기준 생성
+      if (t._scriptQuietTimer) clearTimeout(t._scriptQuietTimer);
+      t._scriptQuietTimer = setTimeout(() => {
+        t._scriptQuietTimer = null;
+        y("info", "scriptOutput.quiet", "5s no chunk → gen from DOM message");
+        runAutoGenFromDom("scriptOutput.quiet").catch((err) => {
+          y("error", "afterReply.fail", err?.message || err);
+        });
+      }, 5e3);
+      // (B) 이번 청크 후 1초 → DOM에 훅 문장 붙었는지. 5회 연속 미부착이면 생성.
+      if (t._scriptMissTimer) clearTimeout(t._scriptMissTimer);
+      t._scriptMissTimer = setTimeout(() => {
+        t._scriptMissTimer = null;
         (async () => {
-          const card = t.backendSettings?.card || {};
-          if (card.power === !1 || card.execute === "manual" || !card.auto_gen_on_reply) {
-            y("info", "afterRequest.skip", "toggled-off-during-delay");
-            return;
-          }
+          if (t._afterGenRunning) return;
+          const hint = w(t._scriptHint, 5e4);
+          if (!hint) return;
           const doc = await ue().catch(() => t.hostDoc);
-          if (!doc) return y("warn", "afterRequest.skip", "no host doc");
+          if (!doc) return;
           t._msgElsCache = null;
           const els = await getCachedMsgEls(doc);
-          if (!els?.length) return y("warn", "afterRequest.skip", "no message elements");
-          y("info", "afterRequest.select", \`DOM#0 of \${els.length}\`);
-          await Da(0, els, { source: "text" });
+          if (!els?.length) return;
+          await Da(0, els, { source: "provisional" });
+          const sel = t.selectedMessage;
+          if (!sel?.text) {
+            t._scriptMissStreak = (t._scriptMissStreak || 0) + 1;
+          } else if (domHasScriptHint(sel.text, hint)) {
+            t._scriptMissStreak = 0;
+            return;
+          } else {
+            t._scriptMissStreak = (t._scriptMissStreak || 0) + 1;
+          }
+          const streak = t._scriptMissStreak || 0;
+          y("info", "scriptOutput.miss", \`hint not in DOM streak=\${streak}/5\`);
+          if (streak >= 5) {
+            y("info", "scriptOutput.miss5", "5 consecutive misses → gen from DOM message");
+            await runAutoGenFromDom("scriptOutput.miss5");
+          }
         })().catch((err) => {
-          y("error", "afterRequest.fail", err?.message || err);
+          y("error", "scriptOutput.miss.fail", err?.message || err);
         });
-      }, AFTER_GEN_DELAY_MS);
-      return e;`;
+      }, 1e3);
+    } catch (err) {
+      y("error", "scriptOutput.fail", err?.message || err);
+    }
+    return content;
+  }
+  async function _t(e, n = "") {
+    try {
+      // Prefer chat output listener when present (non-stream). Avoid double-fire.
+      if (t._chatOutputReady) return e;
+      const o = await ve();
+      if (!o.enabled)
+        return y("info", "afterRequest.skip", "plugin disabled"), e;
+      const a = w(e, 5e4);
+      if (!a || a.length <= 30)
+        return y("info", "afterRequest.skip", "text too short"), e;
+      const i = t.backendSettings?.card || {};
+      if (i.power === !1) return y("info", "afterRequest.skip", "power off"), e;
+      if (!i.auto_gen_on_reply) return y("info", "afterRequest.skip", "reply-auto-gen-off"), e;
+      await scheduleAutoGenOnReply("afterRequest", a);
+      return e;
+    } catch (o) {
+      y("error", "afterRequest.fail", o?.message || o);
+    }
+    return e;
+  }`;
 
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 약 0.5초 뒤 최신 말풍선(DOM#0)을 선택해 연결을 확인한 뒤 이미지를 만듭니다. 답변이 30자 이하면 건너뜁니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "스트리밍: script output이 5초 안 오거나, 받은 문장이 DOM에 1초 확인×5회 연속 안 붙으면 DOM#0 연결 메시지 기준으로 생성. 비스트리밍: chat/afterRequest 후 0.5초. 캐릭·이미지 없을 때만. 30자 이하·Power/토글 OFF·유저면 스킵." },`;
+
+const VENDOR_CHAT_OUTPUT_BOOT_NEEDLE =
+  `      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
+      await k.addRisuReplacer("afterRequest", _t), t.replacerReady = !0;`;
+const VENDOR_CHAT_OUTPUT_BOOT_PATCH =
+  `      t._chatOutputReady = !1;
+      t._scriptOutputReady = !1;
+      if (typeof k.addRisuChatListener == "function") {
+        try {
+          await k.addRisuChatListener("output", onChatOutput);
+          t._chatOutputReady = !0;
+          y("info", "chatOutput.ready", "output listener on");
+        } catch (err) {
+          y("warn", "chatOutput.init", z(err?.message || err));
+        }
+      } else {
+        y("info", "chatOutput.skip", "addRisuChatListener unavailable");
+      }
+      if (typeof k.addRisuScriptHandler == "function") {
+        try {
+          await k.addRisuScriptHandler("output", onScriptOutput);
+          t._scriptOutputReady = !0;
+          y("info", "scriptOutput.ready", "editoutput debounce (streaming end)");
+        } catch (err) {
+          y("warn", "scriptOutput.init", z(err?.message || err));
+        }
+      } else {
+        y("info", "scriptOutput.skip", "addRisuScriptHandler unavailable");
+      }
+      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
+      await k.addRisuReplacer("afterRequest", _t), t.replacerReady = !0;`;
+
+const VENDOR_CHAT_OUTPUT_UNLOAD_NEEDLE =
+  `await D("removeAfter", () => k.removeRisuReplacer?.("afterRequest", _t), null);`;
+const VENDOR_CHAT_OUTPUT_UNLOAD_PATCH =
+  `await D("removeScriptOutput", () => t._scriptOutputReady ? k.removeRisuScriptHandler?.("output", onScriptOutput) : null, null), await D("removeChatOutput", () => t._chatOutputReady ? k.removeRisuChatListener?.("output", onChatOutput) : null, null), await D("removeAfter", () => k.removeRisuReplacer?.("afterRequest", _t), null);`;
 
 /**
  * On select/rebind: retarget in-flight job save-hash when finished DOM matches (≥60%).
@@ -5158,8 +5411,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.3",
-    body: "설정 열 때 뷰어/스티키 숨김 · 썸네일 transform 스크롤(휠·중클릭·터치) · 프리셋 목록 클릭 수정. 업데이트 내역 탭 참고."
+    title: "2.2.4",
+    body: "응답 후 자동생성 스트리밍(script output 5초 무음·DOM 미부착 5회) · 삽화 keep diff strip. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -6648,9 +6901,10 @@ const loadVendorUi = (): string => {
     [VENDOR_SELECT_BIND_NEEDLE, 'select gesture bind contextmenu'],
     [VENDOR_SELECT_OVERLAY_NEEDLE, 'select gesture overlay ctxId'],
     [VENDOR_SELECT_UNBIND_NEEDLE, 'select gesture unbind contextmenu'],
-    [VENDOR_AFTER_REQUEST_MINLEN_NEEDLE, 'afterRequest minlen 30'],
-    [VENDOR_AFTER_REQUEST_DELAY_NEEDLE, 'afterRequest DOM#0 select'],
-    [VENDOR_AFTER_REQUEST_HELP_NEEDLE, 'afterRequest help DOM#0'],
+    [VENDOR_AFTER_REPLY_FN_NEEDLE, 'afterReply chatOutput+_t'],
+    [VENDOR_AFTER_REQUEST_HELP_NEEDLE, 'afterRequest help chatOutput'],
+    [VENDOR_CHAT_OUTPUT_BOOT_NEEDLE, 'chatOutput boot register'],
+    [VENDOR_CHAT_OUTPUT_UNLOAD_NEEDLE, 'chatOutput unload remove'],
     [VENDOR_REBIND_RETARGET_NEEDLE, 'job save-hash retarget on select'],
     [VENDOR_SELECT_SAME_NEEDLE, 'select same-session early-return'],
     [VENDOR_SCROLL_GALLERY_NEW_NEEDLE, 'scroll select gallery load'],
@@ -6881,9 +7135,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_SELECT_BIND_NEEDLE, VENDOR_SELECT_BIND_PATCH)
     .replace(VENDOR_SELECT_OVERLAY_NEEDLE, VENDOR_SELECT_OVERLAY_PATCH)
     .replace(VENDOR_SELECT_UNBIND_NEEDLE, VENDOR_SELECT_UNBIND_PATCH)
-    .replace(VENDOR_AFTER_REQUEST_MINLEN_NEEDLE, VENDOR_AFTER_REQUEST_MINLEN_PATCH)
-    .replace(VENDOR_AFTER_REQUEST_DELAY_NEEDLE, VENDOR_AFTER_REQUEST_DELAY_PATCH)
+    .replace(VENDOR_AFTER_REPLY_FN_NEEDLE, VENDOR_AFTER_REPLY_FN_PATCH)
     .replace(VENDOR_AFTER_REQUEST_HELP_NEEDLE, VENDOR_AFTER_REQUEST_HELP_PATCH)
+    .replace(VENDOR_CHAT_OUTPUT_BOOT_NEEDLE, VENDOR_CHAT_OUTPUT_BOOT_PATCH)
+    .replace(VENDOR_CHAT_OUTPUT_UNLOAD_NEEDLE, VENDOR_CHAT_OUTPUT_UNLOAD_PATCH)
     .replace(VENDOR_REBIND_RETARGET_NEEDLE, VENDOR_REBIND_RETARGET_PATCH)
     .replace(VENDOR_SELECT_SAME_NEEDLE, VENDOR_SELECT_SAME_PATCH)
     .replace(VENDOR_SCROLL_GALLERY_NEW_NEEDLE, VENDOR_SCROLL_GALLERY_NEW_PATCH)

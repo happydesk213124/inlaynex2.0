@@ -250,6 +250,23 @@ type ScriptMode = 'display' | 'output' | 'input' | 'process';
 type ReplacerType = 'beforeRequest' | 'afterRequest';
 
 /**
+ * Argument passed to chat lifecycle listeners (`addRisuChatListener`).
+ * Fires for both streaming and non-streaming after the model output is committed.
+ */
+type ChatOutputListenerArg = {
+    /** Current character */
+    char: any;
+    /** Current chat */
+    chat: any;
+    /** Index of the character in the database. Use with `setCharacterToIndex`. */
+    characterIndex: number;
+    /** Index of the chat within the character. Use with `setChatToIndex`. */
+    chatIndex: number;
+    /** Current index of the generated message in `chat.message`, or -1 if removed */
+    messageIndex: number;
+};
+
+/**
  * Risuai Plugin definition
  */
 interface RisuPlugin {
@@ -1747,6 +1764,25 @@ interface RisuaiPluginAPI {
     removeRisuScriptHandler(
         mode: ScriptMode,
         func: (content: string) => string | null | undefined | Promise<string | null | undefined>
+    ): Promise<void>;
+
+    // ========== Chat listeners ==========
+
+    /**
+     * Registers a chat lifecycle listener.
+     * - `'output'`: fires after an AI message is appended/updated (streaming and non-streaming).
+     */
+    addRisuChatListener(
+        mode: 'output',
+        func: (arg: ChatOutputListenerArg) => void | Promise<void>
+    ): Promise<void>;
+
+    /**
+     * Removes a chat lifecycle listener previously registered with `addRisuChatListener`.
+     */
+    removeRisuChatListener(
+        mode: 'output',
+        func: (arg: ChatOutputListenerArg) => void | Promise<void>
     ): Promise<void>;
 
     // ========== Replacers ==========

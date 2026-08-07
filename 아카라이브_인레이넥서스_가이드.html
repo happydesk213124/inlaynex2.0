@@ -1,0 +1,406 @@
+<div style="max-width:900px;margin:0 auto;background:linear-gradient(165deg,#050814,#0c1028 42%,#120a22 78%,#070b18);border:1px solid #3a3f6e;color:#d8def5;font-family:'Pretendard','Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;box-shadow:inset 0 0 48px rgba(20,10,50,0.55);">
+
+  <div style="padding:8px 16px;background:linear-gradient(90deg,rgba(155,184,255,0.12),rgba(201,160,255,0.18),rgba(126,200,232,0.12));border-bottom:1px solid #3a3f6e;text-align:center;font-size:12px;font-weight:700;color:#b8c4f0;">&#8251; 본 소개글은 다크 모드에 최적화되어 있습니다.</div>
+
+  <div style="padding:42px 28px 32px;text-align:center;border-bottom:1px solid #3a3f6e;background:radial-gradient(ellipse at 50% 0%,rgba(155,184,255,0.22),rgba(201,160,255,0.08) 42%,rgba(5,8,20,0) 72%);">
+    <div style="font-size:11px;letter-spacing:5px;color:#9bb8ff;font-weight:800;">INLAY NEXUS · GUIDE</div>
+    <div style="font-size:34px;line-height:1.25;font-weight:900;color:#f0f3ff;margin-top:14px;text-shadow:0 0 24px rgba(155,184,255,0.35);">은하 너머의<br>삽화 생성 가이드</div>
+    <div style="font-size:14px;line-height:1.85;color:#a8b0d8;max-width:620px;margin:16px auto 0;">JS만 설치하면 됩니다. 스트리밍 중 생성, 자동 에셋 태깅, 큐레이팅, 시드 유지 리롤까지 — 기존 삽화 모듈과의 차이를 한곳에 모았습니다.</div>
+  </div>
+
+  <table style="width:100%;border-collapse:collapse;border:0;">
+    <tbody>
+      <tr>
+        <td style="width:33%;padding:12px 10px;border:1px solid #3a3f6e;text-align:center;background:linear-gradient(180deg,#12183a,#0a0e1f);color:#f0f3ff;"><strong>VERSION</strong><br><span style="font-size:12px;color:#8a93c0;">2.2.2+</span></td>
+        <td style="width:34%;padding:12px 10px;border:1px solid #3a3f6e;text-align:center;background:linear-gradient(180deg,#12183a,#0a0e1f);color:#f0f3ff;"><strong>NEED</strong><br><span style="font-size:12px;color:#8a93c0;">JS only</span></td>
+        <td style="width:33%;padding:12px 10px;border:1px solid #3a3f6e;text-align:center;background:linear-gradient(180deg,#12183a,#0a0e1f);color:#f0f3ff;"><strong>STATUS</strong><br><span style="font-size:12px;color:#8a93c0;">READY</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="padding:28px 26px 8px;">
+    <div style="text-align:center;padding:8px 0 18px;">
+      <a href="https://drive.proton.me/urls/RNQYPMX7WR#rUctr9qyJFpo" target="_blank" rel="noopener noreferrer" style="text-decoration:none;"><span style="display:inline-block;padding:13px 34px;background:linear-gradient(135deg,#9bb8ff,#6b7fd4);border:1px solid #9bb8ff;border-radius:8px;color:#0a0e1f;font-size:14px;font-weight:800;">Proton 다운로드 · 새 탭</span></a>
+    </div>
+
+    <div style="padding:16px 18px;background:linear-gradient(90deg,rgba(155,184,255,0.14),#0a0e1f);border-left:3px solid #9bb8ff;margin:8px 0 18px;">
+      <div style="font-size:11px;letter-spacing:3px;color:#9bb8ff;font-weight:800;">안내</div>
+      <div style="font-size:14px;color:#d8def5;line-height:1.75;margin-top:7px;">플러그인 JS만 쓰면 됩니다.<br>큐레이터를 쓸 분만 카탈로그에서 <strong style="color:#f0f3ff;">구글 번역 영어 태그</strong> / <strong style="color:#f0f3ff;">한국어 태그</strong> 중 골라 받으세요.</div>
+    </div>
+
+    <div style="padding:16px 18px;background:linear-gradient(90deg,rgba(232,176,110,0.16),#0a0e1f);border-left:3px solid #e8b06e;margin:0 0 22px;">
+      <div style="font-size:11px;letter-spacing:3px;color:#e8b06e;font-weight:800;">중요 · 2.2.2</div>
+      <div style="font-size:14px;color:#d8def5;line-height:1.75;margin-top:7px;"><strong style="color:#f0f3ff;">2.2.2 업데이트 시 프롬프트 기본값 초기화</strong>를 한 번 해 주세요.</div>
+    </div>
+  </div>
+
+  <div style="padding:6px 26px 10px;">
+    <div style="font-size:11px;letter-spacing:4px;color:#c9a0ff;font-weight:800;margin-bottom:8px;">CHAPTER · 01</div>
+    <div style="font-size:22px;font-weight:900;color:#f0f3ff;margin-bottom:14px;">기존 삽화 모듈과 뭐가 다른가요?</div>
+
+    <div style="margin:0 0 12px;padding:18px 20px;background:linear-gradient(90deg,#161b3a,#0a0e1f);border-left:4px solid #c9a0ff;">
+      <div style="font-size:18px;line-height:1.55;color:#eef0ff;font-weight:700;">스트리밍 중에도 생성할 수 있다.</div>
+    </div>
+
+    <div style="border-left:2px solid #6b7fd4;margin:16px 0 8px 6px;">
+      <div style="padding:10px 0 10px 16px;border-bottom:1px solid #2e3560;">
+        <span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;background:linear-gradient(135deg,#9bb8ff,#6b7fd4);color:#0a0e1f;font-size:11px;font-weight:800;margin-right:10px;">1</span>
+        <span style="font-size:14px;color:#d8def5;">이미지 총 5장 뽑을 때, <strong style="color:#f0f3ff;">먼저 생성되는 이미지부터</strong> 볼 수 있습니다.</span>
+      </div>
+      <div style="padding:10px 0 10px 16px;border-bottom:1px solid #2e3560;">
+        <span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;background:linear-gradient(135deg,#9bb8ff,#6b7fd4);color:#0a0e1f;font-size:11px;font-weight:800;margin-right:10px;">2</span>
+        <span style="font-size:14px;color:#d8def5;">해당 채팅 에셋을 뒤져서 <strong style="color:#f0f3ff;">에셋 태그를 자동으로</strong> 넣습니다.</span>
+      </div>
+      <div style="padding:10px 0 10px 16px;border-bottom:1px solid #2e3560;">
+        <span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;background:linear-gradient(135deg,#9bb8ff,#6b7fd4);color:#0a0e1f;font-size:11px;font-weight:800;margin-right:10px;">3</span>
+        <span style="font-size:14px;color:#d8def5;"><strong style="color:#f0f3ff;">큐레이팅</strong>으로 정밀 태깅이 가능합니다. (LLM 2번 호출)</span>
+      </div>
+      <div style="padding:10px 0 10px 16px;border-bottom:1px solid #2e3560;">
+        <span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;background:linear-gradient(135deg,#9bb8ff,#6b7fd4);color:#0a0e1f;font-size:11px;font-weight:800;margin-right:10px;">4</span>
+        <span style="font-size:14px;color:#d8def5;">언제든지 태그를 수정하거나 리롤할 수 있습니다.</span>
+      </div>
+      <div style="padding:10px 0 10px 16px;border-bottom:1px solid #2e3560;">
+        <span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;background:linear-gradient(135deg,#9bb8ff,#6b7fd4);color:#0a0e1f;font-size:11px;font-weight:800;margin-right:10px;">5</span>
+        <span style="font-size:14px;color:#d8def5;">태그를 잘 뽑습니다. 프리셋은 옵션바로 쉽게 고를 수 있습니다.</span>
+      </div>
+      <div style="padding:10px 0 10px 16px;">
+        <span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;background:linear-gradient(135deg,#9bb8ff,#6b7fd4);color:#0a0e1f;font-size:11px;font-weight:800;margin-right:10px;">6</span>
+        <span style="font-size:14px;color:#d8def5;">NAI 이미지를 넣으면 <strong style="color:#f0f3ff;">프리셋이 자동 입력</strong>됩니다.</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="height:28px;line-height:28px;text-align:center;color:#3a3f6e;font-size:12px;letter-spacing:8px;">&#10022;&nbsp;&nbsp;&#10022;&nbsp;&nbsp;&#10022;</div>
+
+  <div style="padding:6px 26px 22px;">
+    <div style="font-size:11px;letter-spacing:4px;color:#c9a0ff;font-weight:800;margin-bottom:8px;">CHAPTER · 02</div>
+    <div style="font-size:22px;font-weight:900;color:#f0f3ff;margin-bottom:14px;">초반 세팅 (공통)</div>
+
+    <div style="padding:16px 18px;background:linear-gradient(160deg,#12183a,#0a0e1f);border:1px solid #3a3f6e;margin-bottom:12px;">
+      <div style="font-size:12px;letter-spacing:2px;color:#9bb8ff;font-weight:800;margin-bottom:8px;">STEP A · 태그 모델</div>
+      <div style="font-size:14px;line-height:1.8;color:#d8def5;">플러그인 설정 &gt; 모델설정 &gt; <strong style="color:#f0f3ff;">태그모델</strong>에서 보조모델 / 메인모델 / 직접입력 중 알맞은 방식으로 설정한 뒤 태깅하세요.</div>
+    </div>
+
+    <div style="padding:16px 18px;background:linear-gradient(160deg,#12183a,#0a0e1f);border:1px solid #3a3f6e;">
+      <div style="font-size:12px;letter-spacing:2px;color:#9bb8ff;font-weight:800;margin-bottom:8px;">STEP B · 이미지 백엔드</div>
+      <div style="font-size:14px;line-height:1.8;color:#d8def5;"><strong style="color:#f0f3ff;">NAI API</strong> 또는 <strong style="color:#f0f3ff;">ComfyUI</strong> 중 하나를 골라 입력합니다.<br>ComfyUI는 도움말 설명을 꼭 읽고 쓰시길 바랍니다.</div>
+    </div>
+  </div>
+
+  <div style="height:28px;line-height:28px;text-align:center;color:#3a3f6e;font-size:12px;letter-spacing:8px;">&#10022;&nbsp;&nbsp;&#10022;&nbsp;&nbsp;&#10022;</div>
+
+  <div style="padding:6px 26px 10px;">
+    <div style="font-size:11px;letter-spacing:4px;color:#c9a0ff;font-weight:800;margin-bottom:8px;">CHAPTER · 03</div>
+    <div style="font-size:22px;font-weight:900;color:#f0f3ff;margin-bottom:6px;">초간단 사용법</div>
+    <div style="font-size:13px;color:#8a93c0;margin-bottom:16px;line-height:1.7;">원하는 스타일에 맞는 접기 항목을 열어 보세요.</div>
+
+    <details style="margin-bottom:12px;">
+      <summary style="background:linear-gradient(90deg,#161b3a,#0c1028);padding:14px 18px;font-size:14px;font-weight:700;color:#f0f3ff;border:1px solid #3a3f6e;">
+        삽화 모듈처럼 메시지 안에 이미지를 두고 싶어요 <span style="float:right;color:#8a93c0;font-size:11px;font-weight:400;">상세 보기</span>
+      </summary>
+      <div style="padding:16px 18px;background:linear-gradient(180deg,#0a0e1f,#12183a);font-size:14px;color:#d8def5;line-height:1.85;border:1px solid #3a3f6e;border-top:0;">
+        <div style="margin-bottom:12px;">아래처럼 세팅하는 걸 추천합니다.</div>
+        <table style="width:100%;border-collapse:collapse;border:0;margin:10px 0 6px;">
+          <tbody>
+            <tr>
+              <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">추천 세팅 예시</td>
+            </tr>
+            <tr>
+              <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+                <img src="//ac.arca.live/20260807sac/8125516baf2e44ee27f9d7ffecfe67aa64050d4c537e7b37fc7c866d9023928c.png?expires=1786094244&amp;key=TkfaGD5GoAkoopcEuYRCEg" class="fr-fic fr-dii" style="width:100%;max-width:808px;">
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details style="margin-bottom:12px;">
+      <summary style="background:linear-gradient(90deg,#161b3a,#0c1028);padding:14px 18px;font-size:14px;font-weight:700;color:#f0f3ff;border:1px solid #3a3f6e;">
+        메시지 스트리밍을 받다가, 원할 때만 생성하고 싶어요 <span style="float:right;color:#8a93c0;font-size:11px;font-weight:400;">상세 보기</span>
+      </summary>
+      <div style="padding:16px 18px;background:linear-gradient(180deg,#0a0e1f,#12183a);font-size:14px;color:#d8def5;line-height:1.85;border:1px solid #3a3f6e;border-top:0;">
+        <div style="padding:14px 16px;background:linear-gradient(90deg,rgba(232,176,110,0.14),#0a0e1f);border-left:3px solid #e8b06e;margin-bottom:14px;">
+          <div style="font-size:11px;letter-spacing:2px;color:#e8b06e;font-weight:800;">주의</div>
+          <div style="font-size:13px;color:#d8def5;line-height:1.7;margin-top:6px;">스트리밍이 <strong style="color:#f0f3ff;">50% 이상</strong> 진행되어야, 스트리밍 완료 후에도 이미지가 연결됩니다.</div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;border:0;margin:10px 0 12px;">
+          <tbody>
+            <tr>
+              <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">스트리밍 모드 세팅</td>
+            </tr>
+            <tr>
+              <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+                <img src="//ac.arca.live/20260807sac/9c6fdb231c55b599d8c7205155025298507e5c2658c986e4e9bf57d5b06b44e6.png?expires=1786093865&amp;key=mEH7xWRAaV_ndqmHXVBGCA" class="fr-fic fr-dii" style="width:100%;max-width:808px;">
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="font-size:14px;line-height:1.8;">이미지 메시지 선택 동작을 원하는 타이밍에 <strong style="color:#f0f3ff;">우클릭</strong>하면, 그 시점부터 바로 생성이 시작됩니다.</div>
+      </div>
+    </details>
+
+    <details style="margin-bottom:12px;">
+      <summary style="background:linear-gradient(90deg,#161b3a,#0c1028);padding:14px 18px;font-size:14px;font-weight:700;color:#f0f3ff;border:1px solid #3a3f6e;">
+        우측 상단 설정 바로가기는 어떻게 끄나요? <span style="float:right;color:#8a93c0;font-size:11px;font-weight:400;">상세 보기</span>
+      </summary>
+      <div style="padding:16px 18px;background:linear-gradient(180deg,#0a0e1f,#12183a);font-size:14px;color:#d8def5;line-height:1.85;border:1px solid #3a3f6e;border-top:0;">
+        <table style="width:100%;border-collapse:collapse;border:0;margin:0 0 12px;">
+          <tbody>
+            <tr>
+              <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">설정 바로가기 UI</td>
+            </tr>
+            <tr>
+              <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+                <img src="//ac.arca.live/20260807sac/dadcdeeed04f6a7b3977ac1478e51558d99d658348c8406558fd263f9ee40d5e.png?expires=1786098175&amp;key=m2bnfNQ8VLokRPlqK2gyMA" class="fr-fic fr-dii" style="width:100%;max-width:808px;">
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <table style="width:100%;border-collapse:collapse;border:0;margin:0 0 12px;">
+          <tbody>
+            <tr>
+              <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">해당 옵션 위치</td>
+            </tr>
+            <tr>
+              <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+                <img src="//ac.arca.live/20260807sac/a120529fab1c50282ac108a0b4143597ae074c5912f9c4e60c9ce37dc59889b2.png?expires=1786098194&amp;key=abRPMfRKzLuOn3-WJaHtqQ" class="fr-fic fr-dii" style="width:100%;max-width:808px;">
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="padding:14px 16px;background:linear-gradient(90deg,rgba(155,184,255,0.14),#0a0e1f);border-left:3px solid #9bb8ff;">
+          <div style="font-size:11px;letter-spacing:2px;color:#9bb8ff;font-weight:800;">해결</div>
+          <div style="font-size:14px;color:#d8def5;line-height:1.7;margin-top:6px;">해당 옵션을 <strong style="color:#f0f3ff;">체크 해제</strong>하면 됩니다.</div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div style="height:28px;line-height:28px;text-align:center;color:#3a3f6e;font-size:12px;letter-spacing:8px;">&#10022;&nbsp;&nbsp;&#10022;&nbsp;&nbsp;&#10022;</div>
+
+  <div style="padding:6px 26px 22px;">
+    <div style="font-size:11px;letter-spacing:4px;color:#c9a0ff;font-weight:800;margin-bottom:8px;">CHAPTER · 04</div>
+    <div style="font-size:22px;font-weight:900;color:#f0f3ff;margin-bottom:10px;">lb-xnai · 토큰 아끼기</div>
+    <div style="font-size:14px;line-height:1.85;color:#d8def5;margin-bottom:14px;">삽화 모델에 <span style="font-family:'Consolas','Monaco','Courier New',monospace;color:#9bb8ff;">lb-xnai.lb.extra</span> 를 지원합니다.<br>여기서 <strong style="color:#f0f3ff;">캐릭터 태그만 참고</strong>해서 토큰을 아끼는 방식이 있습니다.</div>
+
+    <table style="width:100%;border-collapse:collapse;border:0;margin:0 0 12px;">
+      <tbody>
+        <tr>
+          <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">관련 옵션</td>
+        </tr>
+        <tr>
+          <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+            <img src="//ac.arca.live/20260807sac/abbe989650a5cdbe08a210c9cb69967b45f059efb908b0d5b1f52d229f2c2df9.png?expires=1786098217&amp;key=9r3RTHhjOUFNl3CukAQ4XA" class="fr-fic fr-dii" style="width:100%;max-width:790px;">
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <table style="width:100%;border-collapse:collapse;border:0;margin:0 0 12px;">
+      <tbody>
+        <tr>
+          <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">캐릭터 태그 참고 설정</td>
+        </tr>
+        <tr>
+          <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+            <img src="//ac.arca.live/20260807sac/aac5aea9504caebe0633a9cba57f16189d0e2e9f6b2ee8b381a8dd8f1686f433.png?expires=1786098253&amp;key=ltQBexd4YRUktk-Hk8grxQ" class="fr-fic fr-dii" style="width:100%;max-width:411px;">
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <table style="width:100%;border-collapse:collapse;border:0;margin:0 0 14px;">
+      <tbody>
+        <tr>
+          <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">에셋 NAI 태그</td>
+        </tr>
+        <tr>
+          <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+            <img src="//ac.arca.live/20260807sac/6b1811d8b64586cd51bdebe42218970bfcf432b34250304dcee6cf5ed432ee2f.png?expires=1786098912&amp;key=OBJjkEHYk-6TJmMaj5Da-Q" class="fr-fic fr-dii" style="width:100%;max-width:808px;">
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="padding:16px 18px;background:linear-gradient(90deg,rgba(201,160,255,0.14),#0a0e1f);border-left:3px solid #c9a0ff;">
+      <div style="font-size:11px;letter-spacing:3px;color:#c9a0ff;font-weight:800;">에셋 NAI 태그란?</div>
+      <div style="font-size:14px;color:#d8def5;line-height:1.8;margin-top:7px;">에셋 메타데이터 태그를 LLM에 한 번 보내 캐릭터를 추가한 뒤 작성합니다.<br>토큰이 대략 <strong style="color:#f0f3ff;">1000</strong> 정도 더 듭니다. 켜 두는 걸 추천합니다.</div>
+    </div>
+  </div>
+
+  <div style="height:28px;line-height:28px;text-align:center;color:#3a3f6e;font-size:12px;letter-spacing:8px;">&#10022;&nbsp;&nbsp;&#10022;&nbsp;&nbsp;&#10022;</div>
+
+  <div style="padding:6px 26px 22px;">
+    <div style="font-size:11px;letter-spacing:4px;color:#c9a0ff;font-weight:800;margin-bottom:8px;">CHAPTER · 05</div>
+    <div style="font-size:22px;font-weight:900;color:#f0f3ff;margin-bottom:10px;">큐레이팅이 뭔가요?</div>
+
+    <table style="width:100%;border-collapse:collapse;border:0;margin:0 0 14px;">
+      <tbody>
+        <tr>
+          <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">큐레이팅 UI</td>
+        </tr>
+        <tr>
+          <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+            <img src="//ac.arca.live/20260807sac/39ce17b99a06c60aa412a20c91421095b2b2d9009671f9cdfe3f8903994bd399.png?expires=1786098278&amp;key=s6FVxZ_ncVZWHKw-ehSLIw" class="fr-fic fr-dii" style="width:100%;max-width:977px;">
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="padding:16px 18px;background:linear-gradient(160deg,#12183a,#0a0e1f);border:1px solid #3a3f6e;margin-bottom:12px;">
+      <div style="font-size:14px;line-height:1.85;color:#d8def5;">큐레이팅은 <strong style="color:#f0f3ff;">NAI용</strong>입니다. 태그를 잘 못 뽑는 AI를 위해 삽화 태그를 정해 주는 기능입니다.<br>현재 상황을 보고 원하는 태그를 넣어 줍니다.</div>
+    </div>
+
+    <div style="font-size:16px;font-weight:800;color:#f0f3ff;margin:18px 0 10px;">명령 수정 · 리롤</div>
+
+    <table style="width:100%;border-collapse:collapse;border:0;margin:0 0 14px;">
+      <tbody>
+        <tr>
+          <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">명령 수정 · 리롤 UI</td>
+        </tr>
+        <tr>
+          <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+            <img src="//ac.arca.live/20260807sac/aa43539f24efa7d7aab9ddade743df4eee07acf13ad047a7438c85c27e07f5c5.png?expires=1786099694&amp;key=NCgJpc6SuepX8DHAsxkihQ" class="fr-fic fr-dii" style="width:100%;max-width:808px;">
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="padding:16px 18px;background:linear-gradient(90deg,rgba(155,184,255,0.12),#0a0e1f);border-left:3px solid #9bb8ff;margin-bottom:12px;">
+      <div style="font-size:11px;letter-spacing:3px;color:#9bb8ff;font-weight:800;">카탈로그 필요</div>
+      <div style="font-size:14px;color:#d8def5;line-height:1.85;margin-top:7px;">
+        쓰려면 카탈로그가 필요합니다.<br>
+        <a href="https://drive.proton.me/urls/RNQYPMX7WR#rUctr9qyJFpo" target="_blank" rel="noopener noreferrer" style="text-decoration:none;"><span style="color:#9bb8ff;font-weight:700;border-bottom:1px solid #6b7fd4;">Proton</span></a>에서 <span style="font-family:'Consolas','Monaco','Courier New',monospace;color:#c9a0ff;">DEFAULT_PRESET_CATALOG</span> 를 사용할 수 있습니다.<br>
+        토큰을 아끼려면 영어판 <span style="font-family:'Consolas','Monaco','Courier New',monospace;color:#c9a0ff;">DEFAULT_PRESET_CATALOG (EN · google translated)</span> 를 받으세요.
+      </div>
+    </div>
+
+    <div style="padding:16px 18px;background:linear-gradient(160deg,#12183a,#0a0e1f);border:1px solid #3a3f6e;">
+      <div style="font-size:12px;letter-spacing:2px;color:#8a93c0;font-weight:800;margin-bottom:8px;">임베딩식에 대해</div>
+      <div style="font-size:14px;line-height:1.85;color:#d8def5;">임베딩식은 LLM이 생성한 태그를 임베딩해서 단브루 태그로 바꿔 주는 방식입니다.<br>퀄은 보장하지 않습니다. 만들어 보긴 했는데 체감 퀄은 아쉽습니다.</div>
+    </div>
+  </div>
+
+  <div style="height:28px;line-height:28px;text-align:center;color:#3a3f6e;font-size:12px;letter-spacing:8px;">&#10022;&nbsp;&nbsp;&#10022;&nbsp;&nbsp;&#10022;</div>
+
+  <div style="padding:6px 26px 22px;">
+    <div style="font-size:11px;letter-spacing:4px;color:#c9a0ff;font-weight:800;margin-bottom:8px;">CHAPTER · 06</div>
+    <div style="font-size:22px;font-weight:900;color:#f0f3ff;margin-bottom:10px;">이미지 뷰어 · 시드 유지 리롤</div>
+
+    <div style="padding:15px 18px;background:linear-gradient(160deg,#12183a,#0a0e1f);border:1px solid #3a3f6e;margin-bottom:14px;">
+      <div style="font-size:14px;line-height:1.8;color:#d8def5;">스티키 활성화 이미지, 또는 삽입된 이미지를 <strong style="color:#f0f3ff;">꾸욱 누르면</strong> 전체화면(이미지 뷰어)이 됩니다.</div>
+    </div>
+
+    <table style="width:100%;border-collapse:collapse;border:0;margin:0 0 10px;">
+      <tbody>
+        <tr>
+          <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">이미지 뷰어 · Base 버튼</td>
+        </tr>
+        <tr>
+          <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+            <img src="//ac.arca.live/20260807sac/2eaae628f9a82b50e4d90dbb5dd606111f81ee4143dfa0a89210c34d39d2b85d.png?expires=1786099766&amp;key=ceYdN7mpcVmDU3JWOcEFBA" class="fr-fic fr-dii" style="width:100%;max-width:808px;">
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <table style="width:100%;border-collapse:collapse;border:0;margin:0 0 14px;">
+      <tbody>
+        <tr>
+          <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">뷰어 상세</td>
+        </tr>
+        <tr>
+          <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+            <img src="//ac.arca.live/20260807sac/df4a14439cbc563920cc55411f8ff4e7960b90c42976c7ff45315d2a2ad3d152.png?expires=1786099763&amp;key=7RRWEj0nChUWsm3Hhly1cA" class="fr-fic fr-dii" style="width:100%;max-width:808px;">
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="padding:16px 18px;background:linear-gradient(90deg,rgba(155,184,255,0.14),#0a0e1f);border-left:3px solid #9bb8ff;margin-bottom:16px;">
+      <div style="font-size:11px;letter-spacing:3px;color:#9bb8ff;font-weight:800;">Base 버튼</div>
+      <div style="font-size:14px;color:#d8def5;line-height:1.8;margin-top:7px;">이미지 꾸욱 눌렀을 때 나오는 위 화면에서 <strong style="color:#f0f3ff;">Base</strong> 버튼을 누르면, 해당 샷 수정 명령(지시사항)으로 명령을 고쳐서 <strong style="color:#f0f3ff;">리롤</strong>할 수 있습니다.<br><strong style="color:#e8b06e;">시드는 유지</strong>됩니다.</div>
+    </div>
+
+    <table style="width:100%;border-collapse:collapse;border:0;margin:0 0 12px;">
+      <tbody>
+        <tr>
+          <td style="background:linear-gradient(90deg,#161b3a,#0c1028);border:1px solid #3a3f6e;text-align:center;padding:8px 10px;font-size:12px;font-weight:700;color:#b8c4f0;">명령으로 태그 추가</td>
+        </tr>
+        <tr>
+          <td style="background:linear-gradient(180deg,#0a0e1f,#12183a);border:1px solid #3a3f6e;text-align:center;padding:10px;">
+            <img src="//ac.arca.live/20260807sac/df16e10630a0eb7e25bcbbbc867ea12417c3e1a65467bacd0ea5ab677e1c3d3f.png?expires=1786099985&amp;key=fHp_nxtnnFoB61Aw0uM9_Q" class="fr-fic fr-dii" style="width:100%;max-width:295px;">
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="font-size:14px;line-height:1.85;color:#d8def5;margin-bottom:16px;">위처럼 명령으로 태그를 추가할 수 있습니다.<br>시드가 유지되기 때문에, 아래처럼 <strong style="color:#f0f3ff;">표정만 바꾸는</strong> 식의 수정이 가능합니다.</div>
+
+    <table style="width:100%;border-collapse:separate;border-spacing:12px 0;border:0;margin:0 0 8px;">
+      <tbody>
+        <tr>
+          <td style="width:50%;vertical-align:top;padding:14px;background:linear-gradient(160deg,#161b3a,#0a0e1f);border:1px solid #3a3f6e;text-align:center;">
+            <div style="font-size:11px;letter-spacing:2px;color:#8a93c0;font-weight:800;margin-bottom:10px;">BEFORE · 전</div>
+            <img src="//ac.arca.live/20260807sac/ebd71338a8243d05eac3f48e75230be8456350ca1296a898b4b9cbb994b21527.webp?expires=1786099998&amp;key=Q0IHDqM_e-2i04Cxzie8Ig" class="fr-fic fr-dii" style="width:100%;max-width:180px;">
+          </td>
+          <td style="width:50%;vertical-align:top;padding:14px;background:linear-gradient(160deg,#161b3a,#0a0e1f);border:1px solid #3a3f6e;text-align:center;">
+            <div style="font-size:11px;letter-spacing:2px;color:#9bb8ff;font-weight:800;margin-bottom:10px;">AFTER · 후</div>
+            <img src="//ac.arca.live/20260807sac/2fe5674a8a7a7e4faa4e9abdc04088a256af97563ce2b7fdacfe79a29b6d075a.webp?expires=1786099998&amp;key=UUtAaRylfuSflZ1KD9XgNg" class="fr-fic fr-dii" style="width:100%;max-width:180px;">
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="font-size:13px;color:#8a93c0;text-align:center;line-height:1.7;">시드 유지 리롤로 표정만 바꾼 예시</div>
+  </div>
+
+  <div style="height:28px;line-height:28px;text-align:center;color:#3a3f6e;font-size:12px;letter-spacing:8px;">&#10022;&nbsp;&nbsp;&#10022;&nbsp;&nbsp;&#10022;</div>
+
+  <div style="padding:6px 26px 22px;">
+    <div style="font-size:11px;letter-spacing:4px;color:#c9a0ff;font-weight:800;margin-bottom:8px;">CHAPTER · 07</div>
+    <div style="font-size:22px;font-weight:900;color:#f0f3ff;margin-bottom:12px;">마치며</div>
+
+    <div style="padding:15px 18px;background:linear-gradient(160deg,#12183a,#0a0e1f);border:1px solid #3a3f6e;margin-bottom:10px;">
+      <div style="font-size:14px;line-height:1.8;color:#d8def5;"><strong style="color:#c9a0ff;">프롬프트</strong> — 더 깎으면 더 잘될 것 같긴 한데… 엄두가 안 납니다.</div>
+    </div>
+    <div style="padding:15px 18px;background:linear-gradient(160deg,#12183a,#0a0e1f);border:1px solid #3a3f6e;">
+      <div style="font-size:14px;line-height:1.8;color:#d8def5;"><strong style="color:#e8b06e;">버그</strong> — 웬만한 건 잡았습니다. 그외 버그 사안은 댓글로 작성 부탁드려요.</div>
+    </div>
+  </div>
+
+  <div style="margin:8px 26px 28px;padding:22px 20px;background:linear-gradient(160deg,#16102e,#0a0e1f);border:1px solid #4a3a72;box-shadow:inset 0 0 28px rgba(80,40,120,0.25);">
+    <div style="font-size:11px;letter-spacing:4px;color:#c9a0ff;font-weight:800;text-align:center;">SPECIAL THANKS</div>
+    <div style="font-size:18px;font-weight:900;color:#f0f3ff;text-align:center;margin-top:8px;margin-bottom:16px;">참고 · 감사</div>
+
+    <div style="padding:12px 14px;border-bottom:1px solid #2e3560;">
+      <div style="font-size:12px;color:#8a93c0;margin-bottom:4px;">프롬프트 참고</div>
+      <div style="font-size:14px;line-height:1.7;color:#d8def5;">
+        인레이 모듈 —
+        <a href="https://arca.live/b/characterai/176675290" target="_blank" rel="noopener noreferrer" style="text-decoration:none;"><span style="color:#9bb8ff;font-weight:700;border-bottom:1px solid #6b7fd4;">arca.live/b/characterai/176675290</span></a>
+      </div>
+    </div>
+    <div style="padding:12px 14px;border-bottom:1px solid #2e3560;">
+      <div style="font-size:12px;color:#8a93c0;margin-bottom:4px;">UI 참고</div>
+      <div style="font-size:14px;line-height:1.7;color:#d8def5;">
+        Archive Nexus —
+        <a href="https://arca.live/b/characterai/177582896" target="_blank" rel="noopener noreferrer" style="text-decoration:none;"><span style="color:#9bb8ff;font-weight:700;border-bottom:1px solid #6b7fd4;">arca.live/b/characterai/177582896</span></a>
+      </div>
+    </div>
+    <div style="padding:12px 14px 4px;">
+      <div style="font-size:12px;color:#8a93c0;margin-bottom:4px;">큐레이터 로직 · 프리셋 JSON</div>
+      <div style="font-size:14px;line-height:1.7;color:#d8def5;">
+        에셋메이드 참고 —
+        <a href="https://arca.live/b/characterai/178025192" target="_blank" rel="noopener noreferrer" style="text-decoration:none;"><span style="color:#9bb8ff;font-weight:700;border-bottom:1px solid #6b7fd4;">arca.live/b/characterai/178025192</span></a>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:18px 26px 28px;text-align:center;border-top:1px solid #3a3f6e;background:linear-gradient(180deg,#0c1028,#050814);">
+    <div style="font-size:12px;letter-spacing:3px;color:#8a93c0;margin-bottom:12px;">DOWNLOAD · UPDATE</div>
+    <a href="https://drive.proton.me/urls/RNQYPMX7WR#rUctr9qyJFpo" target="_blank" rel="noopener noreferrer" style="text-decoration:none;"><span style="display:inline-block;padding:12px 30px;background:linear-gradient(135deg,#9bb8ff,#6b7fd4);border:1px solid #9bb8ff;border-radius:8px;color:#0a0e1f;font-size:13px;font-weight:800;">Proton에서 받기 · 새 탭</span></a>
+    <div style="font-size:12px;color:#6e7699;margin-top:14px;line-height:1.7;">버그 · 건의는 댓글로 남겨 주세요.</div>
+  </div>
+
+</div>

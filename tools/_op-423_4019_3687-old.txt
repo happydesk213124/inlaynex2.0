@@ -1,0 +1,66 @@
+const VENDOR_INLINE_PTR_STICKY_PATCH = `    }, l = async (f) => {
+      if (typeof f?.clientX == "number") t._pointerClientX = f.clientX;
+      if (typeof f?.clientY == "number") t._pointerClientY = f.clientY;
+      // 말풍선 삽화: nearest-shot sticky — skip Ht only when segment is unchanged.
+      if (t.backendSettings?.card?.inline_chat_images === !0 && !t.uiOpen && (typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) && t.overlayUi?.markers?.length) {
+        if (!t._inlineStickyPtrRaf) {
+          const kick = () => {
+            t._inlineStickyPtrRaf = 0;
+            try {
+              const ov = t.overlayUi;
+              if (!ov?.markers?.length) return;
+              // _liveScrollY is only written on scroll — seed it so peek works before first scroll.
+              let scrollY = Number(ov._liveScrollY);
+              if (!Number.isFinite(scrollY) && typeof window < "u") {
+                scrollY = window.scrollY || window.pageYOffset || 0;
+                ov._liveScrollY = scrollY;
+              }
+              let want = null;
+              if (ov._pinRectCache && ov._pinRectAtScrollY != null && Number.isFinite(scrollY)) {
+                const base = ov._pinRectCache, delta = scrollY - Number(ov._pinRectAtScrollY);
+                const est = {
+                  top: Number(base.top) - delta,
+                  bottom: Number(base.bottom) - delta,
+                  left: Number(base.left) || 0,
+                  right: Number(base.right) || 0,
+                  width: Number(base.width) || 0,
+                  height: Number(base.height) || 0
+                };
+                const vh = viewerViewport().vh, band = 0.5, VC = globalThis.__INLAY_VIEWER_CORE__;
+                let reading = typeof VC?.readingPercentInMessage == "function" ? VC.readingPercentInMessage(est, vh, band) : na(est, vh, band);
+                if (reading == null) reading = typeof VC?.clampReadingPercent == "function" ? VC.clampReadingPercent(est, vh, band) : cn(est, vh, band);
+                if (reading != null && Number.isFinite(Number(reading))) {
+                  const markerPcts = ov.markers.map((T) => Number(T.yPercent) || 0);
+                  want = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, reading) : dn(markerPcts, reading);
+                  if (typeof VC?.stickySegmentForInlineChat == "function") {
+                    want = VC.stickySegmentForInlineChat({
+                      inlineChatOn: !0,
+                      pointerX: t._pointerClientX,
+                      pointerY: t._pointerClientY,
+                      messageRect: est,
+                      markerPercents: markerPcts,
+                      markerCenters: ov.markers.map((T) => T._inlineCenter || null),
+                      fallbackSegment: want
+                    });
+                  }
+                }
+              }
+              const cur = ov._flashSeg != null ? ov._flashSeg : ov.activeSegment;
+              // Only skip when we know the segment is unchanged; if peek failed, still sync (old behavior).
+              if (want != null && want === cur) return;
+              stickyFlashOnScroll();
+              scheduleStickySync();
+            } catch {
+            }
+          };
+          t._inlineStickyPtrRaf = typeof requestAnimationFrame == "function" ? requestAnimationFrame(kick) : (kick(), 0);
+        }
+      }
+      if (t.uiOpen || t._hostChromeBlocked) return;
+      if (pointerGesture && typeof f.clientX == "number" && typeof f.clientY == "number") {
+        pointerGesture.movement = Math.max(pointerGesture.movement || 0, Math.hypot(f.clientX - pointerGesture.x, f.clientY - pointerGesture.y));
+      }
+      if (mobilePress && typeof f.clientX == "number" && typeof f.clientY == "number" && Math.hypot(f.clientX - mobilePress.x, f.clientY - mobilePress.y) > 8) cancelMobilePress();
+      // Sticky pin hover preview removed — keep preview layer hidden.
+      if (t._hoverPreviewCardId) s().catch(() => {});
+    }, p = async (f) => {`;

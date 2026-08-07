@@ -1,0 +1,190 @@
+/**
+ * pointermove: XY only + (inline) flash when shot index changes.
+ * Never Ht/scheduleStickySync here — that waits for scroll settle.
+ */
+const VENDOR_INLINE_PTR_STICKY_NEEDLE = `    }, l = async (f) => {
+      if (typeof f?.clientX == "number") t._pointerClientX = f.clientX;
+      if (typeof f?.clientY == "number") t._pointerClientY = f.clientY;
+      if (t.uiOpen || t._hostChromeBlocked) return;
+      if (pointerGesture && typeof f.clientX == "number" && typeof f.clientY == "number") {
+        pointerGesture.movement = Math.max(pointerGesture.movement || 0, Math.hypot(f.clientX - pointerGesture.x, f.clientY - pointerGesture.y));
+      }
+      if (mobilePress && typeof f.clientX == "number" && typeof f.clientY == "number" && Math.hypot(f.clientX - mobilePress.x, f.clientY - mobilePress.y) > 8) cancelMobilePress();
+      const x = t.overlayUi?.markers || [];
+      if (!x.length || !hoverPreviewOn()) {
+        await s();
+        return;
+      }
+      const I = f.clientX, R = f.clientY;
+      if (!(typeof I != "number" || typeof R != "number")) {
+        for (const g of x.filter((F) => F.active || F.mini)) if (await c(g, I, R)) {
+          await i(g.card, I, R);
+          return;
+        }
+        await s();
+      }
+    }, p = async (f) => {`;
+const VENDOR_INLINE_PTR_STICKY_PATCH = `    }, l = async (f) => {
+      if (typeof f?.clientX == "number") t._pointerClientX = f.clientX;
+      if (typeof f?.clientY == "number") t._pointerClientY = f.clientY;
+      // 말풍선 삽화: remember pointer; paint sticky shot only when nearest segment changes (no Ht).
+      if (t.backendSettings?.card?.inline_chat_images === !0 && !t.uiOpen && (typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) && t.overlayUi?.markers?.length) {
+        if (!t._inlineStickyPtrRaf) {
+          const kick = () => {
+            t._inlineStickyPtrRaf = 0;
+            try {
+              const ov = t.overlayUi;
+              if (!ov?.markers?.length) return;
+              let scrollY = Number(ov._liveScrollY);
+              if (!Number.isFinite(scrollY) && typeof window < "u") {
+                scrollY = window.scrollY || window.pageYOffset || 0;
+                ov._liveScrollY = scrollY;
+              }
+              if (!ov._pinRectCache || ov._pinRectAtScrollY == null || !Number.isFinite(scrollY)) return;
+              const base = ov._pinRectCache, delta = scrollY - Number(ov._pinRectAtScrollY);
+              const est = {
+                top: Number(base.top) - delta,
+                bottom: Number(base.bottom) - delta,
+                left: Number(base.left) || 0,
+                right: Number(base.right) || 0,
+                width: Number(base.width) || 0,
+                height: Number(base.height) || 0
+              };
+              const vh = viewerViewport().vh, band = 0.5, VC = globalThis.__INLAY_VIEWER_CORE__;
+              let reading = typeof VC?.readingPercentInMessage == "function" ? VC.readingPercentInMessage(est, vh, band) : na(est, vh, band);
+              if (reading == null) reading = typeof VC?.clampReadingPercent == "function" ? VC.clampReadingPercent(est, vh, band) : cn(est, vh, band);
+              if (reading == null || !Number.isFinite(Number(reading))) return;
+              const markerPcts = ov.markers.map((T) => Number(T.yPercent) || 0);
+              let want = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, reading) : dn(markerPcts, reading);
+              if (typeof VC?.stickySegmentForInlineChat == "function") {
+                want = VC.stickySegmentForInlineChat({
+                  inlineChatOn: !0,
+                  pointerX: t._pointerClientX,
+                  pointerY: t._pointerClientY,
+                  messageRect: est,
+                  markerPercents: markerPcts,
+                  markerCenters: ov.markers.map((T) => T._inlineCenter || null),
+                  fallbackSegment: want
+                });
+              }
+              const cur = ov._flashSeg != null ? ov._flashSeg : ov.activeSegment;
+              const changed = typeof VC?.stickySegChanged == "function" ? VC.stickySegChanged(cur, want) : want !== cur;
+              if (!changed) return;
+              stickyFlashOnScroll();
+            } catch {
+            }
+          };
+          t._inlineStickyPtrRaf = typeof requestAnimationFrame == "function" ? requestAnimationFrame(kick) : (kick(), 0);
+        }
+      }
+      if (t.uiOpen || t._hostChromeBlocked) return;
+      if (pointerGesture && typeof f.clientX == "number" && typeof f.clientY == "number") {
+        pointerGesture.movement = Math.max(pointerGesture.movement || 0, Math.hypot(f.clientX - pointerGesture.x, f.clientY - pointerGesture.y));
+      }
+      if (mobilePress && typeof f.clientX == "number" && typeof f.clientY == "number" && Math.hypot(f.clientX - mobilePress.x, f.clientY - mobilePress.y) > 8) cancelMobilePress();
+      if (t._hoverPreviewCardId) s().catch(() => {});
+    }, p = async (f) => {`;
+
+/** Scroll: active = scrollY + flash only; settle = Ht + message track. No wheel→full work. */
+const VENDOR_SCROLL_PHASE_NEEDLE = `    }, u = () => {
+      if (t.uiOpen) return;
+      // Capture native scrollY synchronously — SafeDOM rects are too slow for sticky image swaps.
+      try {
+        if (typeof window < "u" && t.overlayUi) t.overlayUi._liveScrollY = window.scrollY || window.pageYOffset || 0;
+      } catch {
+      }
+      stickyFlashOnScroll();
+      // Scroll path: coalesce full sticky correct to 1 rAF; select only after short idle.
+      scheduleStickySync(), scheduleScrollTrack();
+    }, onScrollEnd = () => {
+      if (t.uiOpen) return;
+      try {
+        if (typeof window < "u" && t.overlayUi) t.overlayUi._liveScrollY = window.scrollY || window.pageYOffset || 0;
+      } catch {
+      }
+      // End of gesture: correct with a real pin rect (not just the estimate).
+      scheduleStickySync(!0), settleScrollTrackNow();
+    }, onUserScrollStart = u, b = await fe(n, "scroll", u, !0), C = await fe(e, "scroll", u, !0), S = await fe(e, "scrollend", onScrollEnd, !0);
+    let E = !1;
+    if (typeof window < "u") try {
+      window.addEventListener("scroll", u, !0), window.addEventListener("scrollend", onScrollEnd, !0), window.addEventListener("wheel", onUserScrollStart, {
+        capture: !0,
+        passive: !0
+      }), window.addEventListener("resize", u), E = !0;
+    } catch {
+      try {
+        window.addEventListener("scroll", u), window.addEventListener("wheel", onUserScrollStart), window.addEventListener("resize", u), E = !0;
+      } catch {
+      }
+    }`;
+const VENDOR_SCROLL_PHASE_PATCH = `    }, captureLiveScrollY = () => {
+      try {
+        if (typeof window < "u" && t.overlayUi) t.overlayUi._liveScrollY = window.scrollY || window.pageYOffset || 0;
+      } catch {
+      }
+    }, ensureScrollPhaseBus = () => {
+      if (t._scrollPhaseBus) return t._scrollPhaseBus;
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      const make = VC?.createScrollPhaseBus;
+      const settleMs = 160;
+      const onActive = () => {
+        if (t.uiOpen) return;
+        captureLiveScrollY();
+        stickyFlashOnScroll();
+      };
+      const onSettle = () => {
+        if (t.uiOpen) return;
+        captureLiveScrollY();
+        scheduleStickySync(!0);
+        settleScrollTrackNow();
+      };
+      t._scrollPhaseBus = typeof make == "function"
+        ? make({ settleDelayMs: settleMs, onActive, onSettle })
+        : {
+          onScrollSample() {
+            onActive();
+            if (t._scrollPhaseTimer) clearTimeout(t._scrollPhaseTimer);
+            t._scrollPhaseTimer = setTimeout(() => {
+              t._scrollPhaseTimer = null, onSettle();
+            }, settleMs);
+          },
+          onScrollEnd() {
+            onActive();
+            if (t._scrollPhaseTimer) clearTimeout(t._scrollPhaseTimer);
+            t._scrollPhaseTimer = null, onSettle();
+          },
+          cancel() {
+            if (t._scrollPhaseTimer) clearTimeout(t._scrollPhaseTimer);
+            t._scrollPhaseTimer = null;
+          }
+        };
+      return t._scrollPhaseBus;
+    }, u = () => {
+      if (t.uiOpen) return;
+      // Active only: no Ht / no message Da while fingers are moving.
+      ensureScrollPhaseBus().onScrollSample();
+    }, onScrollEnd = () => {
+      if (t.uiOpen) return;
+      ensureScrollPhaseBus().onScrollEnd();
+    }, onUserScrollStart = u, b = await fe(n, "scroll", u, !0), C = await fe(e, "scroll", u, !0), S = await fe(e, "scrollend", onScrollEnd, !0);
+    let E = !1;
+    if (typeof window < "u") try {
+      // No wheel→u: wheel already produces scroll events; doubling was a CPU multiplier.
+      window.addEventListener("scroll", u, !0), window.addEventListener("scrollend", onScrollEnd, !0), window.addEventListener("resize", onScrollEnd), E = !0;
+    } catch {
+      try {
+        window.addEventListener("scroll", u), window.addEventListener("resize", onScrollEnd), E = !0;
+      } catch {
+      }
+    }`;
+
+/** Message pick: use host viewport height, not plugin iframe innerHeight. */
+const VENDOR_SCROLL_TRACK_VH_NEEDLE = `      const o = typeof window < "u" && window.innerHeight || 800;
+      const py = Number(t._pointerClientY), px = Number(t._pointerClientX);
+      const anchorY = Number.isFinite(py) ? py : o * 0.5;
+      const anchorX = Number.isFinite(px) ? px : null;`;
+const VENDOR_SCROLL_TRACK_VH_PATCH = `      const o = viewerViewport().vh || (typeof window < "u" && window.innerHeight) || 800;
+      // Prefer viewport mid (what user is reading), not stale mouse — mouse is optional nudge only.
+      const py = Number(t._pointerClientY), px = Number(t._pointerClientX);
+      const anchorY = o * 0.5;
+      const anchorX = Number.isFinite(px) ? px : null;`;

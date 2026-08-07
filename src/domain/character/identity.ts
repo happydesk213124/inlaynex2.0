@@ -137,6 +137,48 @@ function partKeys(
   return new Set(list([char[field], ...(char[variantsField] || [])]).map(key).filter(Boolean));
 }
 
+/**
+ * Latin given-name tokens from `name` / `given_name` / variants (ASCII letter runs only).
+ * Used to link asset mononyms (hanna) to fuller rows without full-name merge.
+ */
+export function latinNameTokens(character: CharacterInput | null | undefined): Set<string> {
+  const char = migrateCharacter(character || {});
+  const blob = [char.name, char.given_name, ...(char.given_name_variants || [])].join(' ');
+  const out = new Set<string>();
+  for (const match of blob.matchAll(/[A-Za-z][A-Za-z'-]*/g)) {
+    const token = key(match[0]);
+    if (token) out.add(token);
+  }
+  return out;
+}
+
+/** True when two rows share at least one latin given/name token (exact normalized). */
+export function latinGivenTokenOverlap(
+  a: CharacterInput | null | undefined,
+  b: CharacterInput | null | undefined,
+): boolean {
+  const left = latinNameTokens(a);
+  const right = latinNameTokens(b);
+  if (!left.size || !right.size) return false;
+  for (const token of left) {
+    if (right.has(token)) return true;
+  }
+  return false;
+}
+
+/** Union host aliases with donor aliases + donor display name (no id/appearance change). */
+export function absorbAliasesFromDonor(
+  host: CharacterInput | null | undefined,
+  donor: CharacterInput | null | undefined,
+): string[] {
+  const left = migrateCharacter(host || {});
+  const right = migrateCharacter(donor || {});
+  return list([left.name, ...(left.aliases || []), right.name, ...(right.aliases || [])]);
+}
+
+/** Priority floor for characters filled via asset char_looks prepass. Higher wins. */
+export const ASSET_LOOKS_PRIORITY = 100;
+
 /** Surname + given both overlap (KR/EN variants count). Alias-only overlap does NOT merge. */
 export function sameFullNameIdentity(a: CharacterInput, b: CharacterInput): boolean {
   const left = migrateCharacter(a);

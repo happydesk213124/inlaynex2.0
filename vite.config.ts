@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.5';
+const PLUGIN_VERSION = '2.2.6';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -623,6 +623,15 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.6</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스티키 v2 상시: 원본 비율 이미지·핀 부착 · 모서리 배지 · 설정 중 z-index 매장 · 빠른 교체</li>
+            <li>말풍선 삽화: 스크롤 중엔 스티키 고정 · 멈춘 뒤/포인터로 커서 아래 삽화 hit-test·최근접 활성</li>
+            <li>응답 후 자동 생성(스트리밍): 1초×5 DOM miss 제거 · 청크 5초 무음(종료) + 스트리밍 중에만 말풍선 DOM 5초 무변화 조기 gen</li>
+            <li>에셋 캐릭터: 라틴 이름 토큰이 겹치면 트리거/별칭만 흡수(풀 머지 없음) · char_looks 시 priority 100 · LLM inject 전 적용</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.5</strong>
@@ -2359,27 +2368,406 @@ const VENDOR_INLINE_PCT_LIVE_PATCH =
       const a = Math.max(0, Ne(N("nx-inline-pct"), 100));`;
 
 /**
+ * Sticky activate path (v2 only — pin attaches to original-aspect image):
+ * - nxUpdateStickyActiveOnScrollEnd: scroll-end → reading%
+ * - nxActivateStickyByCardId: inline long-press start → that shot
+ * Legacy mid-scroll flash body is renamed dead; paint goes through nxStickyV2ApplyFromHt.
+ */
+const VENDOR_STICKY_NX_ACTIVATE_NEEDLE = `  function scheduleStickySync(forceFull = !1) {
+    if (forceFull && t.overlayUi) t.overlayUi._stickyWantFull = !0;
+    Ce();
+  }
+  /** Instant within-message image swap: estimate reading% from last pin rect + scrollY delta. */
+  function stickyFlashOnScroll() {`;
+const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull = !1) {
+    if (forceFull && t.overlayUi) t.overlayUi._stickyWantFull = !0;
+    Ce();
+  }
+  function nxStickyV2ImgStyle(box, z) {
+    return ["position:fixed", \`left:\${box.left}px\`, \`top:\${box.top}px\`, \`width:\${box.w}px\`, \`height:\${box.h}px\`, \`z-index:\${z}\`, "border:none", "outline:none", "overflow:hidden", "pointer-events:auto", "display:block", "background:transparent", "box-shadow:none", "border-radius:0"].join(";");
+  }
+  function nxStickyV2PinStyle(pin, on, z) {
+    // Blank hit target — no fill, no glyph (counts live on badge nodes).
+    return ["position:fixed", \`left:\${pin.left}px\`, \`top:\${pin.top}px\`, \`width:\${pin.size}px\`, \`height:\${pin.size}px\`, \`z-index:\${z}\`, "border-radius:0", "display:block", "pointer-events:auto", "user-select:none", "background:transparent", "border:none", "box-shadow:none", "color:transparent", "font-size:0", "line-height:0", "opacity:" + (on ? "1" : "0")].join(";");
+  }
+  function nxStickyV2BadgeStyle(pin, z) {
+    return ["position:fixed", \`left:\${pin.left}px\`, \`top:\${pin.top}px\`, \`min-width:\${pin.size}px\`, \`height:\${pin.size}px\`, "padding:0 6px", \`z-index:\${z}\`, "border-radius:6px", "display:flex", "align-items:center", "justify-content:center", "font-size:11px", "font-weight:700", "line-height:1", "pointer-events:none", "user-select:none", "background:rgba(15,23,42,.75)", "color:#e2e8f0", "border:1px solid rgba(255,255,255,.22)", "box-sizing:border-box"].join(";");
+  }
+  function nxStickyV2BadgeHideStyle(pinSize, z) {
+    return nxStickyV2BadgeStyle({ left: -9999, top: -9999, size: pinSize }, z);
+  }
+  /** Pick a marker for a badge slot — must exclude active + the other badge slot. */
+  function nxStickyV2PickBadgeMarker(e, active, exclude) {
+    for (let i = 0; i < e.markers.length; i += 1) {
+      const m = e.markers[i];
+      if (m && m !== active && m !== exclude) return m;
+    }
+    return null;
+  }
+  /** Sticky v2 layout: image at original aspect; pin attaches to image. */
+  async function nxStickyV2ApplyFromHt(opts = {}) {
+    const e = t.overlayUi;
+    if (!e?.markers?.length) return;
+    const l = Math.trunc(Number(opts.segment));
+    const reading = opts.reading;
+    const pinSize = Math.max(12, Number(opts.pinSize) || Pt || 28);
+    const showSticky = opts.showSticky !== !1;
+    const mobileOn = !!opts.mobileOn;
+    const corner = opts.corner || Ea();
+    const env = opts.env || La();
+    const vp = viewerViewport();
+    const vh = Number(opts.vh) || vp.vh;
+    const vw = vp.vw;
+    if (!Number.isFinite(l) || l < 0 || l >= e.markers.length) return;
+    const next = e.markers[l];
+    if (!next?.thumb) return;
+    if (!next._thumbSrc) {
+      try {
+        const src = typeof Ie == "function" ? Ie(next.card) : "";
+        if (typeof src == "string" && src) next._thumbSrc = src;
+      } catch {
+      }
+    }
+    const buried = !!(t.uiOpen || e._stickyEditorOpen || t.cardTagUi || t.charEditUi);
+    const zImg = buried ? 1 : 99970, zPin = buried ? 1 : 99972, zBadge = buried ? 1 : 99971;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const probed = typeof VC?.probeDataUrlPixelSize == "function" ? VC.probeDataUrlPixelSize(next._thumbSrc) : null;
+    const sized = typeof VC?.stickyThumbSizeForImage == "function"
+      ? VC.stickyThumbSizeForImage(env.w, env.h, probed?.w, probed?.h, 0, 0, { width: vw, height: vh, pad: 16 })
+      : { w: env.w, h: env.h };
+    const layout = mobileOn
+      ? (typeof VC?.stickyV2CornerLayout == "function" ? VC.stickyV2CornerLayout({ corner, imgW: sized.w, imgH: sized.h, viewportW: vw, viewportH: vh, pad: 12, pinSize, gap: 6 }) : null)
+      : (typeof VC?.stickyV2FreeLayout == "function" ? VC.stickyV2FreeLayout({ pinX: resolvePinLeftX(), pinY: resolvePinTopY(pinSize), imgW: sized.w, imgH: sized.h, pinSize, viewportW: vw, viewportH: vh }) : null);
+    if (!layout) return;
+    const counts = typeof VC?.stickyV2ShotCounts == "function" ? VC.stickyV2ShotCounts(l, e.markers.length) : { above: l, below: Math.max(0, e.markers.length - l - 1) };
+    const layoutKey = [l, mobileOn ? 1 : 0, corner, showSticky ? 1 : 0, buried ? 1 : 0, counts.above, counts.below, sized.w, sized.h, layout.image.left, layout.image.top, layout.pin.left, layout.pin.top].join("|");
+    if (e._v2LayoutKey === layoutKey && e._flashSeg === l && next._paintedSrc === next._thumbSrc) {
+      if (Number.isFinite(Number(reading))) e._lastReading = Number(reading), e._flashReading = Number(reading);
+      return;
+    }
+    const prevSeg = e._flashSeg != null ? e._flashSeg : e.activeSegment;
+    const prev = Number.isFinite(Number(prevSeg)) && Number(prevSeg) >= 0 && Number(prevSeg) < e.markers.length ? e.markers[Number(prevSeg)] : null;
+    e._flashGen = (e._flashGen || 0) + 1;
+    const flashGen = e._flashGen;
+    e._flashSeg = l;
+    e.activeSegment = l;
+    e._v2LayoutKey = layoutKey;
+    if (Number.isFinite(Number(reading))) e._lastReading = Number(reading), e._flashReading = Number(reading);
+    e._lastThumbPct = null;
+    e._stickyThumbShowStyle = nxStickyV2ImgStyle(layout.image, zImg);
+    const hideStyle = "position:fixed;display:none;";
+    const compose = typeof VC?.composeStickyV2ThumbHtml == "function" ? VC.composeStickyV2ThumbHtml : (src0) => \`<img src="\${src0}" style="width:100%;height:100%;object-fit:fill;display:block" />\`;
+    const activeId = String(next.card?.id || "");
+    const PIN = " ";
+    try {
+      // Fast swap: paint+show new, then hide old immediately (no blank gap, no delay).
+      if (showSticky && next._thumbSrc && typeof next.thumb.setInnerHTML == "function" && next._paintedSrc !== next._thumbSrc) {
+        await next.thumb.setInnerHTML(compose(next._thumbSrc));
+        if (flashGen !== e._flashGen) return;
+        next._thumbHtmlId = activeId, next._paintedSrc = next._thumbSrc, e._lastStickyThumbHtmlId = activeId;
+      }
+      if (showSticky && typeof next.thumb.setStyleAttribute == "function") {
+        await next.thumb.setStyleAttribute(e._stickyThumbShowStyle);
+      } else if (!showSticky && typeof next.thumb.setStyleAttribute == "function") {
+        await next.thumb.setStyleAttribute(hideStyle);
+      }
+      if (prev?.thumb && prev !== next && typeof prev.thumb.setStyleAttribute == "function") {
+        await prev.thumb.setStyleAttribute(hideStyle);
+      }
+      // Pin: blank hit target (no fill / no glyph).
+      if (typeof next.el?.setStyleAttribute == "function") {
+        await next.el.setStyleAttribute(nxStickyV2PinStyle(layout.pin, !0, zPin));
+        if (next._pinHtml !== PIN && typeof next.el.setInnerHTML == "function") await next.el.setInnerHTML(PIN), next._pinHtml = PIN;
+      }
+      next.active = !0, next.mini = !1, next._v2Parked = !1;
+      // Badge markers: two distinct nodes (exclude active + each other) — never share one el.
+      let leftMk = e._v2BadgeA, rightMk = e._v2BadgeB;
+      if (!leftMk || leftMk === next || leftMk === rightMk || !e.markers.includes(leftMk)) leftMk = nxStickyV2PickBadgeMarker(e, next, rightMk);
+      if (!rightMk || rightMk === next || rightMk === leftMk || !e.markers.includes(rightMk)) rightMk = nxStickyV2PickBadgeMarker(e, next, leftMk);
+      e._v2BadgeA = leftMk, e._v2BadgeB = rightMk;
+      const aboveBox = layout.aboveBadge;
+      const belowBox = layout.belowBadge;
+      const aboveLabel = counts.above > 0 ? \`▲\${counts.above}\` : "";
+      const belowLabel = counts.below > 0 ? \`▼\${counts.below}\` : "";
+      // Collapse empty slots so a lone ▲/▼ does not leave a blank pin-sized hole.
+      let paintAbove = null, paintBelow = null;
+      if (counts.above > 0 && counts.below > 0 && aboveBox && belowBox) {
+        paintAbove = aboveBox, paintBelow = belowBox;
+      } else if (counts.above > 0 && aboveBox) {
+        paintAbove = aboveBox;
+      } else if (counts.below > 0 && belowBox) {
+        paintBelow = aboveBox || belowBox;
+      }
+      if (leftMk && typeof leftMk.el?.setStyleAttribute == "function") {
+        leftMk.active = !1, leftMk.mini = !0, leftMk._v2Parked = !1;
+        if (leftMk.thumb) try {
+          await leftMk.thumb.setStyleAttribute(hideStyle);
+        } catch {
+        }
+        if (paintAbove) {
+          await leftMk.el.setStyleAttribute(nxStickyV2BadgeStyle(paintAbove, zBadge));
+          if (leftMk._pinHtml !== aboveLabel && typeof leftMk.el.setInnerHTML == "function") await leftMk.el.setInnerHTML(aboveLabel), leftMk._pinHtml = aboveLabel;
+        } else {
+          await leftMk.el.setStyleAttribute(nxStickyV2BadgeHideStyle(pinSize, zBadge));
+          if (leftMk._pinHtml !== "" && typeof leftMk.el.setInnerHTML == "function") await leftMk.el.setInnerHTML(""), leftMk._pinHtml = "";
+        }
+      }
+      if (rightMk && typeof rightMk.el?.setStyleAttribute == "function") {
+        rightMk.active = !1, rightMk.mini = !0, rightMk._v2Parked = !1;
+        if (rightMk.thumb) try {
+          await rightMk.thumb.setStyleAttribute(hideStyle);
+        } catch {
+        }
+        if (paintBelow) {
+          await rightMk.el.setStyleAttribute(nxStickyV2BadgeStyle(paintBelow, zBadge));
+          if (rightMk._pinHtml !== belowLabel && typeof rightMk.el.setInnerHTML == "function") await rightMk.el.setInnerHTML(belowLabel), rightMk._pinHtml = belowLabel;
+        } else {
+          await rightMk.el.setStyleAttribute(nxStickyV2BadgeHideStyle(pinSize, zBadge));
+          if (rightMk._pinHtml !== "" && typeof rightMk.el.setInnerHTML == "function") await rightMk.el.setInnerHTML(""), rightMk._pinHtml = "";
+        }
+      }
+      // Other marker pins: park once (no per-shot rebuild).
+      for (let T = 0; T < e.markers.length; T += 1) {
+        const v = e.markers[T];
+        if (v === next || v === leftMk || v === rightMk) continue;
+        v.active = !1, v.mini = !1;
+        if (v.thumb) try {
+          await v.thumb.setStyleAttribute(hideStyle);
+        } catch {
+        }
+        if (!v._v2Parked && typeof v.el?.setStyleAttribute == "function") {
+          await v.el.setStyleAttribute(nxStickyV2PinStyle({ left: -9999, top: -9999, size: pinSize }, !1, zPin));
+          v._v2Parked = !0;
+        }
+      }
+    } catch {
+    }
+    const syncId = activeId;
+    if (syncId && syncId !== String(e._syncedViewerCardId || "")) {
+      e._syncedViewerCardId = syncId;
+      const gui = t.galleryUi;
+      if (gui && !t.uiOpen && typeof gui.syncToCardId == "function") gui.syncToCardId(syncId).catch(() => {});
+    }
+  }
+  /** Activate sticky shot by marker index (same card order as gallery / inline). */
+  async function nxActivateStickyByIndex(idx, reading) {
+    const e = t.overlayUi;
+    if (!e?.markers?.length || t.uiOpen) return;
+    const l = Math.trunc(Number(idx));
+    if (!Number.isFinite(l) || l < 0 || l >= e.markers.length) return;
+    e._stickyPointerSeg = l;
+    if (Number.isFinite(Number(reading))) e._flashReading = Number(reading);
+    e._lastThumbPct = null;
+    e._lastStickyThumbHtmlId = null;
+    e._v2LayoutKey = null;
+    const mobileOn = typeof mobilePinOn == "function" ? mobilePinOn() : !1;
+    await nxStickyV2ApplyFromHt({
+      segment: l,
+      reading,
+      pinSize: Pt,
+      showSticky: typeof Nt == "function" ? Nt() : !0,
+      mobileOn,
+      corner: typeof Ea == "function" ? Ea() : "top-right",
+      env: typeof La == "function" ? La() : { w: 528, h: 720, pct: 100 },
+      vh: viewerViewport().vh
+    });
+  }
+  async function nxActivateStickyByCardId(cardId) {
+    const e = t.overlayUi;
+    if (!e?.markers?.length) return;
+    const id = String(cardId || "");
+    if (!id) return;
+    const idx = e.markers.findIndex((m) => String(m?.card?.id || "") === id);
+    if (idx < 0) return;
+    await nxActivateStickyByIndex(idx);
+  }
+  /** Unwrap SafeDOM NodeList → plain array (same helper pattern as inline inject). */
+  async function nxUnwrapSafeNodes(raw) {
+    if (!raw) return [];
+    try {
+      if (typeof k?.unwarpSafeArray == "function") {
+        const u = await k.unwarpSafeArray(raw);
+        return Array.isArray(u) ? u : u ? [u] : [];
+      }
+    } catch {
+    }
+    return Array.isArray(raw) ? raw : raw && typeof raw.length == "number" ? Array.from(raw) : raw ? [raw] : [];
+  }
+  /**
+   * 말풍선 삽화: cursor → hit-test bubble shot (same scope as long-press), else nearest.
+   * Idle / settle only — do not call mid-scroll (that was the lag we cut).
+   */
+  async function nxActivateStickyNearestToCursor() {
+    const e = t.overlayUi;
+    if (!e?.markers?.length || t.uiOpen) return;
+    if (t.backendSettings?.card?.inline_chat_images !== !0) return;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const vp = viewerViewport();
+    let px = Number(t._pointerClientX), py = Number(t._pointerClientY);
+    // Wheel scroll may leave pointer null — still pick nearest to viewport mid (same idea as main).
+    if (!Number.isFinite(px)) px = vp.vw * 0.5;
+    if (!Number.isFinite(py)) py = vp.vh * 0.5;
+    let rect = e._pinRectCache || null;
+    try {
+      if (e.pinTarget && typeof e.pinTarget.getBoundingClientRect == "function") {
+        const live = await e.pinTarget.getBoundingClientRect();
+        if (live) rect = live, e._pinRectCache = live;
+      }
+    } catch {
+    }
+    const markerPcts = e.markers.map((T) => Number(T.yPercent) || 0);
+    let reading = 50;
+    if (rect) {
+      reading = typeof VC?.readingPercentInMessage == "function" ? VC.readingPercentInMessage(rect, vp.vh, 0.5) : na(rect, vp.vh, 0.5);
+      if (reading == null) reading = typeof VC?.clampReadingPercent == "function" ? VC.clampReadingPercent(rect, vp.vh, 0.5) : cn(rect, vp.vh, 0.5);
+    }
+    let fallback = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, reading) : dn(markerPcts, reading);
+    // Live bubble rects — query pinTarget first, then doc root (long-press path).
+    // Cache briefly so idle pointer rAF does not thrash SafeDOM every frame.
+    const cacheAt = Number(e._inlineRectsAt) || 0;
+    const cacheAge = Date.now() - cacheAt;
+    let centers = Array.isArray(e._inlineCentersCache) && e._inlineCentersCache.length === e.markers.length
+      ? e._inlineCentersCache.slice()
+      : e.markers.map(() => null);
+    let rects = Array.isArray(e._inlineRectsCache) && e._inlineRectsCache.length === e.markers.length
+      ? e._inlineRectsCache.slice()
+      : e.markers.map(() => null);
+    const cacheOk = cacheAge >= 0 && cacheAge < 280 && rects.some((r) => r && Number.isFinite(Number(r.top)));
+    const collectFrom = async (root) => {
+      if (!root || typeof root.querySelectorAll != "function") return;
+      const nodes = await nxUnwrapSafeNodes(await root.querySelectorAll("[data-inlay-inline-shot]"));
+      for (const node of nodes) {
+        if (!node) continue;
+        let id = "";
+        try {
+          if (typeof node.getAttribute == "function") {
+            id = String(await node.getAttribute("x-inlay-inline-shot") || "");
+            if (!id) id = String(await node.getAttribute("data-inlay-inline-shot") || "");
+          }
+        } catch {
+        }
+        if (!id) {
+          try {
+            const oh = typeof node.getOuterHTML == "function" ? String(await node.getOuterHTML() || "") : "";
+            const mm = /(?:data|x)-inlay-inline-shot="([^"]+)"/.exec(oh);
+            if (mm) id = mm[1];
+          } catch {
+          }
+        }
+        if (!id) continue;
+        const idx = e.markers.findIndex((m) => String(m?.card?.id || "") === id);
+        if (idx < 0 || rects[idx]) continue;
+        try {
+          let img = null;
+          try {
+            if (typeof node.querySelector == "function") img = await node.querySelector("[data-inlay-inline-img],img");
+          } catch {
+          }
+          const target = img && typeof img.getBoundingClientRect == "function" ? img : node;
+          const br = typeof target.getBoundingClientRect == "function" ? await target.getBoundingClientRect() : null;
+          if (br && Number.isFinite(Number(br.top))) {
+            rects[idx] = br;
+            centers[idx] = {
+              x: (Number(br.left) + Number(br.right)) / 2,
+              y: (Number(br.top) + Number(br.bottom)) / 2
+            };
+          }
+        } catch {
+        }
+      }
+    };
+    if (!cacheOk) {
+      centers = e.markers.map(() => null);
+      rects = e.markers.map(() => null);
+      try {
+        await collectFrom(e.pinTarget);
+        // Same root long-press uses — pinTarget alone often misses SafeDOM nesting.
+        await collectFrom(e.doc || t.hostDoc);
+      } catch {
+      }
+      e._inlineRectsAt = Date.now();
+    }
+    e._inlineCentersCache = centers;
+    e._inlineRectsCache = rects;
+    let want = fallback;
+    if (typeof VC?.stickySegmentForInlineChat == "function") {
+      want = VC.stickySegmentForInlineChat({
+        inlineChatOn: !0,
+        pointerX: px,
+        pointerY: py,
+        messageRect: rect,
+        markerPercents: markerPcts,
+        markerCenters: centers,
+        markerRects: rects,
+        fallbackSegment: fallback
+      });
+    }
+    if (want == null || want < 0) return;
+    e._stickyNearestIdx = want;
+    e._stickyPointerSeg = want;
+    await nxActivateStickyByIndex(want, reading);
+  }
+  /** Scroll-end sticky activate: 말풍선 ON → cursor-nearest; else reading%. Settle only. */
+  async function nxUpdateStickyActiveOnScrollEnd() {
+    const e = t.overlayUi;
+    if (!e?.markers?.length || t.uiOpen) return;
+    // Scroll moved the bubbles — force a fresh rect pass.
+    e._inlineRectsAt = 0;
+    if (t.backendSettings?.card?.inline_chat_images === !0) {
+      await nxActivateStickyNearestToCursor();
+      return;
+    }
+    let rect = null;
+    try {
+      if (e.pinTarget && typeof e.pinTarget.getBoundingClientRect == "function") {
+        rect = await e.pinTarget.getBoundingClientRect();
+        if (rect) {
+          e._pinRectCache = rect;
+          try {
+            if (typeof captureLiveScrollY == "function") captureLiveScrollY();
+          } catch {
+          }
+          const y = Number(e._liveScrollY);
+          e._pinRectAtScrollY = Number.isFinite(y) ? y : typeof window < "u" ? window.scrollY || window.pageYOffset || 0 : 0;
+        }
+      }
+    } catch {
+    }
+    if (!rect) rect = e._pinRectCache || null;
+    if (!rect) {
+      scheduleStickySync(!0);
+      return;
+    }
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const vh = viewerViewport().vh, band = 0.5;
+    let reading = typeof VC?.readingPercentInMessage == "function" ? VC.readingPercentInMessage(rect, vh, band) : na(rect, vh, band);
+    if (reading == null) reading = typeof VC?.clampReadingPercent == "function" ? VC.clampReadingPercent(rect, vh, band) : cn(rect, vh, band);
+    const markerPcts = e.markers.map((T) => Number(T.yPercent) || 0);
+    const want = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, reading) : dn(markerPcts, reading);
+    if (want == null || want < 0) return;
+    await nxActivateStickyByIndex(want, reading);
+  }
+  /** Legacy mid-scroll flash retired — sticky v2 paints via nxStickyV2ApplyFromHt. */
+  function stickyFlashOnScroll() {
+    return;
+  }
+  function __nxDeadStickyFlashBody() {`;
+
+/**
  * 말풍선 삽화 ON: sticky active shot = nearest to pointer (sticky thumb follows that shot).
  * Applied before sticky size patch so Ht still has `m = La()` on the next line.
+ */
+/**
+ * Mid-scroll flash body is dead (__nxDeadStickyFlashBody). Keep needle→no-op so
+ * assertOnce still proves the vendor flash entry existed at patch time.
  */
 const VENDOR_STICKY_FLASH_NEAR_NEEDLE = `    const markerPcts = e.markers.map((T) => Number(T.yPercent) || 0);
     const l = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, c) : dn(markerPcts, c);
     if (l < 0) return;`;
-const VENDOR_STICKY_FLASH_NEAR_PATCH = `    // Overlay visually off: skip flash paints (pin already parked off-screen at 0%).
-    if (typeof overlayVisualOn == "function" ? !overlayVisualOn() : t.backendSettings?.card?.overlay_markers === !1) return;
+const VENDOR_STICKY_FLASH_NEAR_PATCH = `    // Dead legacy flash body — sticky v2 never enters here.
+    return;
     const markerPcts = e.markers.map((T) => Number(T.yPercent) || 0);
-    let l = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, c) : dn(markerPcts, c);
-    if (typeof VC?.stickySegmentForInlineChat == "function") {
-      l = VC.stickySegmentForInlineChat({
-        inlineChatOn: t.backendSettings?.card?.inline_chat_images === !0,
-        pointerX: t._pointerClientX,
-        pointerY: t._pointerClientY,
-        messageRect: est,
-        markerPercents: markerPcts,
-        markerCenters: e.markers.map((T) => T._inlineCenter || null),
-        fallbackSegment: l
-      });
-    }
+    const l = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, c) : dn(markerPcts, c);
     if (l < 0) return;`;
 
 const VENDOR_STICKY_HT_NEAR_NEEDLE = `    const markerPcts = e.markers.map((T) => Number(T.yPercent) || 0);
@@ -2387,24 +2775,37 @@ const VENDOR_STICKY_HT_NEAR_NEEDLE = `    const markerPcts = e.markers.map((T) =
     const p = Nt(), mobileOn = mobilePinOn(), m = La(), cornerNow = Ea();`;
 const VENDOR_STICKY_HT_NEAR_PATCH = `    const markerPcts = e.markers.map((T) => Number(T.yPercent) || 0);
     let l = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, c) : dn(markerPcts, c);
-    if (typeof VC?.stickySegmentForInlineChat == "function") {
-      l = VC.stickySegmentForInlineChat({
-        inlineChatOn: t.backendSettings?.card?.inline_chat_images === !0,
-        pointerX: t._pointerClientX,
-        pointerY: t._pointerClientY,
-        messageRect: s,
-        markerPercents: markerPcts,
-        markerCenters: e.markers.map((T) => T._inlineCenter || null),
-        fallbackSegment: l
-      });
+    // 말풍선 ON: one-shot lock from settle nearest, else pointer+y% (main math — cheap).
+    if (t.backendSettings?.card?.inline_chat_images === !0 && typeof VC?.stickySegmentForInlineChat == "function") {
+      if (e._stickyPointerSeg != null && Number.isFinite(Number(e._stickyPointerSeg))) {
+        l = Math.trunc(Number(e._stickyPointerSeg));
+        e._stickyPointerSeg = null;
+      } else {
+        l = VC.stickySegmentForInlineChat({
+          inlineChatOn: !0,
+          pointerX: t._pointerClientX,
+          pointerY: t._pointerClientY,
+          messageRect: s,
+          markerPercents: markerPcts,
+          markerCenters: e._inlineCentersCache || null,
+          markerRects: e._inlineRectsCache || null,
+          fallbackSegment: l
+        });
+      }
+    } else if (e._stickyPointerSeg != null && Number.isFinite(Number(e._stickyPointerSeg))) {
+      l = Math.trunc(Number(e._stickyPointerSeg));
+      e._stickyPointerSeg = null;
     }
-    const p = Nt(), mobileOn = mobilePinOn(), m = La(), cornerNow = Ea();`;
+    const p = Nt(), mobileOn = mobilePinOn(), m = La(), cornerNow = Ea();
+    // Sticky v2 only — skip legacy frame / mini-arrow layout that follows.
+    await nxStickyV2ApplyFromHt({ segment: l, reading: c, pinSize: o, showSticky: p, mobileOn, corner: cornerNow, env: m, vh: r });
+    return;`;
 
 /**
  * pointermove hot path (hover preview removed):
  * - store pointer XY
  * - click/longpress gesture movement
- * - 말풍선 삽화: nearest-shot sticky, Ht only when segment changes
+ * - 말풍선 삽화: nearest-shot sticky via one-shot _stickyPointerSeg (not every Ht)
  */
 const VENDOR_INLINE_PTR_STICKY_NEEDLE = `    }, l = async (f) => {
       if (typeof f?.clientX == "number") t._pointerClientX = f.clientX;
@@ -2431,56 +2832,14 @@ const VENDOR_INLINE_PTR_STICKY_NEEDLE = `    }, l = async (f) => {
 const VENDOR_INLINE_PTR_STICKY_PATCH = `    }, l = async (f) => {
       if (typeof f?.clientX == "number") t._pointerClientX = f.clientX;
       if (typeof f?.clientY == "number") t._pointerClientY = f.clientY;
-      // 말풍선 삽화: nearest-shot sticky — skip Ht only when segment is unchanged.
-      if (t.backendSettings?.card?.inline_chat_images === !0 && !t.uiOpen && (typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) && t.overlayUi?.markers?.length) {
-        if (!t._inlineStickyPtrRaf) {
+      // 말풍선 ON: idle pointer → hit-test / nearest sticky (settle path shares the same fn).
+      // Skip while scroll settle pending — mid-scroll thrash was the lag we cut.
+      if (t.backendSettings?.card?.inline_chat_images === !0 && !t.uiOpen && t.overlayUi?.markers?.length) {
+        const scrolling = !!(t._scrollPhaseBus && t._scrollPhaseBus.pendingSettle);
+        if (!scrolling && !t._inlineStickyPtrRaf) {
           const kick = () => {
             t._inlineStickyPtrRaf = 0;
-            try {
-              const ov = t.overlayUi;
-              if (!ov?.markers?.length) return;
-              // _liveScrollY is only written on scroll — seed it so peek works before first scroll.
-              let scrollY = Number(ov._liveScrollY);
-              if (!Number.isFinite(scrollY) && typeof window < "u") {
-                scrollY = window.scrollY || window.pageYOffset || 0;
-                ov._liveScrollY = scrollY;
-              }
-              let want = null;
-              if (ov._pinRectCache && ov._pinRectAtScrollY != null && Number.isFinite(scrollY)) {
-                const base = ov._pinRectCache, delta = scrollY - Number(ov._pinRectAtScrollY);
-                const est = {
-                  top: Number(base.top) - delta,
-                  bottom: Number(base.bottom) - delta,
-                  left: Number(base.left) || 0,
-                  right: Number(base.right) || 0,
-                  width: Number(base.width) || 0,
-                  height: Number(base.height) || 0
-                };
-                const vh = viewerViewport().vh, band = 0.5, VC = globalThis.__INLAY_VIEWER_CORE__;
-                let reading = typeof VC?.readingPercentInMessage == "function" ? VC.readingPercentInMessage(est, vh, band) : na(est, vh, band);
-                if (reading == null) reading = typeof VC?.clampReadingPercent == "function" ? VC.clampReadingPercent(est, vh, band) : cn(est, vh, band);
-                if (reading != null && Number.isFinite(Number(reading))) {
-                  const markerPcts = ov.markers.map((T) => Number(T.yPercent) || 0);
-                  want = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, reading) : dn(markerPcts, reading);
-                  if (typeof VC?.stickySegmentForInlineChat == "function") {
-                    want = VC.stickySegmentForInlineChat({
-                      inlineChatOn: !0,
-                      pointerX: t._pointerClientX,
-                      pointerY: t._pointerClientY,
-                      messageRect: est,
-                      markerPercents: markerPcts,
-                      markerCenters: ov.markers.map((T) => T._inlineCenter || null),
-                      fallbackSegment: want
-                    });
-                  }
-                }
-              }
-              const cur = ov._flashSeg != null ? ov._flashSeg : ov.activeSegment;
-              const changed = typeof VC?.stickySegChanged == "function" ? VC.stickySegChanged(cur, want) : want != null && want !== cur;
-              if (!changed) return;
-              stickyFlashOnScroll();
-            } catch {
-            }
+            if (typeof nxActivateStickyNearestToCursor == "function") nxActivateStickyNearestToCursor().catch(() => {});
           };
           t._inlineStickyPtrRaf = typeof requestAnimationFrame == "function" ? requestAnimationFrame(kick) : (kick(), 0);
         }
@@ -2528,9 +2887,33 @@ const VENDOR_SCROLL_PHASE_NEEDLE = `    }, u = () => {
     }`;
 const VENDOR_SCROLL_PHASE_PATCH = `    }, captureLiveScrollY = () => {
       try {
-        if (typeof window < "u" && t.overlayUi) t.overlayUi._liveScrollY = window.scrollY || window.pageYOffset || 0;
+        const ov = t.overlayUi;
+        if (!ov) return;
+        let y = NaN;
+        // Chat often scrolls inside a container / host doc — window.scrollY stays 0.
+        try {
+          const el = ov.chatScrollEl;
+          if (el && typeof el.scrollTop == "number" && Number.isFinite(el.scrollTop)) y = el.scrollTop;
+        } catch {
+        }
+        if (!Number.isFinite(y)) try {
+          const doc = ov.doc;
+          const se = doc && (doc.scrollingElement || doc.documentElement || doc.body);
+          if (se && typeof se.scrollTop == "number" && Number.isFinite(se.scrollTop)) y = se.scrollTop;
+        } catch {
+        }
+        if (!Number.isFinite(y)) try {
+          const view = ov.doc && ov.doc.defaultView;
+          if (view) y = view.scrollY || view.pageYOffset || 0;
+        } catch {
+        }
+        if (!Number.isFinite(y) && typeof window < "u") y = window.scrollY || window.pageYOffset || 0;
+        if (Number.isFinite(y)) ov._liveScrollY = y;
       } catch {
       }
+    }, snapStickyAfterScroll = () => {
+      // Delegate to NEW scroll-end activator (live pin rect + pointer/reading%).
+      if (typeof nxUpdateStickyActiveOnScrollEnd == "function") nxUpdateStickyActiveOnScrollEnd().catch(() => {});
     }, ensureScrollPhaseBus = () => {
       if (t._scrollPhaseBus) return t._scrollPhaseBus;
       const VC = globalThis.__INLAY_VIEWER_CORE__;
@@ -2539,13 +2922,23 @@ const VENDOR_SCROLL_PHASE_PATCH = `    }, captureLiveScrollY = () => {
       const onActive = () => {
         if (t.uiOpen) return;
         captureLiveScrollY();
-        stickyFlashOnScroll();
+        // 말풍선 ON: mid-scroll sticky shot stays put (settle picks nearest — lag cut).
+        if (t.backendSettings?.card?.inline_chat_images === !0) {
+          if (t.overlayUi) t.overlayUi._inlineRectsAt = 0;
+          return;
+        }
+        scheduleStickySync();
       };
       const onSettle = () => {
         if (t.uiOpen) return;
         captureLiveScrollY();
-        scheduleStickySync(!0);
         settleScrollTrackNow();
+        // Always snap sticky after settle (track Da may also snap; duplicate is ok).
+        if (t._stickySnapTimer) clearTimeout(t._stickySnapTimer);
+        t._stickySnapTimer = setTimeout(() => {
+          t._stickySnapTimer = null;
+          if (typeof nxUpdateStickyActiveOnScrollEnd == "function") nxUpdateStickyActiveOnScrollEnd().catch(() => {});
+        }, 180);
       };
       t._scrollPhaseBus = typeof make == "function"
         ? make({ settleDelayMs: settleMs, onActive, onSettle })
@@ -2578,12 +2971,52 @@ const VENDOR_SCROLL_PHASE_PATCH = `    }, captureLiveScrollY = () => {
     let E = !1;
     if (typeof window < "u") try {
       window.addEventListener("scroll", u, !0), window.addEventListener("scrollend", onScrollEnd, !0), window.addEventListener("resize", onScrollEnd), E = !0;
+      // Capture cursor even when pointermove isn't on the overlay doc; also kick idle sticky.
+      if (!t._nxPtrCap) {
+        t._nxPtrCap = (ev) => {
+          if (typeof ev?.clientX == "number") t._pointerClientX = ev.clientX;
+          if (typeof ev?.clientY == "number") t._pointerClientY = ev.clientY;
+          if (t.backendSettings?.card?.inline_chat_images !== !0 || t.uiOpen || !t.overlayUi?.markers?.length) return;
+          const scrolling = !!(t._scrollPhaseBus && t._scrollPhaseBus.pendingSettle);
+          if (scrolling || t._inlineStickyPtrRaf) return;
+          const kick = () => {
+            t._inlineStickyPtrRaf = 0;
+            if (typeof nxActivateStickyNearestToCursor == "function") nxActivateStickyNearestToCursor().catch(() => {});
+          };
+          t._inlineStickyPtrRaf = typeof requestAnimationFrame == "function" ? requestAnimationFrame(kick) : (kick(), 0);
+        };
+        window.addEventListener("pointermove", t._nxPtrCap, { capture: !0, passive: !0 });
+      }
     } catch {
       try {
         window.addEventListener("scroll", u), window.addEventListener("resize", onScrollEnd), E = !0;
       } catch {
       }
     }`;
+
+/** After scroll DOM select finishes, snap sticky to pin reading% / pointer. */
+const VENDOR_SCROLL_TRACK_SNAP_NEEDLE = `      // Always re-enter Da — same DOM index can hold new text after a reply finishes.
+      await Da(pick, n, { source: "scroll" });
+    } finally {
+      t._scrollTrackBusy = !1;
+    }
+  }`;
+const VENDOR_SCROLL_TRACK_SNAP_PATCH = `      // Always re-enter Da — same DOM index can hold new text after a reply finishes.
+      await Da(pick, n, { source: "scroll" });
+      // Scroll select done → NEW sticky activate (live pin % / pointer nearest).
+      try {
+        if (typeof nxUpdateStickyActiveOnScrollEnd == "function") {
+          if (t._stickySnapTimer) clearTimeout(t._stickySnapTimer);
+          t._stickySnapTimer = setTimeout(() => {
+            t._stickySnapTimer = null, nxUpdateStickyActiveOnScrollEnd().catch(() => {});
+          }, 120);
+        }
+      } catch {
+      }
+    } finally {
+      t._scrollTrackBusy = !1;
+    }
+  }`;
 
 const VENDOR_SCROLL_TRACK_VH_NEEDLE = `      const o = typeof window < "u" && window.innerHeight || 800;
       const py = Number(t._pointerClientY), px = Number(t._pointerClientX);
@@ -3064,6 +3497,8 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
             }
             const card = (t.gallery || []).find((c) => String(c?.id || "") === String(cardId || ""));
             if (!card) continue;
+            // Long-press start: activate sticky image to this inline shot immediately.
+            if (typeof nxActivateStickyByCardId == "function") nxActivateStickyByCardId(card.id).catch(() => {});
             if (mobilePress) {
               cancelMobilePress();
               return;
@@ -5086,23 +5521,80 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
   `  function normAfterReplyText(s) {
     return String(s || "").replace(/\\s+/g, " ").trim().toLowerCase();
   }
-  function domHasScriptHint(domText, hint) {
-    const d = normAfterReplyText(domText);
-    const h = normAfterReplyText(hint);
-    if (!d || !h) return !1;
-    if (d.includes(h) || h.includes(d)) return !0;
-    const tail = h.length > 120 ? h.slice(-120) : h;
-    return tail.length >= 20 && d.includes(tail);
+  function stopScriptDomQuietWatcher() {
+    if (t._scriptDomQuietTimer) {
+      clearInterval(t._scriptDomQuietTimer);
+      t._scriptDomQuietTimer = null;
+    }
+    t._scriptDomSnap = null;
+    t._scriptDomSnapReady = !1;
   }
   function clearScriptOutputTimers() {
     if (t._scriptQuietTimer) {
       clearTimeout(t._scriptQuietTimer);
       t._scriptQuietTimer = null;
     }
-    if (t._scriptMissTimer) {
-      clearTimeout(t._scriptMissTimer);
-      t._scriptMissTimer = null;
+    t._scriptStreaming = !1;
+    stopScriptDomQuietWatcher();
+  }
+  /** Light DOM#0 text peek — reuse msg-el cache; no Da. Only while streaming. */
+  async function peekDom0NormText() {
+    try {
+      const doc = await ue().catch(() => t.hostDoc);
+      if (!doc) return "";
+      const els = await getCachedMsgEls(doc);
+      if (!els?.length) return "";
+      const el = els[0];
+      let raw = "";
+      try {
+        if (typeof el.getInnerHTML == "function") raw = String(await el.getInnerHTML() || "");
+      } catch {
+      }
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      if (typeof VC?.stripInlayInlineHtml == "function") raw = VC.stripInlayInlineHtml(raw);
+      const text = typeof ln == "function" ? ln(raw) : String(raw || "").replace(/<[^>]+>/g, " ");
+      return normAfterReplyText(text);
+    } catch {
+      return "";
     }
+  }
+  /** DOM 5s stable while chunks are still arriving — never runs when idle. */
+  function ensureScriptDomQuietWatcher() {
+    if (t._scriptDomQuietTimer) return;
+    t._scriptDomSnap = null;
+    t._scriptDomSnapReady = !1;
+    t._scriptDomQuietTimer = setInterval(() => {
+      if (!t._scriptStreaming || t._afterGenRunning) {
+        stopScriptDomQuietWatcher();
+        return;
+      }
+      (async () => {
+        if (!t._scriptStreaming || t._afterGenRunning) return;
+        const now = await peekDom0NormText();
+        if (!t._scriptStreaming || t._afterGenRunning) return;
+        if (!t._scriptDomSnapReady) {
+          t._scriptDomSnap = now;
+          t._scriptDomSnapReady = !0;
+          return;
+        }
+        if (now !== String(t._scriptDomSnap || "")) {
+          t._scriptDomSnap = now;
+          y("info", "scriptOutput.domQuiet", "DOM changed while streaming — keep watching");
+          return;
+        }
+        if (!now || now.length <= 30) return;
+        y("info", "scriptOutput.domQuiet5", "DOM stable 5s while streaming → gen");
+        t._scriptStreaming = !1;
+        stopScriptDomQuietWatcher();
+        if (t._scriptQuietTimer) {
+          clearTimeout(t._scriptQuietTimer);
+          t._scriptQuietTimer = null;
+        }
+        await runAutoGenFromDom("scriptOutput.domQuiet5");
+      })().catch((err) => {
+        y("error", "scriptOutput.domQuiet.fail", err?.message || err);
+      });
+    }, 5e3);
   }
   // 생성 본문은 항상 DOM#0에 연결된 message 텍스트 (훅 원문 아님).
   async function runAutoGenFromDom(source) {
@@ -5116,7 +5608,6 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       clearTimeout(t._afterGenTimer);
       t._afterGenTimer = null;
     }
-    t._scriptMissStreak = 0;
     t._afterGenGen = (t._afterGenGen || 0) + 1;
     try {
       const card = t.backendSettings?.card || {};
@@ -5172,7 +5663,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       y("info", "afterReply.skip", \`\${source} text too short\`);
       return;
     }
-    // chatOutput/afterRequest only (scriptOutput has its own quiet/miss path).
+    // chatOutput/afterRequest only (scriptOutput has its own quiet/dom path).
     const AFTER_GEN_DELAY_MS = 5e2;
     if (t._afterGenTimer) {
       clearTimeout(t._afterGenTimer);
@@ -5304,7 +5795,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       y("error", "chatOutput.fail", err?.message || err);
     }
   }
-  // Streaming: (A) 5s quiet → gen  (B) 훅 문장이 DOM에 1초 확인×5회 연속 미부착 → gen
+  // Streaming: (A) 5s chunk quiet → end gen  (B) while chunks arrive, DOM text stable 5s → early gen
   // 생성 텍스트는 항상 DOM 연결 message. Hash relink: last chunk + 0.5s.
   async function onScriptOutput(content) {
     try {
@@ -5316,48 +5807,19 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       if (card.power === !1 || !card.auto_gen_on_reply) return content;
       if (!text || text.length <= 30) return content;
       t._scriptHint = text;
-      // (A) 청크 5초 무음 = 스트림 끝 → DOM 기준 생성
+      t._scriptStreaming = !0;
+      ensureScriptDomQuietWatcher();
+      // (A) 청크 5초 무음 = 스트림 끝 → DOM 기준 생성 (DOM 워처도 끔)
       if (t._scriptQuietTimer) clearTimeout(t._scriptQuietTimer);
       t._scriptQuietTimer = setTimeout(() => {
         t._scriptQuietTimer = null;
+        t._scriptStreaming = !1;
+        stopScriptDomQuietWatcher();
         y("info", "scriptOutput.quiet", "5s no chunk → gen from DOM message");
         runAutoGenFromDom("scriptOutput.quiet").catch((err) => {
           y("error", "afterReply.fail", err?.message || err);
         });
       }, 5e3);
-      // (B) 이번 청크 후 1초 → DOM에 훅 문장 붙었는지. 5회 연속 미부착이면 생성.
-      if (t._scriptMissTimer) clearTimeout(t._scriptMissTimer);
-      t._scriptMissTimer = setTimeout(() => {
-        t._scriptMissTimer = null;
-        (async () => {
-          if (t._afterGenRunning) return;
-          const hint = w(t._scriptHint, 5e4);
-          if (!hint) return;
-          const doc = await ue().catch(() => t.hostDoc);
-          if (!doc) return;
-          t._msgElsCache = null;
-          const els = await getCachedMsgEls(doc);
-          if (!els?.length) return;
-          await Da(0, els, { source: "provisional" });
-          const sel = t.selectedMessage;
-          if (!sel?.text) {
-            t._scriptMissStreak = (t._scriptMissStreak || 0) + 1;
-          } else if (domHasScriptHint(sel.text, hint)) {
-            t._scriptMissStreak = 0;
-            return;
-          } else {
-            t._scriptMissStreak = (t._scriptMissStreak || 0) + 1;
-          }
-          const streak = t._scriptMissStreak || 0;
-          y("info", "scriptOutput.miss", \`hint not in DOM streak=\${streak}/5\`);
-          if (streak >= 5) {
-            y("info", "scriptOutput.miss5", "5 consecutive misses → gen from DOM message");
-            await runAutoGenFromDom("scriptOutput.miss5");
-          }
-        })().catch((err) => {
-          y("error", "scriptOutput.miss.fail", err?.message || err);
-        });
-      }, 1e3);
     } catch (err) {
       y("error", "scriptOutput.fail", err?.message || err);
     }
@@ -5388,7 +5850,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "스트리밍: script output이 5초 안 오거나, 받은 문장이 DOM에 1초 확인×5회 연속 안 붙으면 DOM#0 연결 메시지 기준으로 생성. 비스트리밍: chat/afterRequest 후 0.5초. 캐릭·이미지 없을 때만. 30자 이하·Power/토글 OFF·유저면 스킵." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "스트리밍: script 청크 5초 무음(종료) 또는 스트리밍 중 말풍선 DOM이 5초간 안 변하면 DOM#0 연결 메시지 기준으로 생성. 비스트리밍: chat/afterRequest 후 0.5초. 캐릭·이미지 없을 때만. 30자 이하·Power/토글 OFF·유저면 스킵." },`;
 
 const VENDOR_CHAT_OUTPUT_BOOT_NEEDLE =
   `      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
@@ -5815,8 +6277,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.5",
-    body: "성별→외형 태그 동기화 · 응답 완료 후 해시 자동 연결 · 스크롤/스티키 렉 완화. 업데이트 내역 탭 참고."
+    title: "2.2.6",
+    body: "스티키 v2 · 말풍선 hit-test · 스트리밍 dual-5초 quiet · 에셋 별칭 흡수. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -7185,8 +7647,10 @@ const loadVendorUi = (): string => {
     [VENDOR_STICKY_LA_NEEDLE, 'sticky La()'],
     [VENDOR_STICKY_FLASH_NEAR_NEEDLE, 'sticky flash nearest pointer'],
     [VENDOR_STICKY_HT_NEAR_NEEDLE, 'sticky Ht nearest pointer'],
+    [VENDOR_STICKY_NX_ACTIVATE_NEEDLE, 'nx sticky activate helpers'],
     [VENDOR_INLINE_PTR_STICKY_NEEDLE, 'inline pointer sticky sync'],
     [VENDOR_SCROLL_PHASE_NEEDLE, 'scroll phase bus'],
+    [VENDOR_SCROLL_TRACK_SNAP_NEEDLE, 'scroll track sticky snap'],
     [VENDOR_SCROLL_TRACK_VH_NEEDLE, 'scroll track viewport mid'],
     [VENDOR_HOVER_PREVIEW_OFF_NEEDLE, 'hover preview force off'],
     [VENDOR_HOVER_PREVIEW_TOGGLE_NEEDLE, 'hover preview toggle remove'],
@@ -7195,16 +7659,6 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_PCT_HTML_NEEDLE, 'inline pct html min 0'],
     [VENDOR_INLINE_PCT_SAVE_NEEDLE, 'inline pct save min 0'],
     [VENDOR_INLINE_PCT_LIVE_NEEDLE, 'inline pct live min 0'],
-    [VENDOR_STICKY_SIZE_NEEDLE, 'sticky size from image'],
-    [VENDOR_STICKY_SKIP_SIZE_NEEDLE, 'sticky skip thumb w/h'],
-    [VENDOR_STICKY_ASSIGN_SIZE_NEEDLE, 'sticky assign thumb w/h'],
-    [VENDOR_STICKY_FLASH_SIZE_NEEDLE, 'sticky flash resize'],
-    [VENDOR_STICKY_KEEP_NEEDLE, 'sticky keepHidden'],
-    [VENDOR_STICKY_SHOW_NEEDLE, 'sticky showStickyImg'],
-    [VENDOR_STICKY_ARROW_OPACITY_NEEDLE, 'sticky arrow opacity 50%'],
-    [VENDOR_STICKY_ARROW_ROW_NEEDLE, 'sticky arrow horizontal rows'],
-    [VENDOR_STICKY_SKIP_NEEDLE, 'sticky skip keepHidden'],
-    [VENDOR_STICKY_ASSIGN_NEEDLE, 'sticky assign keepHidden'],
     [VENDOR_STICKY_CLICK_NEEDLE, 'sticky click hide/revive'],
     [VENDOR_STICKY_PRESS_NEEDLE, 'sticky press skip'],
     [VENDOR_PRESS_FILL_NEEDLE, 'press fill lightweight ring'],
@@ -7386,7 +7840,7 @@ const loadVendorUi = (): string => {
       .replace(VENDOR_ASSET_NAI_SAVE_NEEDLE, VENDOR_ASSET_NAI_SAVE_PATCH);
     assertOnce(out, VENDOR_ASSET_NAI_CARD_NEEDLE, 'asset_nai_tags card select (after natural_base)');
     assertOnce(out, VENDOR_ASSET_NAI_CT_NEEDLE, 'asset_nai_tags Ct() (after natural_base)');
-    return out
+    out = out
       .replace(VENDOR_ASSET_NAI_CARD_NEEDLE, VENDOR_ASSET_NAI_CARD_PATCH)
       .replace(VENDOR_ASSET_NAI_CT_NEEDLE, VENDOR_ASSET_NAI_CT_PATCH)
       .replace(VENDOR_ASSET_NAI_HELP_NEEDLE, VENDOR_ASSET_NAI_HELP_PATCH)
@@ -7443,8 +7897,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_STICKY_LA_NEEDLE, VENDOR_STICKY_LA_PATCH)
     .replace(VENDOR_STICKY_FLASH_NEAR_NEEDLE, VENDOR_STICKY_FLASH_NEAR_PATCH)
     .replace(VENDOR_STICKY_HT_NEAR_NEEDLE, VENDOR_STICKY_HT_NEAR_PATCH)
+    .replace(VENDOR_STICKY_NX_ACTIVATE_NEEDLE, VENDOR_STICKY_NX_ACTIVATE_PATCH)
     .replace(VENDOR_INLINE_PTR_STICKY_NEEDLE, VENDOR_INLINE_PTR_STICKY_PATCH)
     .replace(VENDOR_SCROLL_PHASE_NEEDLE, VENDOR_SCROLL_PHASE_PATCH)
+    .replace(VENDOR_SCROLL_TRACK_SNAP_NEEDLE, VENDOR_SCROLL_TRACK_SNAP_PATCH)
     .replace(VENDOR_SCROLL_TRACK_VH_NEEDLE, VENDOR_SCROLL_TRACK_VH_PATCH)
     .replace(VENDOR_HOVER_PREVIEW_OFF_NEEDLE, VENDOR_HOVER_PREVIEW_OFF_PATCH)
     .replace(VENDOR_HOVER_PREVIEW_TOGGLE_NEEDLE, VENDOR_HOVER_PREVIEW_TOGGLE_PATCH)
@@ -7453,16 +7909,6 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_PCT_HTML_NEEDLE, VENDOR_INLINE_PCT_HTML_PATCH)
     .replace(VENDOR_INLINE_PCT_SAVE_NEEDLE, VENDOR_INLINE_PCT_SAVE_PATCH)
     .replace(VENDOR_INLINE_PCT_LIVE_NEEDLE, VENDOR_INLINE_PCT_LIVE_PATCH)
-    .replace(VENDOR_STICKY_SIZE_NEEDLE, VENDOR_STICKY_SIZE_PATCH)
-    .replace(VENDOR_STICKY_SKIP_SIZE_NEEDLE, VENDOR_STICKY_SKIP_SIZE_PATCH)
-    .replace(VENDOR_STICKY_ASSIGN_SIZE_NEEDLE, VENDOR_STICKY_ASSIGN_SIZE_PATCH)
-    .replace(VENDOR_STICKY_FLASH_SIZE_NEEDLE, VENDOR_STICKY_FLASH_SIZE_PATCH)
-    .replace(VENDOR_STICKY_KEEP_NEEDLE, VENDOR_STICKY_KEEP_PATCH)
-    .replace(VENDOR_STICKY_SHOW_NEEDLE, VENDOR_STICKY_SHOW_PATCH)
-    .replace(VENDOR_STICKY_ARROW_OPACITY_NEEDLE, VENDOR_STICKY_ARROW_OPACITY_PATCH)
-    .replace(VENDOR_STICKY_ARROW_ROW_NEEDLE, VENDOR_STICKY_ARROW_ROW_PATCH)
-    .replace(VENDOR_STICKY_SKIP_NEEDLE, VENDOR_STICKY_SKIP_PATCH)
-    .replace(VENDOR_STICKY_ASSIGN_NEEDLE, VENDOR_STICKY_ASSIGN_PATCH)
     .replace(VENDOR_STICKY_CLICK_NEEDLE, VENDOR_STICKY_CLICK_PATCH)
     .replace(VENDOR_PRESS_FILL_NEEDLE, VENDOR_PRESS_FILL_PATCH)
     .replace(VENDOR_PRESS_FILL_STICKY_CALL_NEEDLE, VENDOR_PRESS_FILL_STICKY_CALL_PATCH)
@@ -7615,6 +8061,50 @@ const loadVendorUi = (): string => {
     .replaceAll(VENDOR_STICKY_SHELL_BG_NEEDLE, VENDOR_STICKY_SHELL_BG_PATCH)
     .replace(VENDOR_STICKY_EMPTY_NEEDLE, VENDOR_STICKY_EMPTY_PATCH)
     .replaceAll(VENDOR_APPEARANCE_LABEL_SHARED_NEEDLE, VENDOR_APPEARANCE_LABEL_SHARED_PATCH);
+    // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
+    assertOnce(out, 'ensureScrollPhaseBus = () =>', 'scroll phase bus landed');
+    assertOnce(out, 'async function nxUpdateStickyActiveOnScrollEnd', 'nx scroll-end sticky activate landed');
+    assertOnce(out, 'async function nxActivateStickyByCardId', 'nx sticky by cardId landed');
+    assertOnce(out, 'async function nxStickyV2ApplyFromHt', 'sticky v2 apply landed');
+    assertOnce(out, 'function __nxDeadStickyFlashBody()', 'legacy flash body retired');
+    assertOnce(out, 'Sticky v2 only — skip legacy frame', 'Ht early-return to v2 landed');
+    assertOnce(out, 'const anchorY = o * 0.5;', 'scroll track viewport mid landed');
+    assertOnce(out, 'Sticky pin hover preview removed', 'inline ptr hover preview removed');
+    assertOnce(out, 'function hoverPreviewOn() {\n    return !1;\n  }', 'hover preview force off landed');
+    if (!out.includes('nxUpdateStickyActiveOnScrollEnd().catch')) {
+      throw new Error('[build] scroll-end missing nxUpdateStickyActiveOnScrollEnd call');
+    }
+    if (!out.includes('nxActivateStickyByCardId(card.id)')) {
+      throw new Error('[build] inline longpress missing nxActivateStickyByCardId');
+    }
+    if (out.includes('scheduleStickySync(), scheduleScrollTrack()')) {
+      throw new Error('[build] scroll phase patch missing — thrash path still present');
+    }
+    if (out.includes('sticky_layout_v2')) {
+      throw new Error('[build] sticky_layout_v2 toggle must be removed (v2 is always-on)');
+    }
+    if (out.includes('nx-sticky-v2')) {
+      throw new Error('[build] nx-sticky-v2 UI toggle must be removed');
+    }
+    if (out.includes('stickyFlashOnScroll();\n            } catch {\n            }\n            scheduleStickySync();')) {
+      throw new Error('[build] pointer sticky still calls dead stickyFlashOnScroll every rAF');
+    }
+    if (!out.includes('nxActivateStickyNearestToCursor')) {
+      throw new Error('[build] missing nxActivateStickyNearestToCursor (live bubble nearest)');
+    }
+    if (!out.includes('ensureScriptDomQuietWatcher')) {
+      throw new Error('[build] missing ensureScriptDomQuietWatcher (DOM 5s while streaming)');
+    }
+    if (!out.includes('scriptOutput.domQuiet5')) {
+      throw new Error('[build] missing scriptOutput.domQuiet5 early-gen path');
+    }
+    if (out.includes('scriptOutput.miss5') || out.includes('_scriptMissTimer')) {
+      throw new Error('[build] legacy 1s×5 DOM miss path must be removed');
+    }
+    if (!out.includes('nxActivateStickyNearestToCursor().catch')) {
+      throw new Error('[build] pointer path must call nxActivateStickyNearestToCursor');
+    }
+    return out;
   })();
 };
 

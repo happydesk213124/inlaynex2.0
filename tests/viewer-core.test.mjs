@@ -64,6 +64,11 @@ import {
   stickyCornerEdgeBox,
   stickyPinEdgeBox,
   stickyPinOverImage,
+  stickyV2AnchorSide,
+  stickyV2FreeLayout,
+  stickyV2CornerLayout,
+  stickyV2ShotCounts,
+  composeStickyV2ThumbHtml,
   resolveChatMessageMatch,
   messageCompactKey,
   messageContextTriplet,
@@ -401,11 +406,12 @@ test("claimStickyMarkerByCardId splices the active pin so partial swaps cannot o
   assert.equal(claimStickyMarkerByCardId([{ card: { id: "x" } }], "x"), null);
 });
 
-test("resolveStickyThumbPct is settings size only when always on and not collapsed/editing", () => {
+test("resolveStickyThumbPct is settings size when always on and not collapsed (editor uses z-bury)", () => {
   assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: true, userCollapsed: false, editorOpen: false }), 120);
   assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: false, userCollapsed: false, editorOpen: false }), 0);
   assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: true, userCollapsed: true, editorOpen: false }), 0);
-  assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: true, userCollapsed: false, editorOpen: true }), 0);
+  // Settings/editor open keeps size — paint path buries via z-index instead of 0%.
+  assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: true, userCollapsed: false, editorOpen: true }), 120);
   assert.equal(resolveStickyThumbPct({ settingsPct: 0, alwaysOn: true, userCollapsed: false, editorOpen: false }), 0);
 });
 
@@ -439,6 +445,54 @@ test("composeStickyThumbHtml empty placeholder is transparent", () => {
   const html = composeStickyThumbHtml("", "");
   assert.match(html, /background:transparent/);
   assert.doesNotMatch(html, /background:#0b0f18/);
+});
+
+test("sticky v2 free layout: past midline uses left-center, before uses right-center", () => {
+  assert.equal(stickyV2AnchorSide(100, 400), "right");
+  assert.equal(stickyV2AnchorSide(200, 400), "left");
+  const leftHalf = stickyV2FreeLayout({
+    pinX: 80, pinY: 200, imgW: 120, imgH: 180, pinSize: 28, viewportW: 400, viewportH: 800,
+  });
+  assert.equal(leftHalf.side, "right");
+  assert.equal(leftHalf.image.left, 80 - 120);
+  assert.equal(leftHalf.image.top, 200 - 90);
+  // ▲▼ meet at attachment Y with no blank pin gap.
+  assert.equal(leftHalf.aboveBadge.top + leftHalf.aboveBadge.size, leftHalf.belowBadge.top);
+  assert.equal(leftHalf.aboveBadge.top + leftHalf.aboveBadge.size, 200);
+  const rightHalf = stickyV2FreeLayout({
+    pinX: 300, pinY: 200, imgW: 120, imgH: 180, pinSize: 28, viewportW: 400, viewportH: 800,
+  });
+  assert.equal(rightHalf.side, "left");
+  assert.equal(rightHalf.image.left, 300);
+});
+
+test("sticky v2 corner layout stacks ▲▼ flush at viewport top-center", () => {
+  const top = stickyV2CornerLayout({
+    corner: "top-right", imgW: 100, imgH: 150, viewportW: 400, viewportH: 800, pad: 12, pinSize: 28, gap: 6,
+  });
+  assert.equal(top.aboveBadge.left, Math.round(400 / 2 - 14));
+  assert.equal(top.aboveBadge.top, 12);
+  assert.equal(top.belowBadge.top, 12 + 28);
+  assert.equal(top.aboveBadge.top + top.aboveBadge.size, top.belowBadge.top);
+  assert.equal(top.leftBadge, null);
+  assert.equal(top.rightBadge, null);
+  assert.ok(top.image.left > 200);
+  const bot = stickyV2CornerLayout({
+    corner: "bottom-left", imgW: 100, imgH: 150, viewportW: 400, viewportH: 800, pad: 12, pinSize: 28, gap: 6,
+  });
+  assert.equal(bot.aboveBadge.left, top.aboveBadge.left);
+  assert.equal(bot.aboveBadge.top, top.aboveBadge.top);
+  assert.equal(bot.belowBadge.top, top.belowBadge.top);
+  assert.equal(bot.image.left, 12);
+  assert.ok(bot.image.top > 400);
+});
+
+test("sticky v2 shot counts and pure-image html", () => {
+  assert.deepEqual(stickyV2ShotCounts(2, 5), { above: 2, below: 2 });
+  assert.deepEqual(stickyV2ShotCounts(0, 3), { above: 0, below: 2 });
+  const html = composeStickyV2ThumbHtml("data:image/png;base64,xx");
+  assert.match(html, /object-fit:fill/);
+  assert.doesNotMatch(html, /object-fit:contain/);
 });
 
 test("stickyThumbNeedsHtmlPaint skips when already painted", () => {
@@ -785,6 +839,20 @@ test("stickySegmentForInlineChat prefers shot nearest the pointer", () => {
     markerCenters: [{ x: 10, y: 10 }, null],
     fallbackSegment: -1,
   }), 0);
+  // Pointer inside a live rect wins even when nearer another center.
+  assert.equal(stickySegmentForInlineChat({
+    inlineChatOn: true,
+    pointerX: 55,
+    pointerY: 55,
+    messageRect: rect,
+    markerPercents: [0, 90],
+    markerCenters: [{ x: 10, y: 10 }, { x: 90, y: 90 }],
+    markerRects: [
+      { left: 0, right: 20, top: 0, bottom: 20 },
+      { left: 50, right: 80, top: 50, bottom: 80 },
+    ],
+    fallbackSegment: -1,
+  }), 1);
   assert.deepEqual(markerAnchorClientPoint(rect, 50), { x: 100, y: 50 });
   assert.equal(nearestSegmentByClientPoint([{ x: 0, y: 0 }, { x: 100, y: 100 }], 90, 90), 1);
 });

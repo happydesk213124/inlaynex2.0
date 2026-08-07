@@ -563,6 +563,7 @@ async function runJob(jobId: string): Promise<void> {
               unifiedSessionId,
               characterId,
               sourceSessionIds,
+              assetLooks: true,
             });
           }
           const filledLooks = newChars.filter((c) => characterHasAppearance(c)).length;

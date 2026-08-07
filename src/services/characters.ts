@@ -27,7 +27,7 @@
 import { GLOBAL_SCOPE } from '../core/constants';
 import type { ApiResult, CharacterRecord, ShotCharacter, TaggerResult } from '../core/types';
 import { cleanText, joinTags, normalizeAlias, parseAliasList } from '../core/util/text';
-import { characterMatchesIdentity, inferGenderFromExactTags, normalizeGender } from '../domain/character/identity';
+import { characterMatchesIdentity, inferGenderFromExactTags, normalizeGender, latinGivenTokenOverlap, absorbAliasesFromDonor, ASSET_LOOKS_PRIORITY } from '../domain/character/identity';
 import type { CharacterInput, MigratedCharacter } from '../domain/character/identity';
 import {
   characterAliasKeys,
@@ -69,6 +69,8 @@ export interface MergeRosterArgs {
   unifiedSessionId?: string;
   characterId?: string;
   sourceSessionIds?: unknown[];
+  /** When true (char_looks prepass), bump written rows to ASSET_LOOKS_PRIORITY. */
+  assetLooks?: boolean;
 }
 
 interface SessionEditCount {
@@ -727,6 +729,46 @@ export async function setAppearance(sessionId: string, mapping: unknown): Promis
 // ── tagger merge ───────────────────────────────────────────────────────────
 
 /**
+ * Copy aliases from latin-given peers onto appearance-filled hosts (asset refs).
+ * Does not delete or fold donor rows. Persist before LLM trigger inject.
+ */
+export async function absorbAliasesOntoLatinPeers(args: {
+  sessionId?: string;
+  unifiedSessionId?: string;
+  characterId?: string;
+  sourceSessionIds?: unknown[];
+}): Promise<CharacterRecord[]> {
+  const sessionId = cleanText(args.sessionId || '', 200);
+  const unifiedSessionId = cleanText(args.unifiedSessionId || '', 200);
+  const characterId = cleanText(args.characterId || '', 200);
+  const sourceSessionIds = args.sourceSessionIds ?? [];
+  let roster = await rosterForSession(sessionId, unifiedSessionId, characterId, sourceSessionIds);
+  const hosts = roster.filter((row) => characterHasAppearance(row));
+  for (const host of hosts) {
+    let aliases = parseAliasList([...(host.aliases || []), host.name]);
+    let changed = false;
+    for (const donor of roster) {
+      if (!donor || cleanText(donor.id, 80) === cleanText(host.id, 80)) continue;
+      if (!latinGivenTokenOverlap(host, donor)) continue;
+      const next = absorbAliasesFromDonor(host, donor);
+      const nextList = parseAliasList(next);
+      if (nextList.length > aliases.length || nextList.some((a) => !aliases.includes(a))) {
+        aliases = nextList;
+        changed = true;
+      }
+    }
+    if (!changed) continue;
+    const writeScope = host.scope === GLOBAL_SCOPE ? GLOBAL_SCOPE : (host.scope || sessionId);
+    await upsertCharacter(writeScope, {
+      ...host,
+      aliases,
+    });
+    roster = await rosterForSession(sessionId, unifiedSessionId, characterId, sourceSessionIds);
+  }
+  return roster;
+}
+
+/**
  * Folds the tagger's `new_characters` and every shot's cast back into the roster,
  * then returns the roster the generator should use.
  *
@@ -738,6 +780,8 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
   const unifiedSessionId = args.unifiedSessionId ?? '';
   const sourceSessionIds = args.sourceSessionIds ?? [];
   const characterId = cleanText(args.characterId || '', 200);
+  const assetLooks = !!args.assetLooks;
+  const assetPriorityFloor = assetLooks ? ASSET_LOOKS_PRIORITY : 0;
   // Autotag / new chars always land on the live chat — never the unified cache.
   const writeSessionId = cleanText(sessionId || '', 200);
   const readRoster = (): Promise<CharacterRecord[]> =>
@@ -840,6 +884,7 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
         active_costume: 0,
         attire_locked: wearLocked(existing.attire_locked),
         accessories_locked: wearLocked(existing.accessories_locked),
+        priority: Math.max(assetPriorityFloor, Number(existing.priority || 0), Number(rec.priority || 0)),
         ...nameParts,
       });
       roster = await readRoster();
@@ -862,6 +907,7 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
         active_costume: 0,
         attire_locked: wearLocked(rec.attire_locked),
         accessories_locked: wearLocked(rec.accessories_locked),
+        priority: Math.max(assetPriorityFloor, Number(rec.priority || 0)),
       });
     }
     roster = await readRoster();
@@ -916,6 +962,12 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     }
     roster = await readRoster();
   }
+  await absorbAliasesOntoLatinPeers({
+    sessionId,
+    unifiedSessionId,
+    characterId,
+    sourceSessionIds,
+  });
   return readRoster();
 }
 

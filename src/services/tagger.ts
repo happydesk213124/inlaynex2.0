@@ -33,7 +33,7 @@ import { isCharacterImageExtraLore } from '../domain/lore/extra';
 import type { LlmContentPart, LlmMessage } from '../providers/llm/transform';
 import { numberMessageLinesForTagger, repairLazyShotLines } from '../domain/tagging/shot-line';
 import { collectAssetNaiTags, setLastAssetWeightMap, type AssetLookPreview } from './asset-tags';
-import { rosterForSession } from './characters';
+import { absorbAliasesOntoLatinPeers, rosterForSession } from './characters';
 import { getConfig } from './context';
 import { curationTaggerSystemMessage } from './curation';
 import { getPrompt } from './settings';
@@ -387,14 +387,24 @@ export async function buildTaggerMessages(
   const sourceSessionIds = Array.isArray(request.source_session_ids)
     ? request.source_session_ids.map((s) => cleanText(s, 200)).filter(Boolean)
     : [];
-  const rosterEarly: CharacterRecord[] = card.lorebook || card.char_appearance !== false || normalizeAssetNaiTagsMode(card.asset_nai_tags) !== 'off'
+  const unifiedSessionId = cleanText(request.unified_session_id || '', 200);
+  const characterId = cleanText(request.character_id || '', 200);
+  let rosterEarly: CharacterRecord[] = card.lorebook || card.char_appearance !== false || normalizeAssetNaiTagsMode(card.asset_nai_tags) !== 'off'
     ? await rosterForSession(
       sessionId,
-      cleanText(request.unified_session_id || '', 200),
-      cleanText(request.character_id || '', 200),
+      unifiedSessionId,
+      characterId,
       sourceSessionIds,
     )
     : [];
+  if (rosterEarly.length) {
+    rosterEarly = await absorbAliasesOntoLatinPeers({
+      sessionId,
+      unifiedSessionId,
+      characterId,
+      sourceSessionIds,
+    });
+  }
 
   await pushLoreMessages(messages, request, card, assistant, rosterEarly);
   await pushAppearanceMessages(messages, card, assistant, sessionId, rosterEarly);

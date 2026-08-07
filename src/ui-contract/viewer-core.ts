@@ -1352,16 +1352,17 @@ export function shouldKeepStickyThumbHidden(
 /**
  * Effective sticky always-image size %.
  *
- * Hide is size 0 (not display:none): 상시 off, click-collapse, or shot/char
- * editor open all collapse to 0; otherwise use the settings percentage.
+ * Hide is size 0 (not display:none): 상시 off or click-collapse.
+ * Settings/editor open no longer forces 0% — the paint path buries via z-index.
  */
 export function resolveStickyThumbPct(opts: {
   settingsPct: unknown;
   alwaysOn: boolean;
   userCollapsed: boolean;
-  editorOpen: boolean;
+  editorOpen?: boolean;
 }): number {
-  if (!opts.alwaysOn || opts.userCollapsed || opts.editorOpen) return 0;
+  void opts.editorOpen;
+  if (!opts.alwaysOn || opts.userCollapsed) return 0;
   const pct = finiteNumber(opts.settingsPct, 0);
   return pct > 0 ? pct : 0;
 }
@@ -1591,6 +1592,153 @@ export function stickyThumbStyleWithSize(style: unknown, w: unknown, h: unknown)
   return s
     .replace(/width:\s*\d+px/gi, `width:${ww}px`)
     .replace(/height:\s*\d+px/gi, `height:${hh}px`);
+}
+
+// ── sticky layout v2: pin attaches to image (not image to pin frame) ───────
+
+export type StickyV2AnchorSide = 'left' | 'right';
+
+/**
+ * Pin X past viewport midline → image left-center (pin on image's left edge).
+ * Pin X before midline → image right-center (pin on image's right edge).
+ * (Flipped from a naive center-anchor so the image grows away from chat mid.)
+ */
+export function stickyV2AnchorSide(pinX: unknown, viewportW: unknown): StickyV2AnchorSide {
+  const x = finiteNumber(pinX, 0);
+  const vw = Math.max(1, finiteNumber(viewportW, 1));
+  return x >= vw * 0.5 ? 'left' : 'right';
+}
+
+export interface StickyV2Box {
+  left: number;
+  top: number;
+  w: number;
+  h: number;
+}
+
+export interface StickyV2PinBox {
+  left: number;
+  top: number;
+  size: number;
+}
+
+export interface StickyV2Layout {
+  side: StickyV2AnchorSide | 'corner';
+  image: StickyV2Box;
+  pin: StickyV2PinBox;
+  /** Free mode: count badge above the pin (▲N). Null in corner mode. */
+  aboveBadge: StickyV2PinBox | null;
+  /** Free mode: count badge below the pin (▼N). Null in corner mode. */
+  belowBadge: StickyV2PinBox | null;
+  /** Corner mode: above-count badge to the left of the pin. Null in free mode. */
+  leftBadge: StickyV2PinBox | null;
+  /** Corner mode: below-count badge to the right of the pin. Null in free mode. */
+  rightBadge: StickyV2PinBox | null;
+  /** True when pin sits under the image (top corners). */
+  pinBelowImage: boolean;
+}
+
+/**
+ * Free (non-corner) layout: attachment point = pin % position.
+ * Image left-center or right-center glued to that point so landscape
+ * does not swing into the chat column the way a center-anchor would.
+ * ▲ / ▼ stack flush on the attachment point (no blank pin gap between).
+ */
+export function stickyV2FreeLayout(opts: {
+  pinX: unknown;
+  pinY: unknown;
+  imgW: unknown;
+  imgH: unknown;
+  pinSize?: unknown;
+  viewportW: unknown;
+  viewportH: unknown;
+  badgeGap?: unknown;
+}): StickyV2Layout {
+  const pinSize = Math.max(12, Math.round(finiteNumber(opts.pinSize, 28)));
+  const w = Math.max(1, Math.round(finiteNumber(opts.imgW, 1)));
+  const h = Math.max(1, Math.round(finiteNumber(opts.imgH, 1)));
+  const vw = Math.max(1, Math.round(finiteNumber(opts.viewportW, w)));
+  const vh = Math.max(1, Math.round(finiteNumber(opts.viewportH, h)));
+  const cx = finiteNumber(opts.pinX, 0);
+  const cy = finiteNumber(opts.pinY, 0);
+  const side = stickyV2AnchorSide(cx, vw);
+  // side 'left' → pin on left edge of image; 'right' → pin on right edge
+  const left = Math.round(side === 'left' ? cx : cx - w);
+  const top = Math.round(cy - h / 2);
+  const badgeLeft = Math.round(cx - pinSize / 2);
+  // ▲ sits just above cy, ▼ just below — edges meet (no empty pin slot).
+  void opts.badgeGap;
+  void vh;
+  const aboveTop = Math.round(cy - pinSize);
+  const belowTop = Math.round(cy);
+  return {
+    side,
+    image: { left, top, w, h },
+    // Invisible hit target covering the ▲▼ stack for pin gestures.
+    pin: { left: badgeLeft, top: aboveTop, size: pinSize * 2 },
+    aboveBadge: { left: badgeLeft, top: aboveTop, size: pinSize },
+    belowBadge: { left: badgeLeft, top: belowTop, size: pinSize },
+    leftBadge: null,
+    rightBadge: null,
+    pinBelowImage: false,
+  };
+}
+
+/**
+ * Corner layout: image parked at corner with pad.
+ * ▲ / ▼ stack flush at viewport top-center (no blank pin gap), for any corner.
+ */
+export function stickyV2CornerLayout(opts: {
+  corner: StickyCorner | null | undefined;
+  imgW: unknown;
+  imgH: unknown;
+  viewportW: unknown;
+  viewportH: unknown;
+  pad?: unknown;
+  pinSize?: unknown;
+  gap?: unknown;
+  badgeGap?: unknown;
+}): StickyV2Layout {
+  const pad = Math.max(0, Math.round(finiteNumber(opts.pad, 12)));
+  const pinSize = Math.max(12, Math.round(finiteNumber(opts.pinSize, 28)));
+  void opts.gap;
+  void opts.badgeGap;
+  const vw = Math.max(1, Math.round(finiteNumber(opts.viewportW, 1)));
+  const vh = Math.max(1, Math.round(finiteNumber(opts.viewportH, 1)));
+  const box = stickyCornerImageBox(
+    opts.corner,
+    { w: finiteNumber(opts.imgW, 1), h: finiteNumber(opts.imgH, 1) },
+    { width: vw, height: vh },
+    pad,
+  );
+  const badgeLeft = Math.round(vw / 2 - pinSize / 2);
+  const aboveTop = pad;
+  const belowTop = pad + pinSize;
+  return {
+    side: 'corner',
+    image: { left: box.left, top: box.top, w: box.w, h: box.h },
+    pin: { left: badgeLeft, top: aboveTop, size: pinSize * 2 },
+    aboveBadge: { left: badgeLeft, top: aboveTop, size: pinSize },
+    belowBadge: { left: badgeLeft, top: belowTop, size: pinSize },
+    leftBadge: null,
+    rightBadge: null,
+    pinBelowImage: false,
+  };
+}
+
+/** Pure-image sticky HTML — box already matches aspect; no letterbox frame. */
+export function composeStickyV2ThumbHtml(src: string | null | undefined): string {
+  const next = typeof src === 'string' ? src : '';
+  if (!next) return '<div style="width:100%;height:100%;background:transparent"></div>';
+  return `<img src="${next}" style="width:100%;height:100%;object-fit:fill;display:block;background:transparent;border:none;outline:none" />`;
+}
+
+/** Counts of shots above / below the active sticky index. */
+export function stickyV2ShotCounts(activeIndex: unknown, markerCount: unknown): { above: number; below: number } {
+  const n = Math.max(0, Math.trunc(finiteNumber(markerCount, 0)));
+  const i = Math.trunc(finiteNumber(activeIndex, -1));
+  if (i < 0 || i >= n) return { above: 0, below: 0 };
+  return { above: i, below: Math.max(0, n - i - 1) };
 }
 
 /** Corner box for sticky always-image in mobile layout mode. */
@@ -2207,9 +2355,54 @@ export function nearestSegmentByClientPoint(
   return best;
 }
 
+/** True when (clientX, clientY) lies inside a DOM-like client rect. */
+export function clientPointInRect(
+  rect: { left?: number; right?: number; top?: number; bottom?: number } | null | undefined,
+  clientX: number,
+  clientY: number,
+): boolean {
+  if (!rect) return false;
+  const px = Number(clientX);
+  const py = Number(clientY);
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return false;
+  const left = Number(rect.left);
+  const right = Number(rect.right);
+  const top = Number(rect.top);
+  const bottom = Number(rect.bottom);
+  if (![left, right, top, bottom].every(Number.isFinite)) return false;
+  return px >= left && px <= right && py >= top && py <= bottom;
+}
+
 /**
- * Sticky segment while 말풍선 삽화 (beta) is on: prefer shot nearest the pointer
- * (sticky always-image follows that shot). Falls back to reading-band `fallback`.
+ * Index of the rect containing (clientX, clientY). Overlaps → smallest area.
+ * Empty / miss → -1.
+ */
+export function hitSegmentByClientPoint(
+  rects: Array<{ left?: number; right?: number; top?: number; bottom?: number } | null | undefined> | null | undefined,
+  clientX: number,
+  clientY: number,
+): number {
+  const list = Array.isArray(rects) ? rects : [];
+  if (!list.length) return -1;
+  let best = -1;
+  let bestArea = Infinity;
+  for (let i = 0; i < list.length; i += 1) {
+    const r = list[i];
+    if (!clientPointInRect(r, clientX, clientY) || !r) continue;
+    const w = Math.max(0, Number(r.right) - Number(r.left));
+    const h = Math.max(0, Number(r.bottom) - Number(r.top));
+    const area = w * h;
+    if (area < bestArea) {
+      bestArea = area;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Sticky segment while 말풍선 삽화 (beta) is on: prefer shot under the pointer
+ * (hit-test), else nearest center / y% anchor. Falls back to reading-band `fallback`.
  */
 export function stickySegmentForInlineChat(opts: {
   inlineChatOn?: boolean;
@@ -2219,6 +2412,8 @@ export function stickySegmentForInlineChat(opts: {
   markerPercents?: number[] | null;
   /** Optional live centers (e.g. inline DOM); null entries fall back to y% anchors. */
   markerCenters?: Array<{ x?: number; y?: number } | null | undefined> | null;
+  /** Optional live client rects — when pointer is inside one, that shot wins. */
+  markerRects?: Array<{ left?: number; right?: number; top?: number; bottom?: number } | null | undefined> | null;
   fallbackSegment?: number;
 }): number {
   const fallback = Number.isFinite(Number(opts.fallbackSegment)) ? Math.trunc(Number(opts.fallbackSegment)) : -1;
@@ -2226,6 +2421,8 @@ export function stickySegmentForInlineChat(opts: {
   const px = Number(opts.pointerX);
   const py = Number(opts.pointerY);
   if (!Number.isFinite(px) || !Number.isFinite(py)) return fallback;
+  const hit = hitSegmentByClientPoint(opts.markerRects, px, py);
+  if (hit >= 0) return hit;
   const pcts = Array.isArray(opts.markerPercents) ? opts.markerPercents : [];
   const centers = Array.isArray(opts.markerCenters) ? opts.markerCenters : [];
   const n = Math.max(pcts.length, centers.length);

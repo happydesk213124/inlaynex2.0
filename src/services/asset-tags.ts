@@ -5,22 +5,30 @@ import { dbg } from '../core/debug';
 import { hostHas, risuHost } from '../core/host';
 import type { ApiResult, LoreEntry } from '../core/types';
 import { cleanText } from '../core/util/text.ts';
-import { collectTriggeredLoreKeys } from '../domain/lore/assemble';
+import { normalizeAssetNaiTagsMode } from '../config/schema.ts';
+import type { CharacterInput } from '../domain/character/identity.ts';
+import { collectTriggeredLoreKeys, explainTriggeredLoreEntries } from '../domain/lore/assemble';
 import {
   formatAssetTagsInjectBlock,
   mergeWeightMaps,
   packAssetTagGroups,
+  packedAssetNames,
   tagsFromImageBytes,
   type PackedAssetTags,
 } from '../domain/nai-meta/index.ts';
 import {
   ASSETS_PER_TRIGGER,
+  assetBasenameCompact,
   assetMatchTriggers,
   assetPriorityForTrigger,
+  compactAssetKey,
+  filterAssetTriggersForUnfilledLooks,
+  loreKeysByCompactTrigger,
   orderTriggersForAssetPick,
   pickAssetsPerTrigger,
   scoreAssetName,
 } from '../domain/nai-meta/match.ts';
+import { characterHasAppearance } from '../domain/character/tags.ts';
 import {
   assetsFromEnabledModules,
   collectEnabledModuleIds,
@@ -29,17 +37,35 @@ import {
   personaEmbeddedModule,
   type RisuNamedAsset,
 } from '../domain/nai-meta/risu-asset-list.ts';
-import { asU8 } from '../core/util/bytes.ts';
+import { asU8, bytesToBase64Async } from '../core/util/bytes.ts';
+import { prepareAutotagImage } from '../core/util/image.ts';
 import { getConfig } from './context';
 
-const MAX_ASSETS_HARD = 8;
+function foldNameHas(name: unknown, trigger: string): boolean {
+  const n = assetBasenameCompact(name);
+  const t = compactAssetKey(trigger, 200);
+  return Boolean(n && t && n.includes(t));
+}
+
+/** Hard cap across all triggers (ASSETS_PER_TRIGGER × several cast members). */
+const MAX_ASSETS_HARD = 16;
 /** Cap how many name-matched candidates we try to read before giving up. */
 const MAX_READ_ATTEMPTS = 24;
+/** One vision preview per matched character/trigger (hard cap for multimodal). */
+const MAX_LOOK_PREVIEWS = 5;
+
+export interface AssetLookPreview {
+  name: string;
+  /** Prepared data URL (resized like 오토태그 display path) for the looks LLM. */
+  dataUrl: string;
+}
 
 export interface AssetTagCollectResult {
   block: string;
   packed: PackedAssetTags;
   weightMap: Map<string, string>;
+  /** Representative asset images for vision (≤1 per character, ≤MAX_LOOK_PREVIEWS). */
+  previews: AssetLookPreview[];
 }
 
 interface AssetPoolInfo {
@@ -216,7 +242,9 @@ async function scoreAndReadAssets(
   triggers: readonly string[],
 ): Promise<{
   scored: ScoredAsset[];
-  packedRows: Array<{ name: string; plains: string[]; weightMap: Map<string, string> }>;
+  packedRows: Array<{ name: string; plains: string[]; weightMap: Map<string, string>; trigger: string }>;
+  /** Highest-priority successful asset per trigger (for vision previews). */
+  previewTargets: Array<{ name: string; key: string }>;
   attempts: number;
   attemptLog: Array<Record<string, unknown>>;
 }> {
@@ -227,12 +255,13 @@ async function scoreAndReadAssets(
     })
     .filter(Boolean) as ScoredAsset[];
 
-  const packedRows: Array<{ name: string; plains: string[]; weightMap: Map<string, string> }> = [];
+  const packedRows: Array<{ name: string; plains: string[]; weightMap: Map<string, string>; trigger: string }> = [];
+  const previewTargets: Array<{ name: string; key: string }> = [];
   const attemptLog: Array<Record<string, unknown>> = [];
   const claimed = new Set<string>();
   let attempts = 0;
 
-  const tryRead = async (asset: ScoredAsset): Promise<boolean> => {
+  const tryRead = async (asset: ScoredAsset, trigger: string): Promise<boolean> => {
     if (claimed.has(asset.key)) return false;
     if (packedRows.length >= MAX_ASSETS_HARD) return false;
     if (attempts >= MAX_READ_ATTEMPTS) return false;
@@ -268,7 +297,7 @@ async function scoreAndReadAssets(
     }
 
     claimed.add(asset.key);
-    packedRows.push({ name: asset.name, plains, weightMap });
+    packedRows.push({ name: asset.name, plains, weightMap, trigger });
     attemptLog.push({
       name: asset.name,
       key: asset.key,
@@ -276,6 +305,7 @@ async function scoreAndReadAssets(
       from_cache: fromCache,
       plains: plains.length,
       hits: asset.hits,
+      trigger,
       score: asset.score,
     });
     return true;
@@ -299,21 +329,64 @@ async function scoreAndReadAssets(
     let got = 0;
     for (const asset of pool) {
       if (got >= ASSETS_PER_TRIGGER) break;
-      if (await tryRead(asset)) got += 1;
+      if (await tryRead(asset, tr)) {
+        // First success for this trigger = representative look preview.
+        if (got === 0 && previewTargets.length < MAX_LOOK_PREVIEWS
+          && !previewTargets.some((p) => p.key === asset.key)) {
+          previewTargets.push({ name: asset.name, key: asset.key });
+        }
+        got += 1;
+      }
     }
   }
 
-  return { scored, packedRows, attempts, attemptLog };
+  return { scored, packedRows, previewTargets, attempts, attemptLog };
+}
+
+async function buildLookPreviews(
+  targets: Array<{ name: string; key: string }>,
+): Promise<AssetLookPreview[]> {
+  const out: AssetLookPreview[] = [];
+  for (const t of targets) {
+    try {
+      const bytes = await readAssetBytes(t.key);
+      if (!bytes?.length) continue;
+      const prepared = await prepareAutotagImage(bytes);
+      const b64 = await bytesToBase64Async(prepared.bytes);
+      out.push({
+        name: t.name,
+        dataUrl: `data:${prepared.mime || 'image/png'};base64,${b64}`,
+      });
+    } catch (err) {
+      dbg('asset-tags.preview.fail', {
+        name: t.name,
+        message: String((err as Error)?.message || err),
+      }, 'warn');
+    }
+  }
+  return out;
 }
 
 /**
  * Match lore triggers to character + active-module assets, read NAI metadata, pack common+unique.
  * Returns null when nothing usable was found.
+ * Pass `roster` so triggers for already-filled looks are skipped.
+ * Pass `lorebook` + `message` so each trigger group lists original lore_keys (incl. sibling keys on the same entry).
  */
-export async function collectAssetNaiTags(triggerKeys: readonly unknown[]): Promise<AssetTagCollectResult | null> {
-  const triggers = assetMatchTriggers(triggerKeys);
+export async function collectAssetNaiTags(
+  triggerKeys: readonly unknown[],
+  opts: {
+    withPreviews?: boolean;
+    roster?: CharacterInput[] | null;
+    lorebook?: LoreEntry[] | null;
+    message?: string;
+  } = {},
+): Promise<AssetTagCollectResult | null> {
+  const triggers = filterAssetTriggersForUnfilledLooks(triggerKeys, opts.roster);
   if (!triggers.length) {
-    dbg('asset-tags.skip', { reason: 'no_long_triggers' });
+    dbg('asset-tags.skip', {
+      reason: opts.roster?.length ? 'no_unfilled_triggers' : 'no_long_triggers',
+    });
     return null;
   }
   if (!hostHas('getCharacter') || !hostHas('readImage')) {
@@ -335,24 +408,36 @@ export async function collectAssetNaiTags(triggerKeys: readonly unknown[]): Prom
     return null;
   }
 
-  const { scored, packedRows, attempts } = await scoreAndReadAssets(pool.assets, triggers);
+  const relatedGroups = opts.lorebook?.length && opts.message
+    ? explainTriggeredLoreEntries(opts.lorebook, opts.message).map((e) => e.keys)
+    : [];
+  const loreKeysMap = loreKeysByCompactTrigger(triggerKeys, triggers, relatedGroups);
+  const { scored, packedRows, previewTargets, attempts } = await scoreAndReadAssets(pool.assets, triggers);
 
   if (!packedRows.length) {
     dbg('asset-tags.skip', { reason: 'no_meta_hits', matched: scored.length, attempts });
     return null;
   }
 
-  const packed = packAssetTagGroups(packedRows);
+  const packed = packAssetTagGroups(packedRows, loreKeysMap);
   const weightMap = mergeWeightMaps(packed.weightMap);
   lastWeightMap = weightMap;
   const block = formatAssetTagsInjectBlock(packed);
+  const previews = opts.withPreviews === true ? await buildLookPreviews(previewTargets) : [];
+  const assetNames = packedAssetNames(packed);
   dbg('asset-tags.done', {
-    assets: packed.assets.map((a) => a.name),
+    assets: assetNames,
+    groups: packed.groups.map((g) => ({
+      trigger: g.trigger,
+      lore_keys: g.lore_keys,
+      common: g.common.length,
+      assets: g.assets.map((a) => a.name),
+    })),
     pool: pool.assets.length,
-    common: packed.common.length,
-    unique: packed.assets.reduce((n, a) => n + a.unique.length, 0),
+    unique: packed.groups.reduce((n, g) => n + g.assets.reduce((m, a) => m + a.unique.length, 0), 0),
+    previews: previews.map((p) => p.name),
   });
-  return { block, packed, weightMap };
+  return { block, packed, weightMap, previews };
 }
 
 /**
@@ -365,20 +450,48 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
     ? body.lore_trigger_keys.map((k) => cleanText(k, 200)).filter(Boolean)
     : [];
   const backendKeys = collectTriggeredLoreKeys(lorebook, message);
+  const loreFired = explainTriggeredLoreEntries(lorebook, message);
+  const relatedGroups = loreFired.map((e) => e.keys);
   const triggerPool = [...uiKeys, ...backendKeys];
-  const matchTriggers = assetMatchTriggers(triggerPool);
+  const matchTriggersAll = assetMatchTriggers(triggerPool);
+  const roster = Array.isArray(body.roster) ? (body.roster as CharacterInput[]) : null;
+  const matchTriggers = filterAssetTriggersForUnfilledLooks(triggerPool, roster);
   const card = getConfig().card;
-  const settingOn = card.asset_nai_tags === true;
+  const mode = normalizeAssetNaiTagsMode(card.asset_nai_tags);
+  const settingOn = mode !== 'off';
+
+  const siblingOnly = [
+    ...new Set(
+      loreFired.flatMap((e) => e.sibling_keys_not_in_message.map((k) => compactAssetKey(k, 200)).filter(Boolean)),
+    ),
+  ];
+  const rosterIncomplete = (roster || [])
+    .filter((c) => cleanText(c.name, 200) && !characterHasAppearance(c))
+    .map((c) => cleanText(c.name, 200));
 
   const report: Record<string, unknown> = {
     setting_asset_nai_tags: settingOn,
+    asset_nai_tags_mode: mode,
     message_preview: message.slice(0, 240),
     message_len: message.length,
     lorebook_entries: lorebook.length,
+    /** Fired entries: which keys hit the chat vs sibling keys that still feed asset matching. */
+    lore_entries_fired: loreFired.map((e) => ({
+      comment: e.comment || '(no comment)',
+      keys_hit_in_message: e.keys_hit_in_message,
+      sibling_keys_not_in_message: e.sibling_keys_not_in_message,
+      all_keys: e.keys,
+    })),
+    /** Sibling keys that never appeared in the message (Fallen / Angel / MISC suspects). */
+    sibling_keys_exported: siblingOnly,
     lore_trigger_keys_ui: uiKeys,
     lore_trigger_keys_backend: backendKeys,
+    asset_match_triggers_all: matchTriggersAll,
     asset_match_triggers: matchTriggers,
-    note: 'per trigger ≤2 assets; prefer exact/normal/default names; Hangul any length; Latin/Hanja ≥3',
+    roster_incomplete_names: rosterIncomplete,
+    note:
+      'compact contains (drop space/-/_/.); per trigger ≤2; exact > default|normal|profile|smile > shorter; '
+      + 'common tags computed per trigger group; ALL keys of a lit lore entry become asset triggers (see lore_entries_fired.sibling_keys_not_in_message)',
   };
 
   if (!message) {
@@ -386,7 +499,7 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
     return { ok: true, report };
   }
   if (!matchTriggers.length) {
-    report.skip = 'no_long_triggers';
+    report.skip = matchTriggersAll.length ? 'no_unfilled_triggers' : 'no_long_triggers';
     return { ok: true, report };
   }
   if (!hostHas('getCharacter') || !hostHas('readImage')) {
@@ -423,13 +536,39 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
     return { ok: true, report };
   }
 
+  // Help diagnose “UI has 세노이.webp but no name_matches”: substring scan of the pool.
+  const charish = matchTriggers.filter((t) => /[^\x00-\x7f]/.test(t) || /^(senoy|philia|awa|kurokage)$/i.test(t));
+  report.pool_names_containing_triggers = charish.flatMap((tr) =>
+    pool.assets
+      .filter((a) => foldNameHas(a.name, tr))
+      .slice(0, 8)
+      .map((a) => ({ trigger: tr, name: a.name })),
+  ).slice(0, 40);
+
   const { scored, packedRows, attempts, attemptLog } = await scoreAndReadAssets(pool.assets, matchTriggers);
-  report.name_matches = scored.slice(0, 20).map((a) => ({
+  report.name_matches = scored.slice(0, 40).map((a) => ({
     name: a.name,
     key: a.key,
     score: a.score,
     hits: a.hits,
   }));
+  // Which trigger pulled which files (answers “why is Saviel/MISC here?”).
+  report.per_trigger_picks = orderTriggersForAssetPick(matchTriggers).map((tr) => {
+    const poolForTr = scored
+      .filter((a) => a.hits.includes(tr))
+      .sort(
+        (a, b) =>
+          assetPriorityForTrigger(b.name, tr) - assetPriorityForTrigger(a.name, tr)
+          || a.name.localeCompare(b.name),
+      );
+    return {
+      trigger: tr,
+      lore_keys: loreKeysByCompactTrigger(triggerPool, [tr], relatedGroups).get(tr) || [],
+      from_sibling_key: siblingOnly.includes(tr),
+      match_count: poolForTr.length,
+      top: poolForTr.slice(0, ASSETS_PER_TRIGGER).map((a) => a.name),
+    };
+  });
   report.read_attempts = attempts;
   report.read_log = attemptLog;
   report.picked = packedRows.map((r) => ({
@@ -443,10 +582,15 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
     return { ok: true, report };
   }
 
-  const packed = packAssetTagGroups(packedRows);
+  const loreKeysMap = loreKeysByCompactTrigger(triggerPool, matchTriggers, relatedGroups);
+  const packed = packAssetTagGroups(packedRows, loreKeysMap);
   report.packed = {
-    common: packed.common,
-    assets: packed.assets.map((a) => ({ name: a.name, unique: a.unique })),
+    groups: packed.groups.map((g) => ({
+      trigger: g.trigger,
+      lore_keys: g.lore_keys,
+      common: g.common,
+      assets: g.assets.map((a) => ({ name: a.name, unique: a.unique })),
+    })),
   };
   report.inject_block_preview = formatAssetTagsInjectBlock(packed).slice(0, 2000);
   report.ok_picked = packedRows.length;

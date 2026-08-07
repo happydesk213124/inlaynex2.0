@@ -8,17 +8,17 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.1.11';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.1.12';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
  * Only bump it when a prompt change is mandatory for correctness.
  */
-export const PROMPT_PACK = '2026-08-06-bg-filter';
+export const PROMPT_PACK = '2026-08-07-asset-lore-keys';
 
 export const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'prefill', 'preprocess',
-  'preset_1', 'lore_inject', 'char_inject', 'appearance_inject', 'asset_tags_inject', 'autotag',
+  'preset_1', 'lore_inject', 'char_inject', 'appearance_inject', 'asset_tags_inject', 'char_looks', 'autotag',
   'curation_refine', 'curation_embed_hint',
 ] as const;
 
@@ -26,13 +26,13 @@ export type PromptKey = (typeof PROMPT_KEYS)[number];
 
 /** Prompts that must track the shipped pack even if the user edited them. */
 export const FORCE_PROMPT_KEYS: readonly PromptKey[] = [
-  'tagger', 'format', 'appearance_inject', 'lore_inject', 'asset_tags_inject', 'autotag',
+  'tagger', 'format', 'appearance_inject', 'lore_inject', 'asset_tags_inject', 'char_looks', 'autotag',
   'curation_refine', 'curation_embed_hint',
 ];
 
 export const GLOBAL_SCOPE = '__global__';
 
-// ?�?� device-store keys (IndexedDB via risuai.getLocalPluginStorage) ?�?�?�?�?�?�?�?�?�?�
+// --- device-store keys (IndexedDB via risuai.getLocalPluginStorage) ---
 export const SETTINGS_KEY = 'inx_native_settings';
 export const STORE_KEY = (name: string): string => `inx_nxstore_${name}`;
 export const IMAGE_KEY = (id: string): string => `inx_nximg_${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
@@ -55,13 +55,13 @@ export const isVibePresetMetaKey = (key: unknown): boolean =>
   typeof key === 'string' && key.startsWith('vibe_preset_');
 export const presetIdFromVibeMetaKey = (key: string): string => key.slice('vibe_preset_'.length);
 
-// ?�?� legacy save-file keys (one-time migration source) ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// --- legacy save-file keys (one-time migration source) ---
 export const LEGACY_SETTINGS_KEY = 'native_settings';
 export const LEGACY_STORE_KEY = (name: string): string => `nxstore_${name}`;
 export const LEGACY_IMAGE_KEY = (id: string): string => `nximg_${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 export const LEGACY_REF_IMAGE_KEY = 'nxref_image';
 
-// ?�?� external endpoints ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// --- external endpoints ---
 export const API_URL = 'https://image.novelai.net/ai/generate-image';
 export const ENCODE_URL = 'https://image.novelai.net/ai/encode-vibe';
 export const ANLAS_URL = 'https://api.novelai.net/user/subscription';

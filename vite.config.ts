@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.11';
+const PLUGIN_VERSION = '2.1.12';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -426,14 +426,13 @@ const VENDOR_CARD_TAG_PERSON_MODE_PATCH =
       return ["gender", "girls", "people", "off"].includes(Vt) ? Vt : "gender";
     }, applyAutoPerson = (Vt = !1) => {`;
 
-/** Dashboard: collect NAI metadata tags from matched Risu assets for new_characters. */
+/** Dashboard: auto_aspect toggle only; asset NAI moved to card options select. */
 const VENDOR_ASSET_NAI_HTML_NEEDLE =
   `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
 `;
 
 const VENDOR_ASSET_NAI_HTML_PATCH =
   `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
-            <label class="toggle-row" data-nx-help-id="nx-asset-nai-tags"><input type="checkbox" id="nx-asset-nai-tags" \${i.asset_nai_tags ? "checked" : ""}><span>에셋 NAI 태그</span></label>
             <label class="toggle-row" data-nx-help-id="nx-auto-aspect"><input type="checkbox" id="nx-auto-aspect" \${i.auto_aspect ? "checked" : ""}><span>자동 비율 조절</span></label>
 `;
 
@@ -443,9 +442,40 @@ const VENDOR_ASSET_NAI_SAVE_NEEDLE =
 
 const VENDOR_ASSET_NAI_SAVE_PATCH =
   `      char_appearance: ee("nx-appearance"),
-      asset_nai_tags: ee("nx-asset-nai-tags"),
       auto_aspect: ee("nx-auto-aspect"),
 `;
+
+/** Card options bar: asset NAI mode select (after natural_base 3-col grid). */
+const VENDOR_ASSET_NAI_CARD_NEEDLE =
+  `            <label data-nx-help-id="nx-natural-base"><span>자연어 base</span><select id="nx-natural-base">
+              <option value="off" \${i.natural_base === !1 || i.natural_base === "off" ? "selected" : ""}>안넣기</option>
+              <option value="short" \${i.natural_base !== !1 && i.natural_base !== "off" && i.natural_base !== "detailed" && i.natural_base !== "supplement" ? "selected" : ""}>짧게 넣기</option>
+              <option value="detailed" \${i.natural_base === "detailed" ? "selected" : ""}>구도·자세히</option>
+              <option value="supplement" \${i.natural_base === "supplement" ? "selected" : ""}>태그 보완 자연어</option>
+            </select></label>
+            </div>`;
+
+const VENDOR_ASSET_NAI_CARD_PATCH =
+  `            <label data-nx-help-id="nx-natural-base"><span>자연어 base</span><select id="nx-natural-base">
+              <option value="off" \${i.natural_base === !1 || i.natural_base === "off" ? "selected" : ""}>안넣기</option>
+              <option value="short" \${i.natural_base !== !1 && i.natural_base !== "off" && i.natural_base !== "detailed" && i.natural_base !== "supplement" ? "selected" : ""}>짧게 넣기</option>
+              <option value="detailed" \${i.natural_base === "detailed" ? "selected" : ""}>구도·자세히</option>
+              <option value="supplement" \${i.natural_base === "supplement" ? "selected" : ""}>태그 보완 자연어</option>
+            </select></label>
+            </div>
+            <label class="wide" data-nx-help-id="nx-asset-nai-tags"><span>에셋 NAI 태그</span><select id="nx-asset-nai-tags">
+              <option value="off" \${i.asset_nai_tags === !1 || i.asset_nai_tags === "off" || !i.asset_nai_tags ? "selected" : ""}>사용안함</option>
+              <option value="inline" \${i.asset_nai_tags === "inline" ? "selected" : ""}>그냥 옛날버전 (통째로 보내기)</option>
+              <option value="prepass" \${i.asset_nai_tags === "prepass" ? "selected" : ""}>LLM 따로 호출</option>
+              <option value="prepass_vision" \${i.asset_nai_tags === !0 || i.asset_nai_tags === "prepass_vision" ? "selected" : ""}>LLM 따로 호출 + 이미지 파일 보내기</option>
+            </select></label>`;
+
+const VENDOR_ASSET_NAI_CT_NEEDLE =
+  `      natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",`;
+
+const VENDOR_ASSET_NAI_CT_PATCH =
+  `      natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",
+      asset_nai_tags: document.getElementById("nx-asset-nai-tags") ? N("nx-asset-nai-tags") || "off" : e.asset_nai_tags || "off",`;
 
 const VENDOR_ASSET_NAI_HELP_NEEDLE =
   `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
@@ -453,7 +483,7 @@ const VENDOR_ASSET_NAI_HELP_NEEDLE =
 
 const VENDOR_ASSET_NAI_HELP_PATCH =
   `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
-    "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "로어 트리거와 이름이 맞는 Risu 에셋 이미지(PNG/WebP)의 NovelAI 메타 태그를 트리거당 최대 2장(normal/default·이름 일치 우선) 읽어 태거 프롬프트에 넣습니다. artist·year·품질·*background·straight-on 태그는 제외합니다." },
+    "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "로어 트리거와 이름이 맞는 Risu 에셋 PNG/WebP의 NovelAI 메타 태그를 어떻게 태거에 넣을지 고릅니다. artist·year·품질·*background·straight-on은 제외.\\n\\n• 사용안함 — 에셋 태그를 쓰지 않습니다.\\n• 그냥 옛날버전 (통째로 보내기) — 로어북·에셋 태그를 메인 태거 한 번에 넣습니다. LLM 1회. 컨텍스트가 길어져 토큰을 많이 씁니다.\\n• LLM 따로 호출 — 에셋 태그로 캐릭터 룩만 먼저 채운 뒤 메인 태거를 돌립니다. LLM 2회.\\n• LLM 따로 호출 + 이미지 파일 보내기 — 룩 LLM에 캐릭터당 대표 이미지 1장(최대 5장)을 함께 보냅니다. 비전 입력만큼 토큰·비용이 큽니다." },
     "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(Asset Maid 기본 사이즈). ComfyUI는 워크플로 Empty Latent 등에 [[width]]/[[height]]를 넣어야 반영됩니다. 끄면 NAI Width/Height 설정을 씁니다." },
 `;
 
@@ -583,6 +613,15 @@ const VENDOR_CURATION_PANEL_PATCH =
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
         </div>
         <div class="card" style="margin-top:14px">
+          <strong>2.1.12</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>에셋 NAI 태그: off / inline / prepass / prepass_vision 모드 · looks 전용 LLM 패스</li>
+            <li>에셋 매칭: compact contains(공백/-/_/. 제거) · 트리거당 ≤2 · 트리거별 common · lore_keys로 name/aliases</li>
+            <li>filled 캐릭터 트리거 로어/에셋 스킵 · Incomplete 이름 고정 · 디버그 태깅 프로브(sibling/per_trigger)</li>
+            <li>프롬프트: char_looks · asset_tags_inject 영어 라벨(common/asset/trigger)</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
           <strong>2.1.11</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
             <li>이미지 탐색: 탭 진입 시 통합보기 자동 로드 안 함 · 캐릭터별 접이식 폴더 · 뷰포트+오버스캔 가상 스크롤</li>
@@ -706,11 +745,12 @@ const VENDOR_DEBUG_PANEL_PATCH = `        <div class="nx-seg" style="margin-bott
         \${(t.debugPanelTab || "log") === "tagging" ? \`
         <div class="card">
           <strong>에셋 NAI 태그 프로브</strong>
-          <div class="muted" style="margin-top:8px">현재 선택된 채팅 메시지(DOM)로 로어북 트리거를 잡고, 트리거마다 Risu 에셋(캐릭터/활성 모듈) 중 NAI 메타가 있는 이미지를 최대 2장씩(normal/default·이름 일치 우선) 매칭합니다.</div>
+          <div class="muted" style="margin-top:8px">선택 메시지로 로어를 잡고, lit된 엔트리의 <b>키 전부</b>로 에셋 이름을 compact-contains 매칭합니다 (트리거당 ≤2 · exact→normal/default/smile→짧은 이름 · common은 트리거별). 결과의 <code>lore_entries_fired</code> / <code>sibling_keys_exported</code> / <code>per_trigger_picks</code>를 복사해서 보내 주세요.</div>
           <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
             <button type="button" id="nx-debug-asset-tags">현재 선택 DOM → 로어/에셋 체크</button>
+            <button type="button" id="nx-debug-asset-tags-copy" class="secondary">리포트 복사</button>
           </div>
-          <pre id="nx-debug-asset-tags-out" style="margin-top:12px;white-space:pre-wrap;font:11.5px/1.45 Consolas,monospace;color:#b8c4d8;max-height:520px;overflow:auto;background:rgba(0,0,0,.28);padding:12px;border-radius:12px">\${h(t.debugAssetTagReport || "(아직 실행 안 함 — 채팅에서 메시지를 선택한 뒤 버튼을 누르세요)")}</pre>
+          <pre id="nx-debug-asset-tags-out" style="margin-top:12px;white-space:pre-wrap;font:11.5px/1.45 Consolas,monospace;color:#b8c4d8;max-height:560px;overflow:auto;background:rgba(0,0,0,.28);padding:12px;border-radius:12px">\${h(t.debugAssetTagReport || "(아직 실행 안 함 — 채팅에서 메시지를 선택한 뒤 버튼을 누르세요)")}</pre>
         </div>
         \` : \`
         <div class="card">
@@ -746,6 +786,7 @@ const VENDOR_DEBUG_EVENTS_PATCH = `document.querySelectorAll("[data-nx-debug-pan
         if (!text) throw new Error("채팅에서 메시지를 먼저 선택하세요 (selectedMessage 없음).");
         const lore = await la();
         const keys = collectTriggeredLoreKeys(lore, text);
+        const roster = [...(t.charactersSession || []), ...(t.charactersGlobal || [])].filter(Boolean);
         t.debugAssetTagReport = "실행 중…";
         await P();
         const res = await K("/v1/debug/asset-tags", {
@@ -754,6 +795,7 @@ const VENDOR_DEBUG_EVENTS_PATCH = `document.querySelectorAll("[data-nx-debug-pan
             message: text,
             lorebook: lore,
             lore_trigger_keys: keys,
+            roster,
             selected: {
               hash: msg?.hash || "",
               domIndex: msg?.domIndex,
@@ -765,14 +807,28 @@ const VENDOR_DEBUG_EVENTS_PATCH = `document.querySelectorAll("[data-nx-debug-pan
         });
         const report = res?.report || res;
         t.debugAssetTagReport = JSON.stringify(report, null, 2);
-        y("info", "debug.asset-tags", \`triggers=\${(report?.asset_match_triggers || []).length} matches=\${(report?.name_matches || []).length} picked=\${report?.ok_picked || 0}\`);
-        t.uiMessage = { type: "success", text: "에셋 NAI 태그 프로브 완료" };
+        y("info", "debug.asset-tags", \`triggers=\${(report?.asset_match_triggers || []).length} matches=\${(report?.name_matches || []).length} picked=\${report?.ok_picked || 0} siblings=\${(report?.sibling_keys_exported || []).length}\`);
+        t.uiMessage = { type: "success", text: "에셋 NAI 태그 프로브 완료 — 리포트 복사해서 보내 주세요" };
       } catch (err) {
         t.debugAssetTagReport = String(err?.message || err);
         t.uiMessage = { type: "error", text: z(err?.message || err) };
         y("error", "debug.asset-tags", err?.message || err);
       } finally {
         if (btn) btn.disabled = !1;
+      }
+      await P();
+    }), document.getElementById("nx-debug-asset-tags-copy")?.addEventListener("click", async () => {
+      const text = String(t.debugAssetTagReport || "");
+      if (!text || text.startsWith("(아직") || text === "실행 중…") {
+        t.uiMessage = { type: "error", text: "먼저 프로브를 실행하세요" };
+        await P();
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        t.uiMessage = { type: "success", text: "리포트 복사됨" };
+      } catch (err) {
+        t.uiMessage = { type: "error", text: "복사 실패: " + z(err?.message || err) };
       }
       await P();
     }), document.getElementById("nx-debug-refresh")?.addEventListener("click", async () => {
@@ -2334,6 +2390,78 @@ const VENDOR_STICKY_SKIP_PATCH = `e._lastHideThumbOff === hideThumbOffscreen && 
 const VENDOR_STICKY_ASSIGN_NEEDLE = `e._lastHideThumbOff = hideThumbOffscreen, e._lastStickyUserHidden = keepHidden, e._lastVpW = vpW`;
 const VENDOR_STICKY_ASSIGN_PATCH = `e._lastHideThumbOff = hideThumbOffscreen, e._lastVpW = vpW`;
 
+const VENDOR_PRESS_FILL_NEEDLE =
+  `    }, hidePressFill = async () => {
+      try {
+        await pressFill.setInnerHTML("");
+      } catch {
+      }
+      try {
+        await pressFill.setStyleAttribute("position:fixed;display:none;z-index:99973;pointer-events:none;");
+      } catch {
+      }
+    }, ensurePressFillAnim = async () => {
+      if (t._nxPressFillAnim) return;
+      try {
+        const st = await H(e, "style", {
+          text: "@keyframes nxPressFill{from{transform:scaleY(0)}to{transform:scaleY(1)}}"
+        });
+        await o.appendChild(st), t._nxPressFillAnim = !0;
+      } catch {
+      }
+    }, showPressFill = async (thumb) => {
+      if (!thumb) return;
+      await ensurePressFillAnim();
+      let rect = null;
+      try {
+        rect = await thumb.getBoundingClientRect();
+      } catch {
+        rect = null;
+      }
+      if (!rect) return;
+      const L = Math.round(rect.left), T = Math.round(rect.top), W = Math.max(1, Math.round(rect.width || rect.right - rect.left)), Hh = Math.max(1, Math.round(rect.height || rect.bottom - rect.top));
+      await pressFill.setStyleAttribute(\`position:fixed;left:\${L}px;top:\${T}px;width:\${W}px;height:\${Hh}px;z-index:99971;pointer-events:none;overflow:hidden;border-radius:8px;display:block;background:transparent\`);
+      await pressFill.setInnerHTML(\`<div style="position:absolute;left:0;right:0;bottom:0;height:100%;background:linear-gradient(180deg,rgba(124,108,255,.12),rgba(124,108,255,.42));transform:scaleY(0);transform-origin:bottom center;animation:nxPressFill \${PRESS_MS}ms linear forwards;pointer-events:none"></div>\`);
+    }, showFullscreen = async (f) => {`;
+
+const VENDOR_PRESS_FILL_PATCH =
+  `    }, hidePressFill = async () => {
+      // Don't clear InnerHTML — recreating via SafeDOM every press was a hitch source.
+      try {
+        await pressFill.setStyleAttribute("position:fixed;display:none;z-index:99973;pointer-events:none;");
+      } catch {
+      }
+    }, ensurePressFillAnim = async () => {
+      if (t._nxPressFillAnim) return;
+      try {
+        const st = await H(e, "style", {
+          text: "@keyframes nxPressRing{from{transform:scale(.55);opacity:.35}to{transform:scale(1);opacity:1}}"
+        });
+        await o.appendChild(st), t._nxPressFillAnim = !0;
+      } catch {
+      }
+    }, showPressFill = async (thumb, px, py) => {
+      // Cheap feedback: 36px ring at pointer. The old full-image gradient +
+      // getBoundingClientRect through SafeDOM was the long-press hitch.
+      void thumb;
+      const x0 = Number(px), y0 = Number(py);
+      if (!Number.isFinite(x0) || !Number.isFinite(y0)) return;
+      await ensurePressFillAnim();
+      const S = 36, L = Math.round(x0 - S / 2), T = Math.round(y0 - S / 2);
+      try {
+        await pressFill.setStyleAttribute(\`position:fixed;left:\${L}px;top:\${T}px;width:\${S}px;height:\${S}px;z-index:99971;pointer-events:none;overflow:visible;border-radius:\${S}px;display:block;background:transparent\`);
+        await pressFill.setInnerHTML(\`<div style="width:100%;height:100%;box-sizing:border-box;border-radius:999px;border:2px solid rgba(167,139,250,.95);box-shadow:0 0 0 3px rgba(124,108,255,.22);transform:scale(.55);opacity:.35;animation:nxPressRing \${PRESS_MS}ms linear forwards;pointer-events:none;will-change:transform,opacity"></div>\`);
+      } catch {
+      }
+    }, showFullscreen = async (f) => {`;
+
+const VENDOR_PRESS_FILL_STICKY_CALL_NEEDLE =
+  `          showPressFill(g.thumb).catch(() => {
+          });`;
+const VENDOR_PRESS_FILL_STICKY_CALL_PATCH =
+  `          showPressFill(g.thumb, x, I).catch(() => {
+          });`;
+
 const VENDOR_STICKY_CLICK_NEEDLE = `      if (fPress.source === "sticky-thumb") {
         await hidePressFill();
         const ov = t.overlayUi;
@@ -2375,6 +2503,7 @@ const VENDOR_STICKY_CLICK_PATCH = `      if (fPress.source === "sticky-thumb") {
           await Ht();
         } catch {
         }`;
+
 
 /** Long-press inline bubble shots → same inspect sheet as sticky thumbs. */
 const VENDOR_INLINE_LONGPRESS_NEEDLE =
@@ -2418,7 +2547,7 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
               timer: null,
               thumb: node
             };
-            showPressFill(node).catch(() => {
+            showPressFill(node, x, I).catch(() => {
             });
             F.timer = setTimeout(() => {
               if (mobilePress !== F) return;
@@ -2441,6 +2570,8 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
       }
       // Sticky always-image: short-tap hide / long-press fullscreen+sheet.
       if (Nt() && !inspectOpen) {`;
+
+
 
 const VENDOR_STICKY_PRESS_NEEDLE = `if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbUserHidden) continue;`;
 const VENDOR_STICKY_PRESS_PATCH = `if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;`;
@@ -2934,7 +3065,7 @@ const VENDOR_INLINE_HELP_NEEDLE =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },`;
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },
-    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택한 말풍선 + 바로 위·아래(최대 3개)에만 샷 line 이미지를 끼웁니다. 스크롤 선택으로도 갱신되고, 나머지는 지워서 메모리를 막습니다. 생성 중엔 스피너→이미지. 크기 ≤말풍선 60%." },
+    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 ±1(역할 무관). 나머지는 지워서 메모리를 막습니다. 크기 ≤말풍선 78%(가로는 폭 기준, 세로는 높이 상한)." },
     "nx-progress-toast": { title: "진행 토스트", body: "토스트 노드는 항상 두고, 진행·작업명이 바뀌면 보이게 / 5초간 내용 변화 없으면 눈에서만 숨깁니다. 인덱싱=민트, 그 외=보라. 클릭하면 당장 숨깁니다." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
@@ -3022,7 +3153,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       if (!src || !/^data:image\\//i.test(src)) continue;
       if (!Number.isFinite(line) || line < 1) continue;
       if (cardId) seenCard.add(cardId);
-      placements.push({ line, src, shotIndex: card.shot_index, cardId, pending: !1 });
+      placements.push({
+        line,
+        src,
+        shotIndex: card.shot_index,
+        cardId,
+        pending: !1
+      });
     }
     for (const row of pending) {
       const line = Number(row?.line);
@@ -3235,55 +3372,125 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       if (!Array.isArray(els) || !els.length) return;
       const selIdx = Number(sel.domIndex);
-      const keep = new Set();
-      if (Number.isFinite(selIdx) && selIdx >= 0 && selIdx < els.length) keep.add(selIdx);
-      // DOM newest-first: +1 = above (older), -1 = below (newer). Cap at selected ±1.
-      const neighborIdxs = [];
-      if (Number.isFinite(selIdx)) {
-        if (selIdx + 1 < els.length) neighborIdxs.push(selIdx + 1);
-        if (selIdx - 1 >= 0) neighborIdxs.push(selIdx - 1);
-      }
+      if (!Number.isFinite(selIdx) || selIdx < 0 || selIdx >= els.length) return;
       const VC = globalThis.__INLAY_VIEWER_CORE__;
-      const neighborMsgs = [];
-      if (neighborIdxs.length) {
+      const allRoles = !!t.backendSettings?.card?.generate_all_roles;
+      const maxPerSide = Number(VC?.INLINE_KEEP_MAX_PER_SIDE) > 0
+        ? Number(VC.INLINE_KEEP_MAX_PER_SIDE)
+        : 1;
+      const scope = await Za().catch(() => null);
+      const msgs = scope?.messages || [];
+      const roleCache = new Map();
+      const msgCache = new Map();
+      const resolveAt = async (idx) => {
+        if (msgCache.has(idx)) return msgCache.get(idx);
+        let row = null;
         try {
-          const scope = await Za().catch(() => null);
-          const msgs = scope?.messages || [];
-          for (const nIdx of neighborIdxs) {
-            keep.add(nIdx);
-            try {
-              const raw = await De(els[nIdx]);
-              const text = w(raw || "");
-              if (text.length < 4) {
-                neighborMsgs.push({ idx: nIdx, msg: null });
-                continue;
+          const raw = await De(els[idx]);
+          const text = w(raw || "");
+          if (text.length >= 4) {
+            const hit = typeof qa == "function"
+              ? qa(text, msgs, idx, els.length, {})
+              : typeof VC?.resolveChatMessageMatch == "function"
+                ? VC.resolveChatMessageMatch(text, msgs, idx, els.length)
+                : null;
+            const role = w(hit?.role || "");
+            row = {
+              idx,
+              msg: {
+                domIndex: idx,
+                chatIndex: hit?.chatIndex,
+                messageIndex: hit?.chatIndex,
+                characterId: sel.characterId,
+                chatId: sel.chatId,
+                sessionId: sel.sessionId,
+                role,
+                text,
+                hash: ye(text)
               }
-              const hit = typeof qa == "function"
-                ? qa(text, msgs, nIdx, els.length, {})
-                : typeof VC?.resolveChatMessageMatch == "function"
-                  ? VC.resolveChatMessageMatch(text, msgs, nIdx, els.length)
-                  : null;
-              neighborMsgs.push({
-                idx: nIdx,
-                msg: {
-                  domIndex: nIdx,
-                  chatIndex: hit?.chatIndex,
-                  messageIndex: hit?.chatIndex,
-                  characterId: sel.characterId,
-                  chatId: sel.chatId,
-                  sessionId: sel.sessionId,
-                  role: w(hit?.role || ""),
-                  text,
-                  hash: ye(text)
-                }
-              });
-            } catch {
-              neighborMsgs.push({ idx: nIdx, msg: null });
-            }
+            };
+            roleCache.set(idx, role);
+          } else {
+            roleCache.set(idx, "");
+            row = { idx, msg: null };
           }
         } catch {
-          for (const nIdx of neighborIdxs) keep.add(nIdx);
+          roleCache.set(idx, "");
+          row = { idx, msg: null };
         }
+        msgCache.set(idx, row);
+        return row;
+      };
+      const isCharAtSync = (idx) => {
+        let role = "";
+        if (roleCache.has(idx)) role = roleCache.get(idx);
+        else if (idx === selIdx && sel.role != null && String(sel.role).length) role = String(sel.role);
+        else return !1;
+        return typeof VC?.isCharMessageRole == "function"
+          ? VC.isCharMessageRole(role)
+          : typeof isSelectedCharRole == "function"
+            ? isSelectedCharRole(role)
+            : /^(char|assistant|bot)$/i.test(String(role || ""));
+      };
+      // Prefetch roles along walk so pickInlineKeepDomIndices can stay sync.
+      if (allRoles) {
+        if (selIdx + 1 < els.length) await resolveAt(selIdx + 1);
+        if (selIdx - 1 >= 0) await resolveAt(selIdx - 1);
+      } else {
+        await resolveAt(selIdx);
+        let found = 0;
+        for (let i = selIdx + 1; i < els.length && found < maxPerSide; i += 1) {
+          await resolveAt(i);
+          if (isCharAtSync(i)) found += 1;
+        }
+        found = 0;
+        for (let i = selIdx - 1; i >= 0 && found < maxPerSide; i -= 1) {
+          await resolveAt(i);
+          if (isCharAtSync(i)) found += 1;
+        }
+      }
+      const keepIdxs = typeof VC?.pickInlineKeepDomIndices == "function"
+        ? VC.pickInlineKeepDomIndices({
+          selIdx,
+          length: els.length,
+          allRoles,
+          isCharAt: isCharAtSync,
+          maxPerSide
+        })
+        : (() => {
+          const out = [];
+          const add = (i) => {
+            if (i >= 0 && i < els.length && !out.includes(i)) out.push(i);
+          };
+          if (allRoles) {
+            add(selIdx);
+            if (selIdx + 1 < els.length) add(selIdx + 1);
+            if (selIdx - 1 >= 0) add(selIdx - 1);
+            return out;
+          }
+          if (isCharAtSync(selIdx)) add(selIdx);
+          let n = 0;
+          for (let i = selIdx + 1; i < els.length && n < maxPerSide; i += 1) {
+            if (isCharAtSync(i)) {
+              add(i);
+              n += 1;
+            }
+          }
+          n = 0;
+          for (let i = selIdx - 1; i >= 0 && n < maxPerSide; i -= 1) {
+            if (isCharAtSync(i)) {
+              add(i);
+              n += 1;
+            }
+          }
+          return out;
+        })();
+      const keep = new Set(keepIdxs);
+      const neighborMsgs = [];
+      for (const idx of keep) {
+        if (idx === selIdx) continue;
+        const row = msgCache.get(idx) || await resolveAt(idx);
+        neighborMsgs.push(row || { idx, msg: null });
       }
       const unwrapSafe = async (arr) => {
         if (!arr) return [];
@@ -3331,12 +3538,14 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         } catch {
         }
       }
-      y("info", "inline.keep", \`DOM#\${selIdx}±1 keep=\${[...keep].sort((a, b) => a - b).join(",")}/\${els.length}\`);
-      if (Number.isFinite(selIdx) && els[selIdx]) {
+      const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
+      y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${[...keep].sort((a, b) => a - b).join(",")}/\${els.length}\`);
+      if (keep.has(selIdx) && els[selIdx]) {
         await injectChatInlineImages(els[selIdx], linkedCards(sel), t._inlinePending);
       }
       for (const row of neighborMsgs) {
         if (row?.idx == null || !els[row.idx] || !row.msg) continue;
+        if (!keep.has(row.idx)) continue;
         await injectChatInlineImages(els[row.idx], linkedCards(row.msg), []);
       }
     } catch (err) {
@@ -3483,7 +3692,7 @@ const VENDOR_STREAM_SETTLE_KA_NEEDLE =
   }`;
 const VENDOR_STREAM_SETTLE_KA_PATCH =
   `  async function Ka(e, n) {
-    if (!e || e.length < 8 || t.jobsInFlight.has(n) || !(await ve()).enabled) return;
+    if (!e || e.length <= 30 || t.jobsInFlight.has(n) || !(await ve()).enabled) return;
     if (ge(n).length) return;
     try {
       await le();
@@ -3588,6 +3797,16 @@ const VENDOR_STREAM_SETTLE_KA_PATCH =
   }`;
 
 /**
+ * Auto-gen afterRequest: skip short AI replies (≤30 chars) — was <8 in vendor.
+ */
+const VENDOR_AFTER_REQUEST_MINLEN_NEEDLE =
+  `      if (!a || a.length < 8)
+        return y("info", "afterRequest.skip", "text too short"), e;`;
+const VENDOR_AFTER_REQUEST_MINLEN_PATCH =
+  `      if (!a || a.length <= 30)
+        return y("info", "afterRequest.skip", "text too short"), e;`;
+
+/**
  * "응답 후 자동 생성": wait 0.5s, select DOM#0 (newest), reuse select→Ka path
  * so hash/message_index/role match the real bubble (not raw afterRequest text).
  */
@@ -3631,7 +3850,7 @@ const VENDOR_AFTER_REQUEST_DELAY_PATCH =
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 약 0.5초 뒤 최신 말풍선(DOM#0)을 선택해 연결을 확인한 뒤 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 약 0.5초 뒤 최신 말풍선(DOM#0)을 선택해 연결을 확인한 뒤 이미지를 만듭니다. 답변이 30자 이하면 건너뜁니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 
 /**
  * On select/rebind: retarget in-flight job save-hash when finished DOM matches (≥60%).
@@ -3897,8 +4116,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.1.11",
-    body: "이미지 탐색 가상 스크롤·뷰포트 맞춤 · 새로고침 warm 렉 수정 · 모바일 롱프레스 메뉴. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
+    title: "2.1.12",
+    body: "에셋 NAI 태그 prepass · 트리거당 2장 · lore_keys로 이름/별칭 · compact 매칭. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
   };`;
 
 /** Top-center progress toast: one bar; show on change; hide 5s after last change. */
@@ -4386,7 +4605,7 @@ const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
 const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
   'char_inject', 'preprocess', 'prefill', 'preset_1', 'autotag',
-  'curation_refine', 'curation_embed_hint', 'asset_tags_inject',
+  'curation_refine', 'curation_embed_hint', 'asset_tags_inject', 'char_looks',
 ] as const;
 
 /**
@@ -4487,6 +4706,7 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_ASSET_NAI_HTML_NEEDLE, 'asset_nai_tags HTML');
   assertOnce(raw, VENDOR_ASSET_NAI_SAVE_NEEDLE, 'asset_nai_tags save');
   assertOnce(raw, VENDOR_ASSET_NAI_HELP_NEEDLE, 'asset_nai_tags help');
+  // Card select + Ct() needles exist only after natural_base patches; checked in applyVendorPatches.
   assertOnce(raw, VENDOR_COMFY_MUTED_NEEDLE, 'comfy muted placeholders');
   assertOnce(raw, VENDOR_COMFY_HELP_NEEDLE, 'comfy help width/height');
   assertOnce(raw, VENDOR_CURATION_TABS_NEEDLE, 'curation tabs S/E');
@@ -4536,6 +4756,8 @@ const loadVendorUi = (): string => {
     [VENDOR_STICKY_ASSIGN_NEEDLE, 'sticky assign keepHidden'],
     [VENDOR_STICKY_CLICK_NEEDLE, 'sticky click hide/revive'],
     [VENDOR_STICKY_PRESS_NEEDLE, 'sticky press skip'],
+    [VENDOR_PRESS_FILL_NEEDLE, 'press fill lightweight ring'],
+    [VENDOR_PRESS_FILL_STICKY_CALL_NEEDLE, 'press fill sticky call xy'],
     [VENDOR_INLINE_LONGPRESS_NEEDLE, 'inline shot long-press'],
     [VENDOR_STICKY_REVIVE_NEEDLE, 'sticky pin revive'],
     [VENDOR_STICKY_INIT_NEEDLE, 'sticky init flags'],
@@ -4599,6 +4821,7 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_POLL_NEEDLE, 'inline poll pending'],
     [VENDOR_INLINE_POLL_REFRESH_NEEDLE, 'inline poll refresh'],
     [VENDOR_STREAM_SETTLE_KA_NEEDLE, 'stream settle Ka 0.5s'],
+    [VENDOR_AFTER_REQUEST_MINLEN_NEEDLE, 'afterRequest minlen 30'],
     [VENDOR_AFTER_REQUEST_DELAY_NEEDLE, 'afterRequest DOM#0 select'],
     [VENDOR_AFTER_REQUEST_HELP_NEEDLE, 'afterRequest help DOM#0'],
     [VENDOR_REBIND_RETARGET_NEEDLE, 'job save-hash retarget on select'],
@@ -4637,42 +4860,48 @@ const loadVendorUi = (): string => {
       throw new Error(`[build] expected 2× appearance label shared, found ${count}`);
     }
   }
-  return raw
-    .replace(VENDOR_VERSION_NEEDLE, `He = "${PLUGIN_VERSION}"`)
-    .replace(VENDOR_PROMPT_RESET_NEEDLE, VENDOR_PROMPT_RESET_PATCH)
-    .replace(VENDOR_PROMPT_TAB_HTML_NEEDLE, VENDOR_PROMPT_TAB_HTML_PATCH)
-    .replace(VENDOR_PROMPT_TAB_EVENTS_AFTER_RESET_NEEDLE, VENDOR_PROMPT_TAB_EVENTS_PATCH)
-    .replace(VENDOR_NATURAL_BASE_HTML_NEEDLE, VENDOR_NATURAL_BASE_HTML_PATCH)
-    .replace(VENDOR_NATURAL_BASE_SAVE_NEEDLE, VENDOR_NATURAL_BASE_SAVE_PATCH)
-    .replace(VENDOR_NATURAL_BASE_CT_NEEDLE, VENDOR_NATURAL_BASE_CT_PATCH)
-    .replace(VENDOR_NATURAL_BASE_CARD_NEEDLE, VENDOR_NATURAL_BASE_CARD_PATCH)
-    .replace(VENDOR_NATURAL_BASE_HELP_NEEDLE, VENDOR_NATURAL_BASE_HELP_PATCH)
-    .replace(VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_HTML_PATCH)
-    .replace(VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_CT_PATCH)
-    .replace(VENDOR_PERSON_TAG_SOLO_HTML_NEEDLE, VENDOR_PERSON_TAG_SOLO_HTML_PATCH)
-    .replace(VENDOR_PERSON_TAG_SOLO_CT_NEEDLE, VENDOR_PERSON_TAG_SOLO_CT_PATCH)
-    .replace(VENDOR_ASSET_NAI_HTML_NEEDLE, VENDOR_ASSET_NAI_HTML_PATCH)
-    .replace(VENDOR_ASSET_NAI_SAVE_NEEDLE, VENDOR_ASSET_NAI_SAVE_PATCH)
-    .replace(VENDOR_ASSET_NAI_HELP_NEEDLE, VENDOR_ASSET_NAI_HELP_PATCH)
-    .replace(VENDOR_COMFY_MUTED_NEEDLE, VENDOR_COMFY_MUTED_PATCH)
-    .replace(VENDOR_COMFY_HELP_NEEDLE, VENDOR_COMFY_HELP_PATCH)
-    .replace(VENDOR_CURATION_TABS_NEEDLE, VENDOR_CURATION_TABS_PATCH)
-    .replace(VENDOR_CURATION_PANEL_NEEDLE, VENDOR_CURATION_PANEL_PATCH)
-    .replace(VENDOR_DEBUG_PANEL_NEEDLE, VENDOR_DEBUG_PANEL_PATCH)
-    .replace(VENDOR_DEBUG_EVENTS_NEEDLE, VENDOR_DEBUG_EVENTS_PATCH)
-    .replace(VENDOR_CURATION_EVENTS_NEEDLE, VENDOR_CURATION_EVENTS_PATCH)
-    .replace(VENDOR_CURATION_TAB_LOAD_NEEDLE, VENDOR_CURATION_TAB_LOAD_PATCH)
-    .replace(VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, VENDOR_GLOBAL_TOGGLE_SUMMARY_PATCH)
-    .replace(VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE, VENDOR_GLOBAL_TOGGLE_BODY_PATCH)
-    .replace(VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, VENDOR_EXPLORER_THUMB_PAINT_PATCH)
-    .replace(VENDOR_EXPLORER_HA_NEEDLE, VENDOR_EXPLORER_HA_PATCH)
-    .replace(VENDOR_EXPLORER_THUMB_WARM_NEEDLE, VENDOR_EXPLORER_THUMB_WARM_PATCH)
-    .replace(VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE, VENDOR_EXPLORER_WARM_PROGRESS_PATCH)
-    .replace(VENDOR_EXPLORER_ET_NEEDLE, VENDOR_EXPLORER_ET_PATCH)
-    .replace(VENDOR_EXPLORER_ZE_NEEDLE, VENDOR_EXPLORER_ZE_PATCH)
-    .replace(VENDOR_EXPLORER_ENSURE_NEEDLE, VENDOR_EXPLORER_ENSURE_PATCH)
-    .replace(VENDOR_EXPLORER_CSS_NEEDLE, VENDOR_EXPLORER_CSS_PATCH)
-    .replace(VENDOR_EXPLORER_GRID_CSS_NEEDLE, VENDOR_EXPLORER_GRID_CSS_PATCH)
+  return (() => {
+    let out = raw
+      .replace(VENDOR_VERSION_NEEDLE, `He = "${PLUGIN_VERSION}"`)
+      .replace(VENDOR_PROMPT_RESET_NEEDLE, VENDOR_PROMPT_RESET_PATCH)
+      .replace(VENDOR_PROMPT_TAB_HTML_NEEDLE, VENDOR_PROMPT_TAB_HTML_PATCH)
+      .replace(VENDOR_PROMPT_TAB_EVENTS_AFTER_RESET_NEEDLE, VENDOR_PROMPT_TAB_EVENTS_PATCH)
+      .replace(VENDOR_NATURAL_BASE_HTML_NEEDLE, VENDOR_NATURAL_BASE_HTML_PATCH)
+      .replace(VENDOR_NATURAL_BASE_SAVE_NEEDLE, VENDOR_NATURAL_BASE_SAVE_PATCH)
+      .replace(VENDOR_NATURAL_BASE_CT_NEEDLE, VENDOR_NATURAL_BASE_CT_PATCH)
+      .replace(VENDOR_NATURAL_BASE_CARD_NEEDLE, VENDOR_NATURAL_BASE_CARD_PATCH)
+      .replace(VENDOR_NATURAL_BASE_HELP_NEEDLE, VENDOR_NATURAL_BASE_HELP_PATCH)
+      .replace(VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_HTML_PATCH)
+      .replace(VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE, VENDOR_PERSON_TAG_WEIGHT_CT_PATCH)
+      .replace(VENDOR_PERSON_TAG_SOLO_HTML_NEEDLE, VENDOR_PERSON_TAG_SOLO_HTML_PATCH)
+      .replace(VENDOR_PERSON_TAG_SOLO_CT_NEEDLE, VENDOR_PERSON_TAG_SOLO_CT_PATCH)
+      .replace(VENDOR_ASSET_NAI_HTML_NEEDLE, VENDOR_ASSET_NAI_HTML_PATCH)
+      .replace(VENDOR_ASSET_NAI_SAVE_NEEDLE, VENDOR_ASSET_NAI_SAVE_PATCH);
+    assertOnce(out, VENDOR_ASSET_NAI_CARD_NEEDLE, 'asset_nai_tags card select (after natural_base)');
+    assertOnce(out, VENDOR_ASSET_NAI_CT_NEEDLE, 'asset_nai_tags Ct() (after natural_base)');
+    return out
+      .replace(VENDOR_ASSET_NAI_CARD_NEEDLE, VENDOR_ASSET_NAI_CARD_PATCH)
+      .replace(VENDOR_ASSET_NAI_CT_NEEDLE, VENDOR_ASSET_NAI_CT_PATCH)
+      .replace(VENDOR_ASSET_NAI_HELP_NEEDLE, VENDOR_ASSET_NAI_HELP_PATCH)
+      .replace(VENDOR_COMFY_MUTED_NEEDLE, VENDOR_COMFY_MUTED_PATCH)
+      .replace(VENDOR_COMFY_HELP_NEEDLE, VENDOR_COMFY_HELP_PATCH)
+      .replace(VENDOR_CURATION_TABS_NEEDLE, VENDOR_CURATION_TABS_PATCH)
+      .replace(VENDOR_CURATION_PANEL_NEEDLE, VENDOR_CURATION_PANEL_PATCH)
+      .replace(VENDOR_DEBUG_PANEL_NEEDLE, VENDOR_DEBUG_PANEL_PATCH)
+      .replace(VENDOR_DEBUG_EVENTS_NEEDLE, VENDOR_DEBUG_EVENTS_PATCH)
+      .replace(VENDOR_CURATION_EVENTS_NEEDLE, VENDOR_CURATION_EVENTS_PATCH)
+      .replace(VENDOR_CURATION_TAB_LOAD_NEEDLE, VENDOR_CURATION_TAB_LOAD_PATCH)
+      .replace(VENDOR_GLOBAL_TOGGLE_SUMMARY_NEEDLE, VENDOR_GLOBAL_TOGGLE_SUMMARY_PATCH)
+      .replace(VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE, VENDOR_GLOBAL_TOGGLE_BODY_PATCH)
+      .replace(VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, VENDOR_EXPLORER_THUMB_PAINT_PATCH)
+      .replace(VENDOR_EXPLORER_HA_NEEDLE, VENDOR_EXPLORER_HA_PATCH)
+      .replace(VENDOR_EXPLORER_THUMB_WARM_NEEDLE, VENDOR_EXPLORER_THUMB_WARM_PATCH)
+      .replace(VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE, VENDOR_EXPLORER_WARM_PROGRESS_PATCH)
+      .replace(VENDOR_EXPLORER_ET_NEEDLE, VENDOR_EXPLORER_ET_PATCH)
+      .replace(VENDOR_EXPLORER_ZE_NEEDLE, VENDOR_EXPLORER_ZE_PATCH)
+      .replace(VENDOR_EXPLORER_ENSURE_NEEDLE, VENDOR_EXPLORER_ENSURE_PATCH)
+      .replace(VENDOR_EXPLORER_CSS_NEEDLE, VENDOR_EXPLORER_CSS_PATCH)
+      .replace(VENDOR_EXPLORER_GRID_CSS_NEEDLE, VENDOR_EXPLORER_GRID_CSS_PATCH)
     .replace(VENDOR_EXPLORER_SHELL_OPEN_NEEDLE, VENDOR_EXPLORER_SHELL_OPEN_PATCH)
     .replace(VENDOR_EXPLORER_SHELL_FOOT_NEEDLE, VENDOR_EXPLORER_SHELL_FOOT_PATCH)
     .replace(VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE, VENDOR_EXPLORER_FOLDERS_HTML_PATCH)
@@ -4701,6 +4930,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_STICKY_SKIP_NEEDLE, VENDOR_STICKY_SKIP_PATCH)
     .replace(VENDOR_STICKY_ASSIGN_NEEDLE, VENDOR_STICKY_ASSIGN_PATCH)
     .replace(VENDOR_STICKY_CLICK_NEEDLE, VENDOR_STICKY_CLICK_PATCH)
+    .replace(VENDOR_PRESS_FILL_NEEDLE, VENDOR_PRESS_FILL_PATCH)
+    .replace(VENDOR_PRESS_FILL_STICKY_CALL_NEEDLE, VENDOR_PRESS_FILL_STICKY_CALL_PATCH)
     .replace(VENDOR_STICKY_PRESS_NEEDLE, VENDOR_STICKY_PRESS_PATCH)
     .replace(VENDOR_INLINE_LONGPRESS_NEEDLE, VENDOR_INLINE_LONGPRESS_PATCH)
     .replace(VENDOR_STICKY_REVIVE_NEEDLE, VENDOR_STICKY_REVIVE_PATCH)
@@ -4756,6 +4987,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_POLL_NEEDLE, VENDOR_INLINE_POLL_PATCH)
     .replace(VENDOR_INLINE_POLL_REFRESH_NEEDLE, VENDOR_INLINE_POLL_REFRESH_PATCH)
     .replace(VENDOR_STREAM_SETTLE_KA_NEEDLE, VENDOR_STREAM_SETTLE_KA_PATCH)
+    .replace(VENDOR_AFTER_REQUEST_MINLEN_NEEDLE, VENDOR_AFTER_REQUEST_MINLEN_PATCH)
     .replace(VENDOR_AFTER_REQUEST_DELAY_NEEDLE, VENDOR_AFTER_REQUEST_DELAY_PATCH)
     .replace(VENDOR_AFTER_REQUEST_HELP_NEEDLE, VENDOR_AFTER_REQUEST_HELP_PATCH)
     .replace(VENDOR_REBIND_RETARGET_NEEDLE, VENDOR_REBIND_RETARGET_PATCH)
@@ -4797,6 +5029,7 @@ const loadVendorUi = (): string => {
     .replaceAll(VENDOR_STICKY_SHELL_BG_NEEDLE, VENDOR_STICKY_SHELL_BG_PATCH)
     .replace(VENDOR_STICKY_EMPTY_NEEDLE, VENDOR_STICKY_EMPTY_PATCH)
     .replaceAll(VENDOR_APPEARANCE_LABEL_SHARED_NEEDLE, VENDOR_APPEARANCE_LABEL_SHARED_PATCH);
+  })();
 };
 
 /** Wraps the emitted chunk in an IIFE, prepends the header, appends the frozen UI. */

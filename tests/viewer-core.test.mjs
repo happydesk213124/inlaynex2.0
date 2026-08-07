@@ -63,6 +63,8 @@ import {
   hasGenerationInfo,
   roleFromGenerationInfo,
   isCharMessageRole,
+  pickInlineKeepDomIndices,
+  INLINE_KEEP_MAX_PER_SIDE,
   shouldSelectMessageByTextDrag,
   visibleGalleryImageIds,
   nearbyMessageImageIds,
@@ -174,7 +176,7 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   assert.match(out, /data-inlay-inline-shot="c1"/);
   assert.match(out, /data-inlay-inline-shot="c2"/);
   assert.match(out, /<b>커피를 마셨다<\/b>/);
-  assert.match(out, /max-width:min\(60%,100%\)/);
+  assert.match(out, /max-width:min\(78%,100%\)/);
   // first coffee line is bold — marker for line 2 sits before <b>
   assert.match(out, /data-inlay-inline-shot="c1"[^>]*>[\s\S]*?<b>커피를 마셨다<\/b>/);
   // duplicate plain "커피를 마셨다" still gets line-3 marker (not string search of first)
@@ -182,14 +184,21 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   assert.equal(htmlToPlainLn(stripped), htmlToPlainLn(rich));
 });
 
-test("markerBlockHtml pending shows spinner; ready uses responsive max-width", () => {
+test("markerBlockHtml ready is image-only", () => {
   const pending = markerBlockHtml({ line: 2, src: "", shotIndex: 0, pending: true, cardId: "pending-0" });
   assert.match(pending, /data-inlay-inline-pending="1"/);
   assert.match(pending, /animateTransform/);
   assert.match(pending, /<br><br>/);
-  const ready = markerBlockHtml({ line: 2, src: "data:image/png;base64,abc", shotIndex: 0, cardId: "c1" });
-  assert.match(ready, /max-width:min\(60%,100%\)/);
-  assert.doesNotMatch(ready, /zoom:0\.5/);
+  const ready = markerBlockHtml({
+    line: 2,
+    src: "data:image/png;base64,abc",
+    shotIndex: 0,
+    cardId: "c1",
+  });
+  assert.match(ready, /max-width:min\(78%,100%\)/);
+  assert.match(ready, /data-inlay-inline-img="1"/);
+  assert.doesNotMatch(ready, /data-inlay-inline-act=/);
+  assert.doesNotMatch(ready, /data-inlay-chrome-act=/);
 });
 
 test("injectInlineImagesIntoHtml hard-dedupes pending circles by line and cardId", () => {
@@ -446,6 +455,37 @@ test("selection role uses message.role, not generationInfo presence", () => {
   const hit = resolveChatMessageMatch("오프닝문구입니다아", [{ index: 0, role: "char", text: "오프닝문구입니다아" }], 0, 1);
   assert.equal(hit.role, "char");
   assert.equal(hit.matchMethod, "reverse");
+});
+
+test("pickInlineKeepDomIndices allRoles keeps selected ±1", () => {
+  const roles = ["user", "char", "user", "char", "user"];
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  assert.deepEqual(
+    pickInlineKeepDomIndices({ selIdx: 2, length: 5, allRoles: true, isCharAt }).sort((a, b) => a - b),
+    [1, 2, 3],
+  );
+  assert.equal(INLINE_KEEP_MAX_PER_SIDE, 1);
+});
+
+test("pickInlineKeepDomIndices skips users and keeps 1 char each side", () => {
+  // DOM newest-first: idx0 below … idx8 above. Selected user at 4.
+  // Roles: C U C U [U] U C U C → nearest char below=2, above=6
+  const roles = ["char", "user", "char", "user", "user", "user", "char", "user", "char"];
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  assert.deepEqual(
+    pickInlineKeepDomIndices({ selIdx: 4, length: 9, allRoles: false, isCharAt }).sort((a, b) => a - b),
+    [2, 6],
+  );
+});
+
+test("pickInlineKeepDomIndices keeps selected char plus 1 each side (max 3)", () => {
+  // C U C U [C] U C U C — selected char at 4 → sel + 1 above + 1 below
+  const roles = ["char", "user", "char", "user", "char", "user", "char", "user", "char"];
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  assert.deepEqual(
+    pickInlineKeepDomIndices({ selIdx: 4, length: 9, allRoles: false, isCharAt }).sort((a, b) => a - b),
+    [2, 4, 6],
+  );
 });
 
 test("rawMessageRole reads API fields like Archive (never invents from body)", () => {

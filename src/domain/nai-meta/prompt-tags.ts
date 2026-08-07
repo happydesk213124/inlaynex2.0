@@ -31,10 +31,25 @@ export interface FilteredPromptTags {
   weightMap: Map<string, string>;
 }
 
-export interface PackedAssetTags {
+export interface PackedAssetTriggerGroup {
+  /** Compact lore/asset match trigger this group was picked for. */
+  trigger: string;
+  /** Original lorebook spellings that compact to `trigger` (for name/aliases). */
+  lore_keys: string[];
+  /** Tags shared by every asset in this trigger group. */
   common: string[];
   assets: Array<{ name: string; unique: string[] }>;
+}
+
+export interface PackedAssetTags {
+  /** One block per trigger (common computed within that trigger's assets only). */
+  groups: PackedAssetTriggerGroup[];
   weightMap: Map<string, string>;
+}
+
+/** Flat asset names across all trigger groups (dbg / callers). */
+export function packedAssetNames(packed: PackedAssetTags): string[] {
+  return packed.groups.flatMap((g) => g.assets.map((a) => a.name));
 }
 
 /** Split a prompt keeping `N::…::` and brace/bracket groups intact across commas. */
@@ -263,17 +278,12 @@ function setLower(tags: readonly string[]): Set<string> {
   return new Set(tags.map((t) => t.toLowerCase()).filter(Boolean));
 }
 
-/** Intersection + per-asset unique tags; merges weight maps (first wins). */
-export function packAssetTagGroups(
+function packOneTriggerGroup(
+  trigger: string,
   assets: Array<{ name: string; plains: string[]; weightMap: Map<string, string> }>,
-): PackedAssetTags {
-  const weightMap = new Map<string, string>();
-  for (const a of assets) {
-    for (const [k, v] of a.weightMap) {
-      if (!weightMap.has(k)) weightMap.set(k, v);
-    }
-  }
-  if (!assets.length) return { common: [], assets: [], weightMap };
+  loreKeys: readonly string[] = [],
+): PackedAssetTriggerGroup {
+  if (!assets.length) return { trigger, lore_keys: [...loreKeys], common: [], assets: [] };
 
   let commonSet = setLower(assets[0]!.plains);
   for (let i = 1; i < assets.length; i += 1) {
@@ -281,7 +291,6 @@ export function packAssetTagGroups(
     commonSet = new Set([...commonSet].filter((k) => next.has(k)));
   }
 
-  // Preserve first asset's casing/order for common.
   const common: string[] = [];
   const commonSeen = new Set<string>();
   for (const p of assets[0]!.plains) {
@@ -303,21 +312,66 @@ export function packAssetTagGroups(
     return { name: a.name, unique };
   });
 
-  return { common, assets: outAssets, weightMap };
+  return { trigger, lore_keys: [...loreKeys], common, assets: outAssets };
 }
 
-/** Format packed tags for the tagger system message. */
+/**
+ * Intersection + per-asset unique tags, **per trigger**.
+ * Rows should include `trigger` from the pick loop; missing trigger → one `"_"` group.
+ * `loreKeysByTrigger` maps compact trigger → original lore spellings.
+ */
+export function packAssetTagGroups(
+  assets: Array<{
+    name: string;
+    plains: string[];
+    weightMap: Map<string, string>;
+    trigger?: string;
+  }>,
+  loreKeysByTrigger: ReadonlyMap<string, readonly string[]> | null = null,
+): PackedAssetTags {
+  const weightMap = new Map<string, string>();
+  for (const a of assets) {
+    for (const [k, v] of a.weightMap) {
+      if (!weightMap.has(k)) weightMap.set(k, v);
+    }
+  }
+  if (!assets.length) return { groups: [], weightMap };
+
+  const byTrigger = new Map<string, typeof assets>();
+  for (const a of assets) {
+    const tr = cleanText(a.trigger, 200) || '_';
+    const list = byTrigger.get(tr) || [];
+    list.push(a);
+    byTrigger.set(tr, list);
+  }
+
+  // Preserve first-seen trigger order (pick order).
+  const groups: PackedAssetTriggerGroup[] = [];
+  for (const [tr, rows] of byTrigger) {
+    const loreKeys = loreKeysByTrigger?.get(tr) || [];
+    groups.push(packOneTriggerGroup(tr, rows, loreKeys));
+  }
+  return { groups, weightMap };
+}
+
+/** Format packed tags for the tagger system message (English labels — fewer tokens). */
 export function formatAssetTagsInjectBlock(packed: PackedAssetTags): string {
   const lines: string[] = [];
   lines.push('## NovelAI character asset tags (ground truth for new_characters looks)');
   lines.push('Use ONLY tags from this block for appearance / attire / accessories (clothes, jewelry, weapons included).');
-  lines.push('Do not invent looks outside this list. Asset names hint which outfit belongs to which person.');
-  lines.push('');
-  lines.push(`공통: ${packed.common.length ? packed.common.join(', ') : '(none)'}`);
-  for (const a of packed.assets) {
+  lines.push('Do not invent looks outside this list. Use lore_keys for name/aliases; asset names hint outfits.');
+  for (const g of packed.groups) {
     lines.push('');
-    lines.push(`에셋 \`${a.name}\`:`);
-    lines.push(`  ${a.unique.length ? a.unique.join(', ') : '(no unique tags)'}`);
+    lines.push(`## trigger \`${g.trigger}\``);
+    lines.push(
+      `lore_keys: ${g.lore_keys.length ? g.lore_keys.join(', ') : g.trigger}`,
+    );
+    lines.push(`common: ${g.common.length ? g.common.join(', ') : '(none)'}`);
+    for (const a of g.assets) {
+      lines.push('');
+      lines.push(`asset \`${a.name}\`:`);
+      lines.push(`  ${a.unique.length ? a.unique.join(', ') : '(no unique tags)'}`);
+    }
   }
   return lines.join('\n');
 }

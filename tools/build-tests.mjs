@@ -27,6 +27,7 @@ const MODULES = {
   'roster-merge': 'src/domain/character/roster.ts',
   'character-identity': 'src/domain/character/identity.ts',
   'lore-extra': 'src/domain/lore/extra.ts',
+  'lore-assemble': 'src/domain/lore/assemble.ts',
   'llm-providers': 'src/providers/llm/providers.ts',
   'settings-schema': 'src/config/schema.ts',
   'reroll-setup': 'src/domain/prompt/reroll-setup.ts',

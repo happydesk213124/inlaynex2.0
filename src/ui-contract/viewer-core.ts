@@ -539,6 +539,60 @@ export function isCharMessageRole(roleOrMessage: string | ChatMessage | null | u
   return role === 'char' || role === 'assistant' || role === 'bot';
 }
 
+/** Max char bubbles kept above/below selection when inline skips user roles. */
+export const INLINE_KEEP_MAX_PER_SIDE = 1;
+
+/**
+ * DOM indices that keep inline shots. Chat DOM is newest-first:
+ * higher index = older (above), lower = newer (below).
+ *
+ * - allRoles: selected ±1 (role-blind), same as the old ±1 window.
+ * - else: keep selected only if char; walk past users and keep up to
+ *   `maxPerSide` chars above and below (default 1+1; +selected char → max 3).
+ */
+export function pickInlineKeepDomIndices(opts: {
+  selIdx: number;
+  length: number;
+  allRoles: boolean;
+  isCharAt: (idx: number) => boolean;
+  maxPerSide?: number;
+}): number[] {
+  const selIdx = opts.selIdx;
+  const length = opts.length;
+  const maxPerSide = opts.maxPerSide ?? INLINE_KEEP_MAX_PER_SIDE;
+  if (!Number.isFinite(selIdx) || selIdx < 0 || selIdx >= length || length <= 0) return [];
+
+  const out: number[] = [];
+  const add = (i: number) => {
+    if (i >= 0 && i < length && !out.includes(i)) out.push(i);
+  };
+
+  if (opts.allRoles) {
+    add(selIdx);
+    if (selIdx + 1 < length) add(selIdx + 1);
+    if (selIdx - 1 >= 0) add(selIdx - 1);
+    return out;
+  }
+
+  if (opts.isCharAt(selIdx)) add(selIdx);
+
+  let found = 0;
+  for (let i = selIdx + 1; i < length && found < maxPerSide; i += 1) {
+    if (opts.isCharAt(i)) {
+      add(i);
+      found += 1;
+    }
+  }
+  found = 0;
+  for (let i = selIdx - 1; i >= 0 && found < maxPerSide; i -= 1) {
+    if (opts.isCharAt(i)) {
+      add(i);
+      found += 1;
+    }
+  }
+  return out;
+}
+
 // ── DOM ↔ API message matching ────────────────────────────────────────────
 
 export type ChatMatchMethod = 'reverse' | 'fallback';
@@ -2173,8 +2227,9 @@ export function markerBlockHtml(p: InlineImagePlacement, _maxWidthPx?: number): 
   const shot = Number.isFinite(Number(p.shotIndex)) ? String(Math.floor(Number(p.shotIndex))) : '';
   const id = escapeHtmlAttr(String(p.cardId || (p.pending ? `pending-${shot || p.line}` : '') || shot || p.line || '0'));
   void _maxWidthPx;
-  // Centered block; <br> keeps Risu bubble spacing. Size tracks the bubble (≤60%),
-  // so mobile narrow bubbles shrink the image instead of clipping (no fixed zoom).
+  // Centered block; <br> keeps Risu bubble spacing. Width cap is a bit looser than
+  // height so landscape shots don't look tiny next to portrait/1:1 (those still
+  // hit max-height first). Mobile narrow bubbles still shrink instead of clipping.
   const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box';
   if (p.pending || !/^data:image\//i.test(String(p.src || ''))) {
     const spin = '<svg width="28" height="28" viewBox="0 0 28 28" style="display:inline-block;vertical-align:middle" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="#c4b5fd" stroke-width="3" stroke-linecap="round" stroke-dasharray="18 52"><animateTransform attributeName="transform" type="rotate" from="0 14 14" to="360 14 14" dur="0.75s" repeatCount="indefinite"/></circle></svg>';
@@ -2184,10 +2239,10 @@ export function markerBlockHtml(p: InlineImagePlacement, _maxWidthPx?: number): 
       + `</div>`
     );
   }
-  const imgStyle = 'width:auto;height:auto;max-width:min(60%,100%);max-height:min(70vh,900px);object-fit:contain;border-radius:8px;display:inline-block;vertical-align:top';
+  const imgStyle = 'width:auto;height:auto;max-width:min(78%,100%);max-height:min(70vh,900px);object-fit:contain;border-radius:8px;display:inline-block;vertical-align:top';
   return (
     `<div ${INLAY_INLINE_ATTR}="${id}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-    + `<br><img src="${escapeHtmlAttr(p.src)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
+    + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(p.src)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
     + `</div>`
   );
 }

@@ -19,7 +19,7 @@ import { dbg } from '../core/debug';
 import type { CharacterRecord, JobRequest, TaggedShot, TaggerResult } from '../core/types';
 import { deepMerge } from '../core/util/object';
 import { cleanText, stripCbs } from '../core/util/text';
-import { normalizeNaturalBaseMode, type NaturalBaseMode } from '../config/schema';
+import { normalizeAssetNaiTagsMode, normalizeNaturalBaseMode, type NaturalBaseMode } from '../config/schema';
 import { characterTriggers, dedupeShotCharacters, matchCharactersInText } from '../domain/character/roster';
 import { characterHasAppearance, characterMaxLimit } from '../domain/character/tags';
 import {
@@ -29,9 +29,9 @@ import {
   normalizeLoreExtraMode,
 } from '../domain/lore/assemble';
 import { isCharacterImageExtraLore } from '../domain/lore/extra';
-import type { LlmMessage } from '../providers/llm/transform';
+import type { LlmContentPart, LlmMessage } from '../providers/llm/transform';
 import { numberMessageLinesForTagger, repairLazyShotLines } from '../domain/tagging/shot-line';
-import { collectAssetNaiTags, setLastAssetWeightMap } from './asset-tags';
+import { collectAssetNaiTags, setLastAssetWeightMap, type AssetLookPreview } from './asset-tags';
 import { rosterForSession } from './characters';
 import { getConfig } from './context';
 import { curationTaggerSystemMessage } from './curation';
@@ -56,8 +56,288 @@ export function extractTaggerChatContext(messages: readonly LlmMessage[]): strin
   return '';
 }
 
+/** Optional switches for the main scene tagger call. */
+export interface BuildTaggerOptions {
+  /**
+   * When true, do not inject the NovelAI asset tag soup.
+   * Used after a successful character-looks pre-pass already consumed assets
+   * and wrote looks to the roster (lb-xnai sections then auto-trim via filledNames).
+   */
+  skipAssetInject?: boolean;
+}
+
+/** Lore + UI trigger keys used for asset name matching. */
+export function assetTriggerPoolForRequest(request: TaggerArgs): string[] {
+  const assistant = cleanText(request.assistant_text, 20000);
+  return [
+    ...(Array.isArray(request.lore_trigger_keys) ? request.lore_trigger_keys : []),
+    ...collectTriggeredLoreKeys(request.lorebook || [], assistant),
+  ].map((k) => cleanText(k, 200)).filter(Boolean);
+}
+
+/** Collect asset NAI tags when mode is not off; null if off / empty. */
+export async function collectAssetTagsForTagger(
+  request: TaggerArgs,
+  opts: { withPreviews?: boolean } = {},
+) {
+  const card = deepMerge(getConfig().card, (request.card as Record<string, unknown>) || {});
+  if (normalizeAssetNaiTagsMode(card.asset_nai_tags) === 'off') return null;
+  try {
+    const sessionId = cleanText(request.session_id, 200);
+    const sourceSessionIds = Array.isArray(request.source_session_ids)
+      ? request.source_session_ids.map((s) => cleanText(s, 200)).filter(Boolean)
+      : [];
+    const roster = await rosterForSession(
+      sessionId,
+      cleanText(request.unified_session_id || '', 200),
+      cleanText(request.character_id || '', 200),
+      sourceSessionIds,
+    );
+    return await collectAssetNaiTags(assetTriggerPoolForRequest(request), {
+      withPreviews: opts.withPreviews === true,
+      roster,
+      lorebook: Array.isArray(request.lorebook) ? request.lorebook : null,
+      message: cleanText(request.assistant_text, 20000),
+    });
+  } catch (err) {
+    setLastAssetWeightMap(new Map());
+    dbg('asset-tags.collect.fail', { message: String((err as Error)?.message || err) }, 'warn');
+    return null;
+  }
+}
+
+function formatAppearanceInjectLine(c: Partial<CharacterRecord>): string {
+  const name = cleanText(c.name, 200);
+  const appearance = cleanText(c.appearance || '', 200);
+  const attire = cleanText(c.attire || '', 160);
+  const accessories = cleanText(c.accessories || '', 120);
+  const parts = [
+    appearance ? `appearance=${appearance}` : '',
+    attire ? `attire=${attire}` : '',
+    accessories ? `accessories=${accessories}` : '',
+  ].filter(Boolean);
+  return parts.length ? `${name} ← ${parts.join(' | ')}` : name;
+}
+
+async function pushLoreMessages(
+  messages: LlmMessage[],
+  request: TaggerArgs,
+  card: Record<string, unknown>,
+  assistant: string,
+  rosterEarly: CharacterRecord[],
+  opts: { extraOnly?: boolean } = {},
+): Promise<void> {
+  if (!card.lorebook) return;
+  const filledNames = filledNamesForLoreExtra(rosterEarly);
+  const triggerKeys = Array.isArray(request.lore_trigger_keys) ? request.lore_trigger_keys : null;
+  const loreExtraMode = normalizeLoreExtraMode(card.lore_extra);
+  const filtered = assembleLorebookForTagger(
+    request.lorebook || [],
+    assistant,
+    filledNames,
+    5,
+    1200,
+    triggerKeys,
+    loreExtraMode,
+  );
+  const extraBlocks: string[] = [];
+  const refBlocks: string[] = [];
+  for (const entry of filtered) {
+    const isExtra = isCharacterImageExtraLore(entry) || entry.always;
+    const content = cleanText(entry.content || '', isExtra ? 50000 : 1200);
+    if (!content) continue;
+    const comment = cleanText(entry.comment || '', 200);
+    const block = comment ? `### ${comment}\n${content}` : content;
+    if (isExtra) extraBlocks.push(block);
+    else if (!opts.extraOnly) refBlocks.push(block);
+  }
+  const loreParts: string[] = [];
+  if (extraBlocks.length) {
+    loreParts.push(
+      '## lb-xnai.lb.extra — OFFICIAL PACK (START)\n'
+      + 'Until END: lb-xnai pack only (custom prompt + Character Image Tags). '
+      + '`### Name` headings here are pack sections, not separate lore.\n\n'
+      + extraBlocks.join('\n\n')
+      + '\n\n## lb-xnai.lb.extra — OFFICIAL PACK (END)\n'
+      + '[END OF lb-xnai.lb.extra] Pack finished — text below is not lb-xnai ground truth.',
+    );
+  }
+  if (refBlocks.length) {
+    loreParts.push(
+      '## Reference Lorebook (trigger-matched only)\n'
+      + 'Naming/context only. Not lb-xnai. Do not copy lore prose into tags.\n\n'
+      + refBlocks.join('\n\n'),
+    );
+  }
+  dbg('job.lore.extra', {
+    trigger_keys: Array.isArray(triggerKeys) ? triggerKeys.length : 0,
+    injected: extraBlocks.length,
+    reference: refBlocks.length,
+    extra_only: opts.extraOnly === true,
+    sections: filtered
+      .filter((e) => isCharacterImageExtraLore(e) || e.always)
+      .map((e) => e.key || '')
+      .filter(Boolean)
+      .join(' | '),
+  });
+  if (loreParts.length) {
+    messages.push({ role: 'system', content: `${await getPrompt('lore_inject')}\n${loreParts.join('\n\n')}` });
+  }
+}
+
+/** Incomplete roster rows that belong with this looks pre-pass (asset / message match). */
+function incompleteTargetsForLooks(
+  roster: CharacterRecord[],
+  assetNames: string[],
+  assistant: string,
+): CharacterRecord[] {
+  const incomplete = roster.filter((c) => cleanText(c.name, 200) && !characterHasAppearance(c));
+  if (!incomplete.length) return [];
+  const assetNeedles = assetNames.map((n) => cleanText(n, 200).toLowerCase()).filter(Boolean);
+  const byAsset = incomplete.filter((c) => {
+    const keys = [c.name, ...characterTriggers(c)].map((t) => cleanText(t, 200).toLowerCase()).filter(Boolean);
+    return assetNeedles.some((a) => keys.some((k) => k === a || a.includes(k) || k.includes(a)));
+  });
+  if (byAsset.length) return byAsset;
+  const inMessage = matchCharactersInText(assistant, incomplete);
+  if (!inMessage.length) return [];
+  const hit = new Set(inMessage.map((c) => cleanText(c.name, 200)).filter(Boolean));
+  return incomplete.filter((c) => hit.has(cleanText(c.name, 200)));
+}
+
+/**
+ * Looks-only pre-pass: asset tags + Character Image lore (+ optional images).
+ * No chat message, no filled-roster dump, no story lore, no char/user info, no author note.
+ */
+export async function buildCharacterLooksMessages(
+  request: TaggerArgs,
+  assetBlock: string,
+  assetNames: string[] = [],
+  previews: AssetLookPreview[] = [],
+): Promise<LlmMessage[]> {
+  const card = deepMerge(getConfig().card, (request.card as Record<string, unknown>) || {});
+  const sessionId = cleanText(request.session_id, 200);
+  const looks = stripCbs(await getPrompt('char_looks'));
+  const messages: LlmMessage[] = [{ role: 'system', content: looks.trim() }];
+
+  const assistant = cleanText(request.assistant_text, 20000);
+  const sourceSessionIds = Array.isArray(request.source_session_ids)
+    ? request.source_session_ids.map((s) => cleanText(s, 200)).filter(Boolean)
+    : [];
+  const rosterEarly: CharacterRecord[] = await rosterForSession(
+    sessionId,
+    cleanText(request.unified_session_id || '', 200),
+    cleanText(request.character_id || '', 200),
+    sourceSessionIds,
+  );
+
+  // Character Image / lb-xnai only — not general reference lore.
+  await pushLoreMessages(messages, request, card, assistant, rosterEarly, { extraOnly: true });
+
+  const assetTemplate = await getPrompt('asset_tags_inject');
+  pushAssetBlockMessage(messages, assetTemplate, assetBlock, 'char_looks_prepass', assetNames);
+
+  const incomplete = incompleteTargetsForLooks(rosterEarly, assetNames, assistant);
+  if (incomplete.length) {
+    const lines = incomplete.map((char) => {
+      const aliases = characterTriggers(char).slice(0, 8).join(', ');
+      return `- ${char.name}${aliases ? ` (aliases: ${aliases})` : ''}`;
+    });
+    messages.push({
+      role: 'system',
+      content:
+        '## Incomplete (empty appearance) — fill these in `new_characters`\n'
+        + 'Use these exact name spellings. Skip anyone already filled on the roster.\n'
+        + lines.join('\n'),
+    });
+  }
+  dbg('job.char_looks.targets', {
+    assets: assetNames,
+    incomplete: incomplete.map((c) => c.name),
+  });
+
+  const usablePreviews = (Array.isArray(previews) ? previews : [])
+    .filter((p) => p?.dataUrl && /^data:image\//i.test(p.dataUrl))
+    .slice(0, 5);
+
+  const userText =
+    'Fill `new_characters` for incomplete / asset-matched people from the NovelAI asset block'
+    + (incomplete.length ? ' and the Incomplete list' : '')
+    + '. COPY tags verbatim into appearance / attire / accessories. JSON only.';
+
+  if (usablePreviews.length) {
+    const parts: LlmContentPart[] = [{ type: 'text', text: userText }];
+    for (const p of usablePreviews) {
+      parts.push({
+        type: 'text',
+        text: [`Image asset_name: ${cleanText(p.name, 200)}`, 'role: selected_asset'].join('\n'),
+      });
+      parts.push({ type: 'image_url', image_url: { url: p.dataUrl } });
+    }
+    messages.push({ role: 'user', content: parts });
+    dbg('job.char_looks.previews', { count: usablePreviews.length, names: usablePreviews.map((p) => p.name) });
+  } else {
+    messages.push({ role: 'user', content: userText });
+  }
+  return messages;
+}
+
+async function pushAppearanceMessages(
+  messages: LlmMessage[],
+  card: Record<string, unknown>,
+  assistant: string,
+  sessionId: string,
+  rosterEarly: CharacterRecord[],
+): Promise<void> {
+  if (card.char_appearance === false) return;
+  const roster = rosterEarly;
+  const filled = roster.filter((c) => characterHasAppearance(c));
+  const incomplete = roster.filter((c) => cleanText(c.name, 200) && !characterHasAppearance(c));
+  const matched = matchCharactersInText(assistant, roster);
+  if (!filled.length && !incomplete.length && !matched.length) return;
+  const matchedFilled = matched.filter((c) => characterHasAppearance(c));
+  const matchedIncomplete = matched.filter((c) => !characterHasAppearance(c));
+  const detectedBlock = matchedFilled.length
+    ? matchedFilled.map(formatAppearanceInjectLine).filter(Boolean).join('\n')
+    : '(none)';
+  const incompleteBlock = matchedIncomplete.length
+    ? matchedIncomplete
+      .map((char) => `- ${char.name} (aliases: ${characterTriggers(char).slice(0, 8).join(', ')}) → empty appearance; full looks required in new_characters`)
+      .join('\n')
+    : '(none)';
+  let content = await getPrompt('appearance_inject');
+  if (content.includes('{registered_block}')) {
+    content = content.replace('{registered_block}', detectedBlock);
+  }
+  content = content.includes('{incomplete_block}')
+    ? content.replace('{incomplete_block}', incompleteBlock)
+    : `${content}\n\n## Incomplete\n${incompleteBlock}`;
+  content = content.includes('{detected_block}')
+    ? content.replace('{detected_block}', detectedBlock)
+    : `${content}\n\n${detectedBlock}`;
+  messages.push({ role: 'system', content });
+  dbg('job.roster.split', {
+    filled: filled.map((c) => c.name),
+    incomplete: incomplete.map((c) => c.name),
+    matched: matched.map((c) => c.name),
+    matched_with_looks: matchedFilled.map((c) => c.name),
+    session_id: sessionId,
+  });
+}
+
+function pushAssetBlockMessage(messages: LlmMessage[], assetPromptTemplate: string, block: string, reason: string, assetNames: string[]): void {
+  const assetPrompt = assetPromptTemplate.includes('{asset_tags_block}')
+    ? assetPromptTemplate.replace('{asset_tags_block}', block)
+    : `${assetPromptTemplate}\n\n${block}`;
+  messages.push({ role: 'system', content: assetPrompt });
+  dbg('asset-tags.inject', { reason, assets: assetNames });
+}
+
 /** Builds the full system/user message list for one tagging call. */
-export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessage[]> {
+export async function buildTaggerMessages(
+  request: TaggerArgs,
+  opts: BuildTaggerOptions = {},
+): Promise<LlmMessage[]> {
   const card = deepMerge(getConfig().card, (request.card as Record<string, unknown>) || {});
   const sessionId = cleanText(request.session_id, 200);
   const tagger = stripCbs(await getPrompt('tagger'));
@@ -81,7 +361,7 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
   const sourceSessionIds = Array.isArray(request.source_session_ids)
     ? request.source_session_ids.map((s) => cleanText(s, 200)).filter(Boolean)
     : [];
-  const rosterEarly: CharacterRecord[] = card.lorebook || card.char_appearance !== false || card.asset_nai_tags
+  const rosterEarly: CharacterRecord[] = card.lorebook || card.char_appearance !== false || normalizeAssetNaiTagsMode(card.asset_nai_tags) !== 'off'
     ? await rosterForSession(
       sessionId,
       cleanText(request.unified_session_id || '', 200),
@@ -89,144 +369,43 @@ export async function buildTaggerMessages(request: TaggerArgs): Promise<LlmMessa
       sourceSessionIds,
     )
     : [];
-  const filledNames = filledNamesForLoreExtra(rosterEarly);
 
-  if (card.lorebook) {
-    const triggerKeys = Array.isArray(request.lore_trigger_keys) ? request.lore_trigger_keys : null;
-    const loreExtraMode = normalizeLoreExtraMode(card.lore_extra);
-    const filtered = assembleLorebookForTagger(
-      request.lorebook || [],
-      assistant,
-      filledNames,
-      5,
-      1200,
-      triggerKeys,
-      loreExtraMode,
-    );
-    const extraBlocks: string[] = [];
-    const refBlocks: string[] = [];
-    for (const entry of filtered) {
-      const isExtra = isCharacterImageExtraLore(entry) || entry.always;
-      const content = cleanText(entry.content || '', isExtra ? 50000 : 1200);
-      if (!content) continue;
-      const comment = cleanText(entry.comment || '', 200);
-      const block = comment ? `### ${comment}\n${content}` : content;
-      if (isExtra) extraBlocks.push(block);
-      else refBlocks.push(block);
-    }
-    const loreParts: string[] = [];
-    if (extraBlocks.length) {
-      loreParts.push(
-        '## lb-xnai.lb.extra — OFFICIAL PACK (START)\n'
-        + 'Until END: lb-xnai pack only (custom prompt + Character Image Tags). '
-        + '`### Name` headings here are pack sections, not separate lore.\n\n'
-        + extraBlocks.join('\n\n')
-        + '\n\n## lb-xnai.lb.extra — OFFICIAL PACK (END)\n'
-        + '[END OF lb-xnai.lb.extra] Pack finished — text below is not lb-xnai ground truth.',
-      );
-    }
-    if (refBlocks.length) {
-      loreParts.push(
-        '## Reference Lorebook (trigger-matched only)\n'
-        + 'Naming/context only. Not lb-xnai. Do not copy lore prose into tags.\n\n'
-        + refBlocks.join('\n\n'),
-      );
-    }
-    dbg('job.lore.extra', {
-      trigger_keys: Array.isArray(triggerKeys) ? triggerKeys.length : 0,
-      injected: extraBlocks.length,
-      reference: refBlocks.length,
-      sections: filtered
-        .filter((e) => isCharacterImageExtraLore(e) || e.always)
-        .map((e) => e.key || '')
-        .filter(Boolean)
-        .join(' | '),
-    });
-    if (loreParts.length) {
-      messages.push({ role: 'system', content: `${await getPrompt('lore_inject')}\n${loreParts.join('\n\n')}` });
-    }
-  }
+  await pushLoreMessages(messages, request, card, assistant, rosterEarly);
+  await pushAppearanceMessages(messages, card, assistant, sessionId, rosterEarly);
 
-  const tryInjectAssetNaiTags = async (reason: string): Promise<void> => {
-    if (!card.asset_nai_tags) return;
-    const triggerPool = [
-      ...(Array.isArray(request.lore_trigger_keys) ? request.lore_trigger_keys : []),
-      ...collectTriggeredLoreKeys(request.lorebook || [], assistant),
-    ];
+  // Asset soup on the main tagger: inline mode, or prepass fallback when skipAssetInject is false.
+  const assetMode = normalizeAssetNaiTagsMode(card.asset_nai_tags);
+  if (!opts.skipAssetInject && assetMode !== 'off') {
+    const triggerPool = assetTriggerPoolForRequest(request);
     try {
-      const collected = await collectAssetNaiTags(triggerPool);
+      const collected = await collectAssetNaiTags(triggerPool, {
+        withPreviews: false,
+        roster: rosterEarly,
+        lorebook: Array.isArray(request.lorebook) ? request.lorebook : null,
+        message: assistant,
+      });
       if (collected?.block) {
-        let assetPrompt = await getPrompt('asset_tags_inject');
-        assetPrompt = assetPrompt.includes('{asset_tags_block}')
-          ? assetPrompt.replace('{asset_tags_block}', collected.block)
-          : `${assetPrompt}\n\n${collected.block}`;
-        messages.push({ role: 'system', content: assetPrompt });
-        dbg('asset-tags.inject', {
-          reason,
-          assets: collected.packed.assets.map((a) => a.name),
-          triggers: triggerPool.length,
-        });
+        const assetTemplate = await getPrompt('asset_tags_inject');
+        pushAssetBlockMessage(
+          messages,
+          assetTemplate,
+          collected.block,
+          `asset_nai_tags_${assetMode}`,
+          collected.packed.groups.flatMap((g) => g.assets.map((a) => a.name)),
+        );
       } else {
         setLastAssetWeightMap(new Map());
-        dbg('asset-tags.inject.skip', { reason, cause: 'collect_empty', triggers: triggerPool.length });
+        dbg('asset-tags.inject.skip', { reason: assetMode, cause: 'collect_empty', triggers: triggerPool.length });
       }
     } catch (err) {
       setLastAssetWeightMap(new Map());
-      dbg('asset-tags.inject.fail', { reason, message: String((err as Error)?.message || err) }, 'warn');
+      dbg('asset-tags.inject.fail', { reason: assetMode, message: String((err as Error)?.message || err) }, 'warn');
     }
-  };
-
-  if (card.char_appearance !== false) {
-    const roster = rosterEarly;
-    const filled = roster.filter((c) => characterHasAppearance(c));
-    const incomplete = roster.filter((c) => cleanText(c.name, 200) && !characterHasAppearance(c));
-    const matched = matchCharactersInText(assistant, roster);
-    if (filled.length || incomplete.length || matched.length) {
-      const formatFilledLine = (c: Partial<CharacterRecord>): string => {
-        const name = cleanText(c.name, 200);
-        const appearance = cleanText(c.appearance || '', 200);
-        const attire = cleanText(c.attire || '', 160);
-        const accessories = cleanText(c.accessories || '', 120);
-        const parts = [
-          appearance ? `appearance=${appearance}` : '',
-          attire ? `attire=${attire}` : '',
-          accessories ? `accessories=${accessories}` : '',
-        ].filter(Boolean);
-        return parts.length ? `${name} ← ${parts.join(' | ')}` : name;
-      };
-      // Looks only for characters actually hit in this message — not the whole roster.
-      const matchedFilled = matched.filter((c) => characterHasAppearance(c));
-      const matchedIncomplete = matched.filter((c) => !characterHasAppearance(c));
-      const detectedBlock = matchedFilled.length
-        ? matchedFilled.map(formatFilledLine).filter(Boolean).join('\n')
-        : '(none)';
-      const incompleteBlock = matchedIncomplete.length
-        ? matchedIncomplete
-          .map((char) => `- ${char.name} (aliases: ${characterTriggers(char).slice(0, 8).join(', ')}) → empty appearance; full looks required in new_characters`)
-          .join('\n')
-        : '(none)';
-      let content = await getPrompt('appearance_inject');
-      // Legacy templates still had {registered_block}; keep replace so custom prompts do not leak the placeholder.
-      if (content.includes('{registered_block}')) {
-        content = content.replace('{registered_block}', detectedBlock);
-      }
-      content = content.includes('{incomplete_block}') ? content.replace('{incomplete_block}', incompleteBlock) : `${content}\n\n## Incomplete\n${incompleteBlock}`;
-      content = content.includes('{detected_block}') ? content.replace('{detected_block}', detectedBlock) : `${content}\n\n${detectedBlock}`;
-      messages.push({ role: 'system', content });
-      dbg('job.roster.split', {
-        filled: filled.map((c) => c.name),
-        incomplete: incomplete.map((c) => c.name),
-        matched: matched.map((c) => c.name),
-        matched_with_looks: matchedFilled.map((c) => c.name),
-        session_id: sessionId,
-      });
-    }
+  } else if (opts.skipAssetInject) {
+    dbg('asset-tags.inject.skip', { reason: 'prepass_done' });
+  } else if (assetMode === 'off') {
+    dbg('asset-tags.inject.skip', { reason: 'off' });
   }
-
-  // Always try when the toggle is on. Previous gate (needsNewCharacters) skipped inject when
-  // the roster already matched filled looks — but the message can still introduce *other*
-  // people as new_characters (debug probe finds assets; the live prompt did not).
-  await tryInjectAssetNaiTags('asset_nai_tags_on');
 
   const naturalMode = normalizeNaturalBaseMode(card.natural_base);
   const charMax = characterMaxLimit(card);

@@ -16,10 +16,12 @@ export {
   formatAssetTagsInjectBlock,
   mergeWeightMaps,
   packAssetTagGroups,
+  packedAssetNames,
   restoreAssetTagWeights,
   splitNaiPromptTokens,
   type FilteredPromptTags,
   type PackedAssetTags,
+  type PackedAssetTriggerGroup,
 } from './prompt-tags.ts';
 export { promptFromNaiMetadata } from './from-metadata.ts';
 export { dimsForAspect, normalizeShotAspect, ASPECT_SIZES, type ShotAspect } from './aspect.ts';

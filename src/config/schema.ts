@@ -225,6 +225,8 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   }
   if (card.progress_toast == null) card.progress_toast = false;
   else card.progress_toast = card.progress_toast === true || card.progress_toast === 'true' || card.progress_toast === 1 || card.progress_toast === '1';
+  // sticky_layout_v2 was a temporary toggle; v2 is always-on — drop leftover saves.
+  if (card && typeof card === 'object' && 'sticky_layout_v2' in card) delete card.sticky_layout_v2;
   {
     const mm = String(card.viewer_minimize_mode || 'icon');
     card.viewer_minimize_mode = mm === 'toolbar' || mm === 'actions' ? mm : 'icon';

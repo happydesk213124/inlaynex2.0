@@ -193,6 +193,12 @@ const normalize = (root) => {
         if (k === 'inline_chat_images' || k === 'progress_toast') continue;
         // 2.0 bubble inline scale % — no 1.x field; default 100.
         if (k === 'inline_chat_scale_pct') continue;
+        // Sticky pin hover preview removed in 2.0 (force-off + default false).
+        // 1.x defaulted true; comparing the wire value only hides the deletion.
+        if (k === 'hover_preview' || k === 'hover_preview_anchor') continue;
+        // 2.0 per-role LLM endpoints (`llm_roles`) — no 1.x field; schema defaults
+        // + models UI / unit tests assert behaviour.
+        if (k === 'llm_roles') continue;
         // 2.0 card/gallery `line` (1-based chat line for inline placement). 1.x
         // has no field; unset serialises as null and would spam absent→null.
         if (k === 'line') continue;

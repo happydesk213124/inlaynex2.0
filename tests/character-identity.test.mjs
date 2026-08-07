@@ -7,6 +7,10 @@ import {
   mergeCharacterView,
   sameFullNameIdentity,
   characterMatchesIdentity,
+  latinNameTokens,
+  latinGivenTokenOverlap,
+  absorbAliasesFromDonor,
+  ASSET_LOOKS_PRIORITY,
 } from "../.test-build/character-identity.mjs";
 
 test("shared surname never merges different full names", () => {
@@ -142,4 +146,37 @@ test("characterMatchesIdentity links unified row to per-chat row by alias/name",
   assert.equal(characterMatchesIdentity(unified, chatRow), true);
   assert.equal(characterMatchesIdentity(unified, other), false);
   assert.equal(characterMatchesIdentity({ id: "x" }, { id: "x", name: "A" }), true);
+});
+
+test("latin given tokens match asset mononym to fuller Graymour row", () => {
+  const asset = migrateCharacter({
+    id: "asset-hanna",
+    name: "hanna",
+    given_name: "hanna",
+    given_name_variants: ["hanna"],
+    aliases: ["hanna"],
+    appearance: "1girl, brown hair",
+    priority: ASSET_LOOKS_PRIORITY,
+  });
+  const fuller = migrateCharacter({
+    id: "graymour",
+    name: "한나 그레이무어",
+    surname: "그레이무어",
+    given_name: "한나",
+    surname_variants: ["graymour", "greymoor"],
+    given_name_variants: ["hanna", "hannah"],
+    aliases: ["한나 그레이무어", "Hanna Graymour", "Hannah GreyMoor"],
+  });
+  assert.ok(latinNameTokens(asset).has("hanna"));
+  assert.ok(latinGivenTokenOverlap(asset, fuller));
+  assert.equal(sameFullNameIdentity(asset, fuller), false);
+  const absorbed = absorbAliasesFromDonor(asset, fuller);
+  assert.ok(absorbed.some((a) => /Graymour/i.test(a) || /그레이무어/.test(a)));
+  assert.ok(absorbed.some((a) => /hanna/i.test(a)));
+});
+
+test("latin overlap requires shared ASCII given token", () => {
+  const a = migrateCharacter({ name: "hanna", given_name: "hanna" });
+  const b = migrateCharacter({ name: "mina", given_name: "mina", given_name_variants: ["MINA"] });
+  assert.equal(latinGivenTokenOverlap(a, b), false);
 });

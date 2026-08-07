@@ -494,10 +494,29 @@ async function updateCharacters(body: Record<string, unknown>): Promise<RouteRes
   }
   if ('character' in body) {
     const scope = cleanText(body.scope || sessionId || GLOBAL_SCOPE, 200);
+    const charPayload = (body.character || {}) as Record<string, unknown>;
     if (rootSessionIds.length && scope !== GLOBAL_SCOPE) {
-      await characters.patchExistingInSessions(rootSessionIds, [body.character || {}], '');
+      await characters.patchExistingInSessions(rootSessionIds, [charPayload], '');
     } else {
-      await characters.upsertCharacter(scope, body.character || {});
+      await characters.upsertCharacter(scope, charPayload);
+    }
+    // Viewer save: pin costume onto this card for subsequent rerolls.
+    const stampCardId = cleanText(body.stamp_card_id || charPayload.stamp_card_id || '', 80);
+    if (stampCardId && ('costume' in charPayload || 'active_costume' in charPayload)) {
+      const costume =
+        'costume' in charPayload ? charPayload.costume : charPayload.active_costume;
+      const charIndex =
+        body.stamp_char_index != null
+          ? Number(body.stamp_char_index)
+          : charPayload.stamp_char_index != null
+            ? Number(charPayload.stamp_char_index)
+            : null;
+      await cards.stampCardCostume(
+        stampCardId,
+        cleanText(charPayload.name, 200),
+        costume,
+        Number.isFinite(charIndex as number) ? (charIndex as number) : null,
+      );
     }
   }
   const deleteRefs = Array.isArray(body.root_delete)

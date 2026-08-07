@@ -94,19 +94,28 @@ patched in at build time (was a checkbox).
 
 `card.asset_nai_tags` is a string mode: `off` | `inline` | `prepass` |
 `prepass_vision` (legacy `true` → `prepass_vision`, `false` → `off`). Card
-settings places a `<select>` under the natural_base options row (asserted
-vendor patch); dashboard checkbox was removed. `prepass` / `prepass_vision`
+settings places a `<select>` under the solo/costume row (asserted vendor
+patch); dashboard checkbox was removed. `prepass` / `prepass_vision`
 use a slim looks LLM (asset tags + Character Image lore only; no chat body,
 no filled-roster dump, no story lore). `prepass_vision` also attaches up to
 one representative image per matched character (max 5).
 `card.person_tag_weight` is `0`–`5` (default `3`): NAI emphasis on Inlay
 person-count tags (`0` = plain `1girl, 1boy`; `N` = `N::1girl, 1boy::`). Card
-settings places a number input beside Include Max (asserted vendor patch).
+settings packs Include Max, person_tag_weight, person_tag_mode, lore_extra, and
+natural_base in one auto-fit row (asserted vendor patch).
 
 `card.person_tag_solo` (boolean, default `false`): when the shot has exactly one
 character, put `solo` instead of `1girl`/`1boy` (still emphasized by weight).
 Also applies when `person_tag_mode` is `off`. UI replaces the unused Preprocessing
 checkbox (asserted vendor patch); `card.preprocessing` remains a silent dummy.
+
+`card.costume` (boolean, default `false`): when on, the main tagger receives each
+character's `costumes[]` catalog and may set shot `characters[].costume` /
+`new_costumes`. When off, generation still resolves missing picks to index 0.
+Asset `char_looks` always may populate `costumes[]` regardless of this toggle.
+Card-settings checkbox sits in a `checks-grid` of `toggle-row`s with
+person_tag_solo (same UX as dashboard toggles). Character tab and chip edit
+popup use a costume name+arrow combobox (no field labels; placeholder only).
 
 `curation.mode` (`off` | `two_stage` | `embed_snap`) lives on the **큐레이팅**
 settings tab (asserted vendor patch). Legacy `card.composition_curation: true`
@@ -189,15 +198,23 @@ character_name, chat_name, folder_key`.
 | `/v1/appearance/:sessionId` · `POST` | legacy alias |
 
 Record: `id, name, original, aliases[], surname, given_name, surname_variants[],
-given_name_variants[], appearance, attire, accessories, attire_locked,
-accessories_locked, priority, gender (`girl`|`boy`|`other`|``), original, aliases[].
+given_name_variants[], appearance, attire, accessories, costumes[], active_costume,
+attire_locked, accessories_locked, priority, gender (`girl`|`boy`|`other`|``).
 `attire` = clothes + permanent jewelry; `accessories` = weapons/props only.
-`attire_locked` / `accessories_locked` default **ON** (`!== false`). When locked, shot
-`attire`/`accessories` are ignored for generation. When unlocked, shot wear applies to
+`costumes[]` = named wardrobe sets (`name`, `note?`, `attire`, `accessories`);
+index **0** is the generation default when a shot has no `costume` pick.
+`active_costume` is the UI select index (editing mirror into `attire`/`accessories`).
+`attire_locked` / `accessories_locked` default **ON** (`!== false`). When locked, freeform shot
+`attire`/`accessories` are ignored for generation; a shot `costume` name/index still
+selects from the roster catalog. When unlocked, shot wear applies to
 **that shot's caption only** — it is never written back to the roster. Roster wear
 changes via character edit/create; or when appearance is still empty, a
-`new_characters` re-collect **overwrites** appearance+attire+accessories. UI exposes
-lock toggles on the character tab and edit/create popups.
+`new_characters` re-collect **overwrites** appearance+attire+accessories (and may
+fill `costumes[]`). Viewer character save may send `stamp_card_id` so that card's
+cast keeps `costume` across rerolls without changing `costumes[0]`.
+UI: dashboard `card.costume` toggle injects the catalog into the main tagger;
+character tab / edit popup costume bar: name · when-to-use note · delete · slot
+save · make-default · select (top option = add). At least one costume is kept.
 Autotag returns the same look fields plus `gender`. Missing roster `gender` is
 filled once from exact look tokens (`girl`/`woman`/`female` vs `boy`/`man`/`male`)
 then persisted.

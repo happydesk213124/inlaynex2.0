@@ -22,6 +22,7 @@ import { cleanText, stripCbs } from '../core/util/text';
 import { normalizeAssetNaiTagsMode, normalizeNaturalBaseMode, type NaturalBaseMode } from '../config/schema';
 import { characterTriggers, dedupeShotCharacters, matchCharactersInText } from '../domain/character/roster';
 import { characterHasAppearance, characterMaxLimit } from '../domain/character/tags';
+import { ensureCostumes, formatCostumeCatalog } from '../domain/character/costume';
 import {
   assembleLorebookForTagger,
   collectTriggeredLoreKeys,
@@ -106,16 +107,25 @@ export async function collectAssetTagsForTagger(
   }
 }
 
-function formatAppearanceInjectLine(c: Partial<CharacterRecord>): string {
+function formatAppearanceInjectLine(
+  c: Partial<CharacterRecord>,
+  opts: { withCostumes?: boolean } = {},
+): string {
   const name = cleanText(c.name, 200);
   const appearance = cleanText(c.appearance || '', 200);
-  const attire = cleanText(c.attire || '', 160);
-  const accessories = cleanText(c.accessories || '', 120);
+  const { costumes } = ensureCostumes(c);
   const parts = [
     appearance ? `appearance=${appearance}` : '',
-    attire ? `attire=${attire}` : '',
-    accessories ? `accessories=${accessories}` : '',
-  ].filter(Boolean);
+  ];
+  if (opts.withCostumes) {
+    const catalog = formatCostumeCatalog(costumes);
+    if (catalog) parts.push(`costumes: ${catalog}`);
+  } else {
+    const attire = cleanText(c.attire || costumes[0]?.attire || '', 160);
+    const accessories = cleanText(c.accessories || costumes[0]?.accessories || '', 120);
+    if (attire) parts.push(`attire=${attire}`);
+    if (accessories) parts.push(`accessories=${accessories}`);
+  }
   return parts.length ? `${name} ← ${parts.join(' | ')}` : name;
 }
 
@@ -297,8 +307,13 @@ async function pushAppearanceMessages(
   if (!filled.length && !incomplete.length && !matched.length) return;
   const matchedFilled = matched.filter((c) => characterHasAppearance(c));
   const matchedIncomplete = matched.filter((c) => !characterHasAppearance(c));
+  const withCostumes = card.costume === true
+    || card.costume === 'true'
+    || card.costume === 1
+    || card.costume === '1'
+    || card.costume === 'on';
   const detectedBlock = matchedFilled.length
-    ? matchedFilled.map(formatAppearanceInjectLine).filter(Boolean).join('\n')
+    ? matchedFilled.map((c) => formatAppearanceInjectLine(c, { withCostumes })).filter(Boolean).join('\n')
     : '(none)';
   const incompleteBlock = matchedIncomplete.length
     ? matchedIncomplete
@@ -306,6 +321,17 @@ async function pushAppearanceMessages(
       .join('\n')
     : '(none)';
   let content = await getPrompt('appearance_inject');
+  if (withCostumes) {
+    content += [
+      '',
+      '## Costumes (enabled)',
+      'Registered lines list costumes as name[index] with a short note.',
+      'Set characters[].costume to the name, index, or name[index] for this shot.',
+      'If unclear, use 0 (default). Do not invent freeform shot attire when a costume fits.',
+      'To add a new wardrobe set: new_costumes: [{ "name": "<exact char name>", "costumes": [{ "name", "note", "attire", "accessories" }] }].',
+      'attire = detailed clothes (colors, top/bottom/skirt/dress…). accessories = weapons/held props for that set.',
+    ].join('\n');
+  }
   if (content.includes('{registered_block}')) {
     content = content.replace('{registered_block}', detectedBlock);
   }

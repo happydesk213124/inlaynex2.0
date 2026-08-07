@@ -41,6 +41,12 @@ import {
   fullTags,
   wearLocked,
 } from '../domain/character/tags';
+import {
+  ensureCostumes,
+  mergeCostumeLists,
+  promoteCostumeToDefault,
+  syncActiveCostumeFromWear,
+} from '../domain/character/costume';
 import { restoreAssetTagWeights } from '../domain/nai-meta/prompt-tags.ts';
 import { idbDelete, idbGet, idbGetAll, idbPut } from '../storage/stores';
 import { getLastAssetWeightMap } from './asset-tags';
@@ -126,6 +132,12 @@ export async function listCharacters(scope: string): Promise<CharacterRecord[]> 
         });
       }
     }
+    const ensured = ensureCostumes({
+      attire,
+      accessories,
+      costumes: Array.isArray(row.costumes) ? row.costumes : undefined,
+      active_costume: row.active_costume,
+    });
     const rec: CharacterRecord = {
       id: row.id,
       name: row.name,
@@ -142,6 +154,8 @@ export async function listCharacters(scope: string): Promise<CharacterRecord[]> 
       appearance,
       attire,
       accessories,
+      costumes: ensured.costumes,
+      active_costume: ensured.active_costume,
       gender,
       updated_at: row.updated_at,
       scope: row.scope,
@@ -293,6 +307,11 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
   const givenProvided = hasOwn(raw, 'given_name');
   const surnameVariantsProvided = hasOwn(raw, 'surname_variants');
   const givenVariantsProvided = hasOwn(raw, 'given_name_variants');
+  const costumesProvided = hasOwn(raw, 'costumes');
+  const activeCostumeProvided = hasOwn(raw, 'active_costume');
+  const promoteDefault = Boolean(
+    raw && typeof raw === 'object' && (raw as Record<string, unknown>).promote_costume_default,
+  );
   let rec = normalizeCharacterRecord(raw);
   if (!rec) return null;
   const scopeKey = cleanText(scope, 200) || GLOBAL_SCOPE;
@@ -338,9 +357,35 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
         ? wearLocked(rec.accessories_locked)
         : wearLocked(dup.accessories_locked),
       priority: Math.max(Number(dup.priority || 0), Number(rec.priority || 0)),
+      costumes: costumesProvided ? rec.costumes : dup.costumes,
+      active_costume: activeCostumeProvided ? rec.active_costume : dup.active_costume,
     });
     if (!rec) return null;
   }
+
+  // Normalize costumes: seed from attire if missing; sync active slot from wear on save.
+  {
+    let { costumes, active_costume } = ensureCostumes(rec);
+    if (attireProvided || accessoriesProvided) {
+      costumes = syncActiveCostumeFromWear(costumes, active_costume, {
+        attire: rec.attire,
+        accessories: rec.accessories,
+      });
+    }
+    if (promoteDefault) {
+      costumes = promoteCostumeToDefault(costumes, {
+        attire: rec.attire,
+        accessories: rec.accessories,
+      });
+      active_costume = 0;
+      // Mirror default wear onto top-level fields.
+      rec.attire = costumes[0]!.attire;
+      rec.accessories = costumes[0]!.accessories;
+    }
+    rec.costumes = costumes;
+    rec.active_costume = active_costume;
+  }
+
   const now = Date.now() / 1000;
   await idbPut('characters', {
     scope: scopeKey,
@@ -358,6 +403,8 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
     appearance: rec.appearance,
     attire: rec.attire,
     accessories: rec.accessories || '',
+    costumes: rec.costumes || [],
+    active_costume: Number(rec.active_costume || 0),
     original: rec.original || '',
     gender: normalizeGender(rec.gender ?? rec.sex),
     updated_at: now,
@@ -730,7 +777,19 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
 
     // Looks already on the roster: shot/tagger wear is caption-only (see
     // composeCharacterCaptionTags). Never overwrite stored attire/accessories.
+    // Still allow appending non-default costumes from new_characters.costumes.
     if (existing && characterHasAppearance(existing)) {
+      const incomingCostumes = Array.isArray(raw.costumes) ? raw.costumes : [];
+      if (incomingCostumes.length) {
+        const writeScope = existing.scope === GLOBAL_SCOPE ? GLOBAL_SCOPE : (existing.scope || writeSessionId);
+        const merged = mergeCostumeLists(existing.costumes, incomingCostumes, { protectDefault: true });
+        await upsertCharacter(writeScope, {
+          id: existing.id,
+          name: existing.name,
+          costumes: merged,
+          active_costume: existing.active_costume,
+        });
+      }
       roster = await readRoster();
       continue;
     }
@@ -741,14 +800,23 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
       const aliases = parseAliasList([...(existing.aliases || []), ...(rec.aliases || [])]);
       const appearance = newApp || existing.appearance || '';
       const original = existing.original || rec.original || '';
+      const costumes = mergeCostumeLists(
+        existing.costumes,
+        Array.isArray(raw.costumes) && raw.costumes.length
+          ? raw.costumes
+          : [{ name: 'default', attire: newAttire, accessories: newAccessories }],
+        { protectDefault: false },
+      );
       await upsertCharacter(writeScope, {
         id: existing.id || rec.id,
         name: existing.name || rec.name,
         aliases: aliases.length ? aliases : existing.aliases || rec.aliases,
         original,
         appearance,
-        attire: newAttire,
-        accessories: newAccessories,
+        attire: newAttire || costumes[0]?.attire || '',
+        accessories: newAccessories || costumes[0]?.accessories || '',
+        costumes,
+        active_costume: 0,
         attire_locked: wearLocked(existing.attire_locked),
         accessories_locked: wearLocked(existing.accessories_locked),
         ...nameParts,
@@ -758,12 +826,45 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     }
 
     if (!existing) {
+      const costumes = mergeCostumeLists(
+        null,
+        Array.isArray(raw.costumes) && raw.costumes.length
+          ? raw.costumes
+          : [{ name: 'default', attire: newAttire, accessories: newAccessories }],
+        { protectDefault: false },
+      );
       await upsertCharacter(writeSessionId, {
         ...rec,
+        attire: newAttire || costumes[0]?.attire || '',
+        accessories: newAccessories || costumes[0]?.accessories || '',
+        costumes,
+        active_costume: 0,
         attire_locked: wearLocked(rec.attire_locked),
         accessories_locked: wearLocked(rec.accessories_locked),
       });
     }
+    roster = await readRoster();
+  }
+
+  // new_costumes: append wardrobe sets onto existing roster rows by character name.
+  const newCostumes = Array.isArray(tagged.new_costumes) ? tagged.new_costumes : [];
+  for (const row of newCostumes) {
+    if (!row || typeof row !== 'object') continue;
+    const name = cleanText((row as { name?: unknown }).name, 200);
+    if (!name) continue;
+    const existing = resolveCharacter(name, roster);
+    if (!existing) continue;
+    const incoming = (row as { costumes?: unknown }).costumes;
+    if (!Array.isArray(incoming) || !incoming.length) continue;
+    const writeScope = existing.scope === GLOBAL_SCOPE ? GLOBAL_SCOPE : (existing.scope || writeSessionId);
+    const protectDefault = characterHasAppearance(existing);
+    const merged = mergeCostumeLists(existing.costumes, incoming, { protectDefault });
+    await upsertCharacter(writeScope, {
+      id: existing.id,
+      name: existing.name,
+      costumes: merged,
+      active_costume: existing.active_costume,
+    });
     roster = await readRoster();
   }
 

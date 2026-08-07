@@ -30,7 +30,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.12';
+const PLUGIN_VERSION = '2.1.19';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -284,6 +284,7 @@ const VENDOR_NATURAL_BASE_CT_PATCH =
   `      lore_extra: document.getElementById("nx-lore-extra") ? normalizeLoreExtraMode(N("nx-lore-extra")) : normalizeLoreExtraMode(e.lore_extra),
       natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",`;
 
+/** Removed from original wide rows — re-homed next to Include Max (see PERSON_TAG_WEIGHT). */
 const VENDOR_NATURAL_BASE_CARD_NEEDLE =
   `<label class="wide"><span>사람 태그 자동넣기</span><select id="nx-person-tag-mode">
               <option value="gender" \${R === "gender" ? "selected" : ""}>성별 분리 (1girl, 1boy…)</option>
@@ -297,26 +298,7 @@ const VENDOR_NATURAL_BASE_CARD_NEEDLE =
               <option value="off" \${loreExtraUi === "off" ? "selected" : ""}>넣지 않음</option>
             </select></label>`;
 
-const VENDOR_NATURAL_BASE_CARD_PATCH =
-  `<div class="wide" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end">
-            <label data-nx-help-id="nx-person-tag-mode"><span>사람 태그 자동넣기</span><select id="nx-person-tag-mode">
-              <option value="gender" \${R === "gender" ? "selected" : ""}>성별 분리 (1girl, 1boy…)</option>
-              <option value="girls" \${R === "girls" ? "selected" : ""}>인원수 → girls (4girls)</option>
-              <option value="people" \${R === "people" ? "selected" : ""}>인원수 → people (4people)</option>
-              <option value="off" \${R === "off" ? "selected" : ""}>안 넣기</option>
-            </select></label>
-            <label data-nx-help-id="nx-lore-extra"><span>lb-xnai.lb.extra</span><select id="nx-lore-extra">
-              <option value="tags" \${loreExtraUi === "tags" ? "selected" : ""}>캐릭터 태그만</option>
-              <option value="full" \${loreExtraUi === "full" ? "selected" : ""}>전체</option>
-              <option value="off" \${loreExtraUi === "off" ? "selected" : ""}>넣지 않음</option>
-            </select></label>
-            <label data-nx-help-id="nx-natural-base"><span>자연어 base</span><select id="nx-natural-base">
-              <option value="off" \${i.natural_base === !1 || i.natural_base === "off" ? "selected" : ""}>안넣기</option>
-              <option value="short" \${i.natural_base !== !1 && i.natural_base !== "off" && i.natural_base !== "detailed" && i.natural_base !== "supplement" ? "selected" : ""}>짧게 넣기</option>
-              <option value="detailed" \${i.natural_base === "detailed" ? "selected" : ""}>구도·자세히</option>
-              <option value="supplement" \${i.natural_base === "supplement" ? "selected" : ""}>태그 보완 자연어</option>
-            </select></label>
-            </div>`;
+const VENDOR_NATURAL_BASE_CARD_PATCH = ``;
 
 const VENDOR_NATURAL_BASE_HELP_NEEDLE =
   `"nx-natural-base": { title: "자연어 base 태그", body: "이미지 요청에 짧은 자연어 장면도 함께 넣습니다. 태그만 쓸 때보다 분위기가 자연스러워질 수 있습니다." }`;
@@ -340,10 +322,25 @@ const VENDOR_PERSON_TAG_WEIGHT_HTML_NEEDLE =
 `;
 
 const VENDOR_PERSON_TAG_WEIGHT_HTML_PATCH =
-  `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end">
-            <label data-nx-help-id="nx-include-max"><span>Include Max (최근 문맥 개수)</span><input id="nx-include-max" type="number" min="0" max="20" value="\${h(i.include_max ?? 0)}"></label>
+  `<label data-nx-help-id="nx-include-max"><span>Include Max (최근 문맥 개수)</span><input id="nx-include-max" type="number" min="0" max="20" value="\${h(i.include_max ?? 0)}"></label>
             <label data-nx-help-id="nx-person-tag-weight"><span>사람 태그 강조 (0–5)</span><input id="nx-person-tag-weight" type="number" min="0" max="5" step="1" value="\${h(i.person_tag_weight ?? 3)}"></label>
-            </div>
+            <label data-nx-help-id="nx-person-tag-mode"><span>사람 태그 자동넣기</span><select id="nx-person-tag-mode">
+              <option value="gender" \${R === "gender" ? "selected" : ""}>성별 분리 (1girl, 1boy…)</option>
+              <option value="girls" \${R === "girls" ? "selected" : ""}>인원수 → girls (4girls)</option>
+              <option value="people" \${R === "people" ? "selected" : ""}>인원수 → people (4people)</option>
+              <option value="off" \${R === "off" ? "selected" : ""}>안 넣기</option>
+            </select></label>
+            <label data-nx-help-id="nx-lore-extra"><span>lb-xnai.lb.extra</span><select id="nx-lore-extra">
+              <option value="tags" \${loreExtraUi === "tags" ? "selected" : ""}>캐릭터 태그만</option>
+              <option value="full" \${loreExtraUi === "full" ? "selected" : ""}>전체</option>
+              <option value="off" \${loreExtraUi === "off" ? "selected" : ""}>넣지 않음</option>
+            </select></label>
+            <label data-nx-help-id="nx-natural-base"><span>자연어 base</span><select id="nx-natural-base">
+              <option value="off" \${i.natural_base === !1 || i.natural_base === "off" ? "selected" : ""}>안넣기</option>
+              <option value="short" \${i.natural_base !== !1 && i.natural_base !== "off" && i.natural_base !== "detailed" && i.natural_base !== "supplement" ? "selected" : ""}>짧게 넣기</option>
+              <option value="detailed" \${i.natural_base === "detailed" ? "selected" : ""}>구도·자세히</option>
+              <option value="supplement" \${i.natural_base === "supplement" ? "selected" : ""}>태그 보완 자연어</option>
+            </select></label>
 `;
 
 const VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE =
@@ -363,7 +360,10 @@ const VENDOR_PERSON_TAG_SOLO_HTML_NEEDLE =
   `<label class="check wide"><input id="nx-preprocess" type="checkbox" \${i.preprocessing ? "checked" : ""}> Preprocessing (토큰 추가 소모)</label>
 `;
 const VENDOR_PERSON_TAG_SOLO_HTML_PATCH =
-  `<label class="check wide" data-nx-help-id="nx-person-tag-solo"><input id="nx-person-tag-solo" type="checkbox" \${i.person_tag_solo ? "checked" : ""}> 캐릭 1명일 때 solo 태그</label>
+  `<div class="checks-grid" style="grid-column:1/-1;margin-top:4px">
+            <label class="toggle-row" data-nx-help-id="nx-person-tag-solo" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-person-tag-solo" \${i.person_tag_solo ? "checked" : ""} style="flex-shrink:0;margin:0"><span>캐릭 1명일 때 solo 태그</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-costume" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-costume" \${i.costume === !0 || i.costume === "true" || i.costume === 1 || i.costume === "1" || i.costume === "on" ? "checked" : ""} style="flex-shrink:0;margin:0"><span>코스튬 (샷에서 복장 고르기)</span></label>
+            </div>
 `;
 
 const VENDOR_PERSON_TAG_SOLO_CT_NEEDLE =
@@ -445,23 +445,17 @@ const VENDOR_ASSET_NAI_SAVE_PATCH =
       auto_aspect: ee("nx-auto-aspect"),
 `;
 
-/** Card options bar: asset NAI mode select (after natural_base 3-col grid). */
+/** Card options: asset NAI select after solo+costume checks-grid. */
 const VENDOR_ASSET_NAI_CARD_NEEDLE =
-  `            <label data-nx-help-id="nx-natural-base"><span>자연어 base</span><select id="nx-natural-base">
-              <option value="off" \${i.natural_base === !1 || i.natural_base === "off" ? "selected" : ""}>안넣기</option>
-              <option value="short" \${i.natural_base !== !1 && i.natural_base !== "off" && i.natural_base !== "detailed" && i.natural_base !== "supplement" ? "selected" : ""}>짧게 넣기</option>
-              <option value="detailed" \${i.natural_base === "detailed" ? "selected" : ""}>구도·자세히</option>
-              <option value="supplement" \${i.natural_base === "supplement" ? "selected" : ""}>태그 보완 자연어</option>
-            </select></label>
+  `<div class="checks-grid" style="grid-column:1/-1;margin-top:4px">
+            <label class="toggle-row" data-nx-help-id="nx-person-tag-solo" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-person-tag-solo" \${i.person_tag_solo ? "checked" : ""} style="flex-shrink:0;margin:0"><span>캐릭 1명일 때 solo 태그</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-costume" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-costume" \${i.costume === !0 || i.costume === "true" || i.costume === 1 || i.costume === "1" || i.costume === "on" ? "checked" : ""} style="flex-shrink:0;margin:0"><span>코스튬 (샷에서 복장 고르기)</span></label>
             </div>`;
 
 const VENDOR_ASSET_NAI_CARD_PATCH =
-  `            <label data-nx-help-id="nx-natural-base"><span>자연어 base</span><select id="nx-natural-base">
-              <option value="off" \${i.natural_base === !1 || i.natural_base === "off" ? "selected" : ""}>안넣기</option>
-              <option value="short" \${i.natural_base !== !1 && i.natural_base !== "off" && i.natural_base !== "detailed" && i.natural_base !== "supplement" ? "selected" : ""}>짧게 넣기</option>
-              <option value="detailed" \${i.natural_base === "detailed" ? "selected" : ""}>구도·자세히</option>
-              <option value="supplement" \${i.natural_base === "supplement" ? "selected" : ""}>태그 보완 자연어</option>
-            </select></label>
+  `<div class="checks-grid" style="grid-column:1/-1;margin-top:4px">
+            <label class="toggle-row" data-nx-help-id="nx-person-tag-solo" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-person-tag-solo" \${i.person_tag_solo ? "checked" : ""} style="flex-shrink:0;margin:0"><span>캐릭 1명일 때 solo 태그</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-costume" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-costume" \${i.costume === !0 || i.costume === "true" || i.costume === 1 || i.costume === "1" || i.costume === "on" ? "checked" : ""} style="flex-shrink:0;margin:0"><span>코스튬 (샷에서 복장 고르기)</span></label>
             </div>
             <label class="wide" data-nx-help-id="nx-asset-nai-tags"><span>에셋 NAI 태그</span><select id="nx-asset-nai-tags">
               <option value="off" \${i.asset_nai_tags === !1 || i.asset_nai_tags === "off" || !i.asset_nai_tags ? "selected" : ""}>사용안함</option>
@@ -475,7 +469,8 @@ const VENDOR_ASSET_NAI_CT_NEEDLE =
 
 const VENDOR_ASSET_NAI_CT_PATCH =
   `      natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",
-      asset_nai_tags: document.getElementById("nx-asset-nai-tags") ? N("nx-asset-nai-tags") || "off" : e.asset_nai_tags || "off",`;
+      asset_nai_tags: document.getElementById("nx-asset-nai-tags") ? N("nx-asset-nai-tags") || "off" : e.asset_nai_tags || "off",
+      costume: document.getElementById("nx-costume") ? !!document.getElementById("nx-costume").checked : !!e.costume,`;
 
 const VENDOR_ASSET_NAI_HELP_NEEDLE =
   `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
@@ -484,6 +479,7 @@ const VENDOR_ASSET_NAI_HELP_NEEDLE =
 const VENDOR_ASSET_NAI_HELP_PATCH =
   `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
     "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "로어 트리거와 이름이 맞는 Risu 에셋 PNG/WebP의 NovelAI 메타 태그를 어떻게 태거에 넣을지 고릅니다. artist·year·품질·*background·straight-on은 제외.\\n\\n• 사용안함 — 에셋 태그를 쓰지 않습니다.\\n• 그냥 옛날버전 (통째로 보내기) — 로어북·에셋 태그를 메인 태거 한 번에 넣습니다. LLM 1회. 컨텍스트가 길어져 토큰을 많이 씁니다.\\n• LLM 따로 호출 — 에셋 태그로 캐릭터 룩만 먼저 채운 뒤 메인 태거를 돌립니다. LLM 2회.\\n• LLM 따로 호출 + 이미지 파일 보내기 — 룩 LLM에 캐릭터당 대표 이미지 1장(최대 5장)을 함께 보냅니다. 비전 입력만큼 토큰·비용이 큽니다." },
+    "nx-costume": { title: "코스튬", body: "켜면 메인 태거가 캐릭터별 코스튬 목록을 보고 샷마다 복장을 고릅니다(이름·번호). 꺼도 에셋으로 캐릭을 만들 때는 복장이 코스튬으로 나뉘어 저장됩니다. 샷에 고른 값이 없으면 항상 index 0(기본)을 씁니다." },
     "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(Asset Maid 기본 사이즈). ComfyUI는 워크플로 Empty Latent 등에 [[width]]/[[height]]를 넣어야 반영됩니다. 끄면 NAI Width/Height 설정을 씁니다." },
 `;
 
@@ -611,6 +607,54 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.19</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>solo/코스튬: 체크박스 왼쪽 · 글자 오른쪽 (대시보드 토글과 동일)</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.18</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>샷태그/캐릭터 수정 팝업 열면 플로팅 뷰어를 0 크기로 숨김 · 닫으면 원복(레이어 분리라 z-index 불가)</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.17</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>카드설정 solo/코스튬: model-form label column 덮어써서 한 줄(텍스트□)</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.16</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>solo/코스튬·고정: 텍스트 왼쪽 + 체크 오른쪽 한 줄</li>
+            <li>코스튬 select: 밝은 ▾ 화살표 · 옵션 글자/배경 다크 테마</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.15</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>Firefox: 한글 tofu(Variable Text/560) · 프리셋 이미지 더블클릭(클릭 시 전체 리렌더 제거)</li>
+            <li>카드설정: solo/코스튬을 checks-grid 토글 · Include Max 줄을 model-form 셀로</li>
+            <li>캐릭터 칩 팝업 코스튬 한 줄 실제 적용 · 라벨 제거 · 고정□ 한 줄</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.14</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>코스튬 UI: 이름 입력 + 우측 화살표 select 콤보 · 캐릭터 탭/칩 팝업 동일</li>
+            <li>카드설정: 코스튬 토글을 solo 태그 옆 · 사람태그/lb-xnai/자연어base를 Include Max 줄로</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.1.13</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>코스튬: 캐릭터별 costumes[] · index 0 기본 · 대시보드 토글로 샷 선택 inject</li>
+            <li>에셋 char_looks는 토글과 무관하게 복장을 코스튬으로 분리 저장</li>
+            <li>캐릭터 탭/팝업 코스튬 선택 · 「현재를 기본으로」 · 뷰어 저장 시 카드에 costume stamp(리롤 유지)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.1.12</strong>
@@ -2077,19 +2121,40 @@ const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
           await P();
         }
       };
+      const paintPresetImageFocus = () => {
+        document.querySelectorAll("[data-preset-from-image]").forEach((b) => {
+          b.classList.toggle("armed", !!t.presetImageFocus);
+          b.textContent = t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드";
+        });
+        document.querySelectorAll("[data-preset-image-badge]").forEach((badge) => {
+          badge.classList.toggle("show", !!t.presetImageFocus);
+          badge.textContent = t.presetImageFocus ? "선택됨 · Ctrl+V" : "";
+        });
+      };
       const fileEl = document.getElementById("nx-preset-from-image-file");
       document.querySelectorAll("[data-preset-from-image]").forEach((btn) => {
         btn.addEventListener("click", (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
           t.presetImageFocus = !t.presetImageFocus;
-          P();
+          paintPresetImageFocus();
         });
         btn.addEventListener("dblclick", (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
           t.presetImageFocus = !0;
-          fileEl?.click();
+          paintPresetImageFocus();
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = "image/*";
+          input.style.display = "none";
+          document.body.appendChild(input);
+          input.addEventListener("change", async () => {
+            const f = input.files?.[0];
+            input.remove();
+            await runPresetFromImage(f);
+          });
+          input.click();
         });
       });
       fileEl?.addEventListener("change", async (ev) => {
@@ -2606,6 +2671,7 @@ const VENDOR_STICKY_OPEN_CARD_PATCH = `  async function openCardTagEdit(e) {
     await closeCharacterCreateModal().catch(() => null);
     await closeCardTagEdit(), await xe();
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
+    try { await hideFloatingViewerForModal(); } catch {}
     try { await Ht(); } catch {}`;
 
 /** Shot-tag modal was rebuilding char prompts from live roster + expression/action/sex,
@@ -2712,6 +2778,7 @@ const VENDOR_STICKY_OPEN_CHAR_PATCH = `  async function Ua(e) {
     }
     await closeCardTagEdit(), await xe(), await closeCharacterCreateModal().catch(() => null);
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
+    try { await hideFloatingViewerForModal(); } catch {}
     try { await Ht(); } catch {}`;
 
 const VENDOR_STICKY_CLOSE_CARD_NEEDLE = `  async function closeCardTagEdit() {
@@ -2742,6 +2809,7 @@ const VENDOR_STICKY_CLOSE_CARD_PATCH = `  async function closeCardTagEdit() {
       t.overlayUi._stickyEditorOpen = !1;
       try { await Ht(); } catch {}
     }
+    if (!t.charEditUi) try { await restoreFloatingViewerAfterModal(); } catch {}
   }`;
 
 const VENDOR_STICKY_CLOSE_CHAR_NEEDLE = `    if (t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), o && !t.uiOpen && typeof k.hideContainer == "function") try {
@@ -2760,7 +2828,6 @@ const VENDOR_STICKY_CLOSE_CHAR_PATCH = `    if (t.charEditUi = null, t.autotagFo
       await k.hideContainer();
     } catch {
     }
-    // Viewer stays visible during overlays — no restoreFloatingViewerAfterModal.
     if (t.galleryUi?.renderCast) try {
       await t.galleryUi.renderCast();
     } catch {
@@ -2769,6 +2836,7 @@ const VENDOR_STICKY_CLOSE_CHAR_PATCH = `    if (t.charEditUi = null, t.autotagFo
       t.overlayUi._stickyEditorOpen = !1;
       try { await Ht(); } catch {}
     }
+    if (!t.cardTagUi) try { await restoreFloatingViewerAfterModal(); } catch {}
   }
   async function Ua(e) {`;
 
@@ -2870,8 +2938,218 @@ const VENDOR_CHAR_EDIT_GENDER_SAVE_PATCH =
           gender: ["girl", "boy", "other"].includes(String(genderEl?.value || "")) ? String(genderEl.value) : "",
           attire_locked: attireLockedEl ? !!attireLockedEl.checked : true,
           accessories_locked: accLockedEl ? !!accLockedEl.checked : true,
-          priority: Number(n.priority || 0)
+          priority: Number(n.priority || 0),
+          active_costume: (() => {
+            const sel = i.querySelector("[data-ce-costume]");
+            if (!sel || sel.value === "__add__") return 0;
+            const opts = [...sel.options].filter((o) => o.value !== "__add__");
+            const idx = opts.findIndex((o) => o.value === sel.value);
+            return idx >= 0 ? idx : 0;
+          })(),
+          promote_costume_default: i.dataset.promoteCostumeDefault === "1",
+          costume: (() => {
+            const sel = i.querySelector("[data-ce-costume]");
+            if (!sel || sel.value === "__add__") return 0;
+            const opts = [...sel.options].filter((o) => o.value !== "__add__");
+            const idx = opts.findIndex((o) => o.value === sel.value);
+            return idx >= 0 ? idx : 0;
+          })(),
+          costumes: (() => {
+            const sel = i.querySelector("[data-ce-costume]");
+            if (!sel) return Array.isArray(n.costumes) ? n.costumes : undefined;
+            const nameNow = String(i.querySelector("[data-ce-costume-name]")?.value || "").trim();
+            const noteNow = String(i.querySelector("[data-ce-costume-note]")?.value || "").trim();
+            const opts = [...sel.options].filter((o) => o.value !== "__add__");
+            let active = opts.findIndex((o) => o.value === sel.value);
+            if (active < 0) active = 0;
+            return opts.map((o, idx) => ({
+              name: (idx === active ? nameNow : "") || o.getAttribute("data-name") || (idx === 0 ? "default" : "costume" + idx),
+              note: idx === active ? noteNow : (o.getAttribute("data-note") || ""),
+              attire: idx === active ? T : (o.getAttribute("data-attire") || ""),
+              accessories: idx === active ? Acc : (o.getAttribute("data-accessories") || "")
+            }));
+          })()
         };`;
+
+/** Stamp card id onto character save when edit was opened from a viewer card. */
+const VENDOR_CHAR_EDIT_STAMP_NEEDLE =
+  `            body: {
+              session_id: live?.sessionId || rosterSessionId || "",
+              scope: x,
+              character: edited
+            }`;
+const VENDOR_CHAR_EDIT_STAMP_PATCH =
+  `            body: {
+              session_id: live?.sessionId || rosterSessionId || "",
+              scope: x,
+              character: edited,
+              stamp_card_id: e.cardId || "",
+              stamp_char_index: Number.isFinite(Number(e.index)) ? Number(e.index) : null
+            }`;
+
+const VENDOR_CHAR_EDIT_STAMP_UNIFIED_NEEDLE =
+  `            body: withRootSessions({
+              session_id: rosterSessionId,
+              character_id: w(live?.characterId || rosterMeta.characterId || "", 200),
+              character: edited
+            }, rosterMeta.unifiedScope)`;
+const VENDOR_CHAR_EDIT_STAMP_UNIFIED_PATCH =
+  `            body: withRootSessions({
+              session_id: rosterSessionId,
+              character_id: w(live?.characterId || rosterMeta.characterId || "", 200),
+              character: edited,
+              stamp_card_id: e.cardId || "",
+              stamp_char_index: Number.isFinite(Number(e.index)) ? Number(e.index) : null
+            }, rosterMeta.unifiedScope)`;
+
+/** Bind costume select / add / delete / slot-save / default in char edit modal. */
+const VENDOR_CHAR_EDIT_COSTUME_BIND_NEEDLE =
+  `    i.querySelector("[data-ce-save]")?.addEventListener("click", (f) => {
+      f.preventDefault(), f.stopPropagation(), U().catch(() => {
+      });
+    })`;
+const VENDOR_CHAR_EDIT_COSTUME_BIND_PATCH =
+  `    (() => {
+      const root = i;
+      const sel = () => root.querySelector("[data-ce-costume]");
+      const realOpts = () => [...(sel()?.options || [])].filter((o) => o.value !== "__add__");
+      const reindex = () => {
+        realOpts().forEach((o, idx) => {
+          const name = o.getAttribute("data-name") || o.textContent || ("costume" + idx);
+          const note = o.getAttribute("data-note") || "";
+          o.value = String(idx);
+          o.textContent = name.replace(/\\[\\d+\\].*$/, "").trim() + "[" + idx + "]" + (note ? " · " + note : "");
+        });
+      };
+      const load = () => {
+        const s = sel(), o = s?.options?.[s.selectedIndex];
+        if (!o || o.value === "__add__") return;
+        const nameEl = root.querySelector("[data-ce-costume-name]"), noteEl = root.querySelector("[data-ce-costume-note]");
+        const att = root.querySelector("[data-ce-attire]"), acc = root.querySelector("[data-ce-accessories]");
+        if (nameEl) nameEl.value = o.getAttribute("data-name") || "";
+        if (noteEl) noteEl.value = o.getAttribute("data-note") || "";
+        if (att) att.value = o.getAttribute("data-attire") || "";
+        if (acc) acc.value = o.getAttribute("data-accessories") || "";
+      };
+      const commitSlot = () => {
+        const s = sel(), o = s?.options?.[s.selectedIndex];
+        if (!o || o.value === "__add__") return false;
+        const name = String(root.querySelector("[data-ce-costume-name]")?.value || "").trim() || ("costume" + o.value);
+        const note = String(root.querySelector("[data-ce-costume-note]")?.value || "").trim();
+        const attire = root.querySelector("[data-ce-attire]")?.value || "";
+        const accessories = root.querySelector("[data-ce-accessories]")?.value || "";
+        o.setAttribute("data-name", name);
+        o.setAttribute("data-note", note);
+        o.setAttribute("data-attire", attire);
+        o.setAttribute("data-accessories", accessories);
+        o.textContent = name + "[" + o.value + "]" + (note ? " · " + note : "");
+        return true;
+      };
+      sel()?.addEventListener("change", () => {
+        const s = sel();
+        if (!s) return;
+        if (s.value === "__add__") {
+          const n = realOpts().length;
+          const o = document.createElement("option");
+          o.value = String(n);
+          o.setAttribute("data-name", "costume" + n);
+          o.setAttribute("data-note", "");
+          o.setAttribute("data-attire", "");
+          o.setAttribute("data-accessories", "");
+          o.textContent = "costume" + n + "[" + n + "]";
+          s.appendChild(o);
+          s.value = String(n);
+          const att = root.querySelector("[data-ce-attire]"), acc = root.querySelector("[data-ce-accessories]");
+          if (att) att.value = "";
+          if (acc) acc.value = "";
+          const nameEl = root.querySelector("[data-ce-costume-name]"), noteEl = root.querySelector("[data-ce-costume-note]");
+          if (nameEl) nameEl.value = "costume" + n;
+          if (noteEl) noteEl.value = "";
+          return;
+        }
+        load();
+      });
+      root.querySelector("[data-ce-costume-slot-save]")?.addEventListener("click", (f) => {
+        f.preventDefault();
+        if (commitSlot()) E("코스튬 슬롯 저장됨 · 캐릭터 저장을 누르세요");
+      });
+      root.querySelector("[data-ce-costume-delete]")?.addEventListener("click", (f) => {
+        f.preventDefault();
+        const s = sel();
+        if (!s || s.value === "__add__") return;
+        if (realOpts().length <= 1) {
+          E("코스튬은 최소 1개 필요합니다");
+          return;
+        }
+        s.options[s.selectedIndex]?.remove();
+        reindex();
+        s.value = "0";
+        load();
+        root.dataset.promoteCostumeDefault = "";
+      });
+      root.querySelector("[data-ce-costume-default]")?.addEventListener("click", (f) => {
+        f.preventDefault();
+        commitSlot();
+        const s = sel(), o = s?.options?.[s.selectedIndex];
+        if (!o || o.value === "__add__") return;
+        const addOpt = [...s.options].find((x) => x.value === "__add__");
+        o.remove();
+        if (addOpt) s.insertBefore(o, addOpt.nextSibling);
+        else s.insertBefore(o, s.firstChild);
+        o.setAttribute("data-name", "default");
+        reindex();
+        s.value = "0";
+        root.dataset.promoteCostumeDefault = "";
+        const nameEl = root.querySelector("[data-ce-costume-name]");
+        if (nameEl) nameEl.value = "default";
+        f.target && (f.target.textContent = "기본값 표시됨");
+        load();
+      });
+    })(), i.querySelector("[data-ce-save]")?.addEventListener("click", (f) => {
+      f.preventDefault(), f.stopPropagation(), U().catch(() => {
+      });
+    })`;
+
+/** Pass card id when opening character edit from viewer / sticky. */
+const VENDOR_CHAR_EDIT_CARDID_A_NEEDLE =
+  `      if (name) await Ua({
+        name,
+        prompt: w(raw?.prompt || "", 400),
+        roster: Dt(name),
+        index: idx
+      });`;
+const VENDOR_CHAR_EDIT_CARDID_A_PATCH =
+  `      if (name) await Ua({
+        name,
+        prompt: w(raw?.prompt || "", 400),
+        roster: Dt(name),
+        index: idx,
+        cardId: target?.id || ""
+      });`;
+
+const VENDOR_CHAR_EDIT_CARDID_B_NEEDLE =
+  `          if (name) await Ua({
+            name,
+            prompt: w(raw?.prompt || "", 400),
+            roster: Dt(name),
+            index: charI
+          });`;
+const VENDOR_CHAR_EDIT_CARDID_B_PATCH =
+  `          if (name) await Ua({
+            name,
+            prompt: w(raw?.prompt || "", 400),
+            roster: Dt(name),
+            index: charI,
+            cardId: card?.id || ""
+          });`;
+
+const VENDOR_CHAR_EDIT_CARDID_ENTRY_NEEDLE =
+  `        entry.roster = Dt(entry.name) || entry.roster;
+        await Ua(entry);`;
+const VENDOR_CHAR_EDIT_CARDID_ENTRY_PATCH =
+  `        entry.roster = Dt(entry.name) || entry.roster;
+        entry.cardId = target?.id || entry.cardId || "";
+        await Ua(entry);`;
 
 /** Character settings tab: gender select beside priority. */
 const VENDOR_CHAR_TAB_GENDER_HTML_NEEDLE =
@@ -2890,7 +3168,32 @@ const VENDOR_CHAR_TAB_GENDER_READ_PATCH =
   `        attire_locked: n.querySelector("[data-char-attire-locked]") ? !!n.querySelector("[data-char-attire-locked]")?.checked : true,
         accessories_locked: n.querySelector("[data-char-accessories-locked]") ? !!n.querySelector("[data-char-accessories-locked]")?.checked : true,
         priority: Number(n.querySelector("[data-char-priority]")?.value || 0),
-        gender: ["girl", "boy", "other"].includes(String(n.querySelector("[data-char-gender]")?.value || "")) ? String(n.querySelector("[data-char-gender]")?.value || "") : ""
+        gender: ["girl", "boy", "other"].includes(String(n.querySelector("[data-char-gender]")?.value || "")) ? String(n.querySelector("[data-char-gender]")?.value || "") : "",
+        active_costume: (() => {
+          const sel = n.querySelector("[data-char-costume]");
+          if (!sel || sel.value === "__add__") return 0;
+          const opts = [...sel.options].filter((o) => o.value !== "__add__");
+          const idx = opts.findIndex((o) => o.value === sel.value);
+          return idx >= 0 ? idx : 0;
+        })(),
+        promote_costume_default: n.dataset.promoteCostumeDefault === "1",
+        costumes: (() => {
+          const sel = n.querySelector("[data-char-costume]");
+          if (!sel) return undefined;
+          const attireNow = n.querySelector("[data-char-attire]")?.value || "";
+          const accNow = n.querySelector("[data-char-accessories]")?.value || "";
+          const nameNow = String(n.querySelector("[data-char-costume-name]")?.value || "").trim();
+          const noteNow = String(n.querySelector("[data-char-costume-note]")?.value || "").trim();
+          const opts = [...sel.options].filter((o) => o.value !== "__add__");
+          let active = opts.findIndex((o) => o.value === sel.value);
+          if (active < 0) active = 0;
+          return opts.map((o, i) => ({
+            name: (i === active ? nameNow : "") || o.getAttribute("data-name") || (i === 0 ? "default" : "costume" + i),
+            note: i === active ? noteNow : (o.getAttribute("data-note") || ""),
+            attire: i === active ? attireNow : (o.getAttribute("data-attire") || ""),
+            accessories: i === active ? accNow : (o.getAttribute("data-accessories") || "")
+          }));
+        })()
       };`;
 
 const VENDOR_CHAR_TAB_GENDER_MERGE_NEEDLE =
@@ -2902,34 +3205,53 @@ const VENDOR_CHAR_TAB_GENDER_MERGE_PATCH =
   `        attire_locked: raw.attire_locked !== false,
         accessories_locked: raw.accessories_locked !== false,
         priority: Number(raw.priority || 0) || 0,
-        gender: ["girl", "boy", "other", "female", "male"].includes(String(raw.gender || raw.sex || "").toLowerCase()) ? (["female", "f", "woman"].includes(String(raw.gender || raw.sex || "").toLowerCase()) ? "girl" : ["male", "m", "man"].includes(String(raw.gender || raw.sex || "").toLowerCase()) ? "boy" : String(raw.gender || raw.sex || "").toLowerCase()) : ""
+        gender: ["girl", "boy", "other", "female", "male"].includes(String(raw.gender || raw.sex || "").toLowerCase()) ? (["female", "f", "woman"].includes(String(raw.gender || raw.sex || "").toLowerCase()) ? "girl" : ["male", "m", "man"].includes(String(raw.gender || raw.sex || "").toLowerCase()) ? "boy" : String(raw.gender || raw.sex || "").toLowerCase()) : "",
+        costumes: Array.isArray(raw.costumes) ? raw.costumes : undefined,
+        active_costume: Number(raw.active_costume || 0) || 0
       };`;
 
-/** Wear tabs: clothes+jewelry / weapons-only; keep lock toggles (default ON). */
+/** Wear tabs: clothes+jewelry / weapons-only; keep lock toggles (default ON). Costume bar above. */
 const VENDOR_CHAR_TAB_WEAR_HTML_NEEDLE =
-  `                <div class="char-wear-head"><span>옷 태그</span><label class="char-lock"><input data-char-attire-locked type="checkbox" \${r.attire_locked ? "checked" : ""}><span>고정</span></label></div>
+  `            <div class="char-wear-grid wide">
+              <div class="char-wear-col">
+                <div class="char-wear-head"><span>옷 태그</span><label class="char-lock"><input data-char-attire-locked type="checkbox" \${r.attire_locked ? "checked" : ""}><span>고정</span></label></div>
                 <textarea data-char-attire rows="2">\${h(r.attire || "")}</textarea>
               </div>
               <div class="char-wear-col">
                 <div class="char-wear-head"><span>악세사리·무기·기타</span><label class="char-lock"><input data-char-accessories-locked type="checkbox" \${r.accessories_locked ? "checked" : ""}><span>고정</span></label></div>
                 <textarea data-char-accessories rows="2">\${h(r.accessories || "")}</textarea>`;
 const VENDOR_CHAR_TAB_WEAR_HTML_PATCH =
-  `                <div class="char-wear-head"><span>옷·악세사리</span><label class="char-lock"><input data-char-attire-locked type="checkbox" \${r.attire_locked !== false ? "checked" : ""}><span>고정</span></label></div>
+  `            <div class="wide" data-nx-costume-bar style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 6px">
+              <div style="display:flex;align-items:stretch;min-width:140px;flex:1.2"><input data-char-costume-name placeholder="코스튬 이름" value="\${h((()=>{const L=Array.isArray(r.costumes)&&r.costumes.length?r.costumes:[{name:"default",note:"",attire:r.attire||"",accessories:r.accessories||""}];const i=Math.max(0,Math.min(L.length-1,Number(r.active_costume||0)||0));return(L[i]&&L[i].name)||"default";})())}" style="flex:1;min-width:0;border-top-right-radius:0;border-bottom-right-radius:0;border-right:0"><div style="position:relative;width:36px;flex:0 0 36px"><div aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border:1px solid var(--border,rgba(255,255,255,.14));border-left:0;border-radius:0 10px 10px 0;background:#0b0f18;color:#d7deea;font:700 12px/1 Segoe UI,sans-serif;pointer-events:none">▾</div><select data-char-costume title="코스튬 선택" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;color:#e8eef8;background:#0b0f18;font-size:13px;border:0;margin:0;padding:0"><option value="__add__" style="color:#e8eef8;background:#0b0f18">＋ 코스튬 추가</option>\${(Array.isArray(r.costumes)&&r.costumes.length?r.costumes:[{name:"default",note:"",attire:r.attire||"",accessories:r.accessories||""}]).map((c,i)=>\`<option value="\${i}" data-name="\${h(c&&c.name||"")}" data-note="\${h(c&&c.note||"")}" data-attire="\${h(c&&c.attire||"")}" data-accessories="\${h(c&&c.accessories||"")}" style="color:#e8eef8;background:#0b0f18" \${Number(r.active_costume||0)===i?"selected":""}>\${h((c&&c.name)||("costume"+i))}[\${i}]\${c&&c.note?" · "+h(c.note):""}</option>\`).join("")}</select></div></div>
+              <input data-char-costume-note placeholder="언제 쓸지 · 예: 수영장 / 천사 상태" value="\${h((()=>{const L=Array.isArray(r.costumes)&&r.costumes.length?r.costumes:[{name:"default",note:""}];const i=Math.max(0,Math.min(L.length-1,Number(r.active_costume||0)||0));return(L[i]&&L[i].note)||"";})())}" style="flex:1.4;min-width:140px">
+              <button type="button" class="secondary" data-char-costume-delete style="min-height:34px;padding:6px 10px;flex-shrink:0">삭제</button>
+              <button type="button" data-char-costume-slot-save style="min-height:34px;padding:6px 10px;flex-shrink:0;cursor:pointer;border:0;background:rgba(124,108,255,.22);color:#d7deea;border-radius:10px;font:600 12px Segoe UI,sans-serif">저장</button>
+              <button type="button" data-char-costume-default style="min-height:34px;padding:6px 10px;flex-shrink:0;cursor:pointer;border:0;background:rgba(124,108,255,.22);color:#d7deea;border-radius:10px;font:600 12px Segoe UI,sans-serif">기본값으로</button>
+            </div>
+            <div class="char-wear-grid wide">
+              <div class="char-wear-col">
+                <div class="char-wear-head"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">옷·악세사리</span><label class="char-lock" style="flex-shrink:0"><span>고정</span><input data-char-attire-locked type="checkbox" \${r.attire_locked !== false ? "checked" : ""}></label></div>
                 <textarea data-char-attire rows="2">\${h(r.attire || "")}</textarea>
               </div>
               <div class="char-wear-col">
-                <div class="char-wear-head"><span>무기·기타</span><label class="char-lock"><input data-char-accessories-locked type="checkbox" \${r.accessories_locked !== false ? "checked" : ""}><span>고정</span></label></div>
+                <div class="char-wear-head"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">무기·기타</span><label class="char-lock" style="flex-shrink:0"><span>고정</span><input data-char-accessories-locked type="checkbox" \${r.accessories_locked !== false ? "checked" : ""}></label></div>
                 <textarea data-char-accessories rows="2">\${h(r.accessories || "")}</textarea>`;
 
 const VENDOR_CHAR_EDIT_WEAR_ATTIRE_NEEDLE =
   `<span>옷 태그</span><label style="display:inline-flex;align-items:center;gap:4px;margin:0;color:#d7deea;font-size:11px;font-weight:550;cursor:pointer;white-space:nowrap"><input data-ce-attire-locked type="checkbox" \${n.attire_locked ? "checked" : ""} style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
 const VENDOR_CHAR_EDIT_WEAR_ATTIRE_PATCH =
-  `<span>옷·악세사리</span><label style="display:inline-flex;align-items:center;gap:4px;margin:0;color:#d7deea;font-size:11px;font-weight:550;cursor:pointer;white-space:nowrap"><input data-ce-attire-locked type="checkbox" \${n.attire_locked !== false ? "checked" : ""} style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+  `<span>옷·악세사리</span><label style="display:inline-flex;align-items:center;gap:4px;margin:0;color:#d7deea;font-size:11px;font-weight:550;cursor:pointer;white-space:nowrap;flex-shrink:0"><span>고정</span><input data-ce-attire-locked type="checkbox" \${n.attire_locked !== false ? "checked" : ""} style="width:14px;height:14px;margin:0;accent-color:#7c6cff;flex-shrink:0"></label>`;
 
 const VENDOR_CHAR_EDIT_WEAR_ACC_NEEDLE =
   `<span>악세사리·무기·기타</span><label style="display:inline-flex;align-items:center;gap:4px;margin:0;color:#d7deea;font-size:11px;font-weight:550;cursor:pointer;white-space:nowrap"><input data-ce-accessories-locked type="checkbox" \${n.accessories_locked ? "checked" : ""} style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
 const VENDOR_CHAR_EDIT_WEAR_ACC_PATCH =
-  `<span>무기·기타</span><label style="display:inline-flex;align-items:center;gap:4px;margin:0;color:#d7deea;font-size:11px;font-weight:550;cursor:pointer;white-space:nowrap"><input data-ce-accessories-locked type="checkbox" \${n.accessories_locked !== false ? "checked" : ""} style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+  `<span>무기·기타</span><label style="display:inline-flex;align-items:center;gap:4px;margin:0;color:#d7deea;font-size:11px;font-weight:550;cursor:pointer;white-space:nowrap;flex-shrink:0"><span>고정</span><input data-ce-accessories-locked type="checkbox" \${n.accessories_locked !== false ? "checked" : ""} style="width:14px;height:14px;margin:0;accent-color:#7c6cff;flex-shrink:0"></label>`;
+
+/** Insert costume editor above the edit-modal wear 2-col grid (matches pristine vendor). */
+const VENDOR_CHAR_EDIT_COSTUME_NEEDLE =
+  `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px"><div style="display:grid;gap:4px;min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:#9aa6b8;font-size:11px;font-weight:600"><span>옷 태그</span>`;
+const VENDOR_CHAR_EDIT_COSTUME_PATCH =
+  `<div data-nx-costume-bar style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 8px"><div style="display:flex;align-items:stretch;min-width:140px;flex:1.2"><input data-ce-costume-name placeholder="코스튬 이름" value="\${h((()=>{const L=Array.isArray(n.costumes)&&n.costumes.length?n.costumes:[{name:"default",note:"",attire:n.attire||"",accessories:n.accessories||""}];const i=Math.max(0,Math.min(L.length-1,Number(n.active_costume||0)||0));return(L[i]&&L[i].name)||"default";})())}" style="flex:1;min-width:0;width:100%;box-sizing:border-box;border-radius:10px 0 0 10px;border:1px solid rgba(255,255,255,.14);border-right:0;background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"><div style="position:relative;width:36px;flex:0 0 36px"><div aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14);border-left:0;border-radius:0 10px 10px 0;background:#0b0f18;color:#d7deea;font:700 12px/1 Segoe UI,sans-serif;pointer-events:none">▾</div><select data-ce-costume title="코스튬 선택" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;color:#e8eef8;background:#0b0f18;font-size:13px;border:0;margin:0;padding:0"><option value="__add__" style="color:#e8eef8;background:#0b0f18">＋ 코스튬 추가</option>\${(Array.isArray(n.costumes)&&n.costumes.length?n.costumes:[{name:"default",note:"",attire:n.attire||"",accessories:n.accessories||""}]).map((c,i)=>\`<option value="\${i}" data-name="\${h(c&&c.name||"")}" data-note="\${h(c&&c.note||"")}" data-attire="\${h(c&&c.attire||"")}" data-accessories="\${h(c&&c.accessories||"")}" style="color:#e8eef8;background:#0b0f18" \${Number(n.active_costume||0)===i?"selected":""}>\${h((c&&c.name)||("costume"+i))}[\${i}]\${c&&c.note?" · "+h(c.note):""}</option>\`).join("")}</select></div></div><input data-ce-costume-note placeholder="언제 쓸지 · 예: 수영장 / 천사 상태" value="\${h((()=>{const L=Array.isArray(n.costumes)&&n.costumes.length?n.costumes:[{name:"default",note:""}];const i=Math.max(0,Math.min(L.length-1,Number(n.active_costume||0)||0));return(L[i]&&L[i].note)||"";})())}" style="flex:1.4;min-width:140px;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"><button type="button" data-ce-costume-delete style="cursor:pointer;border:0;background:rgba(248,113,113,.2);color:#fecaca;padding:8px 10px;border-radius:10px;font:600 12px Segoe UI,sans-serif;white-space:nowrap">삭제</button><button type="button" data-ce-costume-slot-save style="cursor:pointer;border:0;background:rgba(124,108,255,.22);color:#d7deea;padding:8px 10px;border-radius:10px;font:600 12px Segoe UI,sans-serif;white-space:nowrap">저장</button><button type="button" data-ce-costume-default style="cursor:pointer;border:0;background:rgba(124,108,255,.22);color:#d7deea;padding:8px 10px;border-radius:10px;font:600 12px Segoe UI,sans-serif;white-space:nowrap">기본값으로</button></div><div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px"><div style="display:grid;gap:4px;min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:#9aa6b8;font-size:11px;font-weight:600;flex-wrap:nowrap"><span>옷 태그</span>`;
 
 const VENDOR_CHAR_EDIT_APPEARANCE_LABEL_NEEDLE = `<span>외형 태그 (girl/boy · 옷·악세사리 제외)</span>`;
 const VENDOR_CHAR_EDIT_APPEARANCE_LABEL_PATCH = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>외형 태그 (girl/boy · 옷·무기 제외)</span><button type="button" data-ce-clear-looks title="외형·옷·악세 비우기 (다음 태깅 시 재수집)" style="cursor:pointer;border:0;background:rgba(248,113,113,.2);color:#fecaca;padding:2px 9px;border-radius:8px;font:700 12px Segoe UI,sans-serif;flex-shrink:0">✕</button></div>`;
@@ -3013,6 +3335,106 @@ const VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_PATCH =
           };
         }
       });
+    }), document.querySelectorAll("[data-nx-costume-bar]").forEach((bar) => {
+      if (bar.dataset.nxCostumeBound) return;
+      bar.dataset.nxCostumeBound = "1";
+      const root = bar.closest("[data-char-scope]") || bar;
+      const sel = () => root.querySelector("[data-char-costume]");
+      const realOpts = () => [...(sel()?.options || [])].filter((o) => o.value !== "__add__");
+      const reindex = () => {
+        realOpts().forEach((o, idx) => {
+          const name = o.getAttribute("data-name") || ("costume" + idx);
+          const note = o.getAttribute("data-note") || "";
+          o.value = String(idx);
+          o.textContent = name + "[" + idx + "]" + (note ? " · " + note : "");
+        });
+      };
+      const load = () => {
+        const s = sel(), o = s?.options?.[s.selectedIndex];
+        if (!o || o.value === "__add__") return;
+        const nameEl = root.querySelector("[data-char-costume-name]"), noteEl = root.querySelector("[data-char-costume-note]");
+        const att = root.querySelector("[data-char-attire]"), acc = root.querySelector("[data-char-accessories]");
+        if (nameEl) nameEl.value = o.getAttribute("data-name") || "";
+        if (noteEl) noteEl.value = o.getAttribute("data-note") || "";
+        if (att) att.value = o.getAttribute("data-attire") || "";
+        if (acc) acc.value = o.getAttribute("data-accessories") || "";
+      };
+      const commitSlot = () => {
+        const s = sel(), o = s?.options?.[s.selectedIndex];
+        if (!o || o.value === "__add__") return false;
+        const name = String(root.querySelector("[data-char-costume-name]")?.value || "").trim() || ("costume" + o.value);
+        const note = String(root.querySelector("[data-char-costume-note]")?.value || "").trim();
+        const attire = root.querySelector("[data-char-attire]")?.value || "";
+        const accessories = root.querySelector("[data-char-accessories]")?.value || "";
+        o.setAttribute("data-name", name);
+        o.setAttribute("data-note", note);
+        o.setAttribute("data-attire", attire);
+        o.setAttribute("data-accessories", accessories);
+        o.textContent = name + "[" + o.value + "]" + (note ? " · " + note : "");
+        return true;
+      };
+      sel()?.addEventListener("change", () => {
+        const s = sel();
+        if (!s) return;
+        if (s.value === "__add__") {
+          const n = realOpts().length;
+          const o = document.createElement("option");
+          o.value = String(n);
+          o.setAttribute("data-name", "costume" + n);
+          o.setAttribute("data-note", "");
+          o.setAttribute("data-attire", "");
+          o.setAttribute("data-accessories", "");
+          o.textContent = "costume" + n + "[" + n + "]";
+          s.appendChild(o);
+          s.value = String(n);
+          const att = root.querySelector("[data-char-attire]"), acc = root.querySelector("[data-char-accessories]");
+          if (att) att.value = "";
+          if (acc) acc.value = "";
+          const nameEl = root.querySelector("[data-char-costume-name]"), noteEl = root.querySelector("[data-char-costume-note]");
+          if (nameEl) nameEl.value = "costume" + n;
+          if (noteEl) noteEl.value = "";
+          t._charsDirty = !0;
+          return;
+        }
+        load();
+      });
+      root.querySelector("[data-char-costume-slot-save]")?.addEventListener("click", (ev) => {
+        ev.preventDefault(), commitSlot(), t._charsDirty = !0;
+      });
+      root.querySelector("[data-char-costume-delete]")?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        const s = sel();
+        if (!s || s.value === "__add__") return;
+        if (realOpts().length <= 1) {
+          t.uiMessage = { type: "error", text: "코스튬은 최소 1개 필요합니다" };
+          return;
+        }
+        s.options[s.selectedIndex]?.remove();
+        reindex();
+        s.value = "0";
+        load();
+        root.dataset.promoteCostumeDefault = "";
+        t._charsDirty = !0;
+      });
+      root.querySelector("[data-char-costume-default]")?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        commitSlot();
+        const s = sel(), o = s?.options?.[s.selectedIndex];
+        if (!o || o.value === "__add__") return;
+        const addOpt = [...s.options].find((x) => x.value === "__add__");
+        o.remove();
+        if (addOpt) s.insertBefore(o, addOpt.nextSibling);
+        else s.insertBefore(o, s.firstChild);
+        o.setAttribute("data-name", "default");
+        reindex();
+        s.value = "0";
+        root.dataset.promoteCostumeDefault = "";
+        const nameEl = root.querySelector("[data-char-costume-name]");
+        if (nameEl) nameEl.value = "default";
+        ev.target && (ev.target.textContent = "기본값 표시됨");
+        load();
+        t._charsDirty = !0;
+      });
     }), document.querySelectorAll("[data-char-delete]").forEach((a) => {`;
 
 const VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE =
@@ -3030,12 +3452,12 @@ const VENDOR_CHAR_CREATE_LOCK_PRESET_PATCH =
 const VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE =
   `<span>옷 태그</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer"><input data-cc-attire-locked type="checkbox" style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
 const VENDOR_CHAR_CREATE_WEAR_ATTIRE_PATCH =
-  `<span>옷·악세사리</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer"><input data-cc-attire-locked type="checkbox" checked style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+  `<span>옷·악세사리</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0"><span>고정</span><input data-cc-attire-locked type="checkbox" checked style="width:14px;height:14px;margin:0;accent-color:#7c6cff;flex-shrink:0"></label>`;
 
 const VENDOR_CHAR_CREATE_WEAR_ACC_NEEDLE =
   `<span>악세사리·무기·기타</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer"><input data-cc-accessories-locked type="checkbox" style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
 const VENDOR_CHAR_CREATE_WEAR_ACC_PATCH =
-  `<span>무기·기타</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer"><input data-cc-accessories-locked type="checkbox" checked style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
+  `<span>무기·기타</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0"><span>고정</span><input data-cc-accessories-locked type="checkbox" checked style="width:14px;height:14px;margin:0;accent-color:#7c6cff;flex-shrink:0"></label>`;
 
 /** Tab + create share this label (2 occurrences). */
 const VENDOR_APPEARANCE_LABEL_SHARED_NEEDLE = `<span>외형 태그 (옷·악세사리 제외)</span>`;
@@ -3059,6 +3481,22 @@ const VENDOR_MOBILE_CHROME_NEEDLE =
   `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.head-actions{flex-wrap:wrap;justify-content:flex-end}}`;
 const VENDOR_MOBILE_CHROME_PATCH =
   `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.wrap{padding:12px 10px 40px;overflow-x:hidden}.head{flex-direction:column;align-items:stretch;gap:8px;padding:10px}.head-actions{display:flex;flex-wrap:wrap;justify-content:stretch;align-items:stretch;width:100%;max-width:100%;flex-shrink:1;gap:6px}.head-actions button{flex:1 1 calc(50% - 6px);min-width:0;max-width:100%}.head-actions #nx-close{flex:1 1 100%;order:99}.tabs{width:100%!important;max-width:100%;box-sizing:border-box}.tab{padding:8px 12px;font-size:13px}}`;
+
+/** Firefox: Segoe UI Variable Text + weight 560 → Hangul tofu; prefer fonts with CJK. */
+const VENDOR_FF_FONT_BODY_NEEDLE =
+  `body{min-height:100vh;margin:0;background:radial-gradient(circle at 12% 0,rgba(124,108,255,.13),transparent 32rem),var(--bg);color:var(--text);font:14px/1.6 "Segoe UI Variable Text",Pretendard,"Noto Sans KR","Segoe UI",system-ui,sans-serif}`;
+const VENDOR_FF_FONT_BODY_PATCH =
+  `body{min-height:100vh;margin:0;background:radial-gradient(circle at 12% 0,rgba(124,108,255,.13),transparent 32rem),var(--bg);color:var(--text);font:14px/1.6 "Segoe UI","Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",Pretendard,system-ui,sans-serif}`;
+
+const VENDOR_FF_FONT_TOGGLE_NEEDLE =
+  `.toggle-row{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:nowrap;line-height:1.4;color:var(--text);font-size:14px;font-weight:560;border-radius:10px;padding:4px 6px;margin-left:-6px;margin-right:-6px;cursor:help;transition:background .12s ease}`;
+const VENDOR_FF_FONT_TOGGLE_PATCH =
+  `.toggle-row{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:nowrap;line-height:1.4;color:var(--text);font-size:14px;font-weight:600;border-radius:10px;padding:4px 6px;margin-left:-6px;margin-right:-6px;cursor:help;transition:background .12s ease}
+.model-form label.toggle-row{flex-direction:row;align-items:center;justify-content:flex-start;gap:10px;text-transform:none;letter-spacing:normal;font-size:14px;font-weight:600;color:var(--text)}
+.model-form label.toggle-row span{flex:0 1 auto;min-width:0}
+.char-wear-head{flex-wrap:nowrap!important;align-items:center!important}
+.char-lock{display:inline-flex!important;flex-direction:row!important;align-items:center!important;flex-shrink:0!important;white-space:nowrap!important;gap:4px!important}
+[data-char-costume] option,[data-ce-costume] option{color:#e8eef8!important;background:#0b0f18!important}`;
 
 /** Beta: message-bubble inline illustrations at LLM `line` (click/hash timing only). */
 const VENDOR_INLINE_HELP_NEEDLE =
@@ -4116,8 +4554,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.1.12",
-    body: "에셋 NAI 태그 prepass · 트리거당 2장 · lore_keys로 이름/별칭 · compact 매칭. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
+    title: "2.1.19",
+    body: "solo/코스튬 체크 왼쪽 정렬. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
   };`;
 
 /** Top-center progress toast: one bar; show on change; hide 5s after last change. */
@@ -4795,8 +5233,15 @@ const loadVendorUi = (): string => {
     [VENDOR_CHAR_TAB_GENDER_READ_NEEDLE, 'char tab gender read'],
     [VENDOR_CHAR_TAB_GENDER_MERGE_NEEDLE, 'char tab gender merge'],
     [VENDOR_CHAR_TAB_WEAR_HTML_NEEDLE, 'char tab wear labels'],
+    [VENDOR_CHAR_EDIT_COSTUME_NEEDLE, 'char edit costume bar'],
     [VENDOR_CHAR_EDIT_WEAR_ATTIRE_NEEDLE, 'char edit wear attire'],
     [VENDOR_CHAR_EDIT_WEAR_ACC_NEEDLE, 'char edit wear accessories'],
+    [VENDOR_CHAR_EDIT_STAMP_NEEDLE, 'char edit stamp card'],
+    [VENDOR_CHAR_EDIT_STAMP_UNIFIED_NEEDLE, 'char edit stamp unified'],
+    [VENDOR_CHAR_EDIT_COSTUME_BIND_NEEDLE, 'char edit costume bind'],
+    [VENDOR_CHAR_EDIT_CARDID_A_NEEDLE, 'char edit cardId viewer'],
+    [VENDOR_CHAR_EDIT_CARDID_B_NEEDLE, 'char edit cardId sticky'],
+    [VENDOR_CHAR_EDIT_CARDID_ENTRY_NEEDLE, 'char edit cardId entry'],
     [VENDOR_CHAR_EDIT_APPEARANCE_LABEL_NEEDLE, 'char edit appearance label'],
     [VENDOR_CHAR_EDIT_CLEAR_LOOKS_NEEDLE, 'char edit clear looks'],
     [VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_NEEDLE, 'char tab clear looks btn'],
@@ -4808,6 +5253,8 @@ const loadVendorUi = (): string => {
     [VENDOR_TAB_NOWRAP_NEEDLE, 'settings tab nowrap'],
     [VENDOR_TABS_SCROLL_NEEDLE, 'settings tabs scroll'],
     [VENDOR_MOBILE_CHROME_NEEDLE, 'mobile settings chrome'],
+    [VENDOR_FF_FONT_BODY_NEEDLE, 'firefox font body'],
+    [VENDOR_FF_FONT_TOGGLE_NEEDLE, 'firefox font toggle-row'],
     [VENDOR_INLINE_HELP_NEEDLE, 'inline chat help'],
     [VENDOR_INLINE_TOGGLE_NEEDLE, 'inline chat toggle'],
     [VENDOR_INLINE_SAVE_NEEDLE, 'inline chat save'],
@@ -4961,6 +5408,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHAR_TAB_GENDER_READ_NEEDLE, VENDOR_CHAR_TAB_GENDER_READ_PATCH)
     .replace(VENDOR_CHAR_TAB_GENDER_MERGE_NEEDLE, VENDOR_CHAR_TAB_GENDER_MERGE_PATCH)
     .replace(VENDOR_CHAR_TAB_WEAR_HTML_NEEDLE, VENDOR_CHAR_TAB_WEAR_HTML_PATCH)
+    .replace(VENDOR_CHAR_EDIT_COSTUME_NEEDLE, VENDOR_CHAR_EDIT_COSTUME_PATCH)
+    .replace(VENDOR_CHAR_EDIT_COSTUME_BIND_NEEDLE, VENDOR_CHAR_EDIT_COSTUME_BIND_PATCH)
     .replace(VENDOR_CHAR_EDIT_WEAR_ATTIRE_NEEDLE, VENDOR_CHAR_EDIT_WEAR_ATTIRE_PATCH)
     .replace(VENDOR_CHAR_EDIT_WEAR_ACC_NEEDLE, VENDOR_CHAR_EDIT_WEAR_ACC_PATCH)
     .replace(VENDOR_CHAR_EDIT_APPEARANCE_LABEL_NEEDLE, VENDOR_CHAR_EDIT_APPEARANCE_LABEL_PATCH)
@@ -4974,6 +5423,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_TAB_NOWRAP_NEEDLE, VENDOR_TAB_NOWRAP_PATCH)
     .replace(VENDOR_TABS_SCROLL_NEEDLE, VENDOR_TABS_SCROLL_PATCH)
     .replace(VENDOR_MOBILE_CHROME_NEEDLE, VENDOR_MOBILE_CHROME_PATCH)
+    .replace(VENDOR_FF_FONT_BODY_NEEDLE, VENDOR_FF_FONT_BODY_PATCH)
+    .replace(VENDOR_FF_FONT_TOGGLE_NEEDLE, VENDOR_FF_FONT_TOGGLE_PATCH)
     .replace(VENDOR_INLINE_HELP_NEEDLE, VENDOR_INLINE_HELP_PATCH)
     .replace(VENDOR_INLINE_TOGGLE_NEEDLE, VENDOR_INLINE_TOGGLE_PATCH)
     .replace(VENDOR_INLINE_SAVE_NEEDLE, VENDOR_INLINE_SAVE_PATCH)

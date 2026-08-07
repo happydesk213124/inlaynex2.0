@@ -95,6 +95,7 @@
     "floating_viewer": true,
     "overlay_markers": true,
     "inline_chat_images": false,
+    "inline_chat_scale_pct": 100,
     "progress_toast": false,
     "llm_anchor_percent": true,
     "natural_base": "short",

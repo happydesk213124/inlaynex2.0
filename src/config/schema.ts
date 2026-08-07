@@ -200,6 +200,12 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   card.inline_previews = overlayOn;
   if (card.inline_chat_images == null) card.inline_chat_images = false;
   else card.inline_chat_images = card.inline_chat_images === true || card.inline_chat_images === 'true' || card.inline_chat_images === 1 || card.inline_chat_images === '1';
+  {
+    const raw = Number(card.inline_chat_scale_pct);
+    card.inline_chat_scale_pct = Number.isFinite(raw) && raw > 0
+      ? Math.max(25, Math.min(200, Math.round(raw)))
+      : 100;
+  }
   if (card.progress_toast == null) card.progress_toast = false;
   else card.progress_toast = card.progress_toast === true || card.progress_toast === 'true' || card.progress_toast === 1 || card.progress_toast === '1';
   {

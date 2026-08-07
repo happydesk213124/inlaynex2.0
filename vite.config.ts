@@ -2305,15 +2305,10 @@ const VENDOR_STICKY_LA_PATCH = `  function La() {
     const pct = typeof VC?.resolveStickyThumbPct == "function"
       ? VC.resolveStickyThumbPct({ settingsPct: n, alwaysOn, userCollapsed, editorOpen })
       : alwaysOn && !userCollapsed && !editorOpen ? Math.max(0, n) : 0;
-    const envelope = typeof VC?.stickyThumbBoxFromPct == "function"
+    // Envelope only — per-image aspect is applied at the sticky layout site.
+    return typeof VC?.stickyThumbBoxFromPct == "function"
       ? VC.stickyThumbBoxFromPct(pct, at, ka)
       : { w: Math.max(0, Math.round(at * pct / 100)), h: Math.max(0, Math.round(ka * pct / 100)), pct };
-    // Fit sticky frame to current NAI aspect (portrait/landscape/square) inside the envelope.
-    const nai = t.backendSettings?.nai || {};
-    const fitted = typeof VC?.fitBoxInside == "function"
-      ? VC.fitBoxInside(envelope.w, envelope.h, nai.width, nai.height)
-      : { w: envelope.w, h: envelope.h };
-    return { w: fitted.w, h: fitted.h, pct: envelope.pct };
   }`;
 
 /** Sticky/viewer thumbs: show full image (contain) for portrait/landscape/square. */
@@ -2331,6 +2326,54 @@ const VENDOR_STICKY_SHELL_BG_PATCH = `"border:none",
 /** Sticky marker create: empty placeholder must stay transparent like composeStickyThumbHtml. */
 const VENDOR_STICKY_EMPTY_NEEDLE = '`<div style="width:100%;height:100%;background:#0b0f18"></div>`';
 const VENDOR_STICKY_EMPTY_PATCH = '`<div style="width:100%;height:100%;background:transparent"></div>`';
+
+/**
+ * Size sticky frame to the active image (data-URL header probe), not global NAI
+ * settings — so landscape/portrait/square each get a matching frame, no crop.
+ */
+const VENDOR_STICKY_SIZE_NEEDLE = `    const p = Nt(), mobileOn = mobilePinOn(), m = La(), cornerNow = Ea();`;
+const VENDOR_STICKY_SIZE_PATCH = `    const p = Nt(), mobileOn = mobilePinOn(), cornerNow = Ea();
+    const env = La();
+    const activeMk = l >= 0 ? e.markers[l] : null;
+    const thumbSrcNow = typeof activeMk?._thumbSrc == "string" ? activeMk._thumbSrc : "";
+    const probed = typeof VC?.probeDataUrlPixelSize == "function" ? VC.probeDataUrlPixelSize(thumbSrcNow) : null;
+    const naiNow = t.backendSettings?.nai || {};
+    if (probed?.w && probed?.h && activeMk) activeMk._imgW = probed.w, activeMk._imgH = probed.h;
+    const vpFitW = typeof window < "u" && window.innerWidth || 1200, vpFitH = typeof window < "u" && window.innerHeight || 800;
+    const sized = typeof VC?.stickyThumbSizeForImage == "function"
+      ? VC.stickyThumbSizeForImage(env.w, env.h, activeMk?._imgW, activeMk?._imgH, naiNow.width, naiNow.height, { width: vpFitW, height: vpFitH, pad: 16 })
+      : typeof VC?.fitBoxInside == "function"
+        ? VC.fitBoxInside(Math.max(env.w, env.h), Math.max(env.w, env.h), activeMk?._imgW || naiNow.width, activeMk?._imgH || naiNow.height)
+        : { w: env.w, h: env.h };
+    const m = { w: sized.w, h: sized.h, pct: env.pct };`;
+
+const VENDOR_STICKY_SKIP_SIZE_NEEDLE = `e._lastThumbPct === m.pct && e._lastInlineOn === p && e._lastOverlayX === overlayXNow && e._lastOverlayY === overlayYNow && e._lastMobileOn === mobileOn && e._lastCorner === cornerNow && e._lastMobilePinnedId === activeIdNow && e._lastHideThumbOff === hideThumbOffscreen && e._lastStickyUserHidden === keepHidden && e._lastVpW === vpW && e._lastVpH === vpH) return;`;
+const VENDOR_STICKY_SKIP_SIZE_PATCH = `e._lastThumbPct === m.pct && e._lastThumbW === m.w && e._lastThumbH === m.h && e._lastInlineOn === p && e._lastOverlayX === overlayXNow && e._lastOverlayY === overlayYNow && e._lastMobileOn === mobileOn && e._lastCorner === cornerNow && e._lastMobilePinnedId === activeIdNow && e._lastHideThumbOff === hideThumbOffscreen && e._lastStickyUserHidden === keepHidden && e._lastVpW === vpW && e._lastVpH === vpH) return;`;
+
+const VENDOR_STICKY_ASSIGN_SIZE_NEEDLE = `e._lastThumbPct = m.pct, e._lastInlineOn = p, e._lastOverlayX = overlayXNow, e._lastOverlayY = overlayYNow, e._lastMobileOn = mobileOn, e._lastCorner = cornerNow, e._lastHideThumbOff = hideThumbOffscreen, e._lastStickyUserHidden = keepHidden, e._lastVpW = vpW, e._lastVpH = vpH;`;
+const VENDOR_STICKY_ASSIGN_SIZE_PATCH = `e._lastThumbPct = m.pct, e._lastThumbW = m.w, e._lastThumbH = m.h, e._lastInlineOn = p, e._lastOverlayX = overlayXNow, e._lastOverlayY = overlayYNow, e._lastMobileOn = mobileOn, e._lastCorner = cornerNow, e._lastHideThumbOff = hideThumbOffscreen, e._lastStickyUserHidden = keepHidden, e._lastVpW = vpW, e._lastVpH = vpH;`;
+
+/** Scroll flash: keep frame aspect in sync when the active shot changes before Ht. */
+const VENDOR_STICKY_FLASH_SIZE_NEEDLE = `        if (flashGen !== e._flashGen) return;
+        await next.thumb.setStyleAttribute(showStyle);`;
+const VENDOR_STICKY_FLASH_SIZE_PATCH = `        if (flashGen !== e._flashGen) return;
+        {
+          const envFlash = La();
+          const probedFlash = typeof VC?.probeDataUrlPixelSize == "function" ? VC.probeDataUrlPixelSize(next._thumbSrc) : null;
+          const naiFlash = t.backendSettings?.nai || {};
+          if (probedFlash?.w && probedFlash?.h) next._imgW = probedFlash.w, next._imgH = probedFlash.h;
+          const sizedFlash = typeof VC?.stickyThumbSizeForImage == "function"
+            ? VC.stickyThumbSizeForImage(envFlash.w, envFlash.h, next._imgW, next._imgH, naiFlash.width, naiFlash.height, {
+              width: typeof window < "u" && window.innerWidth || 1200,
+              height: typeof window < "u" && window.innerHeight || 800,
+              pad: 16
+            })
+            : { w: envFlash.w, h: envFlash.h };
+          const sizedStyle = typeof VC?.stickyThumbStyleWithSize == "function"
+            ? VC.stickyThumbStyleWithSize(showStyle, sizedFlash.w, sizedFlash.h)
+            : showStyle;
+          await next.thumb.setStyleAttribute(sizedStyle);
+        }`;
 
 const VENDOR_EXPLORER_CARD_IMG_NEEDLE =
   '.explorer-card img{width:100%;aspect-ratio:3/4;object-fit:cover;display:block;background:#0b0f18;pointer-events:none}';
@@ -3503,7 +3546,8 @@ const VENDOR_INLINE_HELP_NEEDLE =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },`;
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },
-    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 ±1(역할 무관). 나머지는 지워서 메모리를 막습니다. 크기 ≤말풍선 78%(가로는 폭 기준, 세로는 높이 상한)." },
+    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 ±1(역할 무관). 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
+    "nx-inline-chat-scale": { title: "말풍선 삽화 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
     "nx-progress-toast": { title: "진행 토스트", body: "토스트 노드는 항상 두고, 진행·작업명이 바뀌면 보이게 / 5초간 내용 변화 없으면 눈에서만 숨깁니다. 인덱싱=민트, 그 외=보라. 클릭하면 당장 숨깁니다." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
@@ -3511,6 +3555,9 @@ const VENDOR_INLINE_TOGGLE_NEEDLE =
 const VENDOR_INLINE_TOGGLE_PATCH =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>
             <label class="toggle-row" data-nx-help-id="nx-inline-chat"><input type="checkbox" id="nx-inline-chat" \${i.inline_chat_images ? "checked" : ""}><span>말풍선 삽화 (beta)</span></label>
+            <label data-nx-help-id="nx-inline-chat-scale"><span>말풍선 삽화 배율 (%)</span>
+              <input id="nx-inline-chat-scale" type="number" min="25" max="200" step="5" value="\${h(i.inline_chat_scale_pct ?? 100)}">
+            </label>
             <label class="toggle-row" data-nx-help-id="nx-progress-toast"><input type="checkbox" id="nx-progress-toast" \${i.progress_toast ? "checked" : ""}><span>진행 토스트</span></label>`;
 
 const VENDOR_INLINE_SAVE_NEEDLE =
@@ -3518,6 +3565,7 @@ const VENDOR_INLINE_SAVE_NEEDLE =
 const VENDOR_INLINE_SAVE_PATCH =
   `      overlay_markers: ee("nx-overlay"),
       inline_chat_images: ee("nx-inline-chat"),
+      inline_chat_scale_pct: Math.max(25, Math.min(200, Math.round(Ne(N("nx-inline-chat-scale"), 100)) || 100)),
       progress_toast: ee("nx-progress-toast"),`;
 
 const VENDOR_DE_STRIP_NEEDLE =
@@ -3625,8 +3673,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     };
     try {
       const wantIds = placements.map((p) => String(p.cardId || "")).filter(Boolean).sort();
+      const scaleNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
       let prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
-      if (prev.length === wantIds.length) {
+      if (prev.length === wantIds.length && t._inlinePaintScale === scaleNow) {
         if (!wantIds.length) {
           y("info", "inline.inject.skip", "shots=0 already");
           return;
@@ -3765,7 +3814,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         } catch {
         }
-        const markerHtml = VC.markerBlockHtml(shot);
+        const markerHtml = VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100);
         if (!markerHtml) continue;
         try {
           const tmp = await H(doc, "div", { html: markerHtml });
@@ -3781,6 +3830,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
       }
       y("info", "inline.inject", \`shots=\${placements.length} placed=\${placed} pending=\${placements.filter((p) => p.pending).length}\`);
+      t._inlinePaintScale = scaleNow;
     } catch (err) {
       y("warn", "inline.inject.fail", z(err?.message || err, 120));
     }
@@ -4755,7 +4805,79 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }
   }`;
 
-/** Reroll fake-progress: always call Se (even at 88% cap) so toast heartbeats keep it visible. */
+/** After single-image / all-image reroll, refresh bubble illustrations (gallery alone is not enough). */
+const VENDOR_REROLL_IMAGE_INLINE_NEEDLE =
+  `        d.index = nn >= 0 ? nn : Math.max(0, Math.min(_, Math.max(0, J.length - 1))), await T(), await C.setTextContent(\`이미지 리롤 완료 · \${String(B?.card?.id || A.id).slice(0, 8)}\`), y("info", "regen.image", \`P\${O} \${String(A.id).slice(0, 8)}→\${String(B?.card?.id || "").slice(0, 8)}\`);`;
+const VENDOR_REROLL_IMAGE_INLINE_PATCH =
+  `        d.index = nn >= 0 ? nn : Math.max(0, Math.min(_, Math.max(0, J.length - 1))), await T();
+        try {
+          await refreshSelectedInlineImages();
+        } catch {
+        }
+        await C.setTextContent(\`이미지 리롤 완료 · \${String(B?.card?.id || A.id).slice(0, 8)}\`), y("info", "regen.image", \`P\${O} \${String(A.id).slice(0, 8)}→\${String(B?.card?.id || "").slice(0, 8)}\`);`;
+
+const VENDOR_REROLL_ALL_INLINE_NEEDLE =
+  `          onShot: async (i) => {
+            d.index = i;
+            await T();
+            await C.setTextContent(\`\${i + 1}/\${targets0.length} 교체 완료\`);
+          }
+        }), { shotCount: targets0.length });
+        scope?.sessionId && await ce(scope.sessionId, !0);
+        try {
+          await he();
+        } catch {
+        }
+        const failCount = Array.isArray(B?.failed) ? B.failed.length : 0;
+        d.index = 0, await T(), await C.setTextContent(failCount ? \`전체 재생성 부분 실패 · 성공 \${Number(B?.count || 0)} / 실패 \${failCount}\` : \`전체 재생성 완료 · \${Number(B?.count || 0)}장\`), y("info", "regen.all", \`count=\${B?.count || 0} failed=\${failCount} hash=\${String(A.hash || "").slice(0, 8)}\`);`;
+const VENDOR_REROLL_ALL_INLINE_PATCH =
+  `          onShot: async (i) => {
+            d.index = i;
+            await T();
+            try {
+              await refreshSelectedInlineImages();
+            } catch {
+            }
+            await C.setTextContent(\`\${i + 1}/\${targets0.length} 교체 완료\`);
+          }
+        }), { shotCount: targets0.length });
+        scope?.sessionId && await ce(scope.sessionId, !0);
+        try {
+          await he();
+        } catch {
+        }
+        const failCount = Array.isArray(B?.failed) ? B.failed.length : 0;
+        d.index = 0, await T();
+        try {
+          await refreshSelectedInlineImages();
+        } catch {
+        }
+        await C.setTextContent(failCount ? \`전체 재생성 부분 실패 · 성공 \${Number(B?.count || 0)} / 실패 \${failCount}\` : \`전체 재생성 완료 · \${Number(B?.count || 0)}장\`), y("info", "regen.all", \`count=\${B?.count || 0} failed=\${failCount} hash=\${String(A.hash || "").slice(0, 8)}\`);`;
+
+/** Tag regenerate (force): clear bubble illustrations as soon as cards are unlinked. */
+const VENDOR_FORCE_REGEN_INLINE_NEEDLE =
+  `      if (t.galleryUi?.renderGal) try {
+        await t.galleryUi.renderGal();
+      } catch {
+      }
+    }
+    const u = {
+      session_id: e.sessionId,`;
+const VENDOR_FORCE_REGEN_INLINE_PATCH =
+  `      if (t.galleryUi?.renderGal) try {
+        await t.galleryUi.renderGal();
+      } catch {
+      }
+      try {
+        t._inlineLinkedIds = "";
+        t._inlinePending = null;
+        await refreshSelectedInlineImages();
+      } catch {
+      }
+    }
+    const u = {
+      session_id: e.sessionId,`;
+
 const VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE = `    const a = setInterval(() => {
       if (!t.jobProgress || t.jobProgress.jobId !== "reroll") return;
       const r = Number(t.jobProgress.progress) || 12;
@@ -5188,6 +5310,10 @@ const loadVendorUi = (): string => {
   for (const [needle, label] of [
     [VENDOR_STICKY_TAKE_NEEDLE, 'sticky takePooledMarker'],
     [VENDOR_STICKY_LA_NEEDLE, 'sticky La()'],
+    [VENDOR_STICKY_SIZE_NEEDLE, 'sticky size from image'],
+    [VENDOR_STICKY_SKIP_SIZE_NEEDLE, 'sticky skip thumb w/h'],
+    [VENDOR_STICKY_ASSIGN_SIZE_NEEDLE, 'sticky assign thumb w/h'],
+    [VENDOR_STICKY_FLASH_SIZE_NEEDLE, 'sticky flash resize'],
     [VENDOR_STICKY_KEEP_NEEDLE, 'sticky keepHidden'],
     [VENDOR_STICKY_SHOW_NEEDLE, 'sticky showStickyImg'],
     [VENDOR_STICKY_SKIP_NEEDLE, 'sticky skip keepHidden'],
@@ -5261,6 +5387,9 @@ const loadVendorUi = (): string => {
     [VENDOR_PROGRESS_TOAST_FN_NEEDLE, 'progress toast sync fn'],
     [VENDOR_PROGRESS_TOAST_PAINT_NEEDLE, 'progress toast paintStatus'],
     [VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE, 'reroll toast heartbeat'],
+    [VENDOR_REROLL_IMAGE_INLINE_NEEDLE, 'reroll image inline refresh'],
+    [VENDOR_REROLL_ALL_INLINE_NEEDLE, 'reroll all inline refresh'],
+    [VENDOR_FORCE_REGEN_INLINE_NEEDLE, 'force regen inline clear'],
     [VENDOR_DE_STRIP_NEEDLE, 'De strip inline markers'],
     [VENDOR_INLINE_INJECT_FN_NEEDLE, 'inline inject fn'],
     [VENDOR_INLINE_CALL_NEEDLE, 'inline inject call'],
@@ -5372,6 +5501,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_PRESET_VIBE_EVT_NEEDLE, VENDOR_PRESET_VIBE_EVT_PATCH)
     .replace(VENDOR_STICKY_TAKE_NEEDLE, VENDOR_STICKY_TAKE_PATCH)
     .replace(VENDOR_STICKY_LA_NEEDLE, VENDOR_STICKY_LA_PATCH)
+    .replace(VENDOR_STICKY_SIZE_NEEDLE, VENDOR_STICKY_SIZE_PATCH)
+    .replace(VENDOR_STICKY_SKIP_SIZE_NEEDLE, VENDOR_STICKY_SKIP_SIZE_PATCH)
+    .replace(VENDOR_STICKY_ASSIGN_SIZE_NEEDLE, VENDOR_STICKY_ASSIGN_SIZE_PATCH)
+    .replace(VENDOR_STICKY_FLASH_SIZE_NEEDLE, VENDOR_STICKY_FLASH_SIZE_PATCH)
     .replace(VENDOR_STICKY_KEEP_NEEDLE, VENDOR_STICKY_KEEP_PATCH)
     .replace(VENDOR_STICKY_SHOW_NEEDLE, VENDOR_STICKY_SHOW_PATCH)
     .replace(VENDOR_STICKY_SKIP_NEEDLE, VENDOR_STICKY_SKIP_PATCH)
@@ -5431,6 +5564,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_PROGRESS_TOAST_FN_NEEDLE, VENDOR_PROGRESS_TOAST_FN_PATCH)
     .replace(VENDOR_PROGRESS_TOAST_PAINT_NEEDLE, VENDOR_PROGRESS_TOAST_PAINT_PATCH)
     .replace(VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE, VENDOR_REROLL_TOAST_HEARTBEAT_PATCH)
+    .replace(VENDOR_REROLL_IMAGE_INLINE_NEEDLE, VENDOR_REROLL_IMAGE_INLINE_PATCH)
+    .replace(VENDOR_REROLL_ALL_INLINE_NEEDLE, VENDOR_REROLL_ALL_INLINE_PATCH)
+    .replace(VENDOR_FORCE_REGEN_INLINE_NEEDLE, VENDOR_FORCE_REGEN_INLINE_PATCH)
     .replace(VENDOR_DE_STRIP_NEEDLE, VENDOR_DE_STRIP_PATCH)
     .replace(VENDOR_INLINE_INJECT_FN_NEEDLE, VENDOR_INLINE_INJECT_FN_PATCH)
     .replace(VENDOR_INLINE_CALL_NEEDLE, VENDOR_INLINE_CALL_PATCH)

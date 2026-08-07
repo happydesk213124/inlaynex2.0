@@ -2400,28 +2400,222 @@ const VENDOR_STICKY_HT_NEAR_PATCH = `    const markerPcts = e.markers.map((T) =>
     }
     const p = Nt(), mobileOn = mobilePinOn(), m = La(), cornerNow = Ea();`;
 
+/**
+ * pointermove hot path (hover preview removed):
+ * - store pointer XY
+ * - click/longpress gesture movement
+ * - 말풍선 삽화: nearest-shot sticky, Ht only when segment changes
+ */
 const VENDOR_INLINE_PTR_STICKY_NEEDLE = `    }, l = async (f) => {
       if (typeof f?.clientX == "number") t._pointerClientX = f.clientX;
       if (typeof f?.clientY == "number") t._pointerClientY = f.clientY;
-      if (t.uiOpen || t._hostChromeBlocked) return;`;
+      if (t.uiOpen || t._hostChromeBlocked) return;
+      if (pointerGesture && typeof f.clientX == "number" && typeof f.clientY == "number") {
+        pointerGesture.movement = Math.max(pointerGesture.movement || 0, Math.hypot(f.clientX - pointerGesture.x, f.clientY - pointerGesture.y));
+      }
+      if (mobilePress && typeof f.clientX == "number" && typeof f.clientY == "number" && Math.hypot(f.clientX - mobilePress.x, f.clientY - mobilePress.y) > 8) cancelMobilePress();
+      const x = t.overlayUi?.markers || [];
+      if (!x.length || !hoverPreviewOn()) {
+        await s();
+        return;
+      }
+      const I = f.clientX, R = f.clientY;
+      if (!(typeof I != "number" || typeof R != "number")) {
+        for (const g of x.filter((F) => F.active || F.mini)) if (await c(g, I, R)) {
+          await i(g.card, I, R);
+          return;
+        }
+        await s();
+      }
+    }, p = async (f) => {`;
 const VENDOR_INLINE_PTR_STICKY_PATCH = `    }, l = async (f) => {
       if (typeof f?.clientX == "number") t._pointerClientX = f.clientX;
       if (typeof f?.clientY == "number") t._pointerClientY = f.clientY;
-      // 말풍선 삽화: sticky always-image tracks shot nearest the pointer (only when overlay visually on).
+      // 말풍선 삽화: nearest-shot sticky — skip Ht only when segment is unchanged.
       if (t.backendSettings?.card?.inline_chat_images === !0 && !t.uiOpen && (typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) && t.overlayUi?.markers?.length) {
         if (!t._inlineStickyPtrRaf) {
           const kick = () => {
             t._inlineStickyPtrRaf = 0;
             try {
+              const ov = t.overlayUi;
+              if (!ov?.markers?.length) return;
+              // _liveScrollY is only written on scroll — seed it so peek works before first scroll.
+              let scrollY = Number(ov._liveScrollY);
+              if (!Number.isFinite(scrollY) && typeof window < "u") {
+                scrollY = window.scrollY || window.pageYOffset || 0;
+                ov._liveScrollY = scrollY;
+              }
+              let want = null;
+              if (ov._pinRectCache && ov._pinRectAtScrollY != null && Number.isFinite(scrollY)) {
+                const base = ov._pinRectCache, delta = scrollY - Number(ov._pinRectAtScrollY);
+                const est = {
+                  top: Number(base.top) - delta,
+                  bottom: Number(base.bottom) - delta,
+                  left: Number(base.left) || 0,
+                  right: Number(base.right) || 0,
+                  width: Number(base.width) || 0,
+                  height: Number(base.height) || 0
+                };
+                const vh = viewerViewport().vh, band = 0.5, VC = globalThis.__INLAY_VIEWER_CORE__;
+                let reading = typeof VC?.readingPercentInMessage == "function" ? VC.readingPercentInMessage(est, vh, band) : na(est, vh, band);
+                if (reading == null) reading = typeof VC?.clampReadingPercent == "function" ? VC.clampReadingPercent(est, vh, band) : cn(est, vh, band);
+                if (reading != null && Number.isFinite(Number(reading))) {
+                  const markerPcts = ov.markers.map((T) => Number(T.yPercent) || 0);
+                  want = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, reading) : dn(markerPcts, reading);
+                  if (typeof VC?.stickySegmentForInlineChat == "function") {
+                    want = VC.stickySegmentForInlineChat({
+                      inlineChatOn: !0,
+                      pointerX: t._pointerClientX,
+                      pointerY: t._pointerClientY,
+                      messageRect: est,
+                      markerPercents: markerPcts,
+                      markerCenters: ov.markers.map((T) => T._inlineCenter || null),
+                      fallbackSegment: want
+                    });
+                  }
+                }
+              }
+              const cur = ov._flashSeg != null ? ov._flashSeg : ov.activeSegment;
+              const changed = typeof VC?.stickySegChanged == "function" ? VC.stickySegChanged(cur, want) : want != null && want !== cur;
+              if (!changed) return;
               stickyFlashOnScroll();
             } catch {
             }
-            scheduleStickySync();
           };
           t._inlineStickyPtrRaf = typeof requestAnimationFrame == "function" ? requestAnimationFrame(kick) : (kick(), 0);
         }
       }
-      if (t.uiOpen || t._hostChromeBlocked) return;`;
+      if (t.uiOpen || t._hostChromeBlocked) return;
+      if (pointerGesture && typeof f.clientX == "number" && typeof f.clientY == "number") {
+        pointerGesture.movement = Math.max(pointerGesture.movement || 0, Math.hypot(f.clientX - pointerGesture.x, f.clientY - pointerGesture.y));
+      }
+      if (mobilePress && typeof f.clientX == "number" && typeof f.clientY == "number" && Math.hypot(f.clientX - mobilePress.x, f.clientY - mobilePress.y) > 8) cancelMobilePress();
+      // Sticky pin hover preview removed — keep preview layer hidden.
+      if (t._hoverPreviewCardId) s().catch(() => {});
+    }, p = async (f) => {`;
+
+/** Scroll: active = scrollY + flash only; settle = Ht + message track. */
+const VENDOR_SCROLL_PHASE_NEEDLE = `    }, u = () => {
+      if (t.uiOpen) return;
+      // Capture native scrollY synchronously — SafeDOM rects are too slow for sticky image swaps.
+      try {
+        if (typeof window < "u" && t.overlayUi) t.overlayUi._liveScrollY = window.scrollY || window.pageYOffset || 0;
+      } catch {
+      }
+      stickyFlashOnScroll();
+      // Scroll path: coalesce full sticky correct to 1 rAF; select only after short idle.
+      scheduleStickySync(), scheduleScrollTrack();
+    }, onScrollEnd = () => {
+      if (t.uiOpen) return;
+      try {
+        if (typeof window < "u" && t.overlayUi) t.overlayUi._liveScrollY = window.scrollY || window.pageYOffset || 0;
+      } catch {
+      }
+      // End of gesture: correct with a real pin rect (not just the estimate).
+      scheduleStickySync(!0), settleScrollTrackNow();
+    }, onUserScrollStart = u, b = await fe(n, "scroll", u, !0), C = await fe(e, "scroll", u, !0), S = await fe(e, "scrollend", onScrollEnd, !0);
+    let E = !1;
+    if (typeof window < "u") try {
+      window.addEventListener("scroll", u, !0), window.addEventListener("scrollend", onScrollEnd, !0), window.addEventListener("wheel", onUserScrollStart, {
+        capture: !0,
+        passive: !0
+      }), window.addEventListener("resize", u), E = !0;
+    } catch {
+      try {
+        window.addEventListener("scroll", u), window.addEventListener("wheel", onUserScrollStart), window.addEventListener("resize", u), E = !0;
+      } catch {
+      }
+    }`;
+const VENDOR_SCROLL_PHASE_PATCH = `    }, captureLiveScrollY = () => {
+      try {
+        if (typeof window < "u" && t.overlayUi) t.overlayUi._liveScrollY = window.scrollY || window.pageYOffset || 0;
+      } catch {
+      }
+    }, ensureScrollPhaseBus = () => {
+      if (t._scrollPhaseBus) return t._scrollPhaseBus;
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      const make = VC?.createScrollPhaseBus;
+      const settleMs = 160;
+      const onActive = () => {
+        if (t.uiOpen) return;
+        captureLiveScrollY();
+        stickyFlashOnScroll();
+      };
+      const onSettle = () => {
+        if (t.uiOpen) return;
+        captureLiveScrollY();
+        scheduleStickySync(!0);
+        settleScrollTrackNow();
+      };
+      t._scrollPhaseBus = typeof make == "function"
+        ? make({ settleDelayMs: settleMs, onActive, onSettle })
+        : {
+          onScrollSample() {
+            onActive();
+            if (t._scrollPhaseTimer) clearTimeout(t._scrollPhaseTimer);
+            t._scrollPhaseTimer = setTimeout(() => {
+              t._scrollPhaseTimer = null, onSettle();
+            }, settleMs);
+          },
+          onScrollEnd() {
+            onActive();
+            if (t._scrollPhaseTimer) clearTimeout(t._scrollPhaseTimer);
+            t._scrollPhaseTimer = null, onSettle();
+          },
+          cancel() {
+            if (t._scrollPhaseTimer) clearTimeout(t._scrollPhaseTimer);
+            t._scrollPhaseTimer = null;
+          }
+        };
+      return t._scrollPhaseBus;
+    }, u = () => {
+      if (t.uiOpen) return;
+      ensureScrollPhaseBus().onScrollSample();
+    }, onScrollEnd = () => {
+      if (t.uiOpen) return;
+      ensureScrollPhaseBus().onScrollEnd();
+    }, onUserScrollStart = u, b = await fe(n, "scroll", u, !0), C = await fe(e, "scroll", u, !0), S = await fe(e, "scrollend", onScrollEnd, !0);
+    let E = !1;
+    if (typeof window < "u") try {
+      window.addEventListener("scroll", u, !0), window.addEventListener("scrollend", onScrollEnd, !0), window.addEventListener("resize", onScrollEnd), E = !0;
+    } catch {
+      try {
+        window.addEventListener("scroll", u), window.addEventListener("resize", onScrollEnd), E = !0;
+      } catch {
+      }
+    }`;
+
+const VENDOR_SCROLL_TRACK_VH_NEEDLE = `      const o = typeof window < "u" && window.innerHeight || 800;
+      const py = Number(t._pointerClientY), px = Number(t._pointerClientX);
+      const anchorY = Number.isFinite(py) ? py : o * 0.5;
+      const anchorX = Number.isFinite(px) ? px : null;`;
+const VENDOR_SCROLL_TRACK_VH_PATCH = `      const o = viewerViewport().vh || (typeof window < "u" && window.innerHeight) || 800;
+      const py = Number(t._pointerClientY), px = Number(t._pointerClientX);
+      const anchorY = o * 0.5;
+      const anchorX = Number.isFinite(px) ? px : null;`;
+
+/** Force-disable sticky pin hover preview (feature removed). */
+const VENDOR_HOVER_PREVIEW_OFF_NEEDLE = `  function hoverPreviewOn() {
+    return (t.backendSettings?.card || {}).hover_preview !== !1;
+  }`;
+const VENDOR_HOVER_PREVIEW_OFF_PATCH = `  function hoverPreviewOn() {
+    return !1;
+  }`;
+
+const VENDOR_HOVER_PREVIEW_TOGGLE_NEEDLE =
+  `            <label class="toggle-row" data-nx-help-id="nx-hover-preview"><input type="checkbox" id="nx-hover-preview" \${i.hover_preview !== !1 ? "checked" : ""}><span>스티키 핀 호버 미리보기</span></label>
+`;
+const VENDOR_HOVER_PREVIEW_TOGGLE_PATCH = ``;
+
+const VENDOR_HOVER_ANCHOR_NEEDLE =
+  `            <label data-nx-help-id="nx-hover-anchor"><span>호버 미리보기 기준</span>
+              <select id="nx-hover-anchor">
+                <option value="screen" \${(i.hover_preview_anchor || "screen") === "screen" ? "selected" : ""}>화면 기준</option>
+                <option value="mouse" \${i.hover_preview_anchor === "mouse" ? "selected" : ""}>마우스 기준</option>
+              </select>
+            </label>
+`;
+const VENDOR_HOVER_ANCHOR_PATCH = ``;
 
 const VENDOR_STICKY_LA_NEEDLE = `  function La() {
     const e = t.backendSettings?.card || {};
@@ -4639,7 +4833,8 @@ const VENDOR_INLINE_POLL_NEEDLE =
           t._lastShotDone = i;
           const prevIds = (t.gallery || []).map((card) => String(card?.id || ""));
           try {
-            if (await ce(e), t.selectedMessage) {`;
+            if (await ce(e), t.selectedMessage) {
+              const l = linkedCards(t.selectedMessage);`;
 const VENDOR_INLINE_POLL_PATCH =
   `        const i = Number(r.shot_done ?? 0), s = !!(a.state && a.state !== t.lastJobState), c = i !== Number(t._lastShotDone ?? -1);
         const VC = globalThis.__INLAY_VIEWER_CORE__;
@@ -4656,7 +4851,15 @@ const VENDOR_INLINE_POLL_PATCH =
           const prevIds = (t.gallery || []).map((card) => String(card?.id || ""));
           try {
             // shot_done tick: bypass 2.2s gallery cache so new hash-linked cards are visible.
-            if (await ce(e, !!c), t.selectedMessage) {`;
+            if (await ce(e, !!c), t.selectedMessage) {
+              // Image arrived while selection still on this bubble → one click-like relink/paint.
+              if (c || a.state === "done") {
+                try {
+                  await relinkSelectedMessageHash(a.state === "done" ? "job.done" : "job.shot");
+                } catch {
+                }
+              }
+              const l = linkedCards(t.selectedMessage);`;
 
 const VENDOR_INLINE_POLL_REFRESH_NEEDLE =
   `          if (idsChanged) {
@@ -4989,7 +5192,10 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
   // Streaming finish (last chunk + 0.5s) / chat output / afterRequest → rebind selected msg hash.
   // Independent of auto_gen_on_reply — fixes "must click away and back to see images".
   async function relinkSelectedMessageHash(source) {
-    if (t._hashRelinkRunning) return;
+    if (t._hashRelinkRunning) {
+      t._hashRelinkQueued = source;
+      return;
+    }
     t._hashRelinkRunning = !0;
     try {
       const o = await ve();
@@ -5041,9 +5247,20 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       }
       scheduleOverlayPlace(80);
       await onSelectionChanged("content");
+      try {
+        await refreshSelectedInlineImages();
+      } catch {
+      }
       y("info", "hashRelink.ok", \`src=\${source} cards=\${linked.length} hash=\${String(msg.hash || "").slice(0, 8)}\`);
     } finally {
       t._hashRelinkRunning = !1;
+      if (t._hashRelinkQueued) {
+        const q = t._hashRelinkQueued;
+        t._hashRelinkQueued = null;
+        relinkSelectedMessageHash(q).catch((err) => {
+          y("error", "hashRelink.fail", err?.message || err);
+        });
+      }
     }
   }
   function scheduleHashRelinkAfterReply(source) {
@@ -6969,6 +7186,11 @@ const loadVendorUi = (): string => {
     [VENDOR_STICKY_FLASH_NEAR_NEEDLE, 'sticky flash nearest pointer'],
     [VENDOR_STICKY_HT_NEAR_NEEDLE, 'sticky Ht nearest pointer'],
     [VENDOR_INLINE_PTR_STICKY_NEEDLE, 'inline pointer sticky sync'],
+    [VENDOR_SCROLL_PHASE_NEEDLE, 'scroll phase bus'],
+    [VENDOR_SCROLL_TRACK_VH_NEEDLE, 'scroll track viewport mid'],
+    [VENDOR_HOVER_PREVIEW_OFF_NEEDLE, 'hover preview force off'],
+    [VENDOR_HOVER_PREVIEW_TOGGLE_NEEDLE, 'hover preview toggle remove'],
+    [VENDOR_HOVER_ANCHOR_NEEDLE, 'hover preview anchor remove'],
     [VENDOR_INLINE_PCT_HELP_NEEDLE, 'inline pct help 0%'],
     [VENDOR_INLINE_PCT_HTML_NEEDLE, 'inline pct html min 0'],
     [VENDOR_INLINE_PCT_SAVE_NEEDLE, 'inline pct save min 0'],
@@ -7222,6 +7444,11 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_STICKY_FLASH_NEAR_NEEDLE, VENDOR_STICKY_FLASH_NEAR_PATCH)
     .replace(VENDOR_STICKY_HT_NEAR_NEEDLE, VENDOR_STICKY_HT_NEAR_PATCH)
     .replace(VENDOR_INLINE_PTR_STICKY_NEEDLE, VENDOR_INLINE_PTR_STICKY_PATCH)
+    .replace(VENDOR_SCROLL_PHASE_NEEDLE, VENDOR_SCROLL_PHASE_PATCH)
+    .replace(VENDOR_SCROLL_TRACK_VH_NEEDLE, VENDOR_SCROLL_TRACK_VH_PATCH)
+    .replace(VENDOR_HOVER_PREVIEW_OFF_NEEDLE, VENDOR_HOVER_PREVIEW_OFF_PATCH)
+    .replace(VENDOR_HOVER_PREVIEW_TOGGLE_NEEDLE, VENDOR_HOVER_PREVIEW_TOGGLE_PATCH)
+    .replace(VENDOR_HOVER_ANCHOR_NEEDLE, VENDOR_HOVER_ANCHOR_PATCH)
     .replace(VENDOR_INLINE_PCT_HELP_NEEDLE, VENDOR_INLINE_PCT_HELP_PATCH)
     .replace(VENDOR_INLINE_PCT_HTML_NEEDLE, VENDOR_INLINE_PCT_HTML_PATCH)
     .replace(VENDOR_INLINE_PCT_SAVE_NEEDLE, VENDOR_INLINE_PCT_SAVE_PATCH)

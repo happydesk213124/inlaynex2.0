@@ -1098,6 +1098,58 @@ export interface DebouncedSaveQueue {
 }
 
 /**
+ * Split scroll work into active (cheap) vs settle (SafeDOM).
+ * Active may run every event; settle only after idle/scrollend.
+ */
+export function createScrollPhaseBus({
+  settleDelayMs = 160,
+  onActive,
+  onSettle,
+}: {
+  settleDelayMs?: number;
+  onActive?: () => void;
+  onSettle?: () => void;
+} = {}): {
+  onScrollSample: () => void;
+  onScrollEnd: () => void;
+  cancel: () => void;
+  get pendingSettle(): boolean;
+} {
+  const settle = createScrollSettleTracker({
+    delayMs: settleDelayMs,
+    onSettle: () => {
+      if (typeof onSettle === 'function') onSettle();
+    },
+  });
+  return {
+    onScrollSample() {
+      if (typeof onActive === 'function') onActive();
+      settle.bump();
+    },
+    onScrollEnd() {
+      if (typeof onActive === 'function') onActive();
+      settle.settleNow();
+    },
+    cancel() {
+      settle.cancel();
+    },
+    get pendingSettle() {
+      return settle.pending;
+    },
+  };
+}
+
+/** True when sticky shot index changed enough to warrant a paint (not every pointer pixel). */
+export function stickySegChanged(prev: unknown, next: unknown): boolean {
+  const b = Number(next);
+  if (!Number.isFinite(b)) return false;
+  if (prev == null || prev === '') return true;
+  const a = Number(prev);
+  if (!Number.isFinite(a)) return true;
+  return Math.trunc(a) !== Math.trunc(b);
+}
+
+/**
  * Idle debounce helper for scroll-settle selection.
  * bump() on scroll/wheel; settleNow() on scrollend; onSettle fires once per idle.
  */

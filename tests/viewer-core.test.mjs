@@ -6,6 +6,7 @@ import {
   clampPinPercent,
   clampReadingPercent,
   createDebouncedSaveQueue,
+  createScrollPhaseBus,
   createScrollSettleTracker,
   createSessionChangeGuard,
   evenAnchorPercent,
@@ -13,6 +14,7 @@ import {
   findCardsForMessageIdentity,
   jobMatchesMessageIdentity,
   canRetargetJobSaveHash,
+  stickySegChanged,
   galleryFocusMessage,
   galleryForMessage,
   gallerySelectedCount,
@@ -317,6 +319,33 @@ test("scroll settle tracker fires after idle and on settleNow", async () => {
   t.settleNow();
   assert.equal(n, 2);
   t.cancel();
+});
+
+test("scroll phase bus: active every sample, settle once after idle", async () => {
+  let active = 0;
+  let settle = 0;
+  const bus = createScrollPhaseBus({
+    settleDelayMs: 20,
+    onActive: () => { active += 1; },
+    onSettle: () => { settle += 1; },
+  });
+  bus.onScrollSample();
+  bus.onScrollSample();
+  assert.equal(active, 2);
+  assert.equal(settle, 0);
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(settle, 1);
+  bus.onScrollEnd();
+  assert.equal(active, 3);
+  assert.equal(settle, 2);
+  bus.cancel();
+});
+
+test("stickySegChanged only when index changes", () => {
+  assert.equal(stickySegChanged(0, 0), false);
+  assert.equal(stickySegChanged(0, 1), true);
+  assert.equal(stickySegChanged(null, 0), true);
+  assert.equal(stickySegChanged(1, Number.NaN), false);
 });
 
 test("session guard confirms a real change only after two consistent observations", () => {

@@ -104,7 +104,7 @@
     "inline_thumb_pct": 100,
     "scale_semantics_version": 2,
     "mobile_toggle_pin": false,
-    "hover_preview": true,
+    "hover_preview": false,
     "hover_preview_anchor": "mouse",
     "hover_preview_corner": "top-right",
     "viewer_minimize_mode": "icon",

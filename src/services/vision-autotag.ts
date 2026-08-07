@@ -10,6 +10,7 @@ import { prepareAutotagImage } from '../core/util/image';
 import { cleanText, stripCbs } from '../core/util/text';
 import { callLlm } from '../providers/llm/client';
 import { normalizeLlmSource, type LlmMessage } from '../providers/llm/transform';
+import { resolveLlmRole } from '../domain/llm/roles';
 import { parseAutotagLookJson, type AutotagLook } from '../ui-contract/viewer-core';
 import { getConfig } from './context';
 import { getPrompt } from './settings';
@@ -30,10 +31,11 @@ export async function runVisionAutotagLook(imageBytes: BytesLike): Promise<Autot
   const b64 = await bytesToBase64Async(u8);
   const dataUrl = `data:${mime};base64,${b64}`;
   const prompt = stripCbs(await getPrompt('autotag')) || FALLBACK_AUTOTAG;
+  const llm = resolveLlmRole(getConfig(), 'autotag');
   dbg('vision-autotag.start', {
     message: `llm-vision ${filename} ${u8.length}B`,
     bytes: u8.length,
-    source: normalizeLlmSource(getConfig().llm.source),
+    source: normalizeLlmSource(llm.source),
   });
   const messages: LlmMessage[] = [
     { role: 'system', content: prompt },
@@ -47,7 +49,7 @@ export async function runVisionAutotagLook(imageBytes: BytesLike): Promise<Autot
   ];
   let raw = '';
   try {
-    raw = await callLlm(getConfig().llm, messages);
+    raw = await callLlm(llm, messages);
   } catch (err) {
     dbg('vision-autotag.llm.fail', { message: String((err as Error)?.message || err) }, 'error');
     throw new Error(`오토태그 LLM 실패: ${String((err as Error)?.message || err).slice(0, 240)}`);

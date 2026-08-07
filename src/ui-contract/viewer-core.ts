@@ -66,6 +66,7 @@ export interface MessageRect {
   bottom?: number;
   left?: number;
   right?: number;
+  width?: number;
   height?: number;
 }
 
@@ -901,10 +902,27 @@ export function resolveStoredPinPercent(
 
 // ── message selection gestures ────────────────────────────────────────────
 
-export type SelectionGesture = 'single' | 'double';
+export type SelectionGesture = 'single' | 'double' | 'context' | 'longpress';
+
+/** Same-bubble re-click window for double mode (SafeDOM often never reports detail=2). */
+export const DOUBLE_SELECT_WINDOW_MS = 450;
+
+export function normalizeSelectionGesture(value: unknown): SelectionGesture {
+  const v = String(value ?? '').toLowerCase().trim();
+  if (v === 'double' || v === 'dbl' || v === '2' || v === 'dblclick') return 'double';
+  if (v === 'context' || v === 'right' || v === 'contextmenu' || v === 'rightclick') return 'context';
+  if (v === 'longpress' || v === 'long' || v === 'press' || v === 'hold') return 'longpress';
+  return 'single';
+}
+
+/** Left-click path is used only for single/double; context/longpress ignore click. */
+export function clickSelectTracksEnabled(gesture: unknown): boolean {
+  const g = normalizeSelectionGesture(gesture);
+  return g === 'single' || g === 'double';
+}
 
 export interface MessageSelectionGestureOptions {
-  gesture?: SelectionGesture;
+  gesture?: SelectionGesture | string;
   detail?: number;
   movement?: number;
   textSelecting?: boolean;
@@ -912,10 +930,14 @@ export interface MessageSelectionGestureOptions {
 }
 
 export interface ClickSelectionOptions {
-  gesture?: SelectionGesture;
+  gesture?: SelectionGesture | string;
+  /** Legacy; SafeDOM often always reports 1. Double mode uses pendingAt/now instead. */
   detail?: number;
   pendingDomIndex?: number | null;
+  pendingAt?: number | null;
   targetDomIndex?: number | null;
+  now?: number;
+  windowMs?: number;
 }
 
 export interface ClickSelectionAction {
@@ -985,47 +1007,56 @@ export function pickMessageIndexNearPoint(
 /** True when a pointer event is a real message-selection click, not a drag or text pick. */
 export function isMessageSelectionGesture({
   gesture = 'single',
-  detail = 1,
+  detail: _detail = 1,
   movement = 0,
   textSelecting = false,
   excludedTarget = false,
 }: MessageSelectionGestureOptions = {}): boolean {
-  const expectedDetail = gesture === 'double' ? 2 : 1;
+  void _detail;
+  if (!clickSelectTracksEnabled(gesture)) return false;
   return !excludedTarget
     && !textSelecting
-    && finiteNumber(movement, Infinity) <= 8
-    && finiteNumber(detail) === expectedDetail;
+    && finiteNumber(movement, Infinity) <= 8;
 }
 
 /**
- * Click-only selection state machine.
- * double: detail 1 → provisional, detail 2 → confirm.
- * single: detail 1 → confirm; other details ignored.
+ * Click-only selection state machine (left button).
+ * - single: confirm
+ * - double: same target within windowMs → confirm; else provisional (does not use click.detail)
+ * - context / longpress: ignore (wired on other events)
  */
 export function resolveClickSelectionAction({
   gesture = 'single',
   detail = 1,
   pendingDomIndex = null,
+  pendingAt = null,
   targetDomIndex = null,
+  now = Date.now(),
+  windowMs = DOUBLE_SELECT_WINDOW_MS,
 }: ClickSelectionOptions = {}): ClickSelectionAction {
-  const d = finiteNumber(detail, 1);
-  if (gesture === 'double') {
-    if (d === 1) {
-      return {
-        action: 'provisional',
-        pendingDomIndex: targetDomIndex,
-      };
+  const g = normalizeSelectionGesture(gesture);
+  if (g === 'context' || g === 'longpress') return { action: 'ignore' };
+  if (g === 'double') {
+    const target = Number(targetDomIndex);
+    if (!Number.isFinite(target) || target < 0) return { action: 'ignore' };
+    const pending = pendingDomIndex == null ? NaN : Number(pendingDomIndex);
+    const at = Number(pendingAt);
+    const win = Math.max(50, finiteNumber(windowMs, DOUBLE_SELECT_WINDOW_MS));
+    const within = Number.isFinite(pending)
+      && Number.isFinite(at)
+      && now - at <= win
+      && pending === target;
+    if (within) {
+      return { action: 'confirm', clearPending: true, matchedPending: true, pendingDomIndex: null };
     }
-    if (d === 2) {
-      return {
-        action: 'confirm',
-        clearPending: true,
-        matchedPending: pendingDomIndex != null
-          && Number(pendingDomIndex) === Number(targetDomIndex),
-      };
-    }
-    return { action: 'ignore' };
+    return {
+      action: 'provisional',
+      pendingDomIndex: target,
+      clearPending: false,
+      matchedPending: false,
+    };
   }
+  const d = finiteNumber(detail, 1);
   if (d === 1) return { action: 'confirm', clearPending: true };
   return { action: 'ignore' };
 }
@@ -2063,6 +2094,103 @@ export function activeSegmentIndex(markerPercents: number[] | null | undefined, 
     if (reading >= thresholds[i]) active = i;
   }
   return active;
+}
+
+/**
+ * Client-space point for a marker y% inside a message rect (mid-X, y% down the box).
+ * Used when 말풍선 삽화 is on and sticky picks the shot nearest the pointer.
+ */
+export function markerAnchorClientPoint(
+  rect: MessageRect | null | undefined,
+  yPercent: unknown,
+): { x: number; y: number } | null {
+  if (!rect) return null;
+  const top = finiteNumber(rect.top, 0);
+  const height = Math.max(
+    1,
+    finiteNumber(rect.height, finiteNumber(rect.bottom, top) - top),
+  );
+  const left = finiteNumber(rect.left, 0);
+  const width = Math.max(
+    0,
+    finiteNumber(rect.width, finiteNumber(rect.right, left) - left),
+  );
+  return {
+    x: left + width * 0.5,
+    y: top + height * (clampPercent(yPercent) / 100),
+  };
+}
+
+/**
+ * Index of the point nearest (clientX, clientY). Missing / non-finite points skipped.
+ * Tie → lower index. Empty → -1.
+ */
+export function nearestSegmentByClientPoint(
+  points: Array<{ x?: number; y?: number } | null | undefined> | null | undefined,
+  clientX: number,
+  clientY: number,
+): number {
+  const list = Array.isArray(points) ? points : [];
+  if (!list.length) return -1;
+  const px = Number(clientX);
+  const py = Number(clientY);
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return -1;
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < list.length; i += 1) {
+    const p = list[i];
+    if (!p) continue;
+    const y = Number(p.y);
+    if (!Number.isFinite(y)) continue;
+    const x = Number(p.x);
+    const dx = Number.isFinite(x) ? x - px : 0;
+    const dy = y - py;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Sticky segment while 말풍선 삽화 (beta) is on: prefer shot nearest the pointer
+ * (sticky always-image follows that shot). Falls back to reading-band `fallback`.
+ */
+export function stickySegmentForInlineChat(opts: {
+  inlineChatOn?: boolean;
+  pointerX?: unknown;
+  pointerY?: unknown;
+  messageRect?: MessageRect | null;
+  markerPercents?: number[] | null;
+  /** Optional live centers (e.g. inline DOM); null entries fall back to y% anchors. */
+  markerCenters?: Array<{ x?: number; y?: number } | null | undefined> | null;
+  fallbackSegment?: number;
+}): number {
+  const fallback = Number.isFinite(Number(opts.fallbackSegment)) ? Math.trunc(Number(opts.fallbackSegment)) : -1;
+  if (!opts.inlineChatOn) return fallback;
+  const px = Number(opts.pointerX);
+  const py = Number(opts.pointerY);
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return fallback;
+  const pcts = Array.isArray(opts.markerPercents) ? opts.markerPercents : [];
+  const centers = Array.isArray(opts.markerCenters) ? opts.markerCenters : [];
+  const n = Math.max(pcts.length, centers.length);
+  if (n <= 0) return fallback;
+  const points: Array<{ x: number; y: number } | null> = [];
+  for (let i = 0; i < n; i += 1) {
+    const live = centers[i];
+    if (live && Number.isFinite(Number(live.y))) {
+      points.push({
+        x: Number.isFinite(Number(live.x)) ? Number(live.x) : px,
+        y: Number(live.y),
+      });
+      continue;
+    }
+    points.push(markerAnchorClientPoint(opts.messageRect, pcts[i] ?? 0));
+  }
+  const near = nearestSegmentByClientPoint(points, px, py);
+  return near >= 0 ? near : fallback;
 }
 
 // ── beta: chat-bubble inline images at newline lines ──────────────────────

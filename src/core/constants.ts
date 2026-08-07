@@ -8,18 +8,18 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.2.0';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.2.2';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
  * Only bump it when a prompt change is mandatory for correctness.
  */
-export const PROMPT_PACK = '2026-08-07-costume';
+export const PROMPT_PACK = '2026-08-07-command-reroll';
 
 export const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'prefill', 'preprocess',
   'preset_1', 'lore_inject', 'char_inject', 'appearance_inject', 'asset_tags_inject', 'char_looks', 'autotag',
-  'curation_refine', 'curation_embed_hint',
+  'curation_refine', 'curation_embed_hint', 'command_reroll',
 ] as const;
 
 export type PromptKey = (typeof PROMPT_KEYS)[number];
@@ -27,7 +27,7 @@ export type PromptKey = (typeof PROMPT_KEYS)[number];
 /** Prompts that must track the shipped pack even if the user edited them. */
 export const FORCE_PROMPT_KEYS: readonly PromptKey[] = [
   'tagger', 'format', 'appearance_inject', 'lore_inject', 'asset_tags_inject', 'char_looks', 'autotag',
-  'curation_refine', 'curation_embed_hint',
+  'curation_refine', 'curation_embed_hint', 'command_reroll',
 ];
 
 export const GLOBAL_SCOPE = '__global__';

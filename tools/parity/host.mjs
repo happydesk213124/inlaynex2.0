@@ -17,6 +17,7 @@ export const FIXED_EPOCH = 1_760_000_000_000;
 const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'prefill', 'preprocess',
   'preset_1', 'lore_inject', 'char_inject', 'appearance_inject', 'autotag',
+  'command_reroll',
 ];
 
 /** 1x1 PNG. */

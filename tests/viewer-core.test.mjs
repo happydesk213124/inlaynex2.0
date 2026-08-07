@@ -29,7 +29,10 @@ import {
   preferNearbyHostIndex,
   findElementIndexForLineWithFallback,
   prefixMatchRatio,
+  clickSelectTracksEnabled,
+  DOUBLE_SELECT_WINDOW_MS,
   isMessageSelectionGesture,
+  normalizeSelectionGesture,
   pickMessageIndexNearPoint,
   pinPercentToPx,
   pinPercentToPxFromBottom,
@@ -46,6 +49,9 @@ import {
   shouldKeepStickyThumbHidden,
   resolveStickyThumbPct,
   stickyThumbBoxFromPct,
+  stickySegmentForInlineChat,
+  markerAnchorClientPoint,
+  nearestSegmentByClientPoint,
   fitBoxInside,
   composeStickyThumbHtml,
   stickyThumbNeedsHtmlPaint,
@@ -241,16 +247,59 @@ test("gallery without selection is newest-first capped at 8", () => {
   assert.equal(galleryForMessage(cards, null, 8).length, 8);
 });
 
-test("selection gesture respects configured click count and movement without blocking text selection", () => {
+test("selection gesture respects movement; context/longpress ignore left-click track", () => {
+  assert.equal(normalizeSelectionGesture("double"), "double");
+  assert.equal(normalizeSelectionGesture("context"), "context");
+  assert.equal(normalizeSelectionGesture("longpress"), "longpress");
+  assert.equal(clickSelectTracksEnabled("single"), true);
+  assert.equal(clickSelectTracksEnabled("context"), false);
   assert.equal(isMessageSelectionGesture({ gesture: "single", detail: 1, movement: 0 }), true);
   assert.equal(isMessageSelectionGesture({ gesture: "single", detail: 1, movement: 20 }), false);
-  assert.equal(isMessageSelectionGesture({ gesture: "double", detail: 2, movement: 0 }), true);
+  assert.equal(isMessageSelectionGesture({ gesture: "double", detail: 1, movement: 0 }), true);
+  assert.equal(isMessageSelectionGesture({ gesture: "context", detail: 1, movement: 0 }), false);
+  assert.equal(isMessageSelectionGesture({ gesture: "longpress", detail: 1, movement: 0 }), false);
 });
 
 test("click selection action supports provisional then confirm in double mode", () => {
   assert.equal(resolveClickSelectionAction({ gesture: "double", detail: 1, targetDomIndex: 2 }).action, "provisional");
-  assert.equal(resolveClickSelectionAction({ gesture: "double", detail: 2, targetDomIndex: 2, pendingDomIndex: 2 }).action, "confirm");
+  const t0 = 1_000_000;
+  assert.equal(
+    resolveClickSelectionAction({
+      gesture: "double",
+      detail: 1,
+      targetDomIndex: 2,
+      pendingDomIndex: 2,
+      pendingAt: t0,
+      now: t0 + 100,
+      windowMs: DOUBLE_SELECT_WINDOW_MS,
+    }).action,
+    "confirm",
+  );
+  assert.equal(
+    resolveClickSelectionAction({
+      gesture: "double",
+      detail: 1,
+      targetDomIndex: 2,
+      pendingDomIndex: 2,
+      pendingAt: t0,
+      now: t0 + DOUBLE_SELECT_WINDOW_MS + 50,
+    }).action,
+    "provisional",
+  );
+  assert.equal(
+    resolveClickSelectionAction({
+      gesture: "double",
+      detail: 1,
+      targetDomIndex: 3,
+      pendingDomIndex: 2,
+      pendingAt: t0,
+      now: t0 + 100,
+    }).action,
+    "provisional",
+  );
   assert.equal(resolveClickSelectionAction({ gesture: "single", detail: 1 }).action, "confirm");
+  assert.equal(resolveClickSelectionAction({ gesture: "context", detail: 1, targetDomIndex: 1 }).action, "ignore");
+  assert.equal(resolveClickSelectionAction({ gesture: "longpress", detail: 1, targetDomIndex: 1 }).action, "ignore");
 });
 
 test("text drag selects message only after real drag with selection", () => {
@@ -662,6 +711,40 @@ test("resolveCardAnchorPercent prefers y_percent unless forceEven", () => {
 test("equal band starts map sticky segments to 0-25 / 25-50 / …", () => {
   assert.equal(activeSegmentIndex([0, 25, 50, 75], 10), 0);
   assert.equal(activeSegmentIndex([0, 25, 50, 75], 30), 1);
+});
+
+test("stickySegmentForInlineChat prefers shot nearest the pointer", () => {
+  const rect = { top: 0, bottom: 100, height: 100, left: 0, right: 200, width: 200 };
+  // Mid-message pointer is closer to 75% than 0%/25%/50%.
+  assert.equal(stickySegmentForInlineChat({
+    inlineChatOn: true,
+    pointerX: 100,
+    pointerY: 70,
+    messageRect: rect,
+    markerPercents: [0, 25, 50, 75],
+    fallbackSegment: 0,
+  }), 3);
+  // Off → keep reading-band fallback.
+  assert.equal(stickySegmentForInlineChat({
+    inlineChatOn: false,
+    pointerX: 100,
+    pointerY: 70,
+    messageRect: rect,
+    markerPercents: [0, 25, 50, 75],
+    fallbackSegment: 1,
+  }), 1);
+  // Live DOM center wins over y% projection.
+  assert.equal(stickySegmentForInlineChat({
+    inlineChatOn: true,
+    pointerX: 10,
+    pointerY: 12,
+    messageRect: rect,
+    markerPercents: [0, 90],
+    markerCenters: [{ x: 10, y: 10 }, null],
+    fallbackSegment: -1,
+  }), 0);
+  assert.deepEqual(markerAnchorClientPoint(rect, 50), { x: 100, y: 50 });
+  assert.equal(nearestSegmentByClientPoint([{ x: 0, y: 0 }, { x: 100, y: 100 }], 90, 90), 1);
 });
 
 test("reading percent and segment index follow 20/40/80 bands", () => {

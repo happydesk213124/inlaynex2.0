@@ -326,6 +326,10 @@ const WRITE_ROUTES: readonly Route[] = [
     handler: async ({ param, body }) => ok(await cards.rerollCard(param, String(body.mode || 'nai'), body.overrides)),
   },
   {
+    match: wrapped('/v1/cards/', '/command-rewrite'),
+    handler: async ({ param, body }) => ok(await cards.commandRewriteCard(param, body)),
+  },
+  {
     match: exact('/v1/messages/reroll', '/v1/gallery/reroll-message'),
     handler: async ({ body }) =>
       ok(

@@ -25,6 +25,7 @@ import type { ApiResult, StylePreset } from '../core/types';
 import { deepcopy, deepMerge } from '../core/util/object';
 import { cleanText } from '../core/util/text';
 import { characterMaxLimit } from '../domain/character/tags';
+import { LLM_ROLE_IDS, normalizeLlmRolesSettings } from '../domain/llm/roles';
 import { comfyConfigured, imageBackendKind } from '../providers/comfy/client';
 import { llmConfigured } from '../providers/llm/transform';
 import { saveSettingsToStorage } from '../storage/settings-store';
@@ -304,6 +305,27 @@ export function publicSettings(): Record<string, unknown> {
     cfg.llm.service_account_json = '';
     cfg.llm.service_account_configured = true;
   } else cfg.llm = { ...cfg.llm, service_account_configured: false };
+  // Per-role LLM secrets
+  {
+    const roles = normalizeLlmRolesSettings(cfg.llm_roles);
+    for (const id of LLM_ROLE_IDS) {
+      const role = { ...roles[id] } as Record<string, unknown>;
+      if (role.api_key) {
+        role.api_key = '';
+        role.api_key_configured = true;
+      } else {
+        role.api_key_configured = false;
+      }
+      if (role.service_account_json) {
+        role.service_account_json = '';
+        role.service_account_configured = true;
+      } else {
+        role.service_account_configured = false;
+      }
+      roles[id] = role as typeof roles[typeof id];
+    }
+    cfg.llm_roles = roles;
+  }
   const nai = cfg.nai;
   nai.backend = imageBackendKind(nai);
   nai.image_backend = nai.backend;
@@ -433,6 +455,33 @@ export async function updateSettings(patch: Record<string, unknown>): Promise<Ap
   }
   if (Object.keys(nai).length) cfg.nai = deepMerge(cfg.nai, nai);
   if (Object.keys(llm).length) cfg.llm = deepMerge(cfg.llm, llm);
+  if (payload.llm_roles && typeof payload.llm_roles === 'object' && !Array.isArray(payload.llm_roles)) {
+    const incoming = payload.llm_roles as Record<string, unknown>;
+    const cur = normalizeLlmRolesSettings(cfg.llm_roles);
+    for (const id of LLM_ROLE_IDS) {
+      if (!(id in incoming) || !incoming[id] || typeof incoming[id] !== 'object') continue;
+      const patchRole = { ...(incoming[id] as Record<string, unknown>) };
+      const prev = { ...cur[id] } as Record<string, unknown>;
+      if ('api_key' in patchRole) {
+        const key = patchRole.api_key;
+        delete patchRole.api_key;
+        delete patchRole.api_key_configured;
+        if (cleanText(key)) prev.api_key = key;
+        if (patchRole.clearApiKey) prev.api_key = '';
+        delete patchRole.clearApiKey;
+      }
+      if ('service_account_json' in patchRole) {
+        const sa = patchRole.service_account_json;
+        delete patchRole.service_account_json;
+        delete patchRole.service_account_configured;
+        if (cleanText(sa)) prev.service_account_json = sa;
+        if (patchRole.clearServiceAccount) prev.service_account_json = '';
+        delete patchRole.clearServiceAccount;
+      }
+      cur[id] = normalizeLlmRolesSettings({ [id]: { ...prev, ...patchRole } })[id];
+    }
+    cfg.llm_roles = cur;
+  }
   if (payload.curation && typeof payload.curation === 'object') {
     const { updateCurationSettings } = await import('./curation');
     await updateCurationSettings(payload.curation as Record<string, unknown>);

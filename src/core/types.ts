@@ -71,6 +71,11 @@ export interface CardSettings {
    */
   person_tag_solo: boolean;
   /**
+   * When true, main tagger injects costume catalogs and may pick/create
+   * costumes per shot. Asset char_looks always builds costumes[] regardless.
+   */
+  costume: boolean;
+  /**
    * NAI emphasis on Inlay person-count tags (`1girl`, `1boy`, `solo`, …).
    * 0 = plain tags; 1–5 = `N::1girl, 1boy::`. Default 3.
    */
@@ -154,6 +159,16 @@ export interface Settings {
 /** `"__global__"` or a session id. */
 export type Scope = string;
 
+/** One wardrobe set: clothes (+ jewelry in attire) and weapons/props. */
+export interface CharacterCostume {
+  /** LLM-facing id, e.g. `default`, `swimsuit`. */
+  name: string;
+  /** Short situation hint for the tagger, e.g. `angel on earth`. */
+  note?: string;
+  attire: string;
+  accessories: string;
+}
+
 export interface CharacterRecord {
   id: string;
   name: string;
@@ -166,6 +181,10 @@ export interface CharacterRecord {
   appearance: string;
   attire: string;
   accessories: string;
+  /** Named wardrobe sets; index 0 is the generation default. */
+  costumes?: CharacterCostume[];
+  /** UI select index into `costumes` (editing mirror). */
+  active_costume?: number;
   attire_locked?: boolean;
   accessories_locked?: boolean;
   priority?: number;
@@ -192,6 +211,11 @@ export interface ShotCharacter {
   appearance?: string;
   attire?: string;
   accessories?: string;
+  /**
+   * Costume pick: index, name, or `name[index]`. Unreadable → generation uses
+   * roster `costumes[0]`.
+   */
+  costume?: string | number;
   /** Nude level: 0/off · 1/torn · 2/nude · 3/completely (keeps attire tags). */
   nude?: boolean | string | number;
   /** When on: include accessories (weapons/props) in the caption. */
@@ -335,6 +359,8 @@ export interface TaggedScene {
 export interface TaggerResult {
   scenes?: TaggedScene[];
   new_characters?: Partial<CharacterRecord>[];
+  /** Costume appends keyed by character name (main tagger when card.costume). */
+  new_costumes?: Array<{ name?: string; costumes?: CharacterCostume[] } & Record<string, unknown>>;
   [key: string]: unknown;
 }
 

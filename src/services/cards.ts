@@ -161,6 +161,76 @@ export async function updateCardTags(cardId: string, body: Record<string, unknow
 }
 
 /**
+ * Pin a costume pick onto a card's cast so later rerolls keep that wardrobe
+ * without changing roster costumes[0].
+ */
+export async function stampCardCostume(
+  cardId: string,
+  characterName: string,
+  costume: unknown,
+  charIndex: number | null = null,
+): Promise<ApiResult> {
+  const id = cleanText(cardId, 80);
+  const name = cleanText(characterName, 200);
+  if (!id || !name) {
+    return { ok: false, error: { code: 'bad_request', message: 'card_id and character name required' } };
+  }
+  const row = await idbGet('cards', id);
+  if (!row) return { ok: false, error: { code: 'not_found', message: 'card not found' } };
+
+  const parsed = parseJsonOr(row.characters_json || '[]', []);
+  const chars: Record<string, unknown>[] = Array.isArray(parsed)
+    ? parsed.map((c) => (c && typeof c === 'object' ? { ...(c as Record<string, unknown>) } : c)).filter(Boolean) as Record<string, unknown>[]
+    : [];
+
+  let hit = false;
+  const wantIdx = charIndex != null && Number.isFinite(Number(charIndex)) ? Number(charIndex) : -1;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i]!;
+    const chName = cleanText(ch.name, 200);
+    if (wantIdx >= 0 ? i !== wantIdx : chName !== name) continue;
+    ch.costume = costume;
+    if (ch.raw && typeof ch.raw === 'object') {
+      ch.raw = { ...(ch.raw as Record<string, unknown>), costume, name: chName || name };
+    } else {
+      ch.raw = { ...(typeof ch.raw === 'object' && ch.raw ? ch.raw as Record<string, unknown> : {}), name: chName || name, costume };
+    }
+    hit = true;
+    if (wantIdx >= 0) break;
+  }
+  if (!hit) {
+    return { ok: false, error: { code: 'not_found', message: 'character not on card' } };
+  }
+
+  row.characters_json = JSON.stringify(chars);
+  try {
+    let meta = parseJsonOr(row.meta_json || '{}', {});
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) meta = {};
+    const metaRec = meta as Record<string, unknown>;
+    const metaChars = Array.isArray(metaRec.characters)
+      ? (metaRec.characters as unknown[]).map((c) => (c && typeof c === 'object' ? { ...(c as object) } : c))
+      : chars;
+    for (let i = 0; i < metaChars.length; i++) {
+      const ch = metaChars[i];
+      if (!ch || typeof ch !== 'object') continue;
+      const rec = ch as Record<string, unknown>;
+      const chName = cleanText(rec.name, 200);
+      if (wantIdx >= 0 ? i !== wantIdx : chName !== name) continue;
+      rec.costume = costume;
+      if (rec.raw && typeof rec.raw === 'object') {
+        rec.raw = { ...(rec.raw as Record<string, unknown>), costume, name: chName || name };
+      }
+    }
+    metaRec.characters = metaChars;
+    row.meta_json = JSON.stringify(metaRec);
+  } catch {
+    /* best-effort meta mirror */
+  }
+  await idbPut('cards', row);
+  return { ok: true, card_id: id, costume };
+}
+
+/**
  * Regenerates one card's image, replacing it with a new card at the same place.
  *
  * `mode: "full"` re-runs the entire originating job (tagging included) rather
@@ -260,6 +330,11 @@ export async function rerollCard(
           label: c.label,
           age: c.age,
           original: c.original || c.original_tag,
+          costume: c.costume,
+          attire: c.attire,
+          accessories: c.accessories,
+          nude: c.nude,
+          weapon: c.weapon,
         };
       })
       .filter(Boolean);

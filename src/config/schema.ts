@@ -159,6 +159,13 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     || card.person_tag_solo === 'on';
   // person_tag_weight: NAI emphasis on Inlay person-count tags (0 = plain, 1–5 = N::…::)
   card.person_tag_weight = normalizePersonTagWeight(card.person_tag_weight);
+  // costume: main-tagger catalog inject (char_looks always builds costumes[])
+  card.costume =
+    card.costume === true
+    || card.costume === 'true'
+    || card.costume === 1
+    || card.costume === '1'
+    || card.costume === 'on';
   // curation.mode: off | two_stage | embed_snap (legacy card.composition_curation → two_stage)
   const curationRaw =
     settings.curation && typeof settings.curation === 'object' && !Array.isArray(settings.curation)

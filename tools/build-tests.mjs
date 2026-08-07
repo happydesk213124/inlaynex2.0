@@ -32,6 +32,7 @@ const MODULES = {
   'settings-schema': 'src/config/schema.ts',
   'reroll-setup': 'src/domain/prompt/reroll-setup.ts',
   'character-tags': 'src/domain/character/tags.ts',
+  'character-costume': 'src/domain/character/costume.ts',
   'nai-meta-prompt-tags': 'src/domain/nai-meta/prompt-tags.ts',
   'nai-meta-match': 'src/domain/nai-meta/match.ts',
   'nai-meta-from-metadata': 'src/domain/nai-meta/from-metadata.ts',

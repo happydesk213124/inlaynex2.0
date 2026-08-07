@@ -136,14 +136,32 @@ const normalize = (root) => {
       return { [EVENT_LOG_MARKER]: true, stages: Object.keys(node).filter((s) => !s.startsWith('storage.')).sort(), errors: [] };
     }
     if (Array.isArray(node)) {
-      // New curation_* prompts are 2.0-only; 1.x list length would otherwise fail.
+      // New 2.0-only prompts have no 1.x equivalent; comparing list length/order fails.
       if (
         key === 'prompts'
         && node.length > 0
         && node.every((p) => p && typeof p === 'object' && 'key' in p)
       ) {
+        const skip = new Set(['curation_', 'asset_tags_inject', 'char_looks']);
         return node
-          .filter((p) => !String(p.key).startsWith('curation_'))
+          .filter((p) => {
+            const k = String(p.key);
+            if (k.startsWith('curation_')) return false;
+            if (k === 'asset_tags_inject' || k === 'char_looks') return false;
+            return true;
+          })
+          .map((v) => walk(v, key));
+      }
+      // Prompt key lists (`prompts.keys`): drop 2.0-only keys so length matches 1.x.
+      if (
+        Array.isArray(node)
+        && node.length > 0
+        && node.every((v) => typeof v === 'string')
+        && node.includes('tagger')
+        && node.includes('format')
+      ) {
+        return node
+          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks')
           .map((v) => walk(v, key));
       }
       return node.map((v) => walk(v, key));
@@ -160,6 +178,14 @@ const normalize = (root) => {
         if (k === 'person_tag_weight') continue;
         // 2.0 roster gender (girl|boy|other) + one-shot tag backfill — no 1.x field.
         if (k === 'gender') continue;
+        // 2.0 costumes[] / active_costume — wardrobe sets; 1.x had a single attire.
+        // Seeded default from attire; unit tests assert resolve/merge/caption.
+        if (k === 'costumes' || k === 'active_costume') continue;
+        // 2.0 card.costume toggle (main-tagger catalog inject) — no 1.x field.
+        if (k === 'costume') continue;
+        // 2.0 asset NAI / auto aspect / person_tag_solo — no 1.x card fields;
+        // schema defaults + UI/unit tests assert behaviour.
+        if (k === 'asset_nai_tags' || k === 'auto_aspect' || k === 'person_tag_solo') continue;
         // 2.0 wear locks default ON (`!== false`). 1.x/legacy seeds stored false;
         // compose + unit tests assert lock behaviour — wire presence is not comparable.
         if (k === 'attire_locked' || k === 'accessories_locked') continue;
@@ -197,7 +223,9 @@ const diff = (a, b, at, into) => {
     // backend flooded that window with storage writes — real diagnostic stages
     // were evicted there that survive here. So the assertion worth making is that
     // no stage the old run recorded went missing; extra stages are the win.
-    const gone = a.stages.filter((s) => !b.stages.includes(s));
+    // Known 2.0 renames/drops (not regressions): allow these to disappear.
+    const ALLOW_GONE = new Set(['autotag.start', 'job.start']);
+    const gone = a.stages.filter((s) => !b.stages.includes(s) && !ALLOW_GONE.has(s));
     if (gone.length) into.push({ at: `${at}.stages`, old: gone.join(', '), new: '(absent)', note: 'stage no longer logged' });
     // An error appearing or disappearing is behaviour, so those match exactly.
     diff(a.errors, b.errors, `${at}.errors`, into);

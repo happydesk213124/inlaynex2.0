@@ -174,6 +174,8 @@ export function normalizeCharacterRecord(
     attire,
     accessories,
     gender: normalizeGender(rec.gender ?? rec.sex),
+    costumes: Array.isArray(rec.costumes) ? rec.costumes : undefined,
+    active_costume: rec.active_costume,
   });
 }
 

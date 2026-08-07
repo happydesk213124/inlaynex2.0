@@ -14,8 +14,19 @@ import { cleanText, joinTags, normalizeAlias, splitTagTokens, toInt } from '../.
 import type { CharacterInput } from './identity.ts';
 import { normalizeGender } from './identity.ts';
 import { resolveCharacter } from './roster.ts';
+import { ensureCostumes, resolveCostumeWear } from './costume.ts';
 
 export { normalizeGender } from './identity.ts';
+export {
+  ensureCostumes,
+  formatCostumeCatalog,
+  mergeCostumeLists,
+  normalizeCostume,
+  promoteCostumeToDefault,
+  resolveCostumeIndex,
+  resolveCostumeWear,
+  syncActiveCostumeFromWear,
+} from './costume.ts';
 
 const CLOTHING_HINTS: readonly string[] = clothingHints;
 /** Permanent worn jewelry / glasses / earbuds — stored in attire with clothes. */
@@ -436,9 +447,10 @@ export function wearLocked(value: unknown): boolean {
  * Base: appearance + attire (clothes+jewelry). Weapons only when weapon=on.
  * nude level: 0 off · 1 torn · 2 nude · 3 completely — always keeps attire
  * tags and appends weighted state + gendered anatomy (never strips clothes).
- * When attire/accessories are locked (default), shot overrides are ignored —
- * roster base wear is used. Unlocked rows may take non-empty shot wear for
- * this caption only — never persisted back onto the roster.
+ *
+ * Wear source: `shot.costume` → roster costumes[i]; unreadable/missing →
+ * costumes[0] (not the UI active mirror). Freeform shot attire/accessories
+ * still apply only when the matching lock is off.
  */
 export function composeCharacterCaptionTags(
   stored: CharacterInput | null | undefined,
@@ -451,6 +463,7 @@ export function composeCharacterCaptionTags(
     body?: unknown;
     attire?: unknown;
     accessories?: unknown;
+    costume?: unknown;
     expression?: unknown;
     action?: unknown;
     sex?: unknown;
@@ -463,16 +476,21 @@ export function composeCharacterCaptionTags(
   const hasLooks = characterHasAppearance(stored);
   const shotOriginal = cleanText(shot?.original || shot?.original_tag || '', 400);
   const storedOriginal = cleanText(stored?.original || '', 400);
-  const storedAttire = cleanText(stored?.attire || '', 4000);
-  const storedAcc = cleanText(stored?.accessories || '', 4000);
+  const costumeWear = resolveCostumeWear(stored || {}, shot?.costume);
+  // Prefer catalog wear when the row has a costumes array (or attire to seed one).
+  const hasCostumeList = Array.isArray(stored?.costumes) && (stored!.costumes as unknown[]).length > 0;
+  const seeded = ensureCostumes(stored || {});
+  const useCatalog = hasCostumeList || Boolean(seeded.costumes[0]?.attire || seeded.costumes[0]?.accessories || stored?.attire);
+  const catalogAttire = useCatalog ? costumeWear.attire : cleanText(stored?.attire || '', 4000);
+  const catalogAcc = useCatalog ? costumeWear.accessories : cleanText(stored?.accessories || '', 4000);
   const shotAttire = cleanText(shot?.attire || '', 4000);
   const shotAcc = cleanText(shot?.accessories || '', 4000);
   const attire = wearLocked(stored?.attire_locked)
-    ? storedAttire
-    : (shotAttire || storedAttire);
+    ? catalogAttire
+    : (shotAttire || catalogAttire);
   const accessories = wearLocked(stored?.accessories_locked)
-    ? storedAcc
-    : (shotAcc || storedAcc);
+    ? catalogAcc
+    : (shotAcc || catalogAcc);
   const nudeLevel = parseNudeLevel(shot?.nude);
   const weapon = flagOn(shot?.weapon);
   const gender = resolveCharacterGender(shot, stored);

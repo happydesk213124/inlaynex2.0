@@ -44,7 +44,7 @@ missing, which historically hid bugs — so we publish the full surface.
 
 | Global | Purpose |
 |---|---|
-| `__INLAY_VIEWER_CORE__` | overlay/pin geometry, gallery ordering, DOM↔API message matching; sticky always-image size via `resolveStickyThumbPct` / `stickyThumbBoxFromPct` (hide = 0%, not display:none) + `fitBoxInside` against NAI w×h; sticky thumb HTML/shell use transparent backgrounds (no opaque letterbox bars); `claimStickyMarkerByCardId` reuses a still-mounted pin on partial card-set swaps so sticky pins do not duplicate |
+| `__INLAY_VIEWER_CORE__` | overlay/pin geometry, gallery ordering, DOM↔API message matching; sticky always-image size via `resolveStickyThumbPct` / `stickyThumbBoxFromPct` (hide = 0%, not display:none) + `fitBoxInside` against NAI w×h; overlay toggle OFF keeps sync alive and parks via 0% thumb + off-screen pin (avoids hideStickyMarker thrash); with 말풍선 삽화 ON, `stickySegmentForInlineChat` picks the shot nearest the pointer for sticky activation; sticky thumb HTML/shell use transparent backgrounds (no opaque letterbox bars); `claimStickyMarkerByCardId` reuses a still-mounted pin on partial card-set swaps so sticky pins do not duplicate |
 | `__INLAY_LLM__` | provider list, endpoint defaults, model placeholders |
 | `__INLAY_LORE_EXTRA__` | `lb-xnai.lb.extra` lorebook trimming |
 | `__INLAY_EXPLORER__` | explorer multi-select state machine |
@@ -66,7 +66,7 @@ skipped for health/debug.
 | Route | Body → Response |
 |---|---|
 | `/v1/settings` | `{ settings }` |
-| `PUT /v1/settings` | partial `{card?, llm?, nai?}` → `{ settings }` |
+| `PUT /v1/settings` | partial `{card?, llm?, llm_roles?, nai?}` → `{ settings }` |
 | `POST /v1/settings/update` | alias of the above |
 | `/v1/settings/export` | `{ json }` — drops `api_key`/`auth_token`/`password`/`secret`, but **not** `service_account_json`; see the note in `src/config/schema.ts` |
 | `POST /v1/settings/import` | `{ json }` |
@@ -116,6 +116,32 @@ Asset `char_looks` always may populate `costumes[]` regardless of this toggle.
 Card-settings checkbox sits in a `checks-grid` of `toggle-row`s with
 person_tag_solo (same UX as dashboard toggles). Character tab and chip edit
 popup use a costume name+arrow combobox (no field labels; placeholder only).
+
+### LLM role profiles (`settings.llm` + `settings.llm_roles`)
+
+`settings.llm` remains the **메인 태깅** profile (key name unchanged — no
+migration). Secondary roles live under `settings.llm_roles`:
+
+| Role id | Used for | Default |
+|---|---|---|
+| `autotag` | vision autotag (character chips / models) | `follow_main: true` |
+| `asset_char` | asset NAI looks prepass (`char_looks`) | `follow_main: true` |
+| `curator` | curation two_stage refine | `follow_main: true` |
+
+`resolveLlmRole(settings, role)` (`src/domain/llm/roles.ts`): `main` →
+`settings.llm`; otherwise `follow_main` (or missing role) → `settings.llm`;
+own profile → role fields only (no merge with main). Command rewrite /
+preprocess / unscoped model test stay on main.
+
+GET settings blanks each role's `api_key` / `service_account_json` and sets
+`api_key_configured` / `service_account_configured` like the main LLM.
+Export still redacts `api_key` recursively (including under `llm_roles`).
+
+Models tab UI (asserted vendor patches): four LLM subtabs
+(메인 태깅 / 오토태그 / 에셋캐릭 / 큐레이터); NovelAI/Comfy stays **one shared**
+block below. Secondary source selects include 「태깅 LLM 따라가기」
+(`follow_main`). Save PUT sends `{ llm, llm_roles, nai }`; connection test uses
+the active tab's resolved profile in `POST /v1/models/test`.
 
 `curation.mode` (`off` | `two_stage` | `embed_snap`) lives on the **큐레이팅**
 settings tab (asserted vendor patch). Legacy `card.composition_curation: true`

@@ -14,6 +14,8 @@ export type CardMode = 'illustration' | 'asset';
 export type PersonTagMode = 'gender' | 'girls' | 'people' | 'off';
 export type LoreExtraMode = 'tags' | 'full' | 'off';
 export type LlmSource = 'custom' | 'main' | 'aux';
+/** Secondary chat-LLM roles (main tagging stays on `settings.llm`). */
+export type LlmRoleId = 'autotag' | 'asset_char' | 'curator';
 export type ImageBackend = 'nai' | 'comfy';
 
 export interface StylePreset {
@@ -110,6 +112,16 @@ export interface LlmSettings {
   [key: string]: unknown;
 }
 
+/**
+ * Per-role LLM profile. `follow_main: true` (default) → use `settings.llm`.
+ * When false, the rest of the fields are a full LlmSettings replacement (no merge).
+ */
+export interface LlmRoleSettings extends LlmSettings {
+  follow_main: boolean;
+}
+
+export type LlmRolesSettings = Record<LlmRoleId, LlmRoleSettings>;
+
 export interface NaiSettings {
   provider: string;
   backend: ImageBackend;
@@ -144,7 +156,10 @@ export interface NaiSettings {
 export interface Settings {
   auth_token: string;
   card: CardSettings;
+  /** Main tagging LLM (also default for command_reroll / preprocess). */
   llm: LlmSettings;
+  /** Autotag / asset char_looks / curator refine. Missing → follow main. */
+  llm_roles?: LlmRolesSettings;
   nai: NaiSettings;
   /** Legacy Python-era fields the UI still displays. */
   database_path: string;

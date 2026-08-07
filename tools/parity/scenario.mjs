@@ -7,7 +7,7 @@
  * Add a step whenever a route or bridge method gains behaviour — this file is the
  * executable definition of "feature parity".
  */
-import { PNG_1X1 } from './host.mjs';
+import { DEFAULT_LLM_REPLY, PNG_1X1 } from './host.mjs';
 // The 1.x reader, used as an oracle for both targets so the assertion does not
 // depend on the code under test.
 import { parseStoreZip } from '../../reference/gallery-zip.js';
@@ -165,7 +165,7 @@ export async function runScenario(N, handles) {
   await rec('prompts.keys', () =>
     (promptList?.prompts ?? [])
       .map((p) => p.key)
-      .filter((k) => !String(k).startsWith('curation_')),
+      .filter((k) => !String(k).startsWith('curation_') && k !== 'command_reroll'),
   );
 
   // ── characters: shared surname must not merge ───────────────────────────
@@ -310,6 +310,30 @@ export async function runScenario(N, handles) {
     negative_prompt: 'parity negative',
     characters: [{ name: '태양', prompt: 'boy, black hair', action: 'standing' }],
   }));
+  // 2.0-only: shot-tag command rewrite fills fields (look-lock keeps caption).
+  handles.setLlmReply?.(JSON.stringify({
+    setup: 'CMD SETUP TAGS',
+    negative_prompt: 'cmd neg',
+    characters: [{ index: 0, name: '태양', prompt: 'CHANGED LOOK', action: 'waving', uc: '' }],
+  }));
+  await rec('cards.command_rewrite', async () => {
+    const res = await post(`/v1/cards/${cardId}/command-rewrite`, {
+      instruction: 'make happier',
+      look_locked: [true],
+      main_prompt: 'PARITY EDITED PROMPT',
+      negative_prompt: 'parity negative',
+      characters: [{ name: '태양', prompt: 'boy, black hair', action: 'standing' }],
+    });
+    return {
+      ok: res?.ok ?? null,
+      look_kept: String(res?.characters?.[0]?.prompt || '').includes('black hair'),
+      action: String(res?.characters?.[0]?.action || ''),
+      has_setup: String(res?.main_prompt || '').includes('CMD SETUP')
+        || String(res?.main_prompt || '').length > 0,
+    };
+  });
+  // Restore default tagger JSON so later jobs are unaffected.
+  handles.setLlmReply?.(DEFAULT_LLM_REPLY);
   await rec('cards.gallery_after_tags', () => get('/v1/gallery?session_id=sess_main&limit=40'));
   const reroll = await rec('cards.reroll', () => post(`/v1/cards/${cardId}/reroll`, { mode: 'nai' }));
   const rerolledId = reroll?.card?.id;

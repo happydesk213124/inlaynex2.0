@@ -1,5 +1,7 @@
 /** Settings migration + export/import. Pure: no storage, no I/O. */
 
+import { normalizeLlmRolesSettings } from '../domain/llm/roles.ts';
+
 /** NovelAI base natural-language mode (replaces the old boolean toggle). */
 export type NaturalBaseMode = 'off' | 'short' | 'detailed' | 'supplement';
 
@@ -66,6 +68,17 @@ export function normalizeCurationStrictIds(value: unknown): boolean {
   return value === true || value === 'true' || value === 1 || value === '1' || value === 'on';
 }
 
+export type MessageSelectGesture = 'single' | 'double' | 'context' | 'longpress';
+
+/** Normalize `card.message_select_gesture`. Missing/unknown → `single`. */
+export function normalizeMessageSelectGesture(value: unknown): MessageSelectGesture {
+  const v = String(value ?? '').toLowerCase().trim();
+  if (v === 'double' || v === 'dbl' || v === '2' || v === 'dblclick') return 'double';
+  if (v === 'context' || v === 'right' || v === 'contextmenu' || v === 'rightclick') return 'context';
+  if (v === 'longpress' || v === 'long' || v === 'press' || v === 'hold') return 'longpress';
+  return 'single';
+}
+
 /**
  * Normalize `card.natural_base` from legacy booleans / unknown strings.
  * Missing or unknown → `short` (matches the old default of `true`).
@@ -127,7 +140,8 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   settings.card = card;
   if (Number(card.scale_semantics_version || 0) < 2) {
     const legacy = Number(card.inline_thumb_pct);
-    card.inline_thumb_pct = Number.isFinite(legacy) ? Math.max(1, legacy / 6) : 100;
+    // 0% is valid (hide always-image by size); only coerce non-finite → 100.
+    card.inline_thumb_pct = Number.isFinite(legacy) ? Math.max(0, legacy / 6) : 100;
     card.scale_semantics_version = 2;
   }
   // Sticky pin: prefer stored %; mark unit/origin so clients and future merges stay consistent.
@@ -159,6 +173,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     || card.person_tag_solo === 'on';
   // person_tag_weight: NAI emphasis on Inlay person-count tags (0 = plain, 1–5 = N::…::)
   card.person_tag_weight = normalizePersonTagWeight(card.person_tag_weight);
+  card.message_select_gesture = normalizeMessageSelectGesture(card.message_select_gesture);
   // costume: main-tagger catalog inject (char_looks always builds costumes[])
   card.costume =
     card.costume === true
@@ -194,6 +209,8 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   curationRaw.embedding = embRaw;
   settings.curation = curationRaw;
   card.composition_curation = false;
+  // llm_roles: autotag / asset_char / curator — missing → follow_main true
+  settings.llm_roles = normalizeLlmRolesSettings(settings.llm_roles);
   // Left-line overlay + always-on image are one feature: overlay_markers is canonical.
   const overlayOn = card.overlay_markers !== false;
   card.overlay_markers = overlayOn;

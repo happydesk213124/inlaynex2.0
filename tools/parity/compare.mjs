@@ -142,12 +142,11 @@ const normalize = (root) => {
         && node.length > 0
         && node.every((p) => p && typeof p === 'object' && 'key' in p)
       ) {
-        const skip = new Set(['curation_', 'asset_tags_inject', 'char_looks']);
         return node
           .filter((p) => {
             const k = String(p.key);
             if (k.startsWith('curation_')) return false;
-            if (k === 'asset_tags_inject' || k === 'char_looks') return false;
+            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll') return false;
             return true;
           })
           .map((v) => walk(v, key));
@@ -161,7 +160,7 @@ const normalize = (root) => {
         && node.includes('format')
       ) {
         return node
-          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks')
+          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll')
           .map((v) => walk(v, key));
       }
       return node.map((v) => walk(v, key));
@@ -192,6 +191,8 @@ const normalize = (root) => {
         // 2.0 bubble inline shots + progress toast — no 1.x card fields.
         // Defaults false; UI/schema + unit tests assert behaviour.
         if (k === 'inline_chat_images' || k === 'progress_toast') continue;
+        // 2.0 bubble inline scale % — no 1.x field; default 100.
+        if (k === 'inline_chat_scale_pct') continue;
         // 2.0 card/gallery `line` (1-based chat line for inline placement). 1.x
         // has no field; unset serialises as null and would spam absent→null.
         if (k === 'line') continue;
@@ -286,6 +287,12 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (v?.mode === 'off' && v?.strict_ids === false
       ? null
       : `2.0 must reset curation.mode=off + strict_ids=false, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'cards.command_rewrite',
+    (v) => (v?.ok === true && v?.look_kept === true && v?.action === 'waving'
+      ? null
+      : `2.0 command-rewrite must keep look + apply action, got ${JSON.stringify(v)}`),
   ],
 ]);
 

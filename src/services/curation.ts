@@ -58,6 +58,7 @@ import { parseJsonLoose } from '../core/util/object';
 import { psGet, psRemove, psSet } from '../storage/device-store';
 import { getConfig, setConfig } from './context';
 import { getPrompt, saveConfig } from './settings';
+import { resolveLlmRole } from '../domain/llm/roles';
 import { callLlm } from '../providers/llm/client';
 import type { Settings } from '../core/types';
 
@@ -423,7 +424,7 @@ async function refineShotsWithGroups(
     })),
   };
   const raw = await callLlm(
-    getConfig().llm,
+    resolveLlmRole(getConfig(), 'curator'),
     curationRefineLlmMessages(system, chatContext, shotsPayload),
   );
   const parsed = parseJsonLoose(raw) as Record<string, unknown>;
@@ -496,7 +497,7 @@ async function refineShotsWithPresets(
   let parsed: Record<string, unknown> | null = null;
   try {
     const raw = await callLlm(
-      getConfig().llm,
+      resolveLlmRole(getConfig(), 'curator'),
       curationRefineLlmMessages(system, chatContext, shotsPayload),
     );
     parsed = parseJsonLoose(raw) as Record<string, unknown>;

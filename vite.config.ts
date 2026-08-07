@@ -18,6 +18,22 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 import { encodePromptPack } from './src/config/prompt-codec.ts';
+import {
+  VENDOR_MODELS_LLM_NEEDLE,
+  VENDOR_MODELS_LLM_PATCH,
+  VENDOR_OE_LLM_NEEDLE,
+  VENDOR_OE_LLM_PATCH,
+  VENDOR_OE_RETURN_NEEDLE,
+  VENDOR_OE_RETURN_PATCH,
+  VENDOR_LLM_BIND_NEEDLE,
+  VENDOR_LLM_BIND_PATCH,
+  VENDOR_LLM_SAVE_TEST_NEEDLE,
+  VENDOR_LLM_SAVE_TEST_PATCH,
+  VENDOR_IMG_BACKEND_DRAFT_NEEDLE,
+  VENDOR_IMG_BACKEND_DRAFT_PATCH,
+  VENDOR_BA_QUEUE_NEEDLE,
+  VENDOR_BA_QUEUE_PATCH,
+} from './tools/vendor-patches/llm-roles.mjs';
 
 const configRoot = dirname(fileURLToPath(import.meta.url));
 
@@ -30,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.1.19';
+const PLUGIN_VERSION = '2.2.2';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -607,6 +623,24 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.2</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>모델 설정 LLM: 메인 태깅 / 오토태그 / 에셋캐릭 / 큐레이터 서브탭 · 「태깅 LLM 따라가기」(기본) · NAI/Comfy는 공유 1블록</li>
+            <li>역할별 연결 테스트·저장 · 오토태그/에셋 looks prepass/큐레이션 refine은 각자 프로필(또는 메인 따라가기)</li>
+            <li>샷 태그 「명령으로 수정」: LLM이 폼 텍스트만 재작성(이미지 미생성) · look_locked · 시드 고정 지원</li>
+            <li>상시 이미지 크기 0% 허용(숨김) · 오버레이 OFF 시 동기화 유지 + 0%/핀 화면 밖으로 가림(통째 제거 렉 방지)</li>
+            <li>말풍선 삽화 ON: 스티키 활성 샷이 포인터 최근접 샷을 따라감</li>
+            <li>메시지 선택: 우클릭·길게 누르기 제스처 추가</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.0</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스티키 상시 이미지: 비율 contain(잘림 없음) · 이미지별 박스 맞춤</li>
+            <li>말풍선 삽화 배율 · 리롤/재생성 후 인라인 자동 갱신</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.1.19</strong>
@@ -2276,6 +2310,94 @@ const VENDOR_STICKY_TAKE_PATCH = `  function takePooledMarker(card, src) {
     return m;
   }`;
 
+/** Allow 상시 이미지 크기 0% (hide-by-size); vendor clamped min=1. */
+const VENDOR_INLINE_PCT_HELP_NEEDLE =
+  `"nx-inline-pct": { title: "상시 이미지 크기", body: "상시·모바일 모서리 미리보기 크기입니다. 100%가 기준이고, 200%면 약 두 배로 보입니다." },`;
+const VENDOR_INLINE_PCT_HELP_PATCH =
+  `"nx-inline-pct": { title: "상시 이미지 크기", body: "상시·모바일 모서리 미리보기 크기입니다. 100%가 기준이고, 200%면 약 두 배로 보입니다. 0%면 상시 이미지를 숨깁니다(오버레이·핀은 유지)." },`;
+
+const VENDOR_INLINE_PCT_HTML_NEEDLE =
+  `<input id="nx-inline-pct" type="number" min="1" step="10" value="\${h(i.inline_thumb_pct ?? 100)}">`;
+const VENDOR_INLINE_PCT_HTML_PATCH =
+  `<input id="nx-inline-pct" type="number" min="0" step="10" value="\${h(i.inline_thumb_pct ?? 100)}">`;
+
+const VENDOR_INLINE_PCT_SAVE_NEEDLE =
+  `inline_thumb_pct: Math.max(1, Ne(N("nx-inline-pct"), 100)),`;
+const VENDOR_INLINE_PCT_SAVE_PATCH =
+  `inline_thumb_pct: Math.max(0, Ne(N("nx-inline-pct"), 100)),`;
+
+const VENDOR_INLINE_PCT_LIVE_NEEDLE =
+  `    }), document.getElementById("nx-inline-pct")?.addEventListener("input", () => {
+      const a = Math.max(1, Ne(N("nx-inline-pct"), 100));`;
+const VENDOR_INLINE_PCT_LIVE_PATCH =
+  `    }), document.getElementById("nx-inline-pct")?.addEventListener("input", () => {
+      const a = Math.max(0, Ne(N("nx-inline-pct"), 100));`;
+
+/**
+ * 말풍선 삽화 ON: sticky active shot = nearest to pointer (sticky thumb follows that shot).
+ * Applied before sticky size patch so Ht still has `m = La()` on the next line.
+ */
+const VENDOR_STICKY_FLASH_NEAR_NEEDLE = `    const markerPcts = e.markers.map((T) => Number(T.yPercent) || 0);
+    const l = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, c) : dn(markerPcts, c);
+    if (l < 0) return;`;
+const VENDOR_STICKY_FLASH_NEAR_PATCH = `    // Overlay visually off: skip flash paints (pin already parked off-screen at 0%).
+    if (typeof overlayVisualOn == "function" ? !overlayVisualOn() : t.backendSettings?.card?.overlay_markers === !1) return;
+    const markerPcts = e.markers.map((T) => Number(T.yPercent) || 0);
+    let l = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, c) : dn(markerPcts, c);
+    if (typeof VC?.stickySegmentForInlineChat == "function") {
+      l = VC.stickySegmentForInlineChat({
+        inlineChatOn: t.backendSettings?.card?.inline_chat_images === !0,
+        pointerX: t._pointerClientX,
+        pointerY: t._pointerClientY,
+        messageRect: est,
+        markerPercents: markerPcts,
+        markerCenters: e.markers.map((T) => T._inlineCenter || null),
+        fallbackSegment: l
+      });
+    }
+    if (l < 0) return;`;
+
+const VENDOR_STICKY_HT_NEAR_NEEDLE = `    const markerPcts = e.markers.map((T) => Number(T.yPercent) || 0);
+    const l = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, c) : dn(markerPcts, c);
+    const p = Nt(), mobileOn = mobilePinOn(), m = La(), cornerNow = Ea();`;
+const VENDOR_STICKY_HT_NEAR_PATCH = `    const markerPcts = e.markers.map((T) => Number(T.yPercent) || 0);
+    let l = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, c) : dn(markerPcts, c);
+    if (typeof VC?.stickySegmentForInlineChat == "function") {
+      l = VC.stickySegmentForInlineChat({
+        inlineChatOn: t.backendSettings?.card?.inline_chat_images === !0,
+        pointerX: t._pointerClientX,
+        pointerY: t._pointerClientY,
+        messageRect: s,
+        markerPercents: markerPcts,
+        markerCenters: e.markers.map((T) => T._inlineCenter || null),
+        fallbackSegment: l
+      });
+    }
+    const p = Nt(), mobileOn = mobilePinOn(), m = La(), cornerNow = Ea();`;
+
+const VENDOR_INLINE_PTR_STICKY_NEEDLE = `    }, l = async (f) => {
+      if (typeof f?.clientX == "number") t._pointerClientX = f.clientX;
+      if (typeof f?.clientY == "number") t._pointerClientY = f.clientY;
+      if (t.uiOpen || t._hostChromeBlocked) return;`;
+const VENDOR_INLINE_PTR_STICKY_PATCH = `    }, l = async (f) => {
+      if (typeof f?.clientX == "number") t._pointerClientX = f.clientX;
+      if (typeof f?.clientY == "number") t._pointerClientY = f.clientY;
+      // 말풍선 삽화: sticky always-image tracks shot nearest the pointer (only when overlay visually on).
+      if (t.backendSettings?.card?.inline_chat_images === !0 && !t.uiOpen && (typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) && t.overlayUi?.markers?.length) {
+        if (!t._inlineStickyPtrRaf) {
+          const kick = () => {
+            t._inlineStickyPtrRaf = 0;
+            try {
+              stickyFlashOnScroll();
+            } catch {
+            }
+            scheduleStickySync();
+          };
+          t._inlineStickyPtrRaf = typeof requestAnimationFrame == "function" ? requestAnimationFrame(kick) : (kick(), 0);
+        }
+      }
+      if (t.uiOpen || t._hostChromeBlocked) return;`;
+
 const VENDOR_STICKY_LA_NEEDLE = `  function La() {
     const e = t.backendSettings?.card || {};
     let n = Ne(e.inline_thumb_pct, 0);
@@ -2292,11 +2414,17 @@ const VENDOR_STICKY_LA_NEEDLE = `  function La() {
 
 const VENDOR_STICKY_LA_PATCH = `  function La() {
     const e = t.backendSettings?.card || {};
-    let n = Ne(e.inline_thumb_pct, 0);
-    if (!n) {
+    // Overlay OFF: force 0% always-image (pair with off-screen pin) — do not tear markers down.
+    if (typeof overlayVisualOn == "function" ? !overlayVisualOn() : e.overlay_markers === !1) {
+      return { w: 0, h: 0, pct: 0 };
+    }
+    // Explicit 0% must hide — do not treat 0 as "missing" and fall back to thumb_w.
+    let n = Number(e.inline_thumb_pct);
+    if (!Number.isFinite(n)) {
       const o = Ne(e.inline_thumb_w, at);
       n = Math.round(o / at * 100) || Sa;
     }
+    n = Math.max(0, n);
     const ov = t.overlayUi || {};
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     const alwaysOn = Nt();
@@ -2491,6 +2619,81 @@ const VENDOR_STICKY_KEEP_PATCH = ``;
 
 const VENDOR_STICKY_SHOW_NEEDLE = `    const showStickyImg = p && !hideThumbOffscreen && !keepHidden, u = 6, b = 11, C = 4;`;
 const VENDOR_STICKY_SHOW_PATCH = `    const showStickyImg = p && m.pct > 0 && !hideThumbOffscreen, u = 6, b = 11, C = 4;`;
+
+/**
+ * Mini ▲/▼ were stacked vertically (15px steps), so many shots pushed arrows
+ * far from the sticky pin. Lay each group in one horizontal row hugging the pin.
+ */
+/** Mini ▲/▼: 50% opacity (za default was fully opaque). */
+const VENDOR_STICKY_ARROW_OPACITY_NEEDLE = `  function za(e, n, o) {
+    return [
+      "position:fixed",
+      \`left:\${e}px\`,
+      \`top:\${n}px\`,
+      "z-index:99974",
+      \`width:\${o}px\`,
+      \`height:\${o}px\`,
+      "border-radius:50%",
+      "display:flex",
+      "align-items:center",
+      "justify-content:center",
+      "font-size:8px",
+      "pointer-events:auto",
+      "opacity:1",
+      "background:rgba(15,23,42,.92)",
+      "color:#e2e8f0",
+      "border:1px solid rgba(124,108,255,.5)",
+      "box-shadow:0 2px 6px rgba(0,0,0,.3)"
+    ].join(";");
+  }`;
+const VENDOR_STICKY_ARROW_OPACITY_PATCH = `  function za(e, n, o) {
+    return [
+      "position:fixed",
+      \`left:\${e}px\`,
+      \`top:\${n}px\`,
+      "z-index:99974",
+      \`width:\${o}px\`,
+      \`height:\${o}px\`,
+      "border-radius:50%",
+      "display:flex",
+      "align-items:center",
+      "justify-content:center",
+      "font-size:8px",
+      "pointer-events:auto",
+      "opacity:.5",
+      "background:rgba(15,23,42,.92)",
+      "color:#e2e8f0",
+      "border:1px solid rgba(124,108,255,.5)",
+      "box-shadow:0 2px 6px rgba(0,0,0,.3)"
+    ].join(";");
+  }`;
+
+const VENDOR_STICKY_ARROW_ROW_NEEDLE = `    for (let T = 0; T < e.markers.length; T += 1) {
+      const v = e.markers[T], X = T === l;
+      v.active = X, v.mini = !X && l >= 0;
+      if (X) continue;
+      let te;
+      l < 0 ? (te = -9999, v.mini = !1) : T < l ? (te = pinTop - (I - g) * 15, g += 1) : (te = f + F * 15, F += 1);
+      try {
+        if (te < 0 || l < 0) await v.el.setStyleAttribute(ze(pinLeft, -9999, o, !1));
+        else {
+          await v.el.setStyleAttribute(za(x, te, b));
+          const arrow = T < l ? "▲" : "▼";`;
+
+const VENDOR_STICKY_ARROW_ROW_PATCH = `    const miniStep = b + 2, aboveTop = Math.max(4, pinTop - (b + 3)), belowTop = f, pinCx = pinLeft + o / 2, aboveStart = Math.round(pinCx - (I * miniStep - (I > 0 ? 2 : 0)) / 2), belowStart = Math.round(pinCx - (R * miniStep - (R > 0 ? 2 : 0)) / 2);
+    for (let T = 0; T < e.markers.length; T += 1) {
+      const v = e.markers[T], X = T === l;
+      v.active = X, v.mini = !X && l >= 0;
+      if (X) continue;
+      let te, tx = x;
+      l < 0 ? (te = -9999, v.mini = !1) : T < l ? (te = aboveTop, tx = aboveStart + g * miniStep, g += 1) : (te = belowTop, tx = belowStart + F * miniStep, F += 1);
+      tx = Math.max(4, Math.min(tx, vpW - b - 4));
+      try {
+        if (l < 0) await v.el.setStyleAttribute(ze(pinLeft, -9999, o, !1));
+        else {
+          // Above ▲ sit over the sticky pin (z 99976 > pin 99974); all minis at 50% opacity.
+          await v.el.setStyleAttribute(T < l ? za(tx, te, b).replace("z-index:99974", "z-index:99976") : za(tx, te, b));
+          const arrow = T < l ? "▲" : "▼";`;
 
 const VENDOR_STICKY_SKIP_NEEDLE = `e._lastHideThumbOff === hideThumbOffscreen && e._lastStickyUserHidden === keepHidden && e._lastVpW === vpW`;
 const VENDOR_STICKY_SKIP_PATCH = `e._lastHideThumbOff === hideThumbOffscreen && e._lastVpW === vpW`;
@@ -2804,6 +3007,197 @@ const VENDOR_CARD_TAG_APPLY_WEIGHT_PATCH = `const Xt = currentMode(), YtPlain = 
         const n = Number(t.backendSettings?.card?.person_tag_weight);
         return Number.isFinite(n) ? Math.max(0, Math.min(5, Math.round(n))) : 3;
       })(), Yt = YtPlain && personWeight > 0 ? \`\${personWeight}::\${YtPlain}::\` : YtPlain, Gt = stripPersonCountTags(baseEl.value || ""), Kt = Yt ? Yt + (Gt ? \`, \${Gt}\` : "") : Gt;`;
+
+/** Shot-tag modal: 시드고정 | seed input next to 인원수 태그 자동. */
+const VENDOR_CARD_TAG_SEED_HTML_NEEDLE = `인원수 태그 자동</label><select data-ct-person-mode style="min-width:150px;\${field}">`;
+const VENDOR_CARD_TAG_SEED_HTML_PATCH = `인원수 태그 자동</label><label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:#d7deea;font-size:11px;font-weight:600;padding:5px 9px;border-radius:999px;border:1px solid rgba(56,189,248,.35);background:rgba(56,189,248,.1)"><input data-ct-seed-lock type="checkbox" checked style="accent-color:#38bdf8">시드고정</label><input data-ct-seed type="number" min="0" step="1" value="\${Number(e.seed) > 0 ? Number(e.seed) : ""}" placeholder="시드" style="width:110px;min-width:90px;\${field}"><select data-ct-person-mode style="min-width:150px;\${field}">`;
+
+/** Shot-tag modal: tiny preview left of 명령 수정, then ✕. */
+const VENDOR_CARD_TAG_CMD_BTN_NEEDLE = `'<button type="button" data-ct-x style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:6px 10px;border-radius:8px">✕</button>',`;
+const VENDOR_CARD_TAG_CMD_BTN_PATCH = `\`<div style="display:flex;gap:6px;align-items:center;flex-shrink:0"><img data-ct-thumb alt="" src="\${h((()=>{try{const s=Ie(e);if(typeof s==="string"&&s)return s;}catch{}return String(e?.image_url||"");})())}" style="width:36px;height:36px;object-fit:contain;border-radius:8px;background:#0b0f18;border:1px solid rgba(255,255,255,.14);flex:0 0 auto;display:block"><button type="button" data-ct-cmd style="cursor:pointer;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.12);color:#fde68a;padding:6px 10px;border-radius:8px;font:600 11px Segoe UI,sans-serif">명령 수정</button><button type="button" data-ct-x style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:6px 10px;border-radius:8px">✕</button></div>\`,`;
+
+/** Per-char 룩 고정 checkbox + lookLocked on slots. */
+const VENDOR_CARD_TAG_LOOK_SLOT_INIT_NEEDLE = `let slots = (Array.isArray(e.characters) ? e.characters : []).slice(0, MAX).map((Vt) => ({
+      name: w(Vt?.name || "", 200),
+      prompt: w(Vt?.prompt || "", 4e3),
+      raw: Vt && typeof Vt == "object" ? {
+        ...Vt
+      } : {},
+      open: !0
+    }));`;
+const VENDOR_CARD_TAG_LOOK_SLOT_INIT_PATCH = `let slots = (Array.isArray(e.characters) ? e.characters : []).slice(0, MAX).map((Vt) => ({
+      name: w(Vt?.name || "", 200),
+      prompt: w(Vt?.prompt || "", 4e3),
+      raw: Vt && typeof Vt == "object" ? {
+        ...Vt
+      } : {},
+      open: !0,
+      lookLocked: !1
+    }));`;
+
+const VENDOR_CARD_TAG_LOOK_EMPTY_NEEDLE = `slots.length || (slots = [{
+      name: "",
+      prompt: "",
+      raw: {},
+      open: !0
+    }]);`;
+const VENDOR_CARD_TAG_LOOK_EMPTY_PATCH = `slots.length || (slots = [{
+      name: "",
+      prompt: "",
+      raw: {},
+      open: !0,
+      lookLocked: !1
+    }]);`;
+
+const VENDOR_CARD_TAG_LOOK_PUSH_NEEDLE = `slots.push({
+          name: "",
+          prompt: "",
+          raw: {},
+          open: !0
+        }), renderSlots(), applyAutoPerson(!0), setStatus(\`char\${slots.length} 추가됨\`));`;
+const VENDOR_CARD_TAG_LOOK_PUSH_PATCH = `slots.push({
+          name: "",
+          prompt: "",
+          raw: {},
+          open: !0,
+          lookLocked: !1
+        }), renderSlots(), applyAutoPerson(!0), setStatus(\`char\${slots.length} 추가됨\`));`;
+
+const VENDOR_CARD_TAG_LOOK_SYNC_NEEDLE = `Vt.push({
+          name: w(Yt?.value || slots[Xt]?.name || "", 200),
+          prompt: w(Gt?.value || slots[Xt]?.prompt || "", 4e3),
+          raw: slots[Xt]?.raw && typeof slots[Xt].raw == "object" ? {
+            ...slots[Xt].raw
+          } : {},
+          open: Kt ? !!Kt.open : slots[Xt]?.open !== !1
+        });`;
+const VENDOR_CARD_TAG_LOOK_SYNC_PATCH = `const lookEl = root.querySelector(\`[data-ct-look-lock="\${Xt}"]\`);
+        Vt.push({
+          name: w(Yt?.value || slots[Xt]?.name || "", 200),
+          prompt: w(Gt?.value || slots[Xt]?.prompt || "", 4e3),
+          raw: slots[Xt]?.raw && typeof slots[Xt].raw == "object" ? {
+            ...slots[Xt].raw
+          } : {},
+          open: Kt ? !!Kt.open : slots[Xt]?.open !== !1,
+          lookLocked: lookEl ? !!lookEl.checked : !!slots[Xt]?.lookLocked
+        });`;
+
+const VENDOR_CARD_TAG_LOOK_HTML_NEEDLE = `<label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>캐릭터 태그 (prompt)</span><textarea data-ct-prompt="\${Xt}" rows="3" style="\${field};resize:vertical;min-height:68px">\${h(Vt.prompt || "")}</textarea></label></div></details>\`).join("")`;
+const VENDOR_CARD_TAG_LOOK_HTML_PATCH = `<label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>캐릭터 태그 (prompt)</span><textarea data-ct-prompt="\${Xt}" rows="3" style="\${field};resize:vertical;min-height:68px">\${h(Vt.prompt || "")}</textarea></label><label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:#d7deea;font-size:11px;font-weight:600"><input data-ct-look-lock="\${Xt}" type="checkbox" \${Vt.lookLocked ? "checked" : ""} style="accent-color:#fbbf24">룩 고정</label></div></details>\`).join("")`;
+
+/** 저장·리롤 passes fixed seed when 시드고정 is on. */
+const VENDOR_CARD_TAG_REROLL_SEED_NEEDLE = `body: {
+            mode: "nai",
+            overrides: {
+              main_prompt: payload.main_prompt,
+              negative_prompt: payload.negative_prompt,
+              characters: payload.characters
+            }
+          }`;
+const VENDOR_CARD_TAG_REROLL_SEED_PATCH = `body: {
+            mode: "nai",
+            overrides: (() => {
+              const o = {
+                main_prompt: payload.main_prompt,
+                negative_prompt: payload.negative_prompt,
+                characters: payload.characters
+              };
+              const lock = !!root.querySelector("[data-ct-seed-lock]")?.checked;
+              const seed = Number(root.querySelector("[data-ct-seed]")?.value);
+              if (lock && Number.isFinite(seed) && seed > 0) o.seed = Math.floor(seed);
+              return o;
+            })()
+          }`;
+
+/**
+ * 명령 수정 popup + POST command-rewrite → fill textareas only.
+ * Inserted after the ✕ listener in openCardTagEdit.
+ */
+const VENDOR_CARD_TAG_CMD_EVT_NEEDLE = `root.querySelector("[data-ct-x]")?.addEventListener("click", (Vt) => {
+      Vt.preventDefault(), Vt.stopPropagation(), saveOnly().catch(() => {
+      });
+    }), (() => {
+      const backdrop = root.querySelector("[data-ct-backdrop]");`;
+const VENDOR_CARD_TAG_CMD_EVT_PATCH = `root.querySelector("[data-ct-x]")?.addEventListener("click", (Vt) => {
+      Vt.preventDefault(), Vt.stopPropagation(), saveOnly().catch(() => {
+      });
+    }), root.querySelector("[data-ct-cmd]")?.addEventListener("click", (Vt) => {
+      Vt.preventDefault(), Vt.stopPropagation();
+      const cardCfg = t.backendSettings?.card || {};
+      const presets = Array.isArray(cardCfg.presets) ? cardCfg.presets : [];
+      const activeId = String(cardCfg.active_preset_id || "");
+      const optHtml = presets.length
+        ? presets.map((p) => {
+            const id = String(p?.id || "");
+            const label = h(String(p?.name || p?.label || id || "preset").slice(0, 40));
+            return \`<option value="\${h(id)}" \${id && id === activeId ? "selected" : ""}>\${label}</option>\`;
+          }).join("")
+        : '<option value="">(활성 프리셋)</option>';
+      let previewSrc = "";
+      try {
+        const s = Ie(e);
+        if (typeof s === "string" && s) previewSrc = s;
+      } catch {}
+      if (!previewSrc) previewSrc = String(e?.image_url || root.querySelector("[data-ct-thumb]")?.getAttribute("src") || "");
+      const previewHtml = previewSrc
+        ? \`<img data-ct-cmd-img alt="" src="\${h(previewSrc)}" style="max-width:min(92vw,560px);max-height:min(46vh,440px);width:auto;height:auto;object-fit:contain;border-radius:12px;background:#0b0f18;border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 48px rgba(0,0,0,.55);display:block">\`
+        : '<div style="width:min(56vw,220px);aspect-ratio:3/4;border-radius:12px;background:#0b0f18;border:1px dashed rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;color:#64748b;font-size:12px">이미지 없음</div>';
+      const pop = document.createElement("div");
+      pop.setAttribute("data-ct-cmd-pop", "1");
+      // Image centered in the free space; form docked to the bottom (mobile-safe).
+      pop.style.cssText = "position:fixed;inset:0;z-index:100010;background:rgba(4,8,16,.78);display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px));box-sizing:border-box;gap:10px;overscroll-behavior:contain";
+      pop.innerHTML = \`<div data-ct-cmd-preview style="flex:1 1 auto;min-height:120px;width:100%;display:flex;align-items:center;justify-content:center;padding:4px 0;pointer-events:none">\${previewHtml}</div><div data-ct-cmd-panel style="width:min(440px,100%);flex:0 1 auto;max-height:min(52vh,520px);overflow:auto;-webkit-overflow-scrolling:touch;background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(251,191,36,.35);border-radius:14px;padding:14px 16px;display:grid;gap:10px;box-shadow:0 24px 64px rgba(0,0,0,.55)"><div style="font-weight:700;font-size:14px;color:#fde68a">명령으로 수정</div><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>지시사항 (비우면 랜덤 재작성)</span><textarea data-ct-cmd-instr rows="3" style="\${field};resize:vertical;min-height:72px;max-height:28vh" placeholder="예: 더 밝은 표정, 카페로 배경 변경"></textarea></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>스타일 프리셋</span><select data-ct-cmd-preset style="\${field}">\${optHtml}</select></label><div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button type="button" data-ct-cmd-cancel style="cursor:pointer;border:0;background:#334155;color:#fff;padding:8px 12px;border-radius:9px;font:12px Segoe UI,sans-serif">취소</button><button type="button" data-ct-cmd-apply style="cursor:pointer;border:0;background:#f59e0b;color:#111;padding:8px 14px;border-radius:9px;font:600 12px Segoe UI,sans-serif">적용</button></div></div>\`;
+      const closePop = () => { try { pop.remove(); } catch {} };
+      pop.addEventListener("click", (ev) => { if (ev.target === pop || ev.target?.getAttribute?.("data-ct-cmd-preview") != null) closePop(); });
+      pop.querySelector("[data-ct-cmd-cancel]")?.addEventListener("click", (ev) => { ev.preventDefault(); closePop(); });
+      pop.querySelector("[data-ct-cmd-panel]")?.addEventListener("click", (ev) => ev.stopPropagation());
+      pop.querySelector("[data-ct-cmd-apply]")?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        const applyBtn = pop.querySelector("[data-ct-cmd-apply]");
+        try {
+          if (applyBtn) applyBtn.disabled = !0;
+          setStatus("명령 수정 중…");
+          syncFromDom();
+          const payload = collectPayload();
+          const look_locked = slots.map((s) => !!s.lookLocked);
+          const preset_id = String(pop.querySelector("[data-ct-cmd-preset]")?.value || "");
+          const instruction = String(pop.querySelector("[data-ct-cmd-instr]")?.value || "");
+          const res = await K(\`/v1/cards/\${encodeURIComponent(e.id)}/command-rewrite\`, {
+            method: "POST",
+            body: {
+              instruction,
+              preset_id,
+              look_locked,
+              main_prompt: payload.main_prompt,
+              negative_prompt: payload.negative_prompt,
+              characters: payload.characters
+            }
+          }, 12e4);
+          if (res?.ok === !1) throw new Error(res?.error?.message || "명령 수정 실패");
+          if (baseEl && res?.main_prompt != null) baseEl.value = String(res.main_prompt || "");
+          if (negEl && res?.negative_prompt != null) negEl.value = String(res.negative_prompt || "");
+          const nextChars = Array.isArray(res?.characters) ? res.characters : [];
+          for (let i = 0; i < slots.length; i += 1) {
+            const nc = nextChars[i];
+            if (!nc) continue;
+            if (nc.name != null) slots[i].name = w(nc.name, 200);
+            if (nc.prompt != null) slots[i].prompt = w(nc.prompt, 4e3);
+            slots[i].raw = { ...(slots[i].raw || {}), action: nc.action || slots[i].raw?.action };
+          }
+          renderSlots();
+          applyAutoPerson(!0);
+          closePop();
+          setStatus("명령 반영됨 · 저장 또는 저장·리롤하세요");
+        } catch (err) {
+          setStatus(\`명령 실패: \${z(err?.message || err, 80)}\`);
+        } finally {
+          if (applyBtn) applyBtn.disabled = !1;
+        }
+      });
+      document.body.appendChild(pop);
+      try { pop.querySelector("[data-ct-cmd-instr]")?.focus?.(); } catch {}
+    }), (() => {
+      const backdrop = root.querySelector("[data-ct-backdrop]");`;
 
 const VENDOR_STICKY_OPEN_CHAR_NEEDLE = `  async function Ua(e) {
     if (!e?.name) return;
@@ -3545,8 +3939,8 @@ const VENDOR_FF_FONT_TOGGLE_PATCH =
 const VENDOR_INLINE_HELP_NEEDLE =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },`;
 const VENDOR_INLINE_HELP_PATCH =
-  `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },
-    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 ±1(역할 무관). 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
+  `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
+    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 ±1(역할 무관). 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-chat-scale": { title: "말풍선 삽화 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
     "nx-progress-toast": { title: "진행 토스트", body: "토스트 노드는 항상 두고, 진행·작업명이 바뀌면 보이게 / 5초간 내용 변화 없으면 눈에서만 숨깁니다. 인덱싱=민트, 그 외=보라. 클릭하면 당장 숨깁니다." },`;
 
@@ -4539,6 +4933,55 @@ const VENDOR_SCROLL_GALLERY_SAME_DOM_PATCH = `          linked.length ? schedule
 const VENDOR_SCOPE_POLL_NEEDLE = `n._scopeTick % 24 === 0 && !(t.jobsInFlight.size`;
 const VENDOR_SCOPE_POLL_PATCH = `n._scopeTick % 4 === 0 && !(t.jobsInFlight.size`;
 
+/** Overlay OFF: keep sticky sync alive; hide via 0% thumb + off-screen pin (no hideStickyMarker thrash). */
+const VENDOR_NT_NEEDLE = `  function Nt() {
+    // Overlay + always-on image are one setting (overlay_markers).
+    return t.backendSettings?.card?.overlay_markers !== !1;
+  }
+  function mobilePinOn() {
+    return !!t.backendSettings?.card?.mobile_toggle_pin;
+  }`;
+const VENDOR_NT_PATCH = `  function Nt() {
+    // Always keep sticky sync / shell path ON. Visual hide is overlayVisualOn() → 0% + off-screen pin.
+    return !0;
+  }
+  function overlayVisualOn() {
+    return t.backendSettings?.card?.overlay_markers !== !1;
+  }
+  function mobilePinOn() {
+    return overlayVisualOn() && !!t.backendSettings?.card?.mobile_toggle_pin;
+  }`;
+
+const VENDOR_PIN_OFFSCREEN_NEEDLE = `  /** Sticky pin left = viewport-width % from left (host viewport, not plugin iframe). */
+  function resolvePinLeftX() {
+    const VC = globalThis.__INLAY_VIEWER_CORE__, pinW = Pt, vw = viewerViewport().vw, pct = getPinXPct();
+    if (typeof VC?.pinPercentToPx == "function") return VC.pinPercentToPx(pct, vw, pinW, 4);
+    return Math.max(4, Math.min(vw - pinW - 4, Math.round(vw * pct / 100)));
+  }
+  /** Sticky pin top = viewport-height % from bottom (CSS top; host viewport). */
+  function resolvePinTopY(pinSize = Pt) {
+    const VC = globalThis.__INLAY_VIEWER_CORE__, vh = viewerViewport().vh, pct = getPinYPct();
+    if (typeof VC?.pinPercentToPxFromBottom == "function") return VC.pinPercentToPxFromBottom(pct, vh, pinSize, 8);
+    const fromBottom = Math.floor(vh * pct / 100);
+    return Math.max(8, Math.min(vh - pinSize - 8, vh - fromBottom - pinSize));
+  }`;
+const VENDOR_PIN_OFFSCREEN_PATCH = `  /** Sticky pin left = viewport-width % from left (host viewport, not plugin iframe). */
+  function resolvePinLeftX() {
+    // Overlay OFF: park far off-screen instead of tearing down markers (avoids lag).
+    if (typeof overlayVisualOn == "function" ? !overlayVisualOn() : t.backendSettings?.card?.overlay_markers === !1) return -99999;
+    const VC = globalThis.__INLAY_VIEWER_CORE__, pinW = Pt, vw = viewerViewport().vw, pct = getPinXPct();
+    if (typeof VC?.pinPercentToPx == "function") return VC.pinPercentToPx(pct, vw, pinW, 4);
+    return Math.max(4, Math.min(vw - pinW - 4, Math.round(vw * pct / 100)));
+  }
+  /** Sticky pin top = viewport-height % from bottom (CSS top; host viewport). */
+  function resolvePinTopY(pinSize = Pt) {
+    if (typeof overlayVisualOn == "function" ? !overlayVisualOn() : t.backendSettings?.card?.overlay_markers === !1) return -99999;
+    const VC = globalThis.__INLAY_VIEWER_CORE__, vh = viewerViewport().vh, pct = getPinYPct();
+    if (typeof VC?.pinPercentToPxFromBottom == "function") return VC.pinPercentToPxFromBottom(pct, vh, pinSize, 8);
+    const fromBottom = Math.floor(vh * pct / 100);
+    return Math.max(8, Math.min(vh - pinSize - 8, vh - fromBottom - pinSize));
+  }`;
+
 /** Overlay OFF keeps Ya shell + click tracking; only hide left-line pins/thumbs. */
 const VENDOR_OVERLAY_MOUNT_NEEDLE =
   `e.floating_viewer !== !1 ? await lt() : await st(), e.overlay_markers !== !1 ? await Ya() : await Wt(), e.debug_panel ? await Ba() : await ct();
@@ -4564,14 +5007,10 @@ const VENDOR_OVERLAY_HT_HIDE_NEEDLE = `  async function Ht(opts = {}) {
     const e = t.overlayUi;
     if (!e?.markers?.length) return;
     const light = !!opts.light && !!e.pinTarget && !!e._pinRectCache;`;
+// Former early-return hideStickyMarker thrash caused lag — visual hide is 0% + off-screen pin now.
 const VENDOR_OVERLAY_HT_HIDE_PATCH = `  async function Ht(opts = {}) {
     const e = t.overlayUi;
     if (!e?.markers?.length) return;
-    // Overlay toggle OFF: keep shell/click, park pins+thumbs off-screen.
-    if (!Nt()) {
-      for (const m of e.markers) hideStickyMarker(m);
-      return;
-    }
     const light = !!opts.light && !!e.pinTarget && !!e._pinRectCache;`;
 
 const VENDOR_OVERLAY_JA_HIDE_NEEDLE = `  async function Ja() {
@@ -4584,17 +5023,24 @@ const VENDOR_OVERLAY_JA_HIDE_PATCH = `  async function Ja() {
     if (t.uiOpen || t._hostChromeBlocked) return;
     const e = t.overlayUi;
     if (!e?.layer) return;
-    if (!Nt()) {
-      if (e.markers?.length) for (const m of e.markers) hideStickyMarker(m);
-      return;
-    }
     const n = e.doc || await ue();
     if (!n) return;`;
 
 const VENDOR_OVERLAY_HELP_NEEDLE =
   `"nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },`;
 const VENDOR_OVERLAY_HELP_PATCH =
-  `"nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 메시지 클릭 선택·말풍선 삽화는 유지됩니다. 켠 동안 스크롤하면 읽는 구간 이미지가 따라갑니다." },`;
+  `"nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },`;
+
+/** Viewer toolbar 상시 chip: reflect overlayVisualOn (Nt always true for sync). */
+const VENDOR_TOOLBAR_SANGSI_NEEDLE =
+  `\`<span style="cursor:pointer;background:\${Nt() ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">\${Nt() ? "상시ON" : "상시"}</span>\`,`;
+const VENDOR_TOOLBAR_SANGSI_PATCH =
+  `\`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "상시ON" : "상시"}</span>\`,`;
+
+const VENDOR_TOOLBAR_SANGSI_REFRESH_NEEDLE =
+  `const A = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await c.getChildren()) : [], inlineOn = Nt();`;
+const VENDOR_TOOLBAR_SANGSI_REFRESH_PATCH =
+  `const A = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await c.getChildren()) : [], inlineOn = typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt();`;
 
 /** Idle help panel shows release notes (hover still swaps to per-setting tips). */
 const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
@@ -4604,9 +5050,222 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.1.19",
-    body: "solo/코스튬 체크 왼쪽 정렬. 업데이트 내역 탭에서 변경점을 볼 수 있습니다."
+    title: "2.2.2",
+    body: "LLM 역할별 모델 탭 · 명령수정 · 상시 0%/오버레이 OFF 가림 · 말풍선 시 스티키 포인터 추적. 업데이트 내역 탭 참고."
   };`;
+
+/** Message select gesture: options + help + save + reader. */
+const VENDOR_SELECT_GESTURE_HELP_NEEDLE =
+  `"nx-select-gesture": { title: "메시지 선택 동작", body: "클릭으로 고를 때만 적용됩니다. 한 번: 바로 확정. 두 번: 첫 클릭은 임시, 같은 메시지 두 번째 클릭에 확정. 스크롤·글자 드래그는 이 설정과 무관합니다." },`;
+const VENDOR_SELECT_GESTURE_HELP_PATCH =
+  `"nx-select-gesture": { title: "메시지 선택 동작", body: "메시지를 고르는 입력 방식입니다. 한 번 클릭 / 두 번 클릭(같은 말풍선 짧게 두 번) / 우클릭 / 길게 누르기. 스크롤·글자 드래그는 이 설정과 무관합니다." },`;
+
+const VENDOR_SELECT_GESTURE_HTML_NEEDLE =
+  `<label data-nx-help-id="nx-select-gesture"><span>메시지 선택 동작</span>
+              <select id="nx-select-gesture">
+                <option value="single" \${(i.message_select_gesture || "single") === "single" ? "selected" : ""}>한 번 클릭</option>
+                <option value="double" \${i.message_select_gesture === "double" ? "selected" : ""}>두 번 클릭</option>
+              </select>
+            </label>`;
+const VENDOR_SELECT_GESTURE_HTML_PATCH =
+  `<label data-nx-help-id="nx-select-gesture"><span>메시지 선택 동작</span>
+              <select id="nx-select-gesture">
+                <option value="single" \${(i.message_select_gesture || "single") === "single" ? "selected" : ""}>한 번 클릭</option>
+                <option value="double" \${i.message_select_gesture === "double" ? "selected" : ""}>두 번 클릭</option>
+                <option value="context" \${i.message_select_gesture === "context" ? "selected" : ""}>우클릭</option>
+                <option value="longpress" \${i.message_select_gesture === "longpress" ? "selected" : ""}>길게 누르기</option>
+              </select>
+            </label>`;
+
+const VENDOR_SELECT_GESTURE_SAVE_NEEDLE =
+  `message_select_gesture: N("nx-select-gesture") === "double" ? "double" : "single",`;
+const VENDOR_SELECT_GESTURE_SAVE_PATCH =
+  `message_select_gesture: (() => { const v = String(N("nx-select-gesture") || "single"); const VC = globalThis.__INLAY_VIEWER_CORE__; return typeof VC?.normalizeSelectionGesture == "function" ? VC.normalizeSelectionGesture(v) : v === "double" || v === "context" || v === "longpress" ? v : "single"; })(),`;
+
+const VENDOR_SELECT_GESTURE_FN_NEEDLE =
+  `  function messageSelectGesture() {
+    return (t.backendSettings?.card || {}).message_select_gesture === "double" ? "double" : "single";
+  }`;
+const VENDOR_SELECT_GESTURE_FN_PATCH =
+  `  function messageSelectGesture() {
+    const raw = (t.backendSettings?.card || {}).message_select_gesture;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    return typeof VC?.normalizeSelectionGesture == "function" ? VC.normalizeSelectionGesture(raw) : raw === "double" || raw === "context" || raw === "longpress" ? raw : "single";
+  }`;
+
+/**
+ * Double: hit-test first, then time-window confirm (SafeDOM detail is unreliable).
+ * Context/longpress: ignore left-click here.
+ */
+const VENDOR_SELECT_ONCLICK_NEEDLE =
+  `onClick = async (f) => {
+      if (t.uiOpen || t._hostChromeBlocked) return;
+      const x = f.clientX, I = f.clientY, R = t._lastPointerGesture || pointerGesture;
+      t._lastPointerGesture = null, pointerGesture = null;
+      if (!R || R.marker || !R.forClick || typeof x != "number" || typeof I != "number") return;
+      const g = Math.max(R.movement || 0, Math.hypot(x - R.x, I - R.y));
+      if (g > 8 || await excludedMessageTarget(e, x, I)) return;
+      const gesture = messageSelectGesture(), detail = Number(f.detail || 1), VC = globalThis.__INLAY_VIEWER_CORE__, resolve = VC?.resolveClickSelectionAction;
+      let action = "confirm";
+      if (typeof resolve == "function") {
+        const decision = resolve({
+          gesture,
+          detail,
+          pendingDomIndex: t._pendingSelectDom,
+          targetDomIndex: null
+        });
+        if (decision.action === "ignore") return;
+        action = decision.action;
+      } else if (gesture === "double") {
+        if (detail === 1) action = "provisional";
+        else if (detail !== 2) return;
+      } else if (detail !== 1) return;
+      const a = await dt(await qe(e));
+      if (!a.length) return;
+      let r = await Oa(e, x, I, a);
+      if (r === -2) return;
+      r < 0 && (r = await Ra(x, I, a));
+      if (r < 0) return;
+      if (action === "provisional") {
+        t._pendingSelectDom = r, await Da(r, a, { source: "provisional" });
+        return;
+      }
+      t._pendingSelectDom = null, await Da(r, a, { source: "click" });
+    },`;
+
+const VENDOR_SELECT_ONCLICK_PATCH =
+  `onClick = async (f) => {
+      if (t.uiOpen || t._hostChromeBlocked) return;
+      const x = f.clientX, I = f.clientY, R = t._lastPointerGesture || pointerGesture;
+      t._lastPointerGesture = null, pointerGesture = null;
+      if (!R || R.marker || !R.forClick || typeof x != "number" || typeof I != "number") return;
+      const g = Math.max(R.movement || 0, Math.hypot(x - R.x, I - R.y));
+      if (g > 8 || await excludedMessageTarget(e, x, I)) return;
+      const gesture = messageSelectGesture();
+      if (gesture === "context" || gesture === "longpress") return;
+      const a = await dt(await qe(e));
+      if (!a.length) return;
+      let r = await Oa(e, x, I, a);
+      if (r === -2) return;
+      r < 0 && (r = await Ra(x, I, a));
+      if (r < 0) return;
+      const VC = globalThis.__INLAY_VIEWER_CORE__, resolve = VC?.resolveClickSelectionAction;
+      let action = "confirm";
+      if (typeof resolve == "function") {
+        const decision = resolve({
+          gesture,
+          detail: 1,
+          pendingDomIndex: t._pendingSelectDom,
+          pendingAt: t._pendingSelectAt,
+          targetDomIndex: r,
+          now: Date.now()
+        });
+        if (decision.action === "ignore") return;
+        action = decision.action;
+      } else if (gesture === "double") {
+        const now = Date.now(), win = 450;
+        const pending = t._pendingSelectDom, at = Number(t._pendingSelectAt || 0);
+        action = pending != null && Number(pending) === Number(r) && at && now - at <= win ? "confirm" : "provisional";
+      }
+      if (action === "provisional") {
+        t._pendingSelectDom = r, t._pendingSelectAt = Date.now(), await Da(r, a, { source: "provisional" });
+        return;
+      }
+      t._pendingSelectDom = null, t._pendingSelectAt = 0, await Da(r, a, { source: "click" });
+    },
+    onContextMenu = async (f) => {
+      if (t.uiOpen || t._hostChromeBlocked) return;
+      if (messageSelectGesture() !== "context") return;
+      try {
+        f.preventDefault?.(), f.stopPropagation?.();
+      } catch {
+      }
+      const x = f.clientX, I = f.clientY;
+      if (typeof x != "number" || typeof I != "number") return;
+      if (await excludedMessageTarget(e, x, I)) return;
+      t._pendingSelectDom = null, t._pendingSelectAt = 0;
+      await Fa(e, x, I, { source: "click" });
+    },`;
+
+const VENDOR_SELECT_FORCLICK_NEEDLE =
+  `      if (await excludedMessageTarget(e, x, I)) {
+        pointerGesture = null;
+        return;
+      }
+      pointerGesture = {
+        x,
+        y: I,
+        movement: 0,
+        marker: !1,
+        forClick: clickTrackEnabled(),
+        forText: textDragSelectEnabled()
+      };
+    }, onClick = async (f) => {`;
+
+const VENDOR_SELECT_FORCLICK_PATCH =
+  `      if (await excludedMessageTarget(e, x, I)) {
+        pointerGesture = null;
+        return;
+      }
+      const selGest = messageSelectGesture();
+      if (selGest === "longpress") {
+        const F = {
+          x,
+          y: I,
+          source: "msg-select",
+          pointerId: f.pointerId,
+          long: !1,
+          timer: null
+        };
+        F.timer = setTimeout(() => {
+          if (mobilePress !== F) return;
+          F.long = !0;
+          (async () => {
+            if (await excludedMessageTarget(e, F.x, F.y)) return;
+            t._pendingSelectDom = null, t._pendingSelectAt = 0;
+            await Fa(e, F.x, F.y, { source: "click" });
+          })().catch(() => {
+          });
+        }, 450), mobilePress = F;
+        pointerGesture = {
+          x,
+          y: I,
+          movement: 0,
+          marker: !1,
+          forClick: !1,
+          forText: !1
+        };
+        return;
+      }
+      pointerGesture = {
+        x,
+        y: I,
+        movement: 0,
+        marker: !1,
+        forClick: clickTrackEnabled() && (selGest === "single" || selGest === "double"),
+        forText: textDragSelectEnabled()
+      };
+    }, onClick = async (f) => {`;
+
+const VENDOR_SELECT_BIND_NEEDLE =
+  `const j = await fe(e, "pointermove", l), d = await fe(e, "pointerdown", p), U = null, clickId = await fe(e, "click", onClick), upId = await fe(e, "pointerup", onPointerUp), cancelId = await fe(e, "pointercancel", onPointerCancel), keyId = await fe(e, "keydown", async (f) => {`;
+const VENDOR_SELECT_BIND_PATCH =
+  `const j = await fe(e, "pointermove", l), d = await fe(e, "pointerdown", p), U = null, clickId = await fe(e, "click", onClick), ctxId = await fe(e, "contextmenu", onContextMenu), upId = await fe(e, "pointerup", onPointerUp), cancelId = await fe(e, "pointercancel", onPointerCancel), keyId = await fe(e, "keydown", async (f) => {`;
+
+const VENDOR_SELECT_OVERLAY_NEEDLE =
+  `      dblId: U,
+      clickId,
+      upId,`;
+const VENDOR_SELECT_OVERLAY_PATCH =
+  `      dblId: U,
+      clickId,
+      ctxId,
+      upId,`;
+
+const VENDOR_SELECT_UNBIND_NEEDLE =
+  `await de(e.doc, "dblclick", e.dblId), await de(e.doc, "click", e.clickId)), e?.body && await de(e.body, "scroll", e.bodyScrollId)`;
+const VENDOR_SELECT_UNBIND_PATCH =
+  `await de(e.doc, "dblclick", e.dblId), await de(e.doc, "click", e.clickId), await de(e.doc, "contextmenu", e.ctxId)), e?.body && await de(e.body, "scroll", e.bodyScrollId)`;
 
 /** Top-center progress toast: one bar; show on change; hide 5s after last change. */
 const VENDOR_PROGRESS_TOAST_FN_NEEDLE = `  async function dismissProgressToast() {
@@ -4804,6 +5463,107 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     } catch {
     }
   }`;
+
+/** Sticky/inline long-press inspect sheet: own reroll/regen paths (not gallery rerollImage). */
+const VENDOR_INSPECT_REROLL_INLINE_NEEDLE =
+  `      if (act === "reroll") {
+        await hideInspect();
+        try {
+          await withImageRerollToast("이미지 리롤 중…", async () => await K(\`/v1/cards/\${encodeURIComponent(card.id)}/reroll\`, {
+            method: "POST",
+            body: {
+              mode: "nai"
+            }
+          }, 18e4));
+          const W = await Z({
+            useOverride: !1
+          }).catch(() => null);
+          W?.sessionId && await ce(W.sessionId);
+          try {
+            await he();
+          } catch {
+          }
+        } catch (err) {
+          y("error", "sticky.reroll.fail", err?.message || err);
+        }
+        return;
+      }`;
+const VENDOR_INSPECT_REROLL_INLINE_PATCH =
+  `      if (act === "reroll") {
+        await hideInspect();
+        try {
+          await withImageRerollToast("이미지 리롤 중…", async () => await K(\`/v1/cards/\${encodeURIComponent(card.id)}/reroll\`, {
+            method: "POST",
+            body: {
+              mode: "nai"
+            }
+          }, 18e4));
+          const W = await Z({
+            useOverride: !1
+          }).catch(() => null);
+          W?.sessionId && await ce(W.sessionId);
+          try {
+            await he();
+          } catch {
+          }
+          try {
+            await refreshSelectedInlineImages();
+          } catch {
+          }
+        } catch (err) {
+          y("error", "sticky.reroll.fail", err?.message || err);
+        }
+        return;
+      }`;
+
+const VENDOR_INSPECT_REGEN_INLINE_NEEDLE =
+  `            await withImageRerollToast(\`메시지 이미지 전체 재생성 중… (0/\${targets.length || "?"})\`, async (report) => rerollMessageImagesLive(liveMsg, {
+              scope,
+              report,
+              onShot: async () => {
+                if (t.galleryUi?.renderGal) await t.galleryUi.renderGal();
+              }
+            }), { shotCount: Math.max(1, targets.length || 1) });
+            scope?.sessionId && await ce(scope.sessionId, !0);
+            try {
+              await he();
+            } catch {
+            }
+          } finally {
+            if (hash) t.jobsInFlight.delete(hash);
+          }
+        } catch (err) {
+          y("error", "sticky.regen.fail", err?.message || err);
+        }
+      }`;
+const VENDOR_INSPECT_REGEN_INLINE_PATCH =
+  `            await withImageRerollToast(\`메시지 이미지 전체 재생성 중… (0/\${targets.length || "?"})\`, async (report) => rerollMessageImagesLive(liveMsg, {
+              scope,
+              report,
+              onShot: async () => {
+                if (t.galleryUi?.renderGal) await t.galleryUi.renderGal();
+                try {
+                  await refreshSelectedInlineImages();
+                } catch {
+                }
+              }
+            }), { shotCount: Math.max(1, targets.length || 1) });
+            scope?.sessionId && await ce(scope.sessionId, !0);
+            try {
+              await he();
+            } catch {
+            }
+            try {
+              await refreshSelectedInlineImages();
+            } catch {
+            }
+          } finally {
+            if (hash) t.jobsInFlight.delete(hash);
+          }
+        } catch (err) {
+          y("error", "sticky.regen.fail", err?.message || err);
+        }
+      }`;
 
 /** After single-image / all-image reroll, refresh bubble illustrations (gallery alone is not enough). */
 const VENDOR_REROLL_IMAGE_INLINE_NEEDLE =
@@ -5166,6 +5926,7 @@ const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
   'char_inject', 'preprocess', 'prefill', 'preset_1', 'autotag',
   'curation_refine', 'curation_embed_hint', 'asset_tags_inject', 'char_looks',
+  'command_reroll',
 ] as const;
 
 /**
@@ -5307,15 +6068,33 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_PRESET_DUP_NEEDLE, 'preset dup');
   assertOnce(raw, VENDOR_PRESET_DEL_NEEDLE, 'preset del clear vibe');
   assertOnce(raw, VENDOR_PRESET_VIBE_EVT_NEEDLE, 'preset vibe upload events');
+  assertOnce(raw, VENDOR_MODELS_LLM_NEEDLE, 'models LLM role subtabs HTML');
+  assertOnce(raw, VENDOR_OE_LLM_NEEDLE, 'Oe() llm roles read');
+  assertOnce(raw, VENDOR_OE_RETURN_NEEDLE, 'Oe() return llm_roles');
+  assertOnce(raw, VENDOR_LLM_BIND_NEEDLE, 'models LLM role bind events');
+  assertOnce(raw, VENDOR_LLM_SAVE_TEST_NEEDLE, 'models LLM save/test events');
+  assertOnce(raw, VENDOR_IMG_BACKEND_DRAFT_NEEDLE, 'img backend draft llm_roles');
+  assertOnce(raw, VENDOR_BA_QUEUE_NEEDLE, 'ba() queue llm_roles');
   for (const [needle, label] of [
     [VENDOR_STICKY_TAKE_NEEDLE, 'sticky takePooledMarker'],
+    [VENDOR_NT_NEEDLE, 'overlay Nt always-on sync'],
+    [VENDOR_PIN_OFFSCREEN_NEEDLE, 'overlay pin offscreen when hidden'],
     [VENDOR_STICKY_LA_NEEDLE, 'sticky La()'],
+    [VENDOR_STICKY_FLASH_NEAR_NEEDLE, 'sticky flash nearest pointer'],
+    [VENDOR_STICKY_HT_NEAR_NEEDLE, 'sticky Ht nearest pointer'],
+    [VENDOR_INLINE_PTR_STICKY_NEEDLE, 'inline pointer sticky sync'],
+    [VENDOR_INLINE_PCT_HELP_NEEDLE, 'inline pct help 0%'],
+    [VENDOR_INLINE_PCT_HTML_NEEDLE, 'inline pct html min 0'],
+    [VENDOR_INLINE_PCT_SAVE_NEEDLE, 'inline pct save min 0'],
+    [VENDOR_INLINE_PCT_LIVE_NEEDLE, 'inline pct live min 0'],
     [VENDOR_STICKY_SIZE_NEEDLE, 'sticky size from image'],
     [VENDOR_STICKY_SKIP_SIZE_NEEDLE, 'sticky skip thumb w/h'],
     [VENDOR_STICKY_ASSIGN_SIZE_NEEDLE, 'sticky assign thumb w/h'],
     [VENDOR_STICKY_FLASH_SIZE_NEEDLE, 'sticky flash resize'],
     [VENDOR_STICKY_KEEP_NEEDLE, 'sticky keepHidden'],
     [VENDOR_STICKY_SHOW_NEEDLE, 'sticky showStickyImg'],
+    [VENDOR_STICKY_ARROW_OPACITY_NEEDLE, 'sticky arrow opacity 50%'],
+    [VENDOR_STICKY_ARROW_ROW_NEEDLE, 'sticky arrow horizontal rows'],
     [VENDOR_STICKY_SKIP_NEEDLE, 'sticky skip keepHidden'],
     [VENDOR_STICKY_ASSIGN_NEEDLE, 'sticky assign keepHidden'],
     [VENDOR_STICKY_CLICK_NEEDLE, 'sticky click hide/revive'],
@@ -5336,10 +6115,21 @@ const loadVendorUi = (): string => {
     [VENDOR_OVERLAY_HT_HIDE_NEEDLE, 'overlay Ht hide when off'],
     [VENDOR_OVERLAY_JA_HIDE_NEEDLE, 'overlay Ja hide when off'],
     [VENDOR_OVERLAY_HELP_NEEDLE, 'overlay help click keeps'],
+    [VENDOR_TOOLBAR_SANGSI_NEEDLE, 'toolbar 상시 visual on'],
+    [VENDOR_TOOLBAR_SANGSI_REFRESH_NEEDLE, 'toolbar 상시 refresh visual'],
     [VENDOR_HEAD_HELP_DEFAULT_NEEDLE, 'head help default changelog'],
     [VENDOR_CARD_TAG_ROSTER_REFRESH_NEEDLE, 'card tag keep stored prompt'],
     [VENDOR_CARD_TAG_STRIP_PERSON_NEEDLE, 'card tag strip person NAI-safe split'],
     [VENDOR_CARD_TAG_APPLY_WEIGHT_NEEDLE, 'card tag apply auto person weight'],
+    [VENDOR_CARD_TAG_SEED_HTML_NEEDLE, 'card tag seed lock html'],
+    [VENDOR_CARD_TAG_CMD_BTN_NEEDLE, 'card tag command btn'],
+    [VENDOR_CARD_TAG_LOOK_SLOT_INIT_NEEDLE, 'card tag lookLocked init'],
+    [VENDOR_CARD_TAG_LOOK_EMPTY_NEEDLE, 'card tag lookLocked empty'],
+    [VENDOR_CARD_TAG_LOOK_PUSH_NEEDLE, 'card tag lookLocked push'],
+    [VENDOR_CARD_TAG_LOOK_SYNC_NEEDLE, 'card tag lookLocked sync'],
+    [VENDOR_CARD_TAG_LOOK_HTML_NEEDLE, 'card tag look lock html'],
+    [VENDOR_CARD_TAG_REROLL_SEED_NEEDLE, 'card tag reroll seed'],
+    [VENDOR_CARD_TAG_CMD_EVT_NEEDLE, 'card tag command events'],
     [VENDOR_CARD_TAG_PERSON_SLOTS_NEEDLE, 'card tag personTagsForSlots solo'],
     [VENDOR_CARD_TAG_PERSON_INIT_NEEDLE, 'card tag person initMode'],
     [VENDOR_CARD_TAG_PERSON_SELECT_NEEDLE, 'card tag person select off'],
@@ -5386,6 +6176,8 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_SAVE_NEEDLE, 'inline chat save'],
     [VENDOR_PROGRESS_TOAST_FN_NEEDLE, 'progress toast sync fn'],
     [VENDOR_PROGRESS_TOAST_PAINT_NEEDLE, 'progress toast paintStatus'],
+    [VENDOR_INSPECT_REROLL_INLINE_NEEDLE, 'inspect sheet reroll inline'],
+    [VENDOR_INSPECT_REGEN_INLINE_NEEDLE, 'inspect sheet regen inline'],
     [VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE, 'reroll toast heartbeat'],
     [VENDOR_REROLL_IMAGE_INLINE_NEEDLE, 'reroll image inline refresh'],
     [VENDOR_REROLL_ALL_INLINE_NEEDLE, 'reroll all inline refresh'],
@@ -5397,6 +6189,15 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_POLL_NEEDLE, 'inline poll pending'],
     [VENDOR_INLINE_POLL_REFRESH_NEEDLE, 'inline poll refresh'],
     [VENDOR_STREAM_SETTLE_KA_NEEDLE, 'stream settle Ka 0.5s'],
+    [VENDOR_SELECT_GESTURE_HELP_NEEDLE, 'select gesture help'],
+    [VENDOR_SELECT_GESTURE_HTML_NEEDLE, 'select gesture html'],
+    [VENDOR_SELECT_GESTURE_SAVE_NEEDLE, 'select gesture save'],
+    [VENDOR_SELECT_GESTURE_FN_NEEDLE, 'select gesture fn'],
+    [VENDOR_SELECT_FORCLICK_NEEDLE, 'select gesture forClick/longpress'],
+    [VENDOR_SELECT_ONCLICK_NEEDLE, 'select gesture onClick/context'],
+    [VENDOR_SELECT_BIND_NEEDLE, 'select gesture bind contextmenu'],
+    [VENDOR_SELECT_OVERLAY_NEEDLE, 'select gesture overlay ctxId'],
+    [VENDOR_SELECT_UNBIND_NEEDLE, 'select gesture unbind contextmenu'],
     [VENDOR_AFTER_REQUEST_MINLEN_NEEDLE, 'afterRequest minlen 30'],
     [VENDOR_AFTER_REQUEST_DELAY_NEEDLE, 'afterRequest DOM#0 select'],
     [VENDOR_AFTER_REQUEST_HELP_NEEDLE, 'afterRequest help DOM#0'],
@@ -5499,14 +6300,32 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_PRESET_DUP_NEEDLE, VENDOR_PRESET_DUP_PATCH)
     .replace(VENDOR_PRESET_DEL_NEEDLE, VENDOR_PRESET_DEL_PATCH)
     .replace(VENDOR_PRESET_VIBE_EVT_NEEDLE, VENDOR_PRESET_VIBE_EVT_PATCH)
+    .replace(VENDOR_MODELS_LLM_NEEDLE, VENDOR_MODELS_LLM_PATCH)
+    .replace(VENDOR_OE_LLM_NEEDLE, VENDOR_OE_LLM_PATCH)
+    .replace(VENDOR_OE_RETURN_NEEDLE, VENDOR_OE_RETURN_PATCH)
+    .replace(VENDOR_LLM_BIND_NEEDLE, VENDOR_LLM_BIND_PATCH)
+    .replace(VENDOR_LLM_SAVE_TEST_NEEDLE, VENDOR_LLM_SAVE_TEST_PATCH)
+    .replace(VENDOR_IMG_BACKEND_DRAFT_NEEDLE, VENDOR_IMG_BACKEND_DRAFT_PATCH)
+    .replace(VENDOR_BA_QUEUE_NEEDLE, VENDOR_BA_QUEUE_PATCH)
     .replace(VENDOR_STICKY_TAKE_NEEDLE, VENDOR_STICKY_TAKE_PATCH)
+    .replace(VENDOR_NT_NEEDLE, VENDOR_NT_PATCH)
+    .replace(VENDOR_PIN_OFFSCREEN_NEEDLE, VENDOR_PIN_OFFSCREEN_PATCH)
     .replace(VENDOR_STICKY_LA_NEEDLE, VENDOR_STICKY_LA_PATCH)
+    .replace(VENDOR_STICKY_FLASH_NEAR_NEEDLE, VENDOR_STICKY_FLASH_NEAR_PATCH)
+    .replace(VENDOR_STICKY_HT_NEAR_NEEDLE, VENDOR_STICKY_HT_NEAR_PATCH)
+    .replace(VENDOR_INLINE_PTR_STICKY_NEEDLE, VENDOR_INLINE_PTR_STICKY_PATCH)
+    .replace(VENDOR_INLINE_PCT_HELP_NEEDLE, VENDOR_INLINE_PCT_HELP_PATCH)
+    .replace(VENDOR_INLINE_PCT_HTML_NEEDLE, VENDOR_INLINE_PCT_HTML_PATCH)
+    .replace(VENDOR_INLINE_PCT_SAVE_NEEDLE, VENDOR_INLINE_PCT_SAVE_PATCH)
+    .replace(VENDOR_INLINE_PCT_LIVE_NEEDLE, VENDOR_INLINE_PCT_LIVE_PATCH)
     .replace(VENDOR_STICKY_SIZE_NEEDLE, VENDOR_STICKY_SIZE_PATCH)
     .replace(VENDOR_STICKY_SKIP_SIZE_NEEDLE, VENDOR_STICKY_SKIP_SIZE_PATCH)
     .replace(VENDOR_STICKY_ASSIGN_SIZE_NEEDLE, VENDOR_STICKY_ASSIGN_SIZE_PATCH)
     .replace(VENDOR_STICKY_FLASH_SIZE_NEEDLE, VENDOR_STICKY_FLASH_SIZE_PATCH)
     .replace(VENDOR_STICKY_KEEP_NEEDLE, VENDOR_STICKY_KEEP_PATCH)
     .replace(VENDOR_STICKY_SHOW_NEEDLE, VENDOR_STICKY_SHOW_PATCH)
+    .replace(VENDOR_STICKY_ARROW_OPACITY_NEEDLE, VENDOR_STICKY_ARROW_OPACITY_PATCH)
+    .replace(VENDOR_STICKY_ARROW_ROW_NEEDLE, VENDOR_STICKY_ARROW_ROW_PATCH)
     .replace(VENDOR_STICKY_SKIP_NEEDLE, VENDOR_STICKY_SKIP_PATCH)
     .replace(VENDOR_STICKY_ASSIGN_NEEDLE, VENDOR_STICKY_ASSIGN_PATCH)
     .replace(VENDOR_STICKY_CLICK_NEEDLE, VENDOR_STICKY_CLICK_PATCH)
@@ -5524,6 +6343,15 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CARD_TAG_ROSTER_REFRESH_NEEDLE, VENDOR_CARD_TAG_ROSTER_REFRESH_PATCH)
     .replace(VENDOR_CARD_TAG_STRIP_PERSON_NEEDLE, VENDOR_CARD_TAG_STRIP_PERSON_PATCH)
     .replace(VENDOR_CARD_TAG_APPLY_WEIGHT_NEEDLE, VENDOR_CARD_TAG_APPLY_WEIGHT_PATCH)
+    .replace(VENDOR_CARD_TAG_SEED_HTML_NEEDLE, VENDOR_CARD_TAG_SEED_HTML_PATCH)
+    .replace(VENDOR_CARD_TAG_CMD_BTN_NEEDLE, VENDOR_CARD_TAG_CMD_BTN_PATCH)
+    .replace(VENDOR_CARD_TAG_LOOK_SLOT_INIT_NEEDLE, VENDOR_CARD_TAG_LOOK_SLOT_INIT_PATCH)
+    .replace(VENDOR_CARD_TAG_LOOK_EMPTY_NEEDLE, VENDOR_CARD_TAG_LOOK_EMPTY_PATCH)
+    .replace(VENDOR_CARD_TAG_LOOK_PUSH_NEEDLE, VENDOR_CARD_TAG_LOOK_PUSH_PATCH)
+    .replace(VENDOR_CARD_TAG_LOOK_SYNC_NEEDLE, VENDOR_CARD_TAG_LOOK_SYNC_PATCH)
+    .replace(VENDOR_CARD_TAG_LOOK_HTML_NEEDLE, VENDOR_CARD_TAG_LOOK_HTML_PATCH)
+    .replace(VENDOR_CARD_TAG_REROLL_SEED_NEEDLE, VENDOR_CARD_TAG_REROLL_SEED_PATCH)
+    .replace(VENDOR_CARD_TAG_CMD_EVT_NEEDLE, VENDOR_CARD_TAG_CMD_EVT_PATCH)
     .replace(VENDOR_CARD_TAG_PERSON_SLOTS_NEEDLE, VENDOR_CARD_TAG_PERSON_SLOTS_PATCH)
     .replace(VENDOR_CARD_TAG_PERSON_INIT_NEEDLE, VENDOR_CARD_TAG_PERSON_INIT_PATCH)
     .replace(VENDOR_CARD_TAG_PERSON_SELECT_NEEDLE, VENDOR_CARD_TAG_PERSON_SELECT_PATCH)
@@ -5563,6 +6391,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_SAVE_NEEDLE, VENDOR_INLINE_SAVE_PATCH)
     .replace(VENDOR_PROGRESS_TOAST_FN_NEEDLE, VENDOR_PROGRESS_TOAST_FN_PATCH)
     .replace(VENDOR_PROGRESS_TOAST_PAINT_NEEDLE, VENDOR_PROGRESS_TOAST_PAINT_PATCH)
+    .replace(VENDOR_INSPECT_REROLL_INLINE_NEEDLE, VENDOR_INSPECT_REROLL_INLINE_PATCH)
+    .replace(VENDOR_INSPECT_REGEN_INLINE_NEEDLE, VENDOR_INSPECT_REGEN_INLINE_PATCH)
     .replace(VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE, VENDOR_REROLL_TOAST_HEARTBEAT_PATCH)
     .replace(VENDOR_REROLL_IMAGE_INLINE_NEEDLE, VENDOR_REROLL_IMAGE_INLINE_PATCH)
     .replace(VENDOR_REROLL_ALL_INLINE_NEEDLE, VENDOR_REROLL_ALL_INLINE_PATCH)
@@ -5574,6 +6404,15 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_POLL_NEEDLE, VENDOR_INLINE_POLL_PATCH)
     .replace(VENDOR_INLINE_POLL_REFRESH_NEEDLE, VENDOR_INLINE_POLL_REFRESH_PATCH)
     .replace(VENDOR_STREAM_SETTLE_KA_NEEDLE, VENDOR_STREAM_SETTLE_KA_PATCH)
+    .replace(VENDOR_SELECT_GESTURE_HELP_NEEDLE, VENDOR_SELECT_GESTURE_HELP_PATCH)
+    .replace(VENDOR_SELECT_GESTURE_HTML_NEEDLE, VENDOR_SELECT_GESTURE_HTML_PATCH)
+    .replace(VENDOR_SELECT_GESTURE_SAVE_NEEDLE, VENDOR_SELECT_GESTURE_SAVE_PATCH)
+    .replace(VENDOR_SELECT_GESTURE_FN_NEEDLE, VENDOR_SELECT_GESTURE_FN_PATCH)
+    .replace(VENDOR_SELECT_FORCLICK_NEEDLE, VENDOR_SELECT_FORCLICK_PATCH)
+    .replace(VENDOR_SELECT_ONCLICK_NEEDLE, VENDOR_SELECT_ONCLICK_PATCH)
+    .replace(VENDOR_SELECT_BIND_NEEDLE, VENDOR_SELECT_BIND_PATCH)
+    .replace(VENDOR_SELECT_OVERLAY_NEEDLE, VENDOR_SELECT_OVERLAY_PATCH)
+    .replace(VENDOR_SELECT_UNBIND_NEEDLE, VENDOR_SELECT_UNBIND_PATCH)
     .replace(VENDOR_AFTER_REQUEST_MINLEN_NEEDLE, VENDOR_AFTER_REQUEST_MINLEN_PATCH)
     .replace(VENDOR_AFTER_REQUEST_DELAY_NEEDLE, VENDOR_AFTER_REQUEST_DELAY_PATCH)
     .replace(VENDOR_AFTER_REQUEST_HELP_NEEDLE, VENDOR_AFTER_REQUEST_HELP_PATCH)
@@ -5605,6 +6444,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_OVERLAY_HT_HIDE_NEEDLE, VENDOR_OVERLAY_HT_HIDE_PATCH)
     .replace(VENDOR_OVERLAY_JA_HIDE_NEEDLE, VENDOR_OVERLAY_JA_HIDE_PATCH)
     .replace(VENDOR_OVERLAY_HELP_NEEDLE, VENDOR_OVERLAY_HELP_PATCH)
+    .replace(VENDOR_TOOLBAR_SANGSI_NEEDLE, VENDOR_TOOLBAR_SANGSI_PATCH)
+    .replace(VENDOR_TOOLBAR_SANGSI_REFRESH_NEEDLE, VENDOR_TOOLBAR_SANGSI_REFRESH_PATCH)
     .replace(VENDOR_HEAD_HELP_DEFAULT_NEEDLE, VENDOR_HEAD_HELP_DEFAULT_PATCH)
     .replace(VENDOR_EXPLORER_CARD_IMG_NEEDLE, VENDOR_EXPLORER_CARD_IMG_PATCH)
     .replace(VENDOR_EXPLORER_CAP_CSS_NEEDLE, VENDOR_EXPLORER_CAP_CSS_PATCH)

@@ -35,6 +35,7 @@ import {
   stripPersonCountTags,
 } from '../domain/character/tags';
 import { dimsForAspect } from '../domain/nai-meta/aspect.ts';
+import { resolveGenerationSeed } from '../domain/prompt/command-rewrite';
 import { resolveGenerationCfgParams } from '../domain/style-preset-overrides';
 import { generateViaComfy, imageBackendKind } from '../providers/comfy/client';
 import { generateT2i } from '../providers/nai/client';
@@ -95,6 +96,11 @@ export type ImageRequest = Pick<GenerationPlan, 'main' | 'neg' | 'captions'> & {
   /** Optional per-shot canvas override (auto_aspect). */
   width?: number;
   height?: number;
+  /**
+   * Optional fixed seed (shot-tag 시드고정). When missing/0, falls back to
+   * `nai.seed`, then a random seed — same as a normal generation.
+   */
+  seed?: number;
 };
 
 export interface GeneratedImage {
@@ -268,8 +274,9 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
   // Both providers type their cast as `ShotCharacter`, which requires a `name`;
   // captions carry none and only the four caption fields are ever read.
   const characters = plan.captions as unknown as ShotCharacter[];
+  const resolvedSeed = resolveGenerationSeed(plan.seed, nai.seed);
   if (imageBackendKind(nai) === 'comfy') {
-    const naiSized = { ...nai, width: dims.width, height: dims.height };
+    const naiSized = { ...nai, width: dims.width, height: dims.height, seed: resolvedSeed };
     const [comfyBytes, comfySeed] = await generateViaComfy(naiSized, plan.main, plan.neg, characters);
     return { bytes: comfyBytes, seed: comfySeed };
   }
@@ -336,7 +343,7 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
     negative_prompt: plan.neg,
     width: dims.width,
     height: dims.height,
-    seed: Number(nai.seed ?? 0) || 0,
+    seed: resolvedSeed,
     steps: Math.min(Number(nai.steps ?? 28) || 28, 28),
     cfg_scale: cfgParams.cfg_scale,
     cfg_rescale: cfgParams.cfg_rescale,

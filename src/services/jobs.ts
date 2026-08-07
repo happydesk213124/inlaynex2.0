@@ -45,6 +45,7 @@ import {
   hasNaiBodyControl,
 } from '../providers/nai/http';
 import { callLlm } from '../providers/llm/client';
+import { resolveLlmRole } from '../domain/llm/roles';
 import { characterHasAppearance, characterMaxLimit } from '../domain/character/tags';
 import { dedupeShotCharacters } from '../domain/character/roster';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
@@ -550,7 +551,7 @@ async function runJob(jobId: string): Promise<void> {
             groups: assetCollected.packed.groups.map((g) => g.trigger),
             previews: (assetCollected.previews || []).map((p) => p.name),
           });
-          const lookRaw = await callLlm(getConfig().llm, lookMessages);
+          const lookRaw = await callLlm(resolveLlmRole(getConfig(), 'asset_char'), lookMessages);
           if (await cancelJobIfStale(jobId, 'superseded after char looks')) return;
           const lookTagged = parseJsonLoose(lookRaw) as TaggerResult;
           const newChars = Array.isArray(lookTagged?.new_characters) ? lookTagged.new_characters : [];
@@ -591,7 +592,7 @@ async function runJob(jobId: string): Promise<void> {
       const pre = stripCbs(await getPrompt('preprocess'));
       if (pre) {
         const preMessages = [{ role: 'system', content: pre }, messages[messages.length - 1]];
-        const summary = await callLlm(getConfig().llm, preMessages);
+        const summary = await callLlm(resolveLlmRole(getConfig(), 'main'), preMessages);
         if (await cancelJobIfStale(jobId, 'superseded during preprocess')) return;
         messages.splice(messages.length - 1, 0, {
           role: 'system',
@@ -599,7 +600,7 @@ async function runJob(jobId: string): Promise<void> {
         });
       }
     }
-    const taggedRaw = await callLlm(getConfig().llm, messages);
+    const taggedRaw = await callLlm(resolveLlmRole(getConfig(), 'main'), messages);
     if (await cancelJobIfStale(jobId, 'superseded after tagging')) return;
     const tagged = parseJsonLoose(taggedRaw) as TaggerResult;
     let shots = flattenShots(tagged, request.assistant_text);

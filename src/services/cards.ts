@@ -26,6 +26,7 @@ import type { ApiResult, CardRow, ShotCharacter, TaggedShot } from '../core/type
 import {
   ASSISTANT_PREVIEW_LIMIT,
   cleanText,
+  stripCbs,
   toInt,
   toOptionalFloat,
   unifiedSessionIdForCharacter,
@@ -36,9 +37,16 @@ import {
   collectStylePositives,
   resolveRerollLockedSetup,
 } from '../domain/prompt/reroll-setup';
+import {
+  mergeCommandRewriteCharacters,
+  mergeCommandRewriteMain,
+} from '../domain/prompt/command-rewrite';
 import { QUALITY_TAGS } from '../config/defaults';
+import { parseJsonLoose } from '../core/util/object';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
 import { idbGet, idbGetAll, idbPut } from '../storage/stores';
+import { callLlm } from '../providers/llm/client';
+import type { LlmMessage } from '../providers/llm/transform';
 import { rosterForSession } from './characters';
 import { getConfig, messageBusyKeys } from './context';
 import {
@@ -52,6 +60,7 @@ import type { NaiCaption } from './generation';
 import { deleteCard } from './gallery';
 import { busyReplyForRequest, jobKey } from './job-locks';
 import { createJob } from './jobs';
+import { getPrompt } from './settings';
 import { modelToNaia } from '../providers/nai/payload';
 
 /** Serialised card columns are user data; a malformed one must not fail the request. */
@@ -423,7 +432,12 @@ export async function rerollCard(
     genMetaExtra = { setup: plan.meta.setup, person: plan.meta.person, characters: charList };
   }
 
-  const { bytes, seed } = await generateImage({ main, neg, captions }, meta.aspect ?? ov?.aspect);
+  const ovSeed = ov && 'seed' in ov ? Number(ov.seed) : NaN;
+  const seedOverride = Number.isFinite(ovSeed) && ovSeed > 0 ? Math.floor(ovSeed) : undefined;
+  const { bytes, seed } = await generateImage(
+    { main, neg, captions, seed: seedOverride },
+    meta.aspect ?? ov?.aspect,
+  );
   const newId = uuid();
   const now = Date.now() / 1000;
   let prevLoc = await readImageLocation(row.id);
@@ -495,6 +509,136 @@ export async function rerollCard(
   };
   await attachImageUrls(card);
   return { ok: true, replaced: cardId, card };
+}
+
+export type CommandRewriteBody = {
+  instruction?: unknown;
+  preset_id?: unknown;
+  look_locked?: unknown;
+  main_prompt?: unknown;
+  negative_prompt?: unknown;
+  characters?: unknown;
+};
+
+/**
+ * LLM rewrite for shot-tag form fields. Does not generate an image — the UI
+ * fills textareas and the user chooses 저장 / 저장·리롤.
+ */
+export async function commandRewriteCard(cardId: string, body: CommandRewriteBody = {}): Promise<ApiResult> {
+  const row = await idbGet('cards', cardId);
+  if (!row) return { ok: false, error: { code: 'not_found', message: 'card not found' } };
+
+  const currentMain = cleanText(body.main_prompt ?? row.main_prompt, 8000);
+  const currentNeg = cleanText(body.negative_prompt ?? row.negative_prompt, 8000);
+  let currentChars: Array<Record<string, unknown>> = [];
+  if (Array.isArray(body.characters)) {
+    currentChars = body.characters.filter((c) => c && typeof c === 'object') as Array<Record<string, unknown>>;
+  } else {
+    const parsed = parseJsonOr(row.characters_json || '[]', []);
+    currentChars = Array.isArray(parsed)
+      ? (parsed.filter((c) => c && typeof c === 'object') as Array<Record<string, unknown>>)
+      : [];
+  }
+  currentChars = currentChars.slice(0, characterMaxLimit(getConfig().card || {}));
+
+  const lookLockedRaw = Array.isArray(body.look_locked) ? body.look_locked : [];
+  const lookLocked = currentChars.map((_, i) => lookLockedRaw[i] === true);
+
+  const cardCfg = (getConfig().card || {}) as Record<string, unknown>;
+  const presets: unknown[] = Array.isArray(cardCfg.presets) ? (cardCfg.presets as unknown[]) : [];
+  const wantPreset = cleanText(body.preset_id, 120);
+  const activeId = cleanText(cardCfg.active_preset_id, 120);
+  let stylePositive = '';
+  let chosenPreset: Record<string, unknown> | null = null;
+  if (presets.length) {
+    const id = wantPreset || activeId;
+    if (id) {
+      chosenPreset =
+        (presets.find(
+          (p) => typeof p === 'object' && p && cleanText((p as Record<string, unknown>).id, 120) === id,
+        ) as Record<string, unknown> | undefined) || null;
+    }
+    if (!chosenPreset && typeof presets[0] === 'object') chosenPreset = presets[0] as Record<string, unknown>;
+    if (chosenPreset) {
+      stylePositive = cleanText(chosenPreset.positive || chosenPreset.pos || '', 8000);
+    }
+  }
+
+  const instruction = cleanText(body.instruction, 4000);
+  const payload = {
+    instruction: instruction || '(empty — creatively randomize unlocked fields)',
+    main_prompt: currentMain,
+    negative_prompt: currentNeg,
+    characters: currentChars.map((ch, i) => ({
+      index: i,
+      name: cleanText(ch.name, 200),
+      prompt: cleanText(ch.prompt, 4000),
+      look_locked: lookLocked[i],
+      look_tags: lookLocked[i] ? cleanText(ch.prompt, 4000) : '',
+      uc: cleanText(ch.uc, 2000),
+    })),
+  };
+
+  const system = stripCbs(await getPrompt('command_reroll'));
+  const messages: LlmMessage[] = [
+    { role: 'system', content: system || 'Rewrite prompts. Return JSON only.' },
+    { role: 'user', content: JSON.stringify(payload) },
+  ];
+  let raw = '';
+  try {
+    raw = await callLlm(getConfig().llm, messages);
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: 'llm_failed',
+        message: `명령 수정 LLM 실패: ${String((err as Error)?.message || err).slice(0, 240)}`,
+      },
+    };
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = parseJsonLoose(raw) as Record<string, unknown>;
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: 'parse_failed',
+        message: String((err as Error)?.message || err).slice(0, 240),
+      },
+    };
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return { ok: false, error: { code: 'parse_failed', message: 'LLM returned non-object JSON' } };
+  }
+
+  const naiaModel = modelToNaia(getConfig().nai?.model || 'nai-diffusion-4-5-full');
+  const qualitySuffixes = Object.values(QUALITY_TAGS).filter(Boolean);
+  if (QUALITY_TAGS[naiaModel]) qualitySuffixes.unshift(QUALITY_TAGS[naiaModel]);
+  const stylePositives = collectStylePositives(cardCfg);
+  const meta = parseJsonOr(row.meta_json || '{}', {}) as Record<string, unknown>;
+
+  const main_prompt = mergeCommandRewriteMain({
+    currentMain,
+    setup: parsed.setup,
+    mainPrompt: parsed.main_prompt,
+    stylePositive,
+    person: cleanText(meta.person || '', 400),
+    stylePositives,
+    qualitySuffixes,
+  });
+  const negFromLlm = cleanText(parsed.negative_prompt, 8000);
+  const negative_prompt = negFromLlm || currentNeg;
+  const characters = mergeCommandRewriteCharacters(currentChars, parsed.characters, lookLocked);
+
+  return {
+    ok: true,
+    main_prompt,
+    negative_prompt,
+    characters,
+    preset_id: cleanText((chosenPreset?.id as string) || wantPreset || activeId, 120),
+  };
 }
 
 /**

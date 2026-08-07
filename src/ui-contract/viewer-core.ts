@@ -220,6 +220,8 @@ export interface RebindIdentity {
 /**
  * Hot-path link: exact content_hash only.
  * Soft/streaming upgrades go through findHashRebindCandidates + API rebind.
+ * UI must still scan after a partial link (some shots already on newHash) —
+ * maybeRebindAndLink attaches those siblings, then returns linkedCards for paint.
  */
 export function linkCardsForMessage<T extends GalleryCard = GalleryCard>(
   cards: T[] | null | undefined,

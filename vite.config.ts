@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.6';
+const PLUGIN_VERSION = '2.2.7';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -623,6 +623,15 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.7</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>해시 rebind: 일부 샷이 이미 새 해시여도 형제(구 해시) 카드까지 붙인 뒤 선택/말풍선 갱신</li>
+            <li>성능: 샷마다 풀 Da-relink 대신 이미 링크면 형제 rebind만 · done/첫 링크만 풀 relink</li>
+            <li>성능: 스크롤 같은 말풍선이면 Da+inline 스킵(스티키만) · 말풍선 keep에 linked id 포함·조기 스킵</li>
+            <li>말풍선 삽화: 배치할 샷이 비면 pending만 지우고 기존 샷 유지(마지막 샷에서 통째 사라짐 방지)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.6</strong>
@@ -3001,7 +3010,21 @@ const VENDOR_SCROLL_TRACK_SNAP_NEEDLE = `      // Always re-enter Da — same DO
       t._scrollTrackBusy = !1;
     }
   }`;
-const VENDOR_SCROLL_TRACK_SNAP_PATCH = `      // Always re-enter Da — same DOM index can hold new text after a reply finishes.
+const VENDOR_SCROLL_TRACK_SNAP_PATCH = `      // Same bubble (not streaming): sticky only — skip Da + inline reinject thrash.
+      const samePick = t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(pick);
+      if (samePick && !t._scriptStreaming) {
+        try {
+          if (typeof nxUpdateStickyActiveOnScrollEnd == "function") {
+            if (t._stickySnapTimer) clearTimeout(t._stickySnapTimer);
+            t._stickySnapTimer = setTimeout(() => {
+              t._stickySnapTimer = null, nxUpdateStickyActiveOnScrollEnd().catch(() => {});
+            }, 120);
+          }
+        } catch {
+        }
+        return;
+      }
+      // New bubble (or streaming text): full scroll select. Same index can hold new text after reply.
       await Da(pick, n, { source: "scroll" });
       // Scroll select done → NEW sticky activate (live pin % / pointer nearest).
       try {
@@ -4862,6 +4885,22 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         }
       };
+      // Nothing to paint: strip leftover pending circles only — never wipe already-shown shots.
+      // (Job done clears pending then reinjects; empty linked/URLs used to erase 1..N.)
+      if (!placements.length) {
+        try {
+          const pendOnly = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-pending]"));
+          for (const node of pendOnly) {
+            try {
+              if (node && typeof node.remove == "function") await node.remove();
+            } catch {
+            }
+          }
+        } catch {
+        }
+        y("info", "inline.inject", "shots=0 keep existing");
+        return;
+      }
       await removeAllMarkers();
       await removeAllMarkers();
       // Nuclear: leftover duplicate circles/images → rewrite bubble HTML without markers.
@@ -4873,10 +4912,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           await msgEl.setInnerHTML(htmlLeft);
         }
       } catch {
-      }
-      if (!placements.length) {
-        y("info", "inline.inject", "shots=0 cleared");
-        return;
       }
       const html = String(await msgEl.getInnerHTML() || "");
       const cleaned = typeof VC.stripInlayInlineHtml == "function" ? VC.stripInlayInlineHtml(html) : html;
@@ -5018,6 +5053,29 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       if (!Array.isArray(els) || !els.length) return;
       const selIdx = Number(sel.domIndex);
       if (!Number.isFinite(selIdx) || selIdx < 0 || selIdx >= els.length) return;
+      const pendingKey = Array.isArray(t._inlinePending)
+        ? t._inlinePending.map((p) => String(p?.cardId || p?.id || "")).filter(Boolean).sort().join(",")
+        : "";
+      let linkedKey = "";
+      try {
+        linkedKey = linkedCards(sel).map((card) => String(card?.id || "")).filter(Boolean).sort().join("|");
+      } catch {
+        linkedKey = "";
+      }
+      // Cheap skip before any SafeDOM De/resolve — same bubble + same linked shots + same pending.
+      if (
+        fromCache
+        && t._inlineKeepDoc === doc
+        && Number(t._inlineKeepElsLen) === els.length
+        && Number(t._inlineKeepSelIdx) === selIdx
+        && String(t._inlineKeepPendingKey || "") === pendingKey
+        && String(t._inlineKeepLinkedKey || "") === linkedKey
+        && Array.isArray(t._inlineKeepIdxs)
+        && t._inlineKeepIdxs.length
+      ) {
+        y("info", "inline.keep.skip", \`DOM#\${selIdx} cheap keep=\${t._inlineKeepIdxs.join(",")}\`);
+        return;
+      }
       const VC = globalThis.__INLAY_VIEWER_CORE__;
       const allRoles = !!t.backendSettings?.card?.generate_all_roles;
       const maxPerSide = Number(VC?.INLINE_KEEP_MAX_PER_SIDE) > 0
@@ -5188,14 +5246,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const prevKeep = Array.isArray(t._inlineKeepIdxs) ? t._inlineKeepIdxs : [];
       const nextKeepArr = [...keep].sort((a, b) => a - b);
       const elsRemounted = !fromCache || t._inlineKeepDoc !== doc || Number(t._inlineKeepElsLen) !== els.length;
-      const pendingKey = Array.isArray(t._inlinePending)
-        ? t._inlinePending.map((p) => String(p?.cardId || p?.id || "")).filter(Boolean).sort().join(",")
-        : "";
       const sameKeep = !elsRemounted
         && Number(t._inlineKeepSelIdx) === selIdx
         && prevKeep.length === nextKeepArr.length
         && prevKeep.every((v, i) => Number(v) === Number(nextKeepArr[i]))
-        && String(t._inlineKeepPendingKey || "") === pendingKey;
+        && String(t._inlineKeepPendingKey || "") === pendingKey
+        && String(t._inlineKeepLinkedKey || "") === linkedKey;
       if (sameKeep) {
         y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeepArr.join(",")}\`);
         return;
@@ -5212,6 +5268,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       t._inlineKeepElsLen = els.length;
       t._inlineKeepSelIdx = selIdx;
       t._inlineKeepPendingKey = pendingKey;
+      t._inlineKeepLinkedKey = linkedKey;
       const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
       y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=\${elsRemounted ? "full" : "diff"}\`);
       if (keep.has(selIdx) && els[selIdx]) {
@@ -5285,17 +5342,24 @@ const VENDOR_INLINE_POLL_PATCH =
           t._lastShotDone = i;
           const prevIds = (t.gallery || []).map((card) => String(card?.id || ""));
           try {
-            // shot_done tick: bypass 2.2s gallery cache so new hash-linked cards are visible.
-            if (await ce(e, !!c), t.selectedMessage) {
-              // Image arrived while selection still on this bubble → one click-like relink/paint.
-              if (c || a.state === "done") {
+            // shot_done: force gallery so new cards appear; skip full Da-relink when already linked.
+            if (await ce(e, !!(c || a.state === "done")), t.selectedMessage) {
+              let l = linkedCards(t.selectedMessage);
+              if (a.state === "done" || !l.length) {
+                // Finalize hash / first link → full provisional relink.
                 try {
                   await relinkSelectedMessageHash(a.state === "done" ? "job.done" : "job.shot");
                 } catch {
                 }
+                l = linkedCards(t.selectedMessage);
+              } else if (c) {
+                // Mid-job new shot: sibling rebind only (no Da / no second full paint).
+                try {
+                  l = await maybeRebindAndLink(t.selectedMessage, t.lastScope) || l;
+                } catch {
+                }
               }
-              const l = linkedCards(t.selectedMessage);`;
-
+`;
 const VENDOR_INLINE_POLL_REFRESH_NEEDLE =
   `          if (idsChanged) {
             if (c) scheduleOverlayPlace(120);
@@ -5891,6 +5955,11 @@ const VENDOR_CHAT_OUTPUT_UNLOAD_PATCH =
 /**
  * On select/rebind: retarget in-flight job save-hash when finished DOM matches (≥60%).
  * Busy lock key stays on the original streaming hash.
+ *
+ * Do NOT early-return when some cards are already on the new hash — mid-job
+ * siblings still on the streaming hash must be rebound first, then linkedCards
+ * (caller paints after that). Returning early left late shots on the old hash
+ * until a manual deselect/reselect.
  */
 const VENDOR_REBIND_RETARGET_NEEDLE =
   `  async function maybeRebindAndLink(message, scope = null) {
@@ -5900,13 +5969,40 @@ const VENDOR_REBIND_RETARGET_NEEDLE =
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     if (typeof VC?.findHashRebindCandidates != "function" || !message.text) return [];
     const sc = scope || t.lastScope || {};
-    const candidates = VC.findHashRebindCandidates(t.gallery || [], {`;
+    const candidates = VC.findHashRebindCandidates(t.gallery || [], {
+      newHash: message.hash,
+      text: message.text,
+      characterId: message.characterId || sc.characterId || "",
+      chatId: message.chatId || sc.chatId || "",
+      sessionId: message.sessionId || sc.sessionId || "",
+      messageIndex: Number(message.chatIndex ?? message.messageIndex ?? -1),
+      role: message.role || ""
+    });
+    if (!candidates.length) return [];
+    try {
+      const sid = message.sessionId || sc.sessionId || "";
+      await K("/v1/gallery/rebind-hash", {
+        method: "POST",
+        body: {
+          session_id: sid,
+          card_ids: candidates.map((c) => c.id).filter(Boolean),
+          to_hash: message.hash,
+          assistant_preview: message.text || ""
+        }
+      }, 15e3);
+      if (sid) await ce(sid, !0);
+      y("info", "gallery.rebind", \`n=\${candidates.length} hash=\${String(message.hash).slice(0, 8)} msg#\${message.chatIndex ?? "?"}\`);
+    } catch (err) {
+      return y("warn", "gallery.rebind.fail", err?.message || err), [];
+    }
+    return linkedCards(message);
+  }`;
 const VENDOR_REBIND_RETARGET_PATCH =
   `  async function maybeRebindAndLink(message, scope = null) {
     if (!message?.hash) return linkedCards(message);
     const sc = scope || t.lastScope || {};
+    const sid = message.sessionId || sc.sessionId || "";
     try {
-      const sid = message.sessionId || sc.sessionId || "";
       if (sid && message.text) {
         const ret = await K("/v1/jobs/retarget-hash", {
           method: "POST",
@@ -5920,15 +6016,52 @@ const VENDOR_REBIND_RETARGET_PATCH =
             assistant_preview: message.text || ""
           }
         }, 8e3);
-        if (ret?.retargeted) y("info", "job.retarget", \`job=\${String(ret.job_id || "").slice(0, 8)} hash=\${String(message.hash).slice(0, 8)} rebound=\${ret.rebound || 0}\`);
+        if (ret?.retargeted) {
+          y("info", "job.retarget", \`job=\${String(ret.job_id || "").slice(0, 8)} hash=\${String(message.hash).slice(0, 8)} rebound=\${ret.rebound || 0}\`);
+          // Retarget may rewrite published card hashes — refresh before sibling scan.
+          if (Number(ret.rebound || 0) > 0) {
+            try {
+              await ce(sid, !0);
+            } catch {
+            }
+          }
+        }
       }
     } catch {
     }
-    let linked = linkedCards(message);
-    if (linked.length) return linked;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
-    if (typeof VC?.findHashRebindCandidates != "function" || !message.text) return [];
-    const candidates = VC.findHashRebindCandidates(t.gallery || [], {`;
+    // Always scan siblings still on the old streaming hash (partial linked is OK).
+    if (typeof VC?.findHashRebindCandidates == "function" && message.text) {
+      const candidates = VC.findHashRebindCandidates(t.gallery || [], {
+        newHash: message.hash,
+        text: message.text,
+        characterId: message.characterId || sc.characterId || "",
+        chatId: message.chatId || sc.chatId || "",
+        sessionId: sid,
+        messageIndex: Number(message.chatIndex ?? message.messageIndex ?? -1),
+        role: message.role || ""
+      });
+      if (candidates.length) {
+        try {
+          await K("/v1/gallery/rebind-hash", {
+            method: "POST",
+            body: {
+              session_id: sid,
+              card_ids: candidates.map((c) => c.id).filter(Boolean),
+              to_hash: message.hash,
+              assistant_preview: message.text || ""
+            }
+          }, 15e3);
+          if (sid) await ce(sid, !0);
+          y("info", "gallery.rebind", \`n=\${candidates.length} hash=\${String(message.hash).slice(0, 8)} msg#\${message.chatIndex ?? "?"}\`);
+        } catch (err) {
+          y("warn", "gallery.rebind.fail", err?.message || err);
+        }
+      }
+    }
+    // Paint only after sibling hashes are attached (or none were eligible).
+    return linkedCards(message);
+  }`;
 
 /**
  * Chat switch: scroll/text "same DOM" early-return ignored sessionId, so a new
@@ -6277,8 +6410,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.6",
-    body: "스티키 v2 · 말풍선 hit-test · 스트리밍 dual-5초 quiet · 에셋 별칭 흡수. 업데이트 내역 탭 참고."
+    title: "2.2.7",
+    body: "형제 해시 rebind · 샷/스크롤/말풍선 렉 완화 · 빈 배치 시 기존 샷 유지. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -6857,6 +6990,7 @@ const VENDOR_FORCE_REGEN_INLINE_PATCH =
       }
       try {
         t._inlineLinkedIds = "";
+        t._inlineKeepLinkedKey = "";
         t._inlinePending = null;
         await refreshSelectedInlineImages();
       } catch {

@@ -49,6 +49,9 @@ import {
   fitBoxInside,
   composeStickyThumbHtml,
   stickyThumbNeedsHtmlPaint,
+  stickyThumbSizeForImage,
+  stickyThumbStyleWithSize,
+  probeDataUrlPixelSize,
   stickyCornerImageBox,
   stickyCornerEdgeBox,
   stickyPinEdgeBox,
@@ -199,6 +202,14 @@ test("markerBlockHtml ready is image-only", () => {
   assert.match(ready, /data-inlay-inline-img="1"/);
   assert.doesNotMatch(ready, /data-inlay-inline-act=/);
   assert.doesNotMatch(ready, /data-inlay-chrome-act=/);
+  const scaled = markerBlockHtml({
+    line: 2,
+    src: "data:image/png;base64,abc",
+    shotIndex: 0,
+    cardId: "c1",
+  }, 50);
+  assert.match(scaled, /max-width:min\(39%,100%\)/);
+  assert.match(scaled, /max-height:min\(35vh,450px\)/);
 });
 
 test("injectInlineImagesIntoHtml hard-dedupes pending circles by line and cardId", () => {
@@ -356,6 +367,40 @@ test("stickyThumbNeedsHtmlPaint skips when already painted", () => {
   assert.equal(stickyThumbNeedsHtmlPaint("x", "x", "a", "a"), false);
   assert.equal(stickyThumbNeedsHtmlPaint("x", "y", "a", "a"), true);
   assert.equal(stickyThumbNeedsHtmlPaint("x", "x", "a", "b"), true);
+});
+
+test("stickyThumbSizeForImage uses max-edge budget so landscape is not crushed", () => {
+  // Portrait envelope 300×440 → square budget 440
+  // landscape 1216×832 → 440×301 (not 300×205)
+  assert.deepEqual(stickyThumbSizeForImage(300, 440, 1216, 832), { w: 440, h: 301 });
+  // portrait 832×1216 → 301×440
+  assert.deepEqual(stickyThumbSizeForImage(300, 440, 832, 1216), { w: 301, h: 440 });
+  // missing image → fallback dims
+  assert.deepEqual(stickyThumbSizeForImage(300, 440, 0, 0, 1024, 1024), { w: 440, h: 440 });
+  // viewport clamp (narrow phone)
+  assert.deepEqual(
+    stickyThumbSizeForImage(300, 440, 1216, 832, 0, 0, { width: 360, height: 800, pad: 16 }),
+    { w: 328, h: 224 },
+  );
+});
+
+test("stickyThumbStyleWithSize rewrites width/height only", () => {
+  const s = stickyThumbStyleWithSize("position:fixed;right:16px;bottom:16px;width:200px;height:300px", 180, 120);
+  assert.match(s, /width:180px/);
+  assert.match(s, /height:120px/);
+  assert.match(s, /right:16px/);
+});
+
+test("probeDataUrlPixelSize reads PNG IHDR", () => {
+  // Minimal PNG header bytes: sig + IHDR len/type + 10x20 + rest padded
+  const ihdr = new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x14,
+  ]);
+  let b64 = Buffer.from(ihdr).toString("base64");
+  const url = `data:image/png;base64,${b64}`;
+  assert.deepEqual(probeDataUrlPixelSize(url), { w: 10, h: 20 });
 });
 
 test("stickyCornerImageBox places image in viewport corners with pad", () => {

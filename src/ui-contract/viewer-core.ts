@@ -1325,11 +1325,14 @@ export function fitBoxInside(
 /**
  * Sticky thumb HTML. Prefer a single <img> — dual-stack under/over doubles the
  * data-URL payload through SafeDOM setInnerHTML and is what made scroll flashes lag.
- * `contain` (not cover): portrait / landscape / square all show fully in the box.
- * Transparent bg: La() already shrinks the frame via fitBoxInside; any residual
- * contain letterbox must not paint opaque bars over the chat.
+ * `contain` + a frame sized to the image aspect (see probeDataUrlPixelSize +
+ * fitBoxInside) shows the whole bitmap without crop or letterbox bars.
+ * Transparent bg: residual letterbox must not paint opaque bars over the chat.
  */
-export function composeStickyThumbHtml(src: string | null | undefined, underSrc: string | null | undefined = ''): string {
+export function composeStickyThumbHtml(
+  src: string | null | undefined,
+  underSrc: string | null | undefined = '',
+): string {
   const next = typeof src === 'string' ? src : '';
   void underSrc; // kept for call-site compat; stacking is intentionally unused
   if (!next) return '<div style="width:100%;height:100%;background:transparent"></div>';
@@ -1350,6 +1353,160 @@ export function stickyThumbNeedsHtmlPaint(
   const src = typeof thumbSrc === 'string' ? thumbSrc : '';
   if (!src) return false;
   return String(paintedSrc || '') !== src || String(paintedId || '') !== String(activeId || '');
+}
+
+function readU32BE(bytes: Uint8Array, offset: number): number {
+  return ((bytes[offset] ?? 0) << 24 | (bytes[offset + 1] ?? 0) << 16
+    | (bytes[offset + 2] ?? 0) << 8 | (bytes[offset + 3] ?? 0)) >>> 0;
+}
+
+function readU16BE(bytes: Uint8Array, offset: number): number {
+  return (bytes[offset] ?? 0) << 8 | (bytes[offset + 1] ?? 0);
+}
+
+/** Decode only the leading bytes of a data-URL (enough for image headers). */
+function dataUrlHeaderBytes(src: string, maxBytes = 96): Uint8Array | null {
+  const m = /^data:([^;,]+)?(;base64)?,(.*)$/i.exec(src);
+  if (!m) return null;
+  const isB64 = Boolean(m[2]);
+  const payload = m[3] || '';
+  try {
+    if (isB64) {
+      const needChars = Math.ceil(maxBytes / 3) * 4 + 4;
+      const slice = payload.slice(0, needChars).replace(/\s/g, '');
+      const bin = atob(slice);
+      const n = Math.min(bin.length, maxBytes);
+      const out = new Uint8Array(n);
+      for (let i = 0; i < n; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function probePngSize(bytes: Uint8Array): { w: number; h: number } | null {
+  if (bytes.length < 24) return null;
+  if (bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null;
+  const w = readU32BE(bytes, 16);
+  const h = readU32BE(bytes, 20);
+  if (!(w > 0 && h > 0 && w < 20000 && h < 20000)) return null;
+  return { w, h };
+}
+
+function probeJpegSize(bytes: Uint8Array): { w: number; h: number } | null {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let i = 2;
+  while (i + 9 < bytes.length) {
+    if (bytes[i] !== 0xff) {
+      i += 1;
+      continue;
+    }
+    const marker = bytes[i + 1] ?? 0;
+    if (marker === 0xd8 || marker === 0xd9) {
+      i += 2;
+      continue;
+    }
+    const len = readU16BE(bytes, i + 2);
+    if (len < 2) return null;
+    // SOF0..SOF3 / SOF5..SOF7 / SOF9..SOF11 / SOF13..SOF15 (not DHT/DAC)
+    const isSof = (marker >= 0xc0 && marker <= 0xc3)
+      || (marker >= 0xc5 && marker <= 0xc7)
+      || (marker >= 0xc9 && marker <= 0xcb)
+      || (marker >= 0xcd && marker <= 0xcf);
+    if (isSof && i + 8 < bytes.length) {
+      const h = readU16BE(bytes, i + 5);
+      const w = readU16BE(bytes, i + 7);
+      if (w > 0 && h > 0) return { w, h };
+      return null;
+    }
+    i += 2 + len;
+  }
+  return null;
+}
+
+function probeWebpSize(bytes: Uint8Array): { w: number; h: number } | null {
+  if (bytes.length < 30) return null;
+  if (bytes[0] !== 0x52 || bytes[1] !== 0x49 || bytes[2] !== 0x46 || bytes[3] !== 0x46) return null;
+  if (bytes[8] !== 0x57 || bytes[9] !== 0x45 || bytes[10] !== 0x42 || bytes[11] !== 0x50) return null;
+  const tag = String.fromCharCode(bytes[12] ?? 0, bytes[13] ?? 0, bytes[14] ?? 0, bytes[15] ?? 0);
+  if (tag === 'VP8X' && bytes.length >= 30) {
+    const w = 1 + ((bytes[24] ?? 0) | (bytes[25] ?? 0) << 8 | (bytes[26] ?? 0) << 16);
+    const h = 1 + ((bytes[27] ?? 0) | (bytes[28] ?? 0) << 8 | (bytes[29] ?? 0) << 16);
+    if (w > 0 && h > 0) return { w, h };
+  }
+  if (tag === 'VP8 ' && bytes.length >= 30) {
+    const w = ((bytes[26] ?? 0) | (bytes[27] ?? 0) << 8) & 0x3fff;
+    const h = ((bytes[28] ?? 0) | (bytes[29] ?? 0) << 8) & 0x3fff;
+    if (w > 0 && h > 0) return { w, h };
+  }
+  if (tag === 'VP8L' && bytes.length >= 25) {
+    const b0 = bytes[21] ?? 0;
+    const b1 = bytes[22] ?? 0;
+    const b2 = bytes[23] ?? 0;
+    const b3 = bytes[24] ?? 0;
+    const w = 1 + (b0 | (b1 & 0x3f) << 8);
+    const h = 1 + ((b1 & 0xc0) >> 6 | b2 << 2 | (b3 & 0x0f) << 10);
+    if (w > 0 && h > 0) return { w, h };
+  }
+  return null;
+}
+
+/**
+ * Sync pixel size from a data: URL header (PNG/JPEG/WebP). Used to size the
+ * sticky frame to the real image instead of global NAI settings.
+ */
+export function probeDataUrlPixelSize(src: unknown): { w: number; h: number } | null {
+  const url = String(src || '');
+  if (!url.startsWith('data:image/')) return null;
+  const bytes = dataUrlHeaderBytes(url, 512);
+  if (!bytes || !bytes.length) return null;
+  return probePngSize(bytes) || probeJpegSize(bytes) || probeWebpSize(bytes);
+}
+
+/**
+ * Resolve sticky frame size for a real image (or NAI fallback).
+ *
+ * Settings pct builds a portrait envelope (528×720 base). Fitting a landscape
+ * image into that box makes width the bottleneck and the thumb looks tiny.
+ * Use the longer envelope edge as a square budget so landscape/portrait share
+ * similar on-screen presence, then clamp to the viewport when provided.
+ */
+export function stickyThumbSizeForImage(
+  envelopeW: unknown,
+  envelopeH: unknown,
+  imgW: unknown = 0,
+  imgH: unknown = 0,
+  fallbackW: unknown = 0,
+  fallbackH: unknown = 0,
+  viewport: { width?: number; height?: number; pad?: number } | null | undefined = null,
+): { w: number; h: number } {
+  const iw = finiteNumber(imgW, 0) > 0 ? finiteNumber(imgW, 0) : finiteNumber(fallbackW, 0);
+  const ih = finiteNumber(imgH, 0) > 0 ? finiteNumber(imgH, 0) : finiteNumber(fallbackH, 0);
+  const ew = Math.max(0, finiteNumber(envelopeW, 0));
+  const eh = Math.max(0, finiteNumber(envelopeH, 0));
+  const side = Math.max(ew, eh);
+  let maxW = side;
+  let maxH = side;
+  if (viewport) {
+    const pad = Math.max(0, finiteNumber(viewport.pad, 16));
+    const vpW = Math.max(0, finiteNumber(viewport.width, 0));
+    const vpH = Math.max(0, finiteNumber(viewport.height, 0));
+    if (vpW > 0) maxW = Math.min(maxW, Math.max(1, vpW - pad * 2));
+    if (vpH > 0) maxH = Math.min(maxH, Math.max(1, vpH - pad * 2));
+  }
+  return fitBoxInside(maxW, maxH, iw, ih);
+}
+
+/** Rewrite width/height in a sticky thumb style string (edge anchors stay put). */
+export function stickyThumbStyleWithSize(style: unknown, w: unknown, h: unknown): string {
+  const s = String(style || '');
+  const ww = Math.max(0, Math.round(finiteNumber(w, 0)));
+  const hh = Math.max(0, Math.round(finiteNumber(h, 0)));
+  return s
+    .replace(/width:\s*\d+px/gi, `width:${ww}px`)
+    .replace(/height:\s*\d+px/gi, `height:${hh}px`);
 }
 
 /** Corner box for sticky always-image in mobile layout mode. */
@@ -1953,6 +2110,24 @@ export interface InlineImagePlacement {
 export interface InlineInjectOptions {
   /** Bubble client width — clamps img so intrinsic size cannot expand the parent. */
   maxWidthPx?: number;
+  /** Dashboard scale % for bubble illustrations (100 = default 78%/70vh caps). */
+  scalePct?: number;
+}
+
+/** Clamp bubble-illustration scale; default 100, range 25–200. */
+export function clampInlineChatScalePct(value: unknown): number {
+  const n = Math.round(finiteNumber(value, 100));
+  if (!Number.isFinite(n) || n <= 0) return 100;
+  return Math.max(25, Math.min(200, n));
+}
+
+/** Img CSS for bubble illustrations at the given scale %. */
+export function inlineChatImgStyle(scalePct: unknown = 100): string {
+  const s = clampInlineChatScalePct(scalePct) / 100;
+  const maxW = Math.min(100, Math.max(10, Math.round(78 * s)));
+  const maxHVh = Math.max(10, Math.round(70 * s));
+  const maxHPx = Math.max(120, Math.round(900 * s));
+  return `width:auto;height:auto;max-width:min(${maxW}%,100%);max-height:min(${maxHVh}vh,${maxHPx}px);object-fit:contain;border-radius:8px;display:inline-block;vertical-align:top`;
 }
 
 type MappedChar = { ch: string; htmlIndex: number };
@@ -2223,13 +2398,13 @@ export function findElementIndexForLineWithFallback(
   return null;
 }
 
-export function markerBlockHtml(p: InlineImagePlacement, _maxWidthPx?: number): string {
+export function markerBlockHtml(p: InlineImagePlacement, scalePct: unknown = 100): string {
   const shot = Number.isFinite(Number(p.shotIndex)) ? String(Math.floor(Number(p.shotIndex))) : '';
   const id = escapeHtmlAttr(String(p.cardId || (p.pending ? `pending-${shot || p.line}` : '') || shot || p.line || '0'));
-  void _maxWidthPx;
   // Centered block; <br> keeps Risu bubble spacing. Width cap is a bit looser than
   // height so landscape shots don't look tiny next to portrait/1:1 (those still
   // hit max-height first). Mobile narrow bubbles still shrink instead of clipping.
+  // scalePct (dashboard) multiplies the 78%/70vh defaults.
   const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box';
   if (p.pending || !/^data:image\//i.test(String(p.src || ''))) {
     const spin = '<svg width="28" height="28" viewBox="0 0 28 28" style="display:inline-block;vertical-align:middle" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="#c4b5fd" stroke-width="3" stroke-linecap="round" stroke-dasharray="18 52"><animateTransform attributeName="transform" type="rotate" from="0 14 14" to="360 14 14" dur="0.75s" repeatCount="indefinite"/></circle></svg>';
@@ -2239,7 +2414,7 @@ export function markerBlockHtml(p: InlineImagePlacement, _maxWidthPx?: number): 
       + `</div>`
     );
   }
-  const imgStyle = 'width:auto;height:auto;max-width:min(78%,100%);max-height:min(70vh,900px);object-fit:contain;border-radius:8px;display:inline-block;vertical-align:top';
+  const imgStyle = inlineChatImgStyle(scalePct);
   return (
     `<div ${INLAY_INLINE_ATTR}="${id}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
     + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(p.src)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
@@ -2282,6 +2457,8 @@ export function injectInlineImagesIntoHtml(
   if (!byLine.size) return cleaned;
 
   const maxWidthPx = opts?.maxWidthPx;
+  void maxWidthPx;
+  const scalePct = opts?.scalePct ?? 100;
   /** htmlIndex → marker HTML (one shot per line). */
   const atIndex = new Map<number, string>();
   for (const [line, shot] of byLine) {
@@ -2289,7 +2466,7 @@ export function injectInlineImagesIntoHtml(
     if (offset == null || offset < 0 || offset >= mapped.length) continue;
     const htmlIndex = nudgeInsertBeforeOpenTags(cleaned, mapped[offset]!.htmlIndex);
     if (atIndex.has(htmlIndex)) continue;
-    atIndex.set(htmlIndex, markerBlockHtml(shot, maxWidthPx));
+    atIndex.set(htmlIndex, markerBlockHtml(shot, scalePct));
   }
   if (!atIndex.size) return cleaned;
 

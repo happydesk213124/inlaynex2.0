@@ -51,7 +51,8 @@ import {
 import { restoreAssetTagWeights } from '../domain/nai-meta/prompt-tags.ts';
 import { idbDelete, idbGet, idbGetAll, idbPut } from '../storage/stores';
 import { getLastAssetWeightMap } from './asset-tags';
-import { getCharRefPreviewUrl, getConfig } from './context';
+import { getConfig } from './context';
+import { ensureCharRefPreviewUrl, hasCharRefImage } from './nai-assets';
 
 export interface ReplaceOptions {
   prune?: boolean;
@@ -180,13 +181,12 @@ export async function listCharacters(scope: string): Promise<CharacterRecord[]> 
     rec.tags = fullTags(rec);
     const cid = cleanText(rec.id, 80);
     if (cid) {
-      const preview = getCharRefPreviewUrl(cid);
-      if (preview) {
-        rec.ref_configured = true;
-        rec.ref_preview_url = preview;
-      } else {
-        rec.ref_configured = false;
-      }
+      // Prefer durable bytes over the warm preview map — after reload the map
+      // can lag, and a missing data URL used to report "없음" even when IDB had
+      // the image (or the inverse via the GET handler).
+      const configured = await hasCharRefImage(cid);
+      rec.ref_configured = configured;
+      rec.ref_preview_url = configured ? await ensureCharRefPreviewUrl(cid) : '';
     }
     out.push(rec);
   }

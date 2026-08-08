@@ -23,7 +23,7 @@ import { base64ToBytes, u8ToArrayBuffer } from '../core/util/bytes';
 import { cleanText } from '../core/util/text';
 import { GLOBAL_SCOPE } from '../core/constants';
 import { promptText } from '../config/prompts';
-import { getConfig, getCharRefPreviewUrl, getPresetVibePreviewUrl } from '../services/context';
+import { getConfig, getPresetVibePreviewUrl } from '../services/context';
 import * as cards from '../services/cards';
 import * as characters from '../services/characters';
 import * as diagnostics from '../services/diagnostics';
@@ -169,7 +169,7 @@ const GET_ROUTES: readonly Route[] = [
         ok: true,
         character_id: cid,
         configured,
-        preview_url: configured ? getCharRefPreviewUrl(cid) : '',
+        preview_url: configured ? await naiAssets.ensureCharRefPreviewUrl(cid) : '',
       });
     },
   },
@@ -397,7 +397,7 @@ const WRITE_ROUTES: readonly Route[] = [
           ok: true,
           character_id: cid,
           configured: copied,
-          preview_url: copied ? getCharRefPreviewUrl(cid) : '',
+          preview_url: copied ? await naiAssets.ensureCharRefPreviewUrl(cid) : '',
         });
       }
       const rawB64 = uploadBase64(body);

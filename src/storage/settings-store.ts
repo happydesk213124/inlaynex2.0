@@ -34,7 +34,19 @@ export async function loadSettingsFromStorage(): Promise<Settings> {
 
 export async function saveSettingsToStorage(config: Settings): Promise<void> {
   // Stored as an object; the IndexedDB backend serialises it for us.
-  await psSet(SETTINGS_KEY, deepcopy(config));
+  try {
+    await psSet(SETTINGS_KEY, deepcopy(config));
+  } catch (err) {
+    const msg = String((err as Error)?.message || err);
+    // Risu NodeStorage throws the bare string "setItem Error" when /api/write fails
+    // (quota / path / server). Surface something actionable instead of that alone.
+    if (/setItem\s*Error/i.test(msg)) {
+      throw new Error(
+        '설정 저장 실패(setItem Error): 저장소 쓰기 한도를 넘겼을 수 있습니다. 고정 프롬프트·스타일 프리셋 길이를 줄인 뒤 다시 저장하세요.',
+      );
+    }
+    throw err instanceof Error ? err : new Error(msg);
+  }
   const check = await psGet(SETTINGS_KEY);
   if (check == null) {
     throw new Error('설정 저장 실패: IndexedDB(getLocalPluginStorage)에 기록되지 않았습니다.');

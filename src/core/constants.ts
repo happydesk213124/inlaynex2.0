@@ -8,7 +8,7 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.2.8';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.2.13';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
@@ -55,11 +55,17 @@ export const isVibePresetMetaKey = (key: unknown): boolean =>
   typeof key === 'string' && key.startsWith('vibe_preset_');
 export const presetIdFromVibeMetaKey = (key: string): string => key.slice('vibe_preset_'.length);
 
-/** Per-character reference image (webp/png/jpeg bytes as-is — no re-encode). */
+/** Per-character reference image (webp/png/jpeg bytes as-is ??no re-encode). */
 export const charRefMetaKey = (characterId: string): string => `char_ref_${String(characterId)}`;
 export const isCharRefMetaKey = (key: unknown): boolean =>
   typeof key === 'string' && key.startsWith('char_ref_');
 export const characterIdFromCharRefMetaKey = (key: string): string => key.slice('char_ref_'.length);
+/** Per-character reference PNG/webp (device store) ??same durability pattern as vibe. */
+export const CHAR_REF_IMAGE_KEY = (characterId: string): string =>
+  `inx_nxcref_${String(characterId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}`;
+/** Per-character vibe encode sidecar for char refs. */
+export const CHAR_REF_DATA_KEY = (characterId: string): string =>
+  `inx_nxcrefd_${String(characterId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}`;
 
 // --- legacy save-file keys (one-time migration source) ---
 export const LEGACY_SETTINGS_KEY = 'native_settings';

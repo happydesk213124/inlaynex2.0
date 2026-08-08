@@ -119,6 +119,8 @@ popup use a costume name+arrow combobox (no field labels; placeholder only).
 
 `card.char_ref_mode` is `off` | `vibe` | `image` (default `off`); with
 `char_ref_strength` / `char_ref_fidelity` in `0.01`–`1` (defaults `0.6` / `1`).
+When mode is `image`, `char_ref_image_type` is `character` | `style` |
+`character&style` (default `character&style`).
 Dashboard controls sit beside 이미지 모서리 (asserted vendor patch). Per-character
 bytes live in meta (`char_ref_<id>`) via `POST /v1/characters/ref` — stored
 as-is (webp preferred; no re-encode). Character list rows may include
@@ -126,6 +128,12 @@ as-is (webp preferred; no re-encode). Character list rows may include
 shot character's ref to NAI `vibes[]` or `character_refs[]` (additive with the
 global model vibe/ref). Asset `char_looks` may seed a missing ref from the
 priority-1 asset without overwriting.
+
+`card.fixed_prompt_prefix` / `card.fixed_prompt_suffix` (strings, default `""`,
+max 8000 chars each): always wrapped around the assembled positive after
+person-count tags and before NAI quality tags. Card settings → 생성 옵션 shows a
+2-column pair of textareas, a dedicated save button, plus JSON export/import
+(`{ fixed_prompt_prefix, fixed_prompt_suffix }`).
 
 ### LLM role profiles (`settings.llm` + `settings.llm_roles`)
 

@@ -198,8 +198,11 @@ const normalize = (root) => {
         if (k === 'inline_chat_images' || k === 'progress_toast') continue;
         // 2.0 per-character NAI reference (dashboard mode + per-char image).
         // No 1.x fields; schema defaults + UI/unit tests assert behaviour.
-        if (k === 'char_ref_mode' || k === 'char_ref_strength' || k === 'char_ref_fidelity') continue;
+        if (k === 'char_ref_mode' || k === 'char_ref_strength' || k === 'char_ref_fidelity' || k === 'char_ref_image_type') continue;
         if (k === 'ref_configured' || k === 'ref_preview_url') continue;
+        // 2.0 always-on fixed prompt wrappers around style/scene. No 1.x fields;
+        // empty-string defaults; generation + card UI assert merge behaviour.
+        if (k === 'fixed_prompt_prefix' || k === 'fixed_prompt_suffix') continue;
         // 2.0 bubble inline scale % — no 1.x field; default 100.
         if (k === 'inline_chat_scale_pct') continue;
         // Sticky pin hover preview removed in 2.0 (force-off + default false).

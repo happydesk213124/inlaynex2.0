@@ -450,6 +450,14 @@ export async function updateSettings(patch: Record<string, unknown>): Promise<Ap
     if ('active_preset_id' in card) merged.active_preset_id = card.active_preset_id as string;
     if ('custom_pos' in card) merged.custom_pos = card.custom_pos as string;
     if ('custom_neg' in card) merged.custom_neg = card.custom_neg as string;
+    // updateSettings does not run migrateSettings — cap here so a pasted wall of
+    // text cannot blow IndexedDB / Risu save-file writes ("setItem Error").
+    if ('fixed_prompt_prefix' in card) {
+      merged.fixed_prompt_prefix = String(card.fixed_prompt_prefix ?? '').trim().slice(0, 8000);
+    }
+    if ('fixed_prompt_suffix' in card) {
+      merged.fixed_prompt_suffix = String(card.fixed_prompt_suffix ?? '').trim().slice(0, 8000);
+    }
     cfg.card = merged;
     cfg.card.character_max = characterMaxLimit(cfg.card);
   }

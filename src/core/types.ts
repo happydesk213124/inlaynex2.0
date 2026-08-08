@@ -98,6 +98,18 @@ export interface CardSettings {
   char_ref_strength: number;
   /** 0.01–1 — vibe information_extracted or image Reference Fidelity. */
   char_ref_fidelity: number;
+  /** When char_ref_mode is image: character | style | character&style. */
+  char_ref_image_type: string;
+  /**
+   * Always prepended to the assembled positive (after person-count tags, before
+   * style preset / scene). Empty = unused.
+   */
+  fixed_prompt_prefix: string;
+  /**
+   * Always appended to the assembled positive (before NAI quality tags).
+   * Empty = unused.
+   */
+  fixed_prompt_suffix: string;
   original_text: string;
   custom_pos: string;
   custom_neg: string;

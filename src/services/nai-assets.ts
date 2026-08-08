@@ -322,6 +322,19 @@ export async function hasCharRefImage(characterId: string): Promise<boolean> {
   return Boolean(row?.png && row.png.byteLength > MIN_IMAGE_BYTES);
 }
 
+/** Rebuild the in-memory preview data URL from durable bytes when missing. */
+export async function ensureCharRefPreviewUrl(characterId: string): Promise<string> {
+  const id = cleanText(characterId, 200);
+  if (!id) return '';
+  const existing = getCharRefPreviewUrl(id);
+  if (existing) return existing;
+  const bytes = await getCharRefImageBytes(id);
+  if (!bytes || bytes.byteLength < MIN_IMAGE_BYTES) return '';
+  const preview = pngToDataUrl(bytes);
+  setCharRefPreviewUrl(id, preview);
+  return preview;
+}
+
 export async function getCharRefImageBytes(characterId: string): Promise<ArrayBuffer | null> {
   const id = cleanText(characterId, 200);
   if (!id) return null;

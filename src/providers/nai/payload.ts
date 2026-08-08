@@ -140,8 +140,14 @@ export function buildBaseParameters(req: T2iRequest): Record<string, unknown> {
   }
   if (req.character_refs?.length) {
     if (!modelName.includes('4-5')) throw new Error('Character Reference는 NAID4.5 전용입니다');
+    // Precise Reference and Vibe Transfer are mutually exclusive — drop vibe fields.
+    delete params.reference_image_multiple;
+    delete params.reference_strength_multiple;
+    delete params.reference_information_extracted_multiple;
+    delete params.normalize_reference_strength_multiple;
     params.director_reference_images = req.character_refs.map((r) => bytesToBase64(r.image));
     params.director_reference_strength_values = req.character_refs.map((r) => r.strength);
+    // NAIWeaver: secondary = 1 - fidelity (fidelity 1 → secondary 0).
     params.director_reference_secondary_strength_values = req.character_refs.map((r) => 1.0 - r.fidelity);
     params.director_reference_descriptions = req.character_refs.map((r) => ({
       caption: { base_caption: r.type, char_captions: [] },
@@ -150,7 +156,6 @@ export function buildBaseParameters(req: T2iRequest): Record<string, unknown> {
     params.director_reference_information_extracted = req.character_refs.map(() => 1.0);
     params.controlnet_strength = 1.0;
     params.inpaintImg2ImgStrength = 1.0;
-    params.normalize_reference_strength_multiple = true;
     delete params.skip_cfg_above_sigma;
   }
   return params;

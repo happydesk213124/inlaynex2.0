@@ -241,7 +241,15 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     };
     card.char_ref_strength = clamp01(card.char_ref_strength, 0.6);
     card.char_ref_fidelity = clamp01(card.char_ref_fidelity, 1);
+    {
+      const t = String(card.char_ref_image_type || 'character&style').toLowerCase();
+      card.char_ref_image_type =
+        t === 'character' || t === 'style' || t === 'character&style' ? t : 'character&style';
+    }
   }
+  // Always-on fixed prompt wrappers (empty = unused). Cap keeps settings JSON lean.
+  card.fixed_prompt_prefix = String(card.fixed_prompt_prefix ?? '').trim().slice(0, 8000);
+  card.fixed_prompt_suffix = String(card.fixed_prompt_suffix ?? '').trim().slice(0, 8000);
   // sticky_layout_v2 was a temporary toggle; v2 is always-on — drop leftover saves.
   if (card && typeof card === 'object' && 'sticky_layout_v2' in card) delete card.sticky_layout_v2;
   {

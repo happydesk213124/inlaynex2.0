@@ -4158,7 +4158,7 @@ const VENDOR_STICKY_CLOSE_CHAR_NEEDLE = `    if (t.charEditUi = null, t.autotagF
   }
   async function Ua(e) {`;
 
-const VENDOR_STICKY_CLOSE_CHAR_PATCH = `    if (t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), o && !t.uiOpen && typeof k.hideContainer == "function") try {
+const VENDOR_STICKY_CLOSE_CHAR_PATCH = `    if (t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), t.charRefFocus?.scope === "modal" && (t.charRefFocus = null), o && !t.uiOpen && typeof k.hideContainer == "function") try {
       await k.hideContainer();
     } catch {
     }
@@ -5137,9 +5137,18 @@ const VENDOR_CHAR_REF_TAB_EVT_PATCH =
         }
       });
     }), t._charRefPasteBound || (t._charRefPasteBound = !0, window.addEventListener("paste", async (a) => {
-      if (!t.charRefFocus || !t.uiOpen || t.uiTab !== "characters") return;
+      if (!t.charRefFocus) return;
       const r = Array.from(a.clipboardData?.items || []).find((p) => p.type.startsWith("image/"));
       if (!r) return;
+      if (t.charRefFocus.scope === "modal" && t.charRefFocus.id === "char-edit") {
+        const run = t.charEditUi?.uploadRef;
+        if (typeof run != "function") return;
+        a.preventDefault();
+        const file = r.getAsFile();
+        file && await run(file);
+        return;
+      }
+      if (!t.uiOpen || t.uiTab !== "characters") return;
       a.preventDefault();
       const file = r.getAsFile();
       if (!file) return;
@@ -5261,15 +5270,107 @@ const VENDOR_CHAR_REF_EDIT_EVT_PATCH =
         } catch (err) {
           E(\`제거 실패: \${z(err?.message || err, 80)}\`);
         }
-      }), i.addEventListener("paste", async (f) => {
-        if (!(t.charRefFocus?.scope === "modal" && t.charRefFocus?.id === "char-edit")) return;
-        const item = Array.from(f.clipboardData?.items || []).find((R) => R.type.startsWith("image/"));
-        if (!item) return;
-        f.preventDefault(), f.stopPropagation();
-        const file = item.getAsFile();
-        file && await uploadRef(file);
-      });
+      }), t._ceUploadRef = uploadRef;
     })(), i.querySelector("[data-ce-card]")?.addEventListener("click", (f) => f.stopPropagation()), i.querySelector("[data-ce-form]")?.addEventListener("submit", (f) => {`;
+
+/**
+ * Modal Ctrl+V must use window paste (same as the characters tab).
+ * Element-level paste only fires when focus is inside the modal; after arming
+ * a button, focus often sits on body/Risu chat so Ctrl+V was a no-op.
+ */
+const VENDOR_AUTOTAG_WINDOW_PASTE_NEEDLE =
+  `    }), t._autotagPasteBound || (t._autotagPasteBound = !0, window.addEventListener("paste", async (a) => {
+      if (!t.autotagFocus || t.autotagFocus.scope === "modal" || !t.uiOpen || t.uiTab !== "characters") return;
+      const r = Array.from(a.clipboardData?.items || []).find((p) => p.type.startsWith("image/"));
+      if (!r) return;
+      a.preventDefault();
+      const i = r.getAsFile();
+      if (!i) return;
+      const s = String(t.autotagFocus.scope || ""), c = String(t.autotagFocus.id || ""), l = Array.from(document.querySelectorAll("[data-char-scope]")).find((p) => p.getAttribute("data-char-scope") === s && p.getAttribute("data-char-id") === c);
+      l && await Tt(l, i);
+    }));
+  }
+
+  async function blockHostChrome(e) {`;
+const VENDOR_AUTOTAG_WINDOW_PASTE_PATCH =
+  `    }), t._autotagPasteBound || (t._autotagPasteBound = !0, window.addEventListener("paste", async (a) => {
+      if (!t.autotagFocus) return;
+      const r = Array.from(a.clipboardData?.items || []).find((p) => p.type.startsWith("image/"));
+      if (!r) return;
+      if (t.autotagFocus.scope === "modal") {
+        const id = String(t.autotagFocus.id || "");
+        const run = id === "char-edit" ? t.charEditUi?.runAutotag : id === "char-create" ? t.charCreateUi?.runAutotag : null;
+        if (typeof run != "function") return;
+        a.preventDefault();
+        const file = r.getAsFile();
+        file && await run(file);
+        return;
+      }
+      if (!t.uiOpen || t.uiTab !== "characters") return;
+      a.preventDefault();
+      const i = r.getAsFile();
+      if (!i) return;
+      const s = String(t.autotagFocus.scope || ""), c = String(t.autotagFocus.id || ""), l = Array.from(document.querySelectorAll("[data-char-scope]")).find((p) => p.getAttribute("data-char-scope") === s && p.getAttribute("data-char-id") === c);
+      l && await Tt(l, i);
+    }));
+  }
+
+  async function blockHostChrome(e) {`;
+
+/** Drop element paste on edit modal; expose runAutotag/uploadRef for window paste. */
+const VENDOR_CHAR_EDIT_MODAL_PASTE_NEEDLE =
+  `    }), i.addEventListener("paste", async (f) => {
+      if (!(t.autotagFocus?.scope === "modal" && t.autotagFocus?.id === "char-edit")) return;
+      const x = Array.from(f.clipboardData?.items || []).find((R) => R.type.startsWith("image/"));
+      if (!x) return;
+      f.preventDefault(), f.stopPropagation();
+      const I = x.getAsFile();
+      I && await d(I);
+    });
+    const U = async () => {`;
+const VENDOR_CHAR_EDIT_MODAL_PASTE_PATCH =
+  `    });
+    const U = async () => {`;
+
+const VENDOR_CHAR_EDIT_UI_PASTE_NEEDLE =
+  `    }), t.charEditUi = {
+      root: i,
+      entryName: e.name,
+      openedContainer: r,
+      roster: n,
+      entry: e
+    };`;
+const VENDOR_CHAR_EDIT_UI_PASTE_PATCH =
+  `    }), t.charEditUi = {
+      root: i,
+      entryName: e.name,
+      openedContainer: r,
+      roster: n,
+      entry: e,
+      runAutotag: d,
+      uploadRef: typeof t._ceUploadRef == "function" ? t._ceUploadRef : null
+    };
+    t._ceUploadRef = null;`;
+
+/** Create modal: same window-paste routing as edit. */
+const VENDOR_CHAR_CREATE_MODAL_PASTE_NEEDLE =
+  `    }), root.addEventListener("paste", async (ev) => {
+      if (!(t.autotagFocus?.scope === "modal" && t.autotagFocus?.id === "char-create")) return;
+      const item = Array.from(ev.clipboardData?.items || []).find((R) => R.type.startsWith("image/"));
+      if (!item) return;
+      ev.preventDefault();
+      const file = item.getAsFile();
+      file && await runAutotag(file);
+    });
+    const save = async () => {`;
+const VENDOR_CHAR_CREATE_MODAL_PASTE_PATCH =
+  `    });
+    const save = async () => {`;
+
+const VENDOR_CHAR_CREATE_UI_PASTE_NEEDLE =
+  `    t.charCreateUi = { root, openedContainer: opened, slotIndex: opts.slotIndex };`;
+const VENDOR_CHAR_CREATE_UI_PASTE_PATCH =
+  `    t.charCreateUi = { root, openedContainer: opened, slotIndex: opts.slotIndex, runAutotag };`;
 
 const VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE =
   `<span>옷 태그</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer"><input data-cc-attire-locked type="checkbox" style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
@@ -9068,6 +9169,11 @@ const loadVendorUi = (): string => {
     [VENDOR_CHAR_REF_EDIT_HTML_NEEDLE, 'char ref edit html'],
     [VENDOR_CHAR_REF_TAB_EVT_NEEDLE, 'char ref tab events'],
     [VENDOR_CHAR_REF_EDIT_EVT_NEEDLE, 'char ref edit events'],
+    [VENDOR_AUTOTAG_WINDOW_PASTE_NEEDLE, 'autotag window paste modal'],
+    [VENDOR_CHAR_EDIT_MODAL_PASTE_NEEDLE, 'char edit drop element paste'],
+    [VENDOR_CHAR_EDIT_UI_PASTE_NEEDLE, 'char edit ui paste hooks'],
+    [VENDOR_CHAR_CREATE_MODAL_PASTE_NEEDLE, 'char create drop element paste'],
+    [VENDOR_CHAR_CREATE_UI_PASTE_NEEDLE, 'char create ui paste hooks'],
     [VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, 'char create wear attire'],
     [VENDOR_CHAR_CREATE_WEAR_ACC_NEEDLE, 'char create wear accessories'],
     [VENDOR_TAB_NOWRAP_NEEDLE, 'settings tab nowrap'],
@@ -9339,8 +9445,13 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHAR_REF_DASH_SAVE_NEEDLE, VENDOR_CHAR_REF_DASH_SAVE_PATCH)
     .replace(VENDOR_CHAR_REF_HELP_NEEDLE, VENDOR_CHAR_REF_HELP_PATCH)
     .replace(VENDOR_CHAR_REF_EDIT_HTML_NEEDLE, VENDOR_CHAR_REF_EDIT_HTML_PATCH)
+    .replace(VENDOR_AUTOTAG_WINDOW_PASTE_NEEDLE, VENDOR_AUTOTAG_WINDOW_PASTE_PATCH)
     .replace(VENDOR_CHAR_REF_TAB_EVT_NEEDLE, VENDOR_CHAR_REF_TAB_EVT_PATCH)
     .replace(VENDOR_CHAR_REF_EDIT_EVT_NEEDLE, VENDOR_CHAR_REF_EDIT_EVT_PATCH)
+    .replace(VENDOR_CHAR_EDIT_MODAL_PASTE_NEEDLE, VENDOR_CHAR_EDIT_MODAL_PASTE_PATCH)
+    .replace(VENDOR_CHAR_EDIT_UI_PASTE_NEEDLE, VENDOR_CHAR_EDIT_UI_PASTE_PATCH)
+    .replace(VENDOR_CHAR_CREATE_MODAL_PASTE_NEEDLE, VENDOR_CHAR_CREATE_MODAL_PASTE_PATCH)
+    .replace(VENDOR_CHAR_CREATE_UI_PASTE_NEEDLE, VENDOR_CHAR_CREATE_UI_PASTE_PATCH)
     .replace(VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, VENDOR_CHAR_CREATE_WEAR_ATTIRE_PATCH)
     .replace(VENDOR_CHAR_CREATE_WEAR_ACC_NEEDLE, VENDOR_CHAR_CREATE_WEAR_ACC_PATCH)
     .replace(VENDOR_TAB_NOWRAP_NEEDLE, VENDOR_TAB_NOWRAP_PATCH)

@@ -7049,9 +7049,19 @@ ${Ye(250)}`;
         }), c.click();
       });
     }), t._autotagPasteBound || (t._autotagPasteBound = !0, window.addEventListener("paste", async (a) => {
-      if (!t.autotagFocus || t.autotagFocus.scope === "modal" || !t.uiOpen || t.uiTab !== "characters") return;
+      if (!t.autotagFocus) return;
       const r = Array.from(a.clipboardData?.items || []).find((p) => p.type.startsWith("image/"));
       if (!r) return;
+      if (t.autotagFocus.scope === "modal") {
+        const id = String(t.autotagFocus.id || "");
+        const run = id === "char-edit" ? t.charEditUi?.runAutotag : id === "char-create" ? t.charCreateUi?.runAutotag : null;
+        if (typeof run != "function") return;
+        a.preventDefault();
+        const file = r.getAsFile();
+        file && await run(file);
+        return;
+      }
+      if (!t.uiOpen || t.uiTab !== "characters") return;
       a.preventDefault();
       const i = r.getAsFile();
       if (!i) return;
@@ -7140,9 +7150,18 @@ ${Ye(250)}`;
         }
       });
     }), t._charRefPasteBound || (t._charRefPasteBound = !0, window.addEventListener("paste", async (a) => {
-      if (!t.charRefFocus || !t.uiOpen || t.uiTab !== "characters") return;
+      if (!t.charRefFocus) return;
       const r = Array.from(a.clipboardData?.items || []).find((p) => p.type.startsWith("image/"));
       if (!r) return;
+      if (t.charRefFocus.scope === "modal" && t.charRefFocus.id === "char-edit") {
+        const run = t.charEditUi?.uploadRef;
+        if (typeof run != "function") return;
+        a.preventDefault();
+        const file = r.getAsFile();
+        file && await run(file);
+        return;
+      }
+      if (!t.uiOpen || t.uiTab !== "characters") return;
       a.preventDefault();
       const file = r.getAsFile();
       if (!file) return;
@@ -8151,7 +8170,7 @@ ${Ye(250)}`;
     } catch {
     }
     const o = !!e?.openedContainer;
-    if (t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), o && !t.uiOpen && typeof k.hideContainer == "function") try {
+    if (t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), t.charRefFocus?.scope === "modal" && (t.charRefFocus = null), o && !t.uiOpen && typeof k.hideContainer == "function") try {
       await k.hideContainer();
     } catch {
     }
@@ -8343,13 +8362,6 @@ ${Ye(250)}`;
         const I = x.files?.[0];
         x.remove(), I && await d(I);
       }), x.click();
-    }), i.addEventListener("paste", async (f) => {
-      if (!(t.autotagFocus?.scope === "modal" && t.autotagFocus?.id === "char-edit")) return;
-      const x = Array.from(f.clipboardData?.items || []).find((R) => R.type.startsWith("image/"));
-      if (!x) return;
-      f.preventDefault(), f.stopPropagation();
-      const I = x.getAsFile();
-      I && await d(I);
     });
     const U = async () => {
       const live = await Z({ useOverride: !1 }).catch(() => null);
@@ -8660,14 +8672,7 @@ ${Ye(250)}`;
         } catch (err) {
           E(`제거 실패: ${z(err?.message || err, 80)}`);
         }
-      }), i.addEventListener("paste", async (f) => {
-        if (!(t.charRefFocus?.scope === "modal" && t.charRefFocus?.id === "char-edit")) return;
-        const item = Array.from(f.clipboardData?.items || []).find((R) => R.type.startsWith("image/"));
-        if (!item) return;
-        f.preventDefault(), f.stopPropagation();
-        const file = item.getAsFile();
-        file && await uploadRef(file);
-      });
+      }), t._ceUploadRef = uploadRef;
     })(), i.querySelector("[data-ce-card]")?.addEventListener("click", (f) => f.stopPropagation()), i.querySelector("[data-ce-form]")?.addEventListener("submit", (f) => {
       f.preventDefault(), U().catch(() => {
       });
@@ -8676,8 +8681,11 @@ ${Ye(250)}`;
       entryName: e.name,
       openedContainer: r,
       roster: n,
-      entry: e
+      entry: e,
+      runAutotag: d,
+      uploadRef: typeof t._ceUploadRef == "function" ? t._ceUploadRef : null
     };
+    t._ceUploadRef = null;
     try {
       s?.focus?.();
     } catch {
@@ -8832,13 +8840,6 @@ ${Ye(250)}`;
         const file = input.files?.[0];
         input.remove(), file && await runAutotag(file);
       }), input.click();
-    }), root.addEventListener("paste", async (ev) => {
-      if (!(t.autotagFocus?.scope === "modal" && t.autotagFocus?.id === "char-create")) return;
-      const item = Array.from(ev.clipboardData?.items || []).find((R) => R.type.startsWith("image/"));
-      if (!item) return;
-      ev.preventDefault();
-      const file = item.getAsFile();
-      file && await runAutotag(file);
     });
     const save = async () => {
       const name = w(nameEl?.value || "", 200);
@@ -8915,7 +8916,7 @@ ${Ye(250)}`;
         });
       });
     })(), root.querySelector("[data-cc-card]")?.addEventListener("click", (ev) => ev.stopPropagation());
-    t.charCreateUi = { root, openedContainer: opened, slotIndex: opts.slotIndex };
+    t.charCreateUi = { root, openedContainer: opened, slotIndex: opts.slotIndex, runAutotag };
     try {
       nameEl?.focus?.();
     } catch {

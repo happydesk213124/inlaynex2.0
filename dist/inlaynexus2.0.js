@@ -9515,7 +9515,8 @@ ${Ye(250)}`;
       selectedCount: 0,
       _metaGen: 0,
       _metaCardId: "",
-      metaHits: []
+      metaHits: [],
+      presetHits: []
     };
     t.galleryUi = d, t.viewerOpen = !0;
     const galleryFocusOf = () => {
@@ -10387,14 +10388,33 @@ ${Ye(250)}`;
         typeof d.presetSelect.setTextContent == "function" ? await d.presetSelect.setTextContent(label) : await d.presetSelect.setInnerHTML(h(label));
       } catch {
       }
-      if (d.presetMenu && typeof d.presetMenu.setInnerHTML == "function") {
-        const menuHtml = presets.length ? presets.map((p) => {
-          const on = presetIdEq(p.id, activeId);
-          return `<div style="padding:14px 14px;cursor:pointer;font-size:14px;line-height:1.35;min-height:44px;box-sizing:border-box;display:flex;align-items:center;color:${on ? "#e8eef8" : "#a6b1c2"};background:${on ? "rgba(124,108,255,.22)" : "transparent"};border-bottom:1px solid rgba(255,255,255,.06)">${h(p.name || p.id)}</div>`;
-        }).join("") : '<div style="padding:14px;font-size:14px;color:#778398">프리셋 없음</div>';
+      // Same path as meta chips: SafeDOM createElement + live rect cache (setInnerHTML kids drift).
+      d.presetHits = [];
+      if (d.presetMenu) {
         try {
-          await d.presetMenu.setInnerHTML(menuHtml);
+          await d.presetMenu.setInnerHTML("");
         } catch {
+        }
+        if (presets.length) {
+          for (const p of presets) {
+            const id = String(p.id || "");
+            if (!id) continue;
+            const on = presetIdEq(p.id, activeId);
+            const style = `padding:14px 14px;cursor:pointer;font-size:14px;line-height:1.35;min-height:44px;box-sizing:border-box;display:flex;align-items:center;color:${on ? "#e8eef8" : "#a6b1c2"};background:${on ? "rgba(124,108,255,.22)" : "transparent"};border-bottom:1px solid rgba(255,255,255,.06);pointer-events:auto;`;
+            try {
+              const el = await H(e, "div", { text: String(p.name || p.id || ""), style });
+              try { await el.setAttribute("data-nx-preset-id", id); } catch {}
+              await d.presetMenu.appendChild(el);
+              d.presetHits.push({ el, id, hitPad: 12 });
+            } catch {
+            }
+          }
+        } else {
+          try {
+            const empty = await H(e, "div", { text: "프리셋 없음", style: "padding:14px;font-size:14px;color:#778398;pointer-events:none;" });
+            await d.presetMenu.appendChild(empty);
+          } catch {
+          }
         }
       }
       const presetChromeLive = !d.minimized || viewerMinimizeMode() === "toolbar" || viewerMinimizeMode() === "actions";
@@ -10409,6 +10429,29 @@ ${Ye(250)}`;
         await r.setStyleAttribute(d.presetMenuOpen && presetChromeLive ? base.replace(/overflow:[^;]+/i, "overflow:visible") : base);
       } catch {
       }
+    }, hitPresetItemAt = async (x, y) => {
+      const zones = Array.isArray(d.presetHits) ? d.presetHits : [];
+      for (const zone of zones) {
+        if (!zone?.el || !zone?.id) continue;
+        try {
+          const R = await zone.el.getBoundingClientRect(), g = Number(zone.hitPad) || 12;
+          if (x >= R.left - g && x <= R.right + g && y >= R.top - g && y <= R.bottom + g) return zone;
+        } catch {
+        }
+      }
+      // Fallback if cache empty/stale after scroll — still pad finger misses.
+      try {
+        if (!d.presetMenu) return null;
+        const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await d.presetMenu.getChildren()) : [];
+        for (let W = 0; W < kids.length; W += 1) {
+          const id = String(d.viewerPresetIds?.[W] || zones[W]?.id || "");
+          if (!id) continue;
+          const J = await kids[W].getBoundingClientRect(), g = 12;
+          if (x >= J.left - g && x <= J.right + g && y >= J.top - g && y <= J.bottom + g) return { el: kids[W], id, hitPad: g };
+        }
+      } catch {
+      }
+      return null;
     }, pickViewerPreset = async (selected) => {
       if (!selected || t._presetSwitching) return;
       try {
@@ -10590,20 +10633,13 @@ ${Ye(250)}`;
       }
       if (d.minimized && viewerMinimizeMode() === "actions") {
         if (d.actionsFolded == null) d.actionsFolded = !1;
-        if (!d.actionsFolded && d.presetMenuOpen && d.presetMenu && await X(d.presetMenu, _, O)) {
-          try {
-            const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await d.presetMenu.getChildren()) : [];
-            for (let W = 0; W < kids.length; W += 1) {
-              const J = await kids[W].getBoundingClientRect();
-              if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
-                const id = d.viewerPresetIds?.[W] || "";
-                id && await pickViewerPreset(id);
-                return;
-              }
-            }
-          } catch {
+        if (!d.actionsFolded && d.presetMenuOpen && d.presetMenu) {
+          const zone = await hitPresetItemAt(_, O);
+          if (zone?.id) {
+            await pickViewerPreset(zone.id);
+            return;
           }
-          return;
+          if (await X(d.presetMenu, _, O)) return;
         }
         if (!d.actionsFolded && d.presetSelect && await X(d.presetSelect, _, O)) {
           d.presetMenuOpen = !d.presetMenuOpen;
@@ -10673,21 +10709,14 @@ ${Ye(250)}`;
           }
           return;
         }
-        // Preset dropdown (SafeDOM forbids change/input — drive via pointer hit-test).
-        if (d.presetMenuOpen && d.presetMenu && await X(d.presetMenu, _, O)) {
-          try {
-            const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await d.presetMenu.getChildren()) : [];
-            for (let W = 0; W < kids.length; W += 1) {
-              const J = await kids[W].getBoundingClientRect();
-              if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
-                const id = d.viewerPresetIds?.[W] || "";
-                id && await pickViewerPreset(id);
-                return;
-              }
-            }
-          } catch {
+        // Preset dropdown: live rect + hitPad cache (same idea as meta chips).
+        if (d.presetMenuOpen && d.presetMenu) {
+          const zone = await hitPresetItemAt(_, O);
+          if (zone?.id) {
+            await pickViewerPreset(zone.id);
+            return;
           }
-          return;
+          if (await X(d.presetMenu, _, O)) return;
         }
         if (d.presetSelect && await X(d.presetSelect, _, O)) {
           d.presetMenuOpen = !d.presetMenuOpen;

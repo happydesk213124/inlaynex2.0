@@ -8235,14 +8235,33 @@ const VENDOR_VIEWER_PRESET_MENU_TOUCH_PATCH =
         typeof d.presetSelect.setTextContent == "function" ? await d.presetSelect.setTextContent(label) : await d.presetSelect.setInnerHTML(h(label));
       } catch {
       }
-      if (d.presetMenu && typeof d.presetMenu.setInnerHTML == "function") {
-        const menuHtml = presets.length ? presets.map((p) => {
-          const on = presetIdEq(p.id, activeId);
-          return \`<div style="padding:14px 14px;cursor:pointer;font-size:14px;line-height:1.35;min-height:44px;box-sizing:border-box;display:flex;align-items:center;color:\${on ? "#e8eef8" : "#a6b1c2"};background:\${on ? "rgba(124,108,255,.22)" : "transparent"};border-bottom:1px solid rgba(255,255,255,.06)">\${h(p.name || p.id)}</div>\`;
-        }).join("") : '<div style="padding:14px;font-size:14px;color:#778398">프리셋 없음</div>';
+      // Same path as meta chips: SafeDOM createElement + live rect cache (setInnerHTML kids drift).
+      d.presetHits = [];
+      if (d.presetMenu) {
         try {
-          await d.presetMenu.setInnerHTML(menuHtml);
+          await d.presetMenu.setInnerHTML("");
         } catch {
+        }
+        if (presets.length) {
+          for (const p of presets) {
+            const id = String(p.id || "");
+            if (!id) continue;
+            const on = presetIdEq(p.id, activeId);
+            const style = \`padding:14px 14px;cursor:pointer;font-size:14px;line-height:1.35;min-height:44px;box-sizing:border-box;display:flex;align-items:center;color:\${on ? "#e8eef8" : "#a6b1c2"};background:\${on ? "rgba(124,108,255,.22)" : "transparent"};border-bottom:1px solid rgba(255,255,255,.06);pointer-events:auto;\`;
+            try {
+              const el = await H(e, "div", { text: String(p.name || p.id || ""), style });
+              try { await el.setAttribute("data-nx-preset-id", id); } catch {}
+              await d.presetMenu.appendChild(el);
+              d.presetHits.push({ el, id, hitPad: 12 });
+            } catch {
+            }
+          }
+        } else {
+          try {
+            const empty = await H(e, "div", { text: "프리셋 없음", style: "padding:14px;font-size:14px;color:#778398;pointer-events:none;" });
+            await d.presetMenu.appendChild(empty);
+          } catch {
+          }
         }
       }
       const presetChromeLive = !d.minimized || viewerMinimizeMode() === "toolbar" || viewerMinimizeMode() === "actions";
@@ -8251,6 +8270,76 @@ const VENDOR_VIEWER_PRESET_MENU_TOUCH_PATCH =
         await d.presetMenu?.setStyleAttribute?.(\`display:\${d.presetMenuOpen && presetChromeLive && !folded ? "block" : "none"};position:absolute;top:\${actionsMin ? "auto" : "52px"};\${actionsMin ? "bottom:56px;" : ""}left:10px;right:\${actionsMin ? "10px" : "auto"};min-width:\${actionsMin ? "0" : "200px"};max-width:\${actionsMin ? "none" : "min(92vw,320px)"};max-height:min(50vh,360px);overflow:auto;z-index:20;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`);
       } catch {
       }`;
+
+/** Live-rect + hitPad preset item picker (chip-style). */
+const VENDOR_PRESET_HIT_HELPER_NEEDLE =
+  `    }, pickViewerPreset = async (selected) => {
+      if (!selected || t._presetSwitching) return;`;
+const VENDOR_PRESET_HIT_HELPER_PATCH =
+  `    }, hitPresetItemAt = async (x, y) => {
+      const zones = Array.isArray(d.presetHits) ? d.presetHits : [];
+      for (const zone of zones) {
+        if (!zone?.el || !zone?.id) continue;
+        try {
+          const R = await zone.el.getBoundingClientRect(), g = Number(zone.hitPad) || 12;
+          if (x >= R.left - g && x <= R.right + g && y >= R.top - g && y <= R.bottom + g) return zone;
+        } catch {
+        }
+      }
+      // Fallback if cache empty/stale after scroll — still pad finger misses.
+      try {
+        if (!d.presetMenu) return null;
+        const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await d.presetMenu.getChildren()) : [];
+        for (let W = 0; W < kids.length; W += 1) {
+          const id = String(d.viewerPresetIds?.[W] || zones[W]?.id || "");
+          if (!id) continue;
+          const J = await kids[W].getBoundingClientRect(), g = 12;
+          if (x >= J.left - g && x <= J.right + g && y >= J.top - g && y <= J.bottom + g) return { el: kids[W], id, hitPad: g };
+        }
+      } catch {
+      }
+      return null;
+    }, pickViewerPreset = async (selected) => {
+      if (!selected || t._presetSwitching) return;`;
+
+/** Expanded viewer: use presetHits instead of index walk. */
+const VENDOR_PRESET_EXPANDED_HIT_NEEDLE =
+  `        // Preset dropdown (SafeDOM forbids change/input — drive via pointer hit-test).
+        if (d.presetMenuOpen && d.presetMenu && await X(d.presetMenu, _, O)) {
+          try {
+            const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await d.presetMenu.getChildren()) : [];
+            for (let W = 0; W < kids.length; W += 1) {
+              const J = await kids[W].getBoundingClientRect();
+              if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
+                const id = d.viewerPresetIds?.[W] || "";
+                id && await pickViewerPreset(id);
+                return;
+              }
+            }
+          } catch {
+          }
+          return;
+        }`;
+const VENDOR_PRESET_EXPANDED_HIT_PATCH =
+  `        // Preset dropdown: live rect + hitPad cache (same idea as meta chips).
+        if (d.presetMenuOpen && d.presetMenu) {
+          const zone = await hitPresetItemAt(_, O);
+          if (zone?.id) {
+            await pickViewerPreset(zone.id);
+            return;
+          }
+          if (await X(d.presetMenu, _, O)) return;
+        }`;
+
+const VENDOR_VIEWER_PRESET_HITS_STATE_NEEDLE =
+  `      _metaCardId: "",
+      metaHits: []
+    };`;
+const VENDOR_VIEWER_PRESET_HITS_STATE_PATCH =
+  `      _metaCardId: "",
+      metaHits: [],
+      presetHits: []
+    };`;
 
 const VENDOR_VIEWER_IMG_REROLL_TOUCH_NEEDLE =
   `      return \`<div style="position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center">\${spin}<span data-nx-img-reroll="1" style="position:absolute;right:8px;top:8px;z-index:3;cursor:pointer;background:rgba(124,108,255,.92);color:#fff;padding:5px 10px;border-radius:8px;font-size:11px;line-height:1;font-weight:600;border:1px solid rgba(255,255,255,.18);box-shadow:0 2px 10px rgba(0,0,0,.35);user-select:none" title="이 이미지만 리롤">리롤</span><img data-nx-main-img="1" src="\${src}" style="max-width:100%;max-height:100%;object-fit:contain" loading="eager" decoding="async" /></div>\`;`;
@@ -8748,20 +8837,13 @@ const VENDOR_ACTIONS_POINTER_PATCH =
       }
       if (d.minimized && viewerMinimizeMode() === "actions") {
         if (d.actionsFolded == null) d.actionsFolded = !1;
-        if (!d.actionsFolded && d.presetMenuOpen && d.presetMenu && await X(d.presetMenu, _, O)) {
-          try {
-            const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await d.presetMenu.getChildren()) : [];
-            for (let W = 0; W < kids.length; W += 1) {
-              const J = await kids[W].getBoundingClientRect();
-              if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
-                const id = d.viewerPresetIds?.[W] || "";
-                id && await pickViewerPreset(id);
-                return;
-              }
-            }
-          } catch {
+        if (!d.actionsFolded && d.presetMenuOpen && d.presetMenu) {
+          const zone = await hitPresetItemAt(_, O);
+          if (zone?.id) {
+            await pickViewerPreset(zone.id);
+            return;
           }
-          return;
+          if (await X(d.presetMenu, _, O)) return;
         }
         if (!d.actionsFolded && d.presetSelect && await X(d.presetSelect, _, O)) {
           d.presetMenuOpen = !d.presetMenuOpen;
@@ -9240,6 +9322,9 @@ const loadVendorUi = (): string => {
     [VENDOR_VIEWER_HDR_TAIL_TOUCH_NEEDLE, 'viewer header tail touch'],
     [VENDOR_VIEWER_HDR_CHROME_TOUCH_NEEDLE, 'viewer header chrome touch'],
     [VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE, 'viewer preset menu touch'],
+    [VENDOR_PRESET_HIT_HELPER_NEEDLE, 'preset hitPresetItemAt helper'],
+    [VENDOR_PRESET_EXPANDED_HIT_NEEDLE, 'preset expanded hit cache'],
+    [VENDOR_VIEWER_PRESET_HITS_STATE_NEEDLE, 'viewer presetHits state'],
     [VENDOR_VIEWER_IMG_REROLL_TOUCH_NEEDLE, 'viewer img reroll touch'],
     [VENDOR_VIEWER_IMG_ACT_HIT_NEEDLE, 'viewer img act hit'],
     [VENDOR_VIEWER_STOP_HDR_NEEDLE, 'viewer stop header btn'],
@@ -9518,6 +9603,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_VIEWER_HDR_TAIL_TOUCH_NEEDLE, VENDOR_VIEWER_HDR_TAIL_TOUCH_PATCH)
     .replace(VENDOR_VIEWER_HDR_CHROME_TOUCH_NEEDLE, VENDOR_VIEWER_HDR_CHROME_TOUCH_PATCH)
     .replace(VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE, VENDOR_VIEWER_PRESET_MENU_TOUCH_PATCH)
+    .replace(VENDOR_PRESET_HIT_HELPER_NEEDLE, VENDOR_PRESET_HIT_HELPER_PATCH)
+    .replace(VENDOR_PRESET_EXPANDED_HIT_NEEDLE, VENDOR_PRESET_EXPANDED_HIT_PATCH)
+    .replace(VENDOR_VIEWER_PRESET_HITS_STATE_NEEDLE, VENDOR_VIEWER_PRESET_HITS_STATE_PATCH)
     .replace(VENDOR_VIEWER_IMG_REROLL_TOUCH_NEEDLE, VENDOR_VIEWER_IMG_REROLL_TOUCH_PATCH)
     .replace(VENDOR_VIEWER_IMG_ACT_HIT_NEEDLE, VENDOR_VIEWER_IMG_ACT_HIT_PATCH)
     .replace(VENDOR_VIEWER_STOP_HDR_NEEDLE, VENDOR_VIEWER_STOP_HDR_PATCH)

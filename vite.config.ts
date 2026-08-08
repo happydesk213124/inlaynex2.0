@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.6';
+const PLUGIN_VERSION = '2.2.7';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -623,6 +623,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.7</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>탐색기 선택바 짧은 라벨: 선택ZIP · 저장 · ★/☆ · 선택해제</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.6</strong>
@@ -1420,6 +1426,27 @@ const VENDOR_EXPLORER_GRID_HTML_NEEDLE =
 
 const VENDOR_EXPLORER_GRID_HTML_PATCH =
   `          <div class="explorer-grid" id="nx-explorer-grid" style="--ex-thumb:\${thumb}px"><div class="explorer-marquee" id="nx-explorer-marquee"></div>\${o === "__pick__" ? '<div class="explorer-pick-hint">왼쪽에서 캐릭터 채팅을 고르거나<br>통합 이미지보기를 눌러 주세요.</div>' : etWindowed(a, 0)}</div>`;
+
+/** Shorter selbar labels so mobile/narrow chrome fits. */
+const VENDOR_EXPLORER_SELBAR_LABELS_NEEDLE =
+  `            <button type="button" id="nx-explorer-export-sel" class="secondary" style="min-height:28px;padding:4px 10px">선택 ZIP</button>
+            <button type="button" id="nx-explorer-save-one" class="secondary" style="min-height:28px;padding:4px 10px">단건 저장</button>
+            <button type="button" id="nx-explorer-favonly" class="secondary ex-mobile-select \${e.favOnly ? "active" : ""}" style="min-height:28px;padding:4px 10px" title="별 표시한 이미지만 보기">\${e.favOnly ? "★ 즐겨찾기만" : "☆ 즐겨찾기만"}</button>
+            <button type="button" id="nx-explorer-delete-sel" style="min-height:28px;padding:4px 10px">삭제</button>
+            <button type="button" id="nx-explorer-clear-sel" class="secondary" style="min-height:28px;padding:4px 10px">선택 해제</button>`;
+
+const VENDOR_EXPLORER_SELBAR_LABELS_PATCH =
+  `            <button type="button" id="nx-explorer-export-sel" class="secondary" style="min-height:28px;padding:4px 10px">선택ZIP</button>
+            <button type="button" id="nx-explorer-save-one" class="secondary" style="min-height:28px;padding:4px 10px">저장</button>
+            <button type="button" id="nx-explorer-favonly" class="secondary ex-mobile-select \${e.favOnly ? "active" : ""}" style="min-height:28px;padding:4px 10px" title="별 표시한 이미지만 보기">\${e.favOnly ? "★" : "☆"}</button>
+            <button type="button" id="nx-explorer-delete-sel" style="min-height:28px;padding:4px 10px">삭제</button>
+            <button type="button" id="nx-explorer-clear-sel" class="secondary" style="min-height:28px;padding:4px 10px">선택해제</button>`;
+
+const VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE =
+  `favBtn && (favBtn.classList.toggle("active", !!ex.favOnly), favBtn.textContent = ex.favOnly ? "★ 즐겨찾기만" : "☆ 즐겨찾기만");`;
+
+const VENDOR_EXPLORER_FAVONLY_PAINT_PATCH =
+  `favBtn && (favBtn.classList.toggle("active", !!ex.favOnly), favBtn.textContent = ex.favOnly ? "★" : "☆");`;
 
 const VENDOR_EXPLORER_ET_FN_NEEDLE =
   `  function et(e) {
@@ -6277,8 +6304,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.6",
-    body: "스티키 v2 · 말풍선 hit-test · 스트리밍 dual-5초 quiet · 에셋 별칭 흡수. 업데이트 내역 탭 참고."
+    title: "2.2.7",
+    body: "탐색기 선택바 짧은 라벨. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -7612,6 +7639,8 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_EXPLORER_SHELL_FOOT_NEEDLE, 'explorer shell foot');
   assertOnce(raw, VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE, 'explorer folders html');
   assertOnce(raw, VENDOR_EXPLORER_GRID_HTML_NEEDLE, 'explorer grid html');
+  assertOnce(raw, VENDOR_EXPLORER_SELBAR_LABELS_NEEDLE, 'explorer selbar short labels');
+  assertOnce(raw, VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE, 'explorer favonly paint star-only');
   assertOnce(raw, VENDOR_EXPLORER_ET_FN_NEEDLE, 'explorer et windowed');
   assertOnce(raw, VENDOR_EXPLORER_HA_NEEDLE, 'explorer ha window paint');
   assertOnce(raw, VENDOR_EXPLORER_TAB_LOAD_NEEDLE, 'explorer tab load optimistic');
@@ -7867,6 +7896,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_EXPLORER_SHELL_FOOT_NEEDLE, VENDOR_EXPLORER_SHELL_FOOT_PATCH)
     .replace(VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE, VENDOR_EXPLORER_FOLDERS_HTML_PATCH)
     .replace(VENDOR_EXPLORER_GRID_HTML_NEEDLE, VENDOR_EXPLORER_GRID_HTML_PATCH)
+    .replace(VENDOR_EXPLORER_SELBAR_LABELS_NEEDLE, VENDOR_EXPLORER_SELBAR_LABELS_PATCH)
+    .replace(VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE, VENDOR_EXPLORER_FAVONLY_PAINT_PATCH)
     .replace(VENDOR_EXPLORER_ET_FN_NEEDLE, VENDOR_EXPLORER_ET_FN_PATCH)
     .replace(VENDOR_EXPLORER_TAB_LOAD_NEEDLE, VENDOR_EXPLORER_TAB_LOAD_PATCH)
     .replace(VENDOR_EXPLORER_FOLDER_BIND_NEEDLE, VENDOR_EXPLORER_FOLDER_BIND_PATCH)

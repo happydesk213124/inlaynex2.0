@@ -4,7 +4,7 @@
 import { dbg } from '../core/debug';
 import { hostHas, risuHost } from '../core/host';
 import type { ApiResult, LoreEntry } from '../core/types';
-import { cleanText } from '../core/util/text.ts';
+import { cleanText, normalizeAlias } from '../core/util/text.ts';
 import { normalizeAssetNaiTagsMode } from '../config/schema.ts';
 import type { CharacterInput } from '../domain/character/identity.ts';
 import { collectTriggeredLoreKeys, explainTriggeredLoreEntries } from '../domain/lore/assemble';
@@ -37,9 +37,11 @@ import {
   personaEmbeddedModule,
   type RisuNamedAsset,
 } from '../domain/nai-meta/risu-asset-list.ts';
-import { asU8, bytesToBase64Async } from '../core/util/bytes.ts';
+import { asU8, bytesToBase64Async, u8ToArrayBuffer } from '../core/util/bytes.ts';
 import { prepareAutotagImage } from '../core/util/image.ts';
+import { resolveCharacter } from '../domain/character/roster';
 import { getConfig } from './context';
+import { setCharRefImage } from './nai-assets';
 
 function foldNameHas(name: unknown, trigger: string): boolean {
   const n = assetBasenameCompact(name);
@@ -66,6 +68,8 @@ export interface AssetTagCollectResult {
   weightMap: Map<string, string>;
   /** Representative asset images for vision (≤1 per character, ≤MAX_LOOK_PREVIEWS). */
   previews: AssetLookPreview[];
+  /** Highest-priority successful asset per trigger (raw bytes source for char refs). */
+  previewTargets: Array<{ name: string; key: string }>;
 }
 
 interface AssetPoolInfo {
@@ -331,9 +335,11 @@ async function scoreAndReadAssets(
       if (got >= ASSETS_PER_TRIGGER) break;
       if (await tryRead(asset, tr)) {
         // First success for this trigger = representative look preview.
+        // `name` is the lore/character trigger (not asset filename) so char_ref
+        // auto-seed can match new_characters by identity.
         if (got === 0 && previewTargets.length < MAX_LOOK_PREVIEWS
-          && !previewTargets.some((p) => p.key === asset.key)) {
-          previewTargets.push({ name: asset.name, key: asset.key });
+          && !previewTargets.some((p) => p.key === asset.key || normalizeAlias(p.name) === normalizeAlias(tr))) {
+          previewTargets.push({ name: tr, key: asset.key });
         }
         got += 1;
       }
@@ -437,7 +443,7 @@ export async function collectAssetNaiTags(
     unique: packed.groups.reduce((n, g) => n + g.assets.reduce((m, a) => m + a.unique.length, 0), 0),
     previews: previews.map((p) => p.name),
   });
-  return { block, packed, weightMap, previews };
+  return { block, packed, weightMap, previews, previewTargets };
 }
 
 /**
@@ -595,4 +601,52 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
   report.inject_block_preview = formatAssetTagsInjectBlock(packed).slice(0, 2000);
   report.ok_picked = packedRows.length;
   return { ok: true, report };
+}
+
+/**
+ * After char_looks fills a roster row, seed its NAI reference from the
+ * priority-1 asset for that trigger — original bytes only (no re-encode).
+ * Skips characters that already have a reference image.
+ * Targets use trigger names (unfilled-look lore keys), matching new_characters.
+ */
+export async function applyCharRefsFromPreviewTargets(
+  newCharacters: unknown[],
+  targets: Array<{ name: string; key: string }>,
+  roster: CharacterInput[],
+): Promise<number> {
+  if (!targets.length || !newCharacters.length) return 0;
+  let applied = 0;
+  for (const raw of newCharacters) {
+    if (!raw || typeof raw !== 'object') continue;
+    const name = cleanText((raw as { name?: unknown }).name, 200);
+    if (!name) continue;
+    const stored = resolveCharacter(name, roster);
+    const cid = cleanText(stored?.id || '', 80);
+    if (!cid) continue;
+    // Match trigger→character: exact alias fold, or resolveCharacter against trigger.
+    const hit =
+      targets.find((t) => normalizeAlias(t.name) === normalizeAlias(name))
+      || targets.find((t) => normalizeAlias(t.name) === normalizeAlias(stored?.name || ''))
+      || targets.find((t) => {
+        const byTrigger = resolveCharacter(t.name, [stored || raw as CharacterInput].filter(Boolean));
+        return Boolean(byTrigger && cleanText(byTrigger.id || '', 80) === cid);
+      })
+      || targets.find((t) => Boolean(resolveCharacter(t.name, roster)?.id === cid));
+    if (!hit?.key) continue;
+    const bytes = await readAssetBytes(hit.key);
+    if (!bytes?.length) continue;
+    try {
+      const result = await setCharRefImage(cid, u8ToArrayBuffer(bytes), { overwrite: false });
+      if (result && typeof result === 'object' && (result as { ok?: boolean }).ok && !(result as { skipped?: boolean }).skipped) {
+        applied += 1;
+        dbg('asset-tags.char_ref.set', { name, character_id: cid, asset_key: hit.key, trigger: hit.name });
+      }
+    } catch (err) {
+      dbg('asset-tags.char_ref.fail', {
+        name,
+        message: String((err as Error)?.message || err),
+      }, 'warn');
+    }
+  }
+  return applied;
 }

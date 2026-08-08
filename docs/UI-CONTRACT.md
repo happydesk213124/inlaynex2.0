@@ -117,6 +117,16 @@ Card-settings checkbox sits in a `checks-grid` of `toggle-row`s with
 person_tag_solo (same UX as dashboard toggles). Character tab and chip edit
 popup use a costume name+arrow combobox (no field labels; placeholder only).
 
+`card.char_ref_mode` is `off` | `vibe` | `image` (default `off`); with
+`char_ref_strength` / `char_ref_fidelity` in `0.01`–`1` (defaults `0.6` / `1`).
+Dashboard controls sit beside 이미지 모서리 (asserted vendor patch). Per-character
+bytes live in meta (`char_ref_<id>`) via `POST /v1/characters/ref` — stored
+as-is (webp preferred; no re-encode). Character list rows may include
+`ref_configured` / `ref_preview_url`. When mode ≠ `off`, generation adds each
+shot character's ref to NAI `vibes[]` or `character_refs[]` (additive with the
+global model vibe/ref). Asset `char_looks` may seed a missing ref from the
+priority-1 asset without overwriting.
+
 ### LLM role profiles (`settings.llm` + `settings.llm_roles`)
 
 `settings.llm` remains the **메인 태깅** profile (key name unchanged — no
@@ -184,6 +194,7 @@ char_inject, appearance_inject, asset_tags_inject, autotag, curation_refine, cur
 | `POST /v1/jobs/create` | → `{ job_id }` (**202**) or `{ busy: true }` / `{ error: { code: "busy" } }` |
 | `POST /v1/jobs/retarget-hash` | While a job runs: if same char/chat/msg/role and text Dice≥60% vs job-start preview, set **save** `content_hash` (lock key unchanged) + rebind published siblings |
 | `POST /v1/jobs/busy-message` | `{session_id, character_id, chat_id, message_index, role}` → `{ busy, job_id? }` — active job for that turn (hash ignored); UI skips Ka |
+| `POST /v1/jobs/stop` | `{session_id?}` → `{ stopped, job_ids, reroll_stop }` — soft-stop active jobs **and** message reroll batches (keep published / finished shots; do not abort in-flight LLM/NAI; remaining shots/rerolls skip). UI may clear busy immediately. |
 | `/v1/jobs/:id` | `{ ok, state, error?, progress? }`, state ∈ `queued\|tagging\|generating\|done\|cancelled\|error` |
 
 Auto-gen (`Ka`): after soft rebind/retarget, skip `Be` when (1) `busy-message` is true, or (2) gallery already has cards for the same char/chat/msg/role (hash may differ). Generate only when neither applies.
@@ -221,11 +232,15 @@ character_name, chat_name, folder_key`.
 | `POST /v1/characters` | 6 body shapes: bulk save, single `character`, unified patch (`root_session_ids`), move-to-global, delete (`root_delete[]`), create |
 | `POST /v1/characters/global-toggles` | `{character_id, disabled_globals[]}` |
 | `POST /v1/characters/unify` | `{target_session_id, source_session_ids[], include_target}` |
+| `GET /v1/characters/ref?character_id=` | `{ configured, preview_url }` |
+| `POST /v1/characters/ref` | `{character_id, image_b64}` or `{character_id, copy_from}` or `{character_id, clear:true}` — bytes as-is |
+| `POST /v1/characters/ref/clear` | `{character_id}` |
 | `/v1/appearance/:sessionId` · `POST` | legacy alias |
 
 Record: `id, name, original, aliases[], surname, given_name, surname_variants[],
 given_name_variants[], appearance, attire, accessories, costumes[], active_costume,
-attire_locked, accessories_locked, priority, gender (`girl`|`boy`|`other`|``).
+attire_locked, accessories_locked, priority, gender (`girl`|`boy`|`other`|``),
+`ref_configured?`, `ref_preview_url?`.
 `attire` = clothes + permanent jewelry; `accessories` = weapons/props only.
 `costumes[]` = named wardrobe sets (`name`, `note?`, `attire`, `accessories`);
 index **0** is the generation default when a shot has no `costume` pick.

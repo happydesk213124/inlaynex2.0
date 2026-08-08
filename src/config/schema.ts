@@ -162,6 +162,12 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   // asset_nai_tags: off | inline | prepass | prepass_vision (legacy bool → off / prepass_vision)
   card.asset_nai_tags = normalizeAssetNaiTagsMode(card.asset_nai_tags);
   card.auto_aspect = card.auto_aspect === true || card.auto_aspect === 'true' || card.auto_aspect === 1 || card.auto_aspect === '1';
+  card.llm_json_retry =
+    card.llm_json_retry === true
+    || card.llm_json_retry === 'true'
+    || card.llm_json_retry === 1
+    || card.llm_json_retry === '1'
+    || card.llm_json_retry === 'on';
   // natural_base: legacy boolean → "off" | "short" | "detailed" | "supplement"
   card.natural_base = normalizeNaturalBaseMode(card.natural_base);
   // person_tag_solo: one-character shots use `solo` instead of 1girl/1boy
@@ -225,6 +231,17 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   }
   if (card.progress_toast == null) card.progress_toast = false;
   else card.progress_toast = card.progress_toast === true || card.progress_toast === 'true' || card.progress_toast === 1 || card.progress_toast === '1';
+  {
+    const mode = String(card.char_ref_mode || 'off').toLowerCase();
+    card.char_ref_mode = mode === 'vibe' || mode === 'image' ? mode : 'off';
+    const clamp01 = (raw: unknown, fallback: number) => {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.max(0.01, Math.min(1, n));
+    };
+    card.char_ref_strength = clamp01(card.char_ref_strength, 0.6);
+    card.char_ref_fidelity = clamp01(card.char_ref_fidelity, 1);
+  }
   // sticky_layout_v2 was a temporary toggle; v2 is always-on — drop leftover saves.
   if (card && typeof card === 'object' && 'sticky_layout_v2' in card) delete card.sticky_layout_v2;
   {

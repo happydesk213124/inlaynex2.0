@@ -43,7 +43,7 @@ import { modelToNaia, type CharacterReference, type T2iRequest, type VibeReferen
 import { imageLocation, putImageLocation } from '../storage/stores';
 import { getConfig } from './context';
 import { loadCurationCatalog } from './curation';
-import { ensurePresetVibeEncoded, ensureVibeEncoded, getReferenceImageBytes } from './nai-assets';
+import { ensureCharRefVibeEncoded, ensurePresetVibeEncoded, ensureVibeEncoded, getCharRefImageBytes, getReferenceImageBytes } from './nai-assets';
 import { getPrompt } from './settings';
 
 /** NAI width/height: accept any positive size up to 5000 (no 832/1216 portrait ceiling). */
@@ -68,6 +68,8 @@ export interface NaiCaption {
 /** A caption plus the bookkeeping the card row and the reroll path need. */
 export interface GenerationCharacter extends NaiCaption {
   name: string;
+  /** Roster id when resolved — used for per-character NAI reference images. */
+  id?: string;
   /** The tagger's original entry, replayed verbatim when the card is rerolled. */
   raw: ShotCharacter;
 }
@@ -101,6 +103,11 @@ export type ImageRequest = Pick<GenerationPlan, 'main' | 'neg' | 'captions'> & {
    * `nai.seed`, then a random seed — same as a normal generation.
    */
   seed?: number;
+  /**
+   * Shot cast with roster ids — used to attach per-character NAI refs when
+   * dashboard `char_ref_mode` is vibe|image.
+   */
+  characters?: Array<{ id?: string; name?: string }>;
 };
 
 export interface GeneratedImage {
@@ -259,7 +266,15 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
     const cx = n === 1 ? 0.5 : Math.round((0.1 + (0.8 * idx) / Math.max(1, n - 1)) * 10) / 10;
     const cy = 0.5;
     captions.push({ prompt: prompt || 'girl', uc, center_x: cx, center_y: cy });
-    charMeta.push({ name: stored?.name || name, prompt, uc, center_x: cx, center_y: cy, raw: char });
+    charMeta.push({
+      name: stored?.name || name,
+      id: cleanText(stored?.id || '', 80) || undefined,
+      prompt,
+      uc,
+      center_x: cx,
+      center_y: cy,
+      raw: char,
+    });
   }
   return { main, neg, captions, meta: { setup, person, characters: charMeta, paragraph: shot.paragraph } };
 }
@@ -338,6 +353,41 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
       information_extracted: Math.max(0, Math.min(1, ie)),
     });
   }
+
+  // Per-character refs from dashboard mode (additive with global NAI model vibe/ref).
+  const charRefMode = String(card.char_ref_mode || 'off').toLowerCase();
+  if (charRefMode === 'vibe' || charRefMode === 'image') {
+    let strength = Number(card.char_ref_strength ?? 0.6);
+    let fidelity = Number(card.char_ref_fidelity ?? 1);
+    if (Number.isNaN(strength)) strength = 0.6;
+    if (Number.isNaN(fidelity)) fidelity = 1;
+    strength = Math.max(0.01, Math.min(1, strength));
+    fidelity = Math.max(0.01, Math.min(1, fidelity));
+    const cast = Array.isArray(plan.characters) ? plan.characters : [];
+    for (const entry of cast) {
+      const cid = cleanText(entry?.id || '', 80);
+      if (!cid) continue;
+      if (charRefMode === 'image') {
+        const bytes = await getCharRefImageBytes(cid);
+        if (!bytes) continue;
+        characterRefs.push({
+          image: bytes,
+          type: 'character&style',
+          strength,
+          fidelity,
+        });
+      } else {
+        const row = await ensureCharRefVibeEncoded(cid, fidelity);
+        if (!row?.encoded) continue;
+        vibes.push({
+          encoded: row.encoded,
+          strength,
+          information_extracted: fidelity,
+        });
+      }
+    }
+  }
+
   const req: T2iRequest = {
     prompt: plan.main,
     negative_prompt: plan.neg,

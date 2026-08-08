@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.7';
+const PLUGIN_VERSION = '2.2.8';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -450,6 +450,7 @@ const VENDOR_ASSET_NAI_HTML_NEEDLE =
 const VENDOR_ASSET_NAI_HTML_PATCH =
   `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
             <label class="toggle-row" data-nx-help-id="nx-auto-aspect"><input type="checkbox" id="nx-auto-aspect" \${i.auto_aspect ? "checked" : ""}><span>자동 비율 조절</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-llm-json-retry"><input type="checkbox" id="nx-llm-json-retry" \${i.llm_json_retry ? "checked" : ""}><span>JSON 오류 시 재시도</span></label>
 `;
 
 const VENDOR_ASSET_NAI_SAVE_NEEDLE =
@@ -459,6 +460,7 @@ const VENDOR_ASSET_NAI_SAVE_NEEDLE =
 const VENDOR_ASSET_NAI_SAVE_PATCH =
   `      char_appearance: ee("nx-appearance"),
       auto_aspect: ee("nx-auto-aspect"),
+      llm_json_retry: ee("nx-llm-json-retry"),
 `;
 
 /** Card options: asset NAI select after solo+costume checks-grid. */
@@ -497,6 +499,7 @@ const VENDOR_ASSET_NAI_HELP_PATCH =
     "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "로어 트리거와 이름이 맞는 Risu 에셋 PNG/WebP의 NovelAI 메타 태그를 어떻게 태거에 넣을지 고릅니다. artist·year·품질·*background·straight-on은 제외.\\n\\n• 사용안함 — 에셋 태그를 쓰지 않습니다.\\n• 그냥 옛날버전 (통째로 보내기) — 로어북·에셋 태그를 메인 태거 한 번에 넣습니다. LLM 1회. 컨텍스트가 길어져 토큰을 많이 씁니다.\\n• LLM 따로 호출 — 에셋 태그로 캐릭터 룩만 먼저 채운 뒤 메인 태거를 돌립니다. LLM 2회.\\n• LLM 따로 호출 + 이미지 파일 보내기 — 룩 LLM에 캐릭터당 대표 이미지 1장(최대 5장)을 함께 보냅니다. 비전 입력만큼 토큰·비용이 큽니다." },
     "nx-costume": { title: "코스튬", body: "켜면 메인 태거가 캐릭터별 코스튬 목록을 보고 샷마다 복장을 고릅니다(이름·번호). 꺼도 에셋으로 캐릭을 만들 때는 복장이 코스튬으로 나뉘어 저장됩니다. 샷에 고른 값이 없으면 항상 index 0(기본)을 씁니다." },
     "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(Asset Maid 기본 사이즈). ComfyUI는 워크플로 Empty Latent 등에 [[width]]/[[height]]를 넣어야 반영됩니다. 끄면 NAI Width/Height 설정을 씁니다." },
+    "nx-llm-json-retry": { title: "JSON 오류 시 재시도", body: "메인 태거 응답이 JSON으로 파싱되지 않으면, 오류 내용을 붙여 LLM에 한 번 더 요청합니다. 재시도도 실패하면 작업이 오류로 끝납니다." },
 `;
 
 /** Models → ComfyUI: document [[width]]/[[height]] (auto_aspect / NAI W·H). */
@@ -623,6 +626,19 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.8</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>캐릭터 참고이미지: 대시보드 vibe/image/끄기 + Strength·Fidelity · 캐릭 탭/수정에서 업로드·제거·미리보기(webp 원본 보관)</li>
+            <li>생성 시 참고이미지 → NAI vibes[] / character_refs[] · char_looks 우선순위1 에셋이 비어 있으면 참고이미지 자동 시드(기존 덮지 않음)</li>
+            <li>작업 중단: 뷰어 「중단」 + POST /v1/jobs/stop · 이미 나온 샷 유지, 남은 샷/리롤만 스킵</li>
+            <li>접힘 「재생성·태그 플로팅」: 상단 드래그 패드 · 길게 누르면 펼침 · 히트테스트 보정</li>
+            <li>Risu 호스트 설정(.rs-setting-cont) 열리면 플로팅 뷰어만 숨김 · 닫으면 복원</li>
+            <li>플로팅 아이콘: 설정 열 때 탭-펼침이 같이 뜨던 버그 수정</li>
+            <li>진행 토스트: 2줄(단계+바 / 메타·경과) · 인덱싱은 항상 2초 후 숨김 · 태깅/생성은 끝날 때까지</li>
+            <li>대시보드 「JSON 오류 시 재시도」 토글(llm_json_retry)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.7</strong>
@@ -4378,6 +4394,12 @@ const VENDOR_CHAR_TAB_GENDER_HTML_NEEDLE =
             <div class="autotag-status muted\${l ? " pending" : ""}" data-autotag-status>`;
 const VENDOR_CHAR_TAB_GENDER_HTML_PATCH =
   `            <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:end"><label><span>우선순위</span><input data-char-priority type="number" value="\${h(r.priority ?? 0)}"></label><label><span>성별</span><select data-char-gender><option value="" \${!["girl","boy","other","female","male"].includes(String(r.gender||r.sex||""))?"selected":""}>미정</option><option value="girl" \${["girl","female"].includes(String(r.gender||r.sex||""))?"selected":""}>girl</option><option value="boy" \${["boy","male"].includes(String(r.gender||r.sex||""))?"selected":""}>boy</option><option value="other" \${String(r.gender||r.sex||"")==="other"?"selected":""}>other</option></select></label></div>
+            <div class="wide" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:2px">
+              <button type="button" class="secondary" data-char-ref title="클릭: 붙여넣기 대상 · 더블클릭: 파일 (webp 권장, 재인코딩 없음)">참고이미지</button>
+              <button type="button" class="secondary" data-char-ref-clear title="참고이미지 제거">제거</button>
+              <div data-char-ref-preview style="width:42px;height:42px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);flex-shrink:0">\${r.ref_preview_url ? \`<img src="\${h(r.ref_preview_url)}" alt="" style="width:100%;height:100%;object-fit:cover">\` : ""}</div>
+              <span class="muted" style="font-size:11px" data-char-ref-status>\${r.ref_configured ? "설정됨" : "없음"}</span>
+            </div>
             <div class="autotag-status muted\${l ? " pending" : ""}" data-autotag-status>`;
 
 const VENDOR_CHAR_TAB_GENDER_READ_NEEDLE =
@@ -4661,14 +4683,377 @@ const VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_PATCH =
 const VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE =
   `attireLockedEl && (attireLockedEl.checked = !!I.attire_locked), accLockedEl && (accLockedEl.checked = !!I.accessories_locked)`;
 const VENDOR_CHAR_EDIT_LOCK_PRESET_PATCH =
-  `attireLockedEl && (attireLockedEl.checked = I.attire_locked !== false), accLockedEl && (accLockedEl.checked = I.accessories_locked !== false)`;
+  `attireLockedEl && (attireLockedEl.checked = I.attire_locked !== false), accLockedEl && (accLockedEl.checked = I.accessories_locked !== false), (() => {
+      const gRaw = String(I.gender || I.sex || "").toLowerCase();
+      const gNorm = gRaw === "female" || gRaw === "girl" ? "girl" : gRaw === "male" || gRaw === "boy" ? "boy" : gRaw === "other" ? "other" : "";
+      if (genderEl) genderEl.value = gNorm;
+      n.gender = gNorm;
+      {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        if (p && gNorm && typeof VC?.syncGenderIntoAppearance == "function") p.value = VC.syncGenderIntoAppearance(p.value, gNorm);
+      }
+      const list = Array.isArray(I.costumes) && I.costumes.length ? I.costumes : [{
+        name: "default",
+        note: "",
+        attire: I.attire || "",
+        accessories: I.accessories || ""
+      }];
+      let active = Math.max(0, Math.min(list.length - 1, Number(I.active_costume || 0) || 0));
+      n.costumes = list;
+      n.active_costume = active;
+      const costumeSel = i.querySelector("[data-ce-costume]");
+      if (costumeSel) {
+        const addOpt = [...costumeSel.options].find((o) => o.value === "__add__");
+        [...costumeSel.options].filter((o) => o.value !== "__add__").forEach((o) => o.remove());
+        list.forEach((slot, idx) => {
+          const o = document.createElement("option");
+          const name = String(slot?.name || (idx === 0 ? "default" : "costume" + idx));
+          const note = String(slot?.note || "");
+          const attire = String(slot?.attire || "");
+          const accessories = String(slot?.accessories || "");
+          o.value = String(idx);
+          o.setAttribute("data-name", name);
+          o.setAttribute("data-note", note);
+          o.setAttribute("data-attire", attire);
+          o.setAttribute("data-accessories", accessories);
+          o.textContent = name + "[" + idx + "]" + (note ? " · " + note : "");
+          if (addOpt) costumeSel.insertBefore(o, addOpt);
+          else costumeSel.appendChild(o);
+        });
+        costumeSel.value = String(active);
+        const activeSlot = list[active] || list[0];
+        const nameElC = i.querySelector("[data-ce-costume-name]");
+        const noteElC = i.querySelector("[data-ce-costume-note]");
+        if (nameElC) nameElC.value = String(activeSlot?.name || "default");
+        if (noteElC) noteElC.value = String(activeSlot?.note || "");
+        if (m) m.value = w(activeSlot?.attire || I.attire || "", 4e3);
+        if (accEl) accEl.value = w(activeSlot?.accessories || I.accessories || "", 4e3);
+      }
+      i.dataset.promoteCostumeDefault = "";
+      const fromId = String(I.id || ""), toId = String(n.id || "");
+      if (fromId && toId && fromId !== toId && I.ref_configured) {
+        K("/v1/characters/ref", {
+          method: "POST",
+          body: {
+            character_id: toId,
+            copy_from: fromId
+          }
+        }, 15e3).then((res) => {
+          const prev = i.querySelector("[data-ce-ref-preview]"), st = i.querySelector("[data-ce-ref-status]");
+          if (prev) prev.innerHTML = res?.preview_url ? \`<img src="\${res.preview_url}" alt="" style="width:100%;height:100%;object-fit:cover">\` : "";
+          if (st) st.textContent = res?.configured ? "설정됨" : "없음";
+          n.ref_preview_url = res?.preview_url || "";
+          n.ref_configured = !!res?.configured;
+        }).catch(() => {
+        });
+      }
+    })()`;
 
 const VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE =
   `attireLockedEl && (attireLockedEl.checked = !!I.attire_locked);
       accLockedEl && (accLockedEl.checked = !!I.accessories_locked);`;
 const VENDOR_CHAR_CREATE_LOCK_PRESET_PATCH =
   `attireLockedEl && (attireLockedEl.checked = I.attire_locked !== false);
-      accLockedEl && (accLockedEl.checked = I.accessories_locked !== false);`;
+      accLockedEl && (accLockedEl.checked = I.accessories_locked !== false);
+      {
+        const gRaw = String(I.gender || I.sex || "").toLowerCase();
+        const gNorm = gRaw === "female" || gRaw === "girl" ? "girl" : gRaw === "male" || gRaw === "boy" ? "boy" : gRaw === "other" ? "other" : "";
+        if (genderEl) genderEl.value = gNorm;
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        if (appearanceEl && gNorm && typeof VC?.syncGenderIntoAppearance == "function") appearanceEl.value = VC.syncGenderIntoAppearance(appearanceEl.value, gNorm);
+      }`;
+
+/** Dashboard: char NAI ref mode + strength/fidelity beside hover corner. */
+const VENDOR_CHAR_REF_DASH_HTML_NEEDLE =
+  `            <label data-nx-help-id="nx-hover-corner"><span>이미지 모서리</span>
+              <select id="nx-hover-corner">
+                <option value="top-right" \${i.hover_preview_corner === "top-right" ? "selected" : ""}>우상단</option>
+                <option value="bottom-right" \${(i.hover_preview_corner || "bottom-right") === "bottom-right" ? "selected" : ""}>우하단</option>
+                <option value="top-left" \${i.hover_preview_corner === "top-left" ? "selected" : ""}>좌상단</option>
+                <option value="bottom-left" \${i.hover_preview_corner === "bottom-left" ? "selected" : ""}>좌하단</option>
+              </select>
+            </label>`;
+const VENDOR_CHAR_REF_DASH_HTML_PATCH =
+  `            <label data-nx-help-id="nx-hover-corner"><span>이미지 모서리</span>
+              <select id="nx-hover-corner">
+                <option value="top-right" \${i.hover_preview_corner === "top-right" ? "selected" : ""}>우상단</option>
+                <option value="bottom-right" \${(i.hover_preview_corner || "bottom-right") === "bottom-right" ? "selected" : ""}>우하단</option>
+                <option value="top-left" \${i.hover_preview_corner === "top-left" ? "selected" : ""}>좌상단</option>
+                <option value="bottom-left" \${i.hover_preview_corner === "bottom-left" ? "selected" : ""}>좌하단</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-char-ref-mode" class="wide"><span>캐릭터 참고이미지</span>
+              <select id="nx-char-ref-mode">
+                <option value="off" \${(i.char_ref_mode || "off") === "off" ? "selected" : ""}>끄기</option>
+                <option value="vibe" \${i.char_ref_mode === "vibe" ? "selected" : ""}>NAI vibe transfer</option>
+                <option value="image" \${i.char_ref_mode === "image" ? "selected" : ""}>NAI image reference (anlas 많이 소모)</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-char-ref-strength"><span>참고 Strength</span>
+              <input id="nx-char-ref-strength" type="number" min="0.01" max="1" step="0.01" value="\${h(i.char_ref_strength ?? 0.6)}">
+            </label>
+            <label data-nx-help-id="nx-char-ref-fidelity"><span>참고 Fidelity</span>
+              <input id="nx-char-ref-fidelity" type="number" min="0.01" max="1" step="0.01" value="\${h(i.char_ref_fidelity ?? 1)}">
+            </label>`;
+
+const VENDOR_CHAR_REF_DASH_SAVE_NEEDLE =
+  `      hover_preview_corner: Ut(N("nx-hover-corner")),
+      viewer_minimize_mode: N("nx-minimize-mode") === "toolbar" ? "toolbar" : "icon"`;
+const VENDOR_CHAR_REF_DASH_SAVE_PATCH =
+  `      hover_preview_corner: Ut(N("nx-hover-corner")),
+      char_ref_mode: (() => {
+        const v = N("nx-char-ref-mode");
+        if (v === "vibe" || v === "image") return v;
+        const b = String(t.backendSettings?.card?.char_ref_mode || "off");
+        return b === "vibe" || b === "image" ? b : "off";
+      })(),
+      char_ref_strength: Math.max(0.01, Math.min(1, Ne(N("nx-char-ref-strength"), Number(t.backendSettings?.card?.char_ref_strength ?? 0.6) || 0.6))),
+      char_ref_fidelity: Math.max(0.01, Math.min(1, Ne(N("nx-char-ref-fidelity"), Number(t.backendSettings?.card?.char_ref_fidelity ?? 1) || 1))),
+      viewer_minimize_mode: N("nx-minimize-mode") === "toolbar" ? "toolbar" : "icon"`;
+
+const VENDOR_CHAR_REF_HELP_NEEDLE =
+  `    "nx-hover-corner": { title: "이미지 모서리", body: "모바일 모서리 고정이 켜져 있을 때 상시 이미지를 붙일 모서리(우상·우하·좌상·좌하)를 고릅니다. 스티키 핀은 그 이미지 상단 중앙에 따라갑니다." },`;
+const VENDOR_CHAR_REF_HELP_PATCH =
+  `    "nx-hover-corner": { title: "이미지 모서리", body: "모바일 모서리 고정이 켜져 있을 때 상시 이미지를 붙일 모서리(우상·우하·좌상·좌하)를 고릅니다. 스티키 핀은 그 이미지 상단 중앙에 따라갑니다." },
+    "nx-char-ref-mode": { title: "캐릭터 참고이미지", body: "캐릭터 탭/수정에 올린 참고이미지를 샷 생성에 넣습니다. vibe는 Anlas가 적고, image reference는 더 강하지만 Anlas를 많이 씁니다. 끄면 참고이미지를 보관만 합니다." },
+    "nx-char-ref-strength": { title: "참고 Strength", body: "캐릭터 참고이미지 영향 강도(0.01~1)." },
+    "nx-char-ref-fidelity": { title: "참고 Fidelity", body: "vibe면 information_extracted, image면 Reference Fidelity(0.01~1)." },`;
+
+/** Edit popup: hide regenerate button UI; put 참고이미지 in that slot (handlers kept). */
+const VENDOR_CHAR_REF_EDIT_HTML_NEEDLE =
+  `      '<button type="button" data-ce-regenerate style="cursor:pointer;border:1px solid rgba(124,108,255,.7);background:rgba(124,108,255,.2);color:#ddd6fe;padding:7px 12px;border-radius:9px;font:700 12px Segoe UI,sans-serif">관련 이미지 재생성</button>',`;
+const VENDOR_CHAR_REF_EDIT_HTML_PATCH =
+  `      '<button type="button" data-ce-regenerate style="display:none">관련 이미지 재생성</button>',
+      '<button type="button" data-ce-ref style="cursor:pointer;border:1px solid rgba(124,108,255,.7);background:rgba(124,108,255,.2);color:#ddd6fe;padding:7px 12px;border-radius:9px;font:700 12px Segoe UI,sans-serif">참고이미지</button>',
+      '<button type="button" data-ce-ref-clear style="cursor:pointer;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#d7deea;padding:7px 12px;border-radius:9px;font:700 12px Segoe UI,sans-serif">제거</button>',
+      '<div data-ce-ref-preview style="width:42px;height:42px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);flex-shrink:0">' + (n.ref_preview_url ? '<img src="' + h(n.ref_preview_url) + '" alt="" style="width:100%;height:100%;object-fit:cover">' : '') + '</div>',
+      '<span data-ce-ref-status style="color:#9aa6b8;font-size:11px">' + (n.ref_configured || n.ref_preview_url ? "설정됨" : "없음") + '</span>',`;
+
+/** Character tab: bind 참고이미지 upload / clear / paste (webp as-is). */
+const VENDOR_CHAR_REF_TAB_EVT_NEEDLE =
+  `      l && await Tt(l, i);
+    }));
+  }
+
+  async function blockHostChrome(e) {`;
+const VENDOR_CHAR_REF_TAB_EVT_PATCH =
+  `      l && await Tt(l, i);
+    })), document.querySelectorAll("[data-char-ref]").forEach((a) => {
+      const stop = (i) => {
+        i.preventDefault(), i.stopPropagation();
+      };
+      const paint = (card, url, ok) => {
+        const prev = card.querySelector("[data-char-ref-preview]"), st = card.querySelector("[data-char-ref-status]");
+        if (prev) prev.innerHTML = url ? \`<img src="\${url}" alt="" style="width:100%;height:100%;object-fit:cover">\` : "";
+        if (st) st.textContent = ok ? "설정됨" : "없음";
+      };
+      const upload = async (card, file) => {
+        const id = card.getAttribute("data-char-id") || "";
+        if (!id || !file) return;
+        const st = card.querySelector("[data-char-ref-status]");
+        if (st) st.textContent = "업로드…";
+        try {
+          const res = await K("/v1/characters/ref", {
+            method: "POST",
+            body: {
+              character_id: id,
+              image_b64: await It(file)
+            }
+          }, 6e4);
+          paint(card, res?.preview_url || "", !!res?.configured);
+          for (const list of [t.charactersSession, t.charactersGlobal]) {
+            const hit = (list || []).find((c) => String(c.id || "") === id || String(c.name || "") === id);
+            if (hit) hit.ref_configured = !!res?.configured, hit.ref_preview_url = res?.preview_url || "";
+          }
+        } catch {
+          if (st) st.textContent = "실패";
+        }
+      };
+      a.addEventListener("pointerdown", stop), a.addEventListener("mousedown", stop), a.addEventListener("click", (i) => {
+        stop(i);
+        const card = a.closest("[data-char-scope]");
+        if (!card) return;
+        if (t.charRefFocus && t.charRefFocus.scope === card.getAttribute("data-char-scope") && t.charRefFocus.id === (card.getAttribute("data-char-id") || "")) {
+          t.charRefFocus = null, a.classList.remove("armed"), a.textContent = "참고이미지";
+          return;
+        }
+        vt(), t.autotagFocus = null, t.charRefFocus = {
+          scope: card.getAttribute("data-char-scope"),
+          id: card.getAttribute("data-char-id") || ""
+        }, document.querySelectorAll("[data-char-ref].armed").forEach((b) => {
+          b.classList.remove("armed"), b.textContent = "참고이미지";
+        }), a.classList.add("armed"), a.textContent = "붙여넣기 대기";
+      }), a.addEventListener("dblclick", (i) => {
+        stop(i);
+        const card = a.closest("[data-char-scope]");
+        if (!card) return;
+        const inp = document.createElement("input");
+        inp.type = "file", inp.accept = "image/*,.webp", inp.style.display = "none", document.body.appendChild(inp), inp.addEventListener("change", async () => {
+          const f = inp.files?.[0];
+          inp.remove(), f && await upload(card, f);
+        }), inp.click();
+      });
+    }), document.querySelectorAll("[data-char-ref-clear]").forEach((a) => {
+      const stop = (i) => {
+        i.preventDefault(), i.stopPropagation();
+      };
+      a.addEventListener("pointerdown", stop), a.addEventListener("mousedown", stop), a.addEventListener("click", async (i) => {
+        stop(i);
+        const card = a.closest("[data-char-scope]");
+        if (!card) return;
+        const id = card.getAttribute("data-char-id") || "";
+        if (!id) return;
+        try {
+          await K("/v1/characters/ref/clear", {
+            method: "POST",
+            body: {
+              character_id: id
+            }
+          }, 15e3);
+          const prev = card.querySelector("[data-char-ref-preview]"), st = card.querySelector("[data-char-ref-status]");
+          if (prev) prev.innerHTML = "";
+          if (st) st.textContent = "없음";
+          for (const list of [t.charactersSession, t.charactersGlobal]) {
+            const hit = (list || []).find((c) => String(c.id || "") === id || String(c.name || "") === id);
+            if (hit) hit.ref_configured = !1, hit.ref_preview_url = "";
+          }
+        } catch {
+        }
+      });
+    }), t._charRefPasteBound || (t._charRefPasteBound = !0, window.addEventListener("paste", async (a) => {
+      if (!t.charRefFocus || !t.uiOpen || t.uiTab !== "characters") return;
+      const r = Array.from(a.clipboardData?.items || []).find((p) => p.type.startsWith("image/"));
+      if (!r) return;
+      a.preventDefault();
+      const file = r.getAsFile();
+      if (!file) return;
+      const s = String(t.charRefFocus.scope || ""), c = String(t.charRefFocus.id || ""), card = Array.from(document.querySelectorAll("[data-char-scope]")).find((p) => p.getAttribute("data-char-scope") === s && p.getAttribute("data-char-id") === c);
+      if (!card) return;
+      const id = card.getAttribute("data-char-id") || "";
+      if (!id) return;
+      const st = card.querySelector("[data-char-ref-status]");
+      if (st) st.textContent = "업로드…";
+      try {
+        const res = await K("/v1/characters/ref", {
+          method: "POST",
+          body: {
+            character_id: id,
+            image_b64: await It(file)
+          }
+        }, 6e4);
+        const prev = card.querySelector("[data-char-ref-preview]");
+        if (prev) prev.innerHTML = res?.preview_url ? \`<img src="\${res.preview_url}" alt="" style="width:100%;height:100%;object-fit:cover">\` : "";
+        if (st) st.textContent = res?.configured ? "설정됨" : "없음";
+      } catch {
+        if (st) st.textContent = "실패";
+      }
+    }));
+  }
+
+  async function blockHostChrome(e) {`;
+
+/** Edit popup: 참고이미지 upload/clear + paste (regen handler stays, button hidden). */
+const VENDOR_CHAR_REF_EDIT_EVT_NEEDLE =
+  `    })(), i.querySelector("[data-ce-regenerate]")?.addEventListener("click", async (f) => {
+      f.preventDefault(), f.stopPropagation();
+      const x = t.selectedMessage, I = await Z({ useOverride: !1 }).catch(() => null);
+      if (!x) return E("재생성할 메시지를 먼저 선택하세요");
+      try {
+        const targets = messageCardsByY(x);
+        E("관련 이미지 재생성 중…"), await withImageRerollToast(\`관련 이미지 재생성 중… (0/\${targets.length || "?"})\`, async (report) => {
+          const result = await rerollMessageImagesLive(x, { scope: I, report });
+          if (Array.isArray(result.failed) && result.failed.length) E(\`관련 이미지 재생성 부분 실패 · 성공 \${result.count} / 실패 \${result.failed.length}\`);
+          return result;
+        }, { shotCount: Math.max(1, targets.length || 1) }), I?.sessionId && await ce(I.sessionId, !0), await he(), t.galleryUi?.renderGal && await t.galleryUi.renderGal(), E("관련 이미지 재생성 완료");
+      } catch (R) {
+        E(\`재생성 실패: \${z(R?.message || R, 80)}\`);
+      }
+    }), i.querySelector("[data-ce-card]")?.addEventListener("click", (f) => f.stopPropagation()), i.querySelector("[data-ce-form]")?.addEventListener("submit", (f) => {`;
+const VENDOR_CHAR_REF_EDIT_EVT_PATCH =
+  `    })(), i.querySelector("[data-ce-regenerate]")?.addEventListener("click", async (f) => {
+      f.preventDefault(), f.stopPropagation();
+      const x = t.selectedMessage, I = await Z({ useOverride: !1 }).catch(() => null);
+      if (!x) return E("재생성할 메시지를 먼저 선택하세요");
+      try {
+        const targets = messageCardsByY(x);
+        E("관련 이미지 재생성 중…"), await withImageRerollToast(\`관련 이미지 재생성 중… (0/\${targets.length || "?"})\`, async (report) => {
+          const result = await rerollMessageImagesLive(x, { scope: I, report });
+          if (Array.isArray(result.failed) && result.failed.length) E(\`관련 이미지 재생성 부분 실패 · 성공 \${result.count} / 실패 \${result.failed.length}\`);
+          return result;
+        }, { shotCount: Math.max(1, targets.length || 1) }), I?.sessionId && await ce(I.sessionId, !0), await he(), t.galleryUi?.renderGal && await t.galleryUi.renderGal(), E("관련 이미지 재생성 완료");
+      } catch (R) {
+        E(\`재생성 실패: \${z(R?.message || R, 80)}\`);
+      }
+    }), (() => {
+      const paintRef = (url, ok) => {
+        const prev = i.querySelector("[data-ce-ref-preview]"), st = i.querySelector("[data-ce-ref-status]");
+        if (prev) prev.innerHTML = url ? \`<img src="\${url}" alt="" style="width:100%;height:100%;object-fit:cover">\` : "";
+        if (st) st.textContent = ok ? "설정됨" : "없음";
+        n.ref_preview_url = url || "";
+        n.ref_configured = !!ok;
+      };
+      const uploadRef = async (file) => {
+        const id = String(n.id || "");
+        if (!id || !file) return E("참고이미지: 캐릭터 id 없음");
+        E("참고이미지 업로드…");
+        try {
+          const res = await K("/v1/characters/ref", {
+            method: "POST",
+            body: {
+              character_id: id,
+              image_b64: await It(file)
+            }
+          }, 6e4);
+          paintRef(res?.preview_url || "", !!res?.configured), E(res?.configured ? "참고이미지 설정됨" : "참고이미지 실패");
+        } catch (err) {
+          E(\`참고이미지 실패: \${z(err?.message || err, 80)}\`);
+        }
+      };
+      i.querySelector("[data-ce-ref]")?.addEventListener("click", (f) => {
+        f.preventDefault(), f.stopPropagation();
+        const on = t.charRefFocus?.scope === "modal" && t.charRefFocus?.id === "char-edit";
+        if (on) {
+          t.charRefFocus = null;
+          const btn = i.querySelector("[data-ce-ref]");
+          if (btn) btn.textContent = "참고이미지";
+          return;
+        }
+        t.autotagFocus = null, t.charRefFocus = {
+          scope: "modal",
+          id: "char-edit"
+        };
+        const btn = i.querySelector("[data-ce-ref]");
+        if (btn) btn.textContent = "붙여넣기 대기";
+      }), i.querySelector("[data-ce-ref]")?.addEventListener("dblclick", (f) => {
+        f.preventDefault(), f.stopPropagation();
+        const inp = document.createElement("input");
+        inp.type = "file", inp.accept = "image/*,.webp", inp.style.display = "none", document.body.appendChild(inp), inp.addEventListener("change", async () => {
+          const file = inp.files?.[0];
+          inp.remove(), file && await uploadRef(file);
+        }), inp.click();
+      }), i.querySelector("[data-ce-ref-clear]")?.addEventListener("click", async (f) => {
+        f.preventDefault(), f.stopPropagation();
+        const id = String(n.id || "");
+        if (!id) return;
+        try {
+          await K("/v1/characters/ref/clear", {
+            method: "POST",
+            body: {
+              character_id: id
+            }
+          }, 15e3), paintRef("", !1), E("참고이미지 제거됨");
+        } catch (err) {
+          E(\`제거 실패: \${z(err?.message || err, 80)}\`);
+        }
+      }), i.addEventListener("paste", async (f) => {
+        if (!(t.charRefFocus?.scope === "modal" && t.charRefFocus?.id === "char-edit")) return;
+        const item = Array.from(f.clipboardData?.items || []).find((R) => R.type.startsWith("image/"));
+        if (!item) return;
+        f.preventDefault(), f.stopPropagation();
+        const file = item.getAsFile();
+        file && await uploadRef(file);
+      });
+    })(), i.querySelector("[data-ce-card]")?.addEventListener("click", (f) => f.stopPropagation()), i.querySelector("[data-ce-form]")?.addEventListener("submit", (f) => {`;
 
 const VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE =
   `<span>옷 태그</span><label style="display:inline-flex;align-items:center;gap:4px;color:#d7deea;font-size:11px;cursor:pointer"><input data-cc-attire-locked type="checkbox" style="width:14px;height:14px;margin:0;accent-color:#7c6cff">고정</label>`;
@@ -4726,7 +5111,7 @@ const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
     "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 ±1(역할 무관). 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-chat-scale": { title: "말풍선 삽화 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
-    "nx-progress-toast": { title: "진행 토스트", body: "토스트 노드는 항상 두고, 진행·작업명이 바뀌면 보이게 / 5초간 내용 변화 없으면 눈에서만 숨깁니다. 인덱싱=민트, 그 외=보라. 클릭하면 당장 숨깁니다." },`;
+    "nx-progress-toast": { title: "진행 토스트", body: "진행·메시지 선택 시 표시. 태깅/생성 중엔 유지(경과 시간 포함), 인덱싱·선택·실패 칩은 2초 후 숨김. 99% 이상·클릭 시 바로 숨김. 인덱싱=민트, 그 외=보라." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>`;
@@ -5295,6 +5680,10 @@ const VENDOR_INLINE_CALL_PATCH =
       } catch {
       }
     }
+    if (source === "click" || source === "text") {
+      t._progressToastIdlePeek = !0;
+      t._progressToastFp = "";
+    }
     return await onSelectionChanged("content"), scheduleOverlayPlace(80), t.debugUi?.refreshSoon && t.debugUi.refreshSoon(), (source === "click" || source === "text") && await ensureMessageInView(o), source === "provisional" ? !0 : !isSelectedCharRole(l) ? (y("info", "select.user", "유저 메시지 — 자동 생성 안 함"), !0) : u.length ? (y("info", "select.hasImage", \`cards=\${u.length} · 재생성은 뷰어 버튼\`), !0) : (y("info", "select.noImage", "해시 이미지 없음 → 태그부터 생성"), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
   }`;
 
@@ -5310,6 +5699,10 @@ const VENDOR_INLINE_SAME_PATCH =
           await refreshSelectedInlineImages();
         } catch {
         }
+      }
+      if (source === "click" || source === "text") {
+        t._progressToastIdlePeek = !0;
+        t._progressToastFp = "";
       }
       if (linked.length) return !0;
       if (source === "scroll" || source === "provisional") return !0;
@@ -5817,6 +6210,45 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
         });
       }
     }
+  }
+  async function optimisticStopJobs() {
+    // Lag-free: clear UI busy immediately; backend soft-stops without aborting in-flight work.
+    t._rerollStopRequested = !0;
+    try {
+      if (t.pollTimer) clearInterval(t.pollTimer), t.pollTimer = null;
+    } catch {
+    }
+    try {
+      t.jobsInFlight && typeof t.jobsInFlight.clear == "function" && t.jobsInFlight.clear();
+    } catch {
+    }
+    t.jobProgress = {
+      state: "cancelled",
+      progress: Number(t.jobProgress?.progress) || 0,
+      message: "사용자 중단",
+      jobId: t.jobProgress?.jobId || ""
+    };
+    try {
+      if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+      else await onSelectionChanged("chrome");
+    } catch {
+    }
+    setTimeout(() => {
+      t.jobProgress = null;
+      Se().catch(() => {
+      });
+    }, 1200);
+    const sid = t.lastScope?.sessionId || t.selectedMessage?.sessionId || "";
+    K("/v1/jobs/stop", {
+      method: "POST",
+      body: {
+        session_id: sid
+      }
+    }, 8e3).then((ret) => {
+      y("info", "job.stop", \`n=\${ret?.stopped || 0} reroll=\${ret?.reroll_stop ? 1 : 0} session=\${String(sid).slice(-8)}\`);
+    }).catch((err) => {
+      y("warn", "job.stop.fail", err?.message || err);
+    });
   }
   function scheduleHashRelinkAfterReply(source) {
     const RELINK_MS = 5e2;
@@ -6410,8 +6842,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.7",
-    body: "형제 해시 rebind · 샷/스크롤/말풍선 렉 완화 · 빈 배치 시 기존 샷 유지. 업데이트 내역 탭 참고."
+    title: "2.2.8",
+    body: "캐릭 참고이미지 · 작업 중단 · 플로팅/설정 겹침 수정 · 진행 토스트. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -6627,7 +7059,7 @@ const VENDOR_SELECT_UNBIND_NEEDLE =
 const VENDOR_SELECT_UNBIND_PATCH =
   `await de(e.doc, "dblclick", e.dblId), await de(e.doc, "click", e.clickId), await de(e.doc, "contextmenu", e.ctxId)), e?.body && await de(e.body, "scroll", e.bodyScrollId)`;
 
-/** Top-center progress toast: one bar; show on change; hide 5s after last change. */
+/** Top-center progress toast: 2-line; busy stays; idle/error hide after 2s; hide at ≥99%. */
 const VENDOR_PROGRESS_TOAST_FN_NEEDLE = `  async function dismissProgressToast() {
     t.jobProgress = null;
     try {
@@ -6651,6 +7083,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
   /** risutts-style: one SafeDOM toast; eye-hide via display none/block; never recreate while enabled. */
   const PROGRESS_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:auto;max-width:min(420px,92vw);display:block;";
   const PROGRESS_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:none;max-width:min(420px,92vw);display:none;";
+  const PROGRESS_TOAST_HIDE_MS = 2e3;
   async function setProgressToastEye(visible) {
     const root = t._progressToastRoot;
     if (!root) return;
@@ -6662,15 +7095,16 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
   }
   function armProgressToastEyeHide() {
     t._progressToastArmed = !0;
-    t._progressToastUntil = Date.now() + 5e3;
+    t._progressToastUntil = Date.now() + PROGRESS_TOAST_HIDE_MS;
     if (t._progressToastHideTimer) clearTimeout(t._progressToastHideTimer);
     t._progressToastHideTimer = setTimeout(() => {
       t._progressToastHideTimer = null;
       t._progressToastArmed = !1;
       t._progressToastUntil = 0;
+      t._progressToastIdlePeek = !1;
       setProgressToastEye(!1).catch(() => {
       });
-    }, 5e3);
+    }, PROGRESS_TOAST_HIDE_MS);
   }
   function clearProgressToastEyeHide() {
     if (t._progressToastHideTimer) {
@@ -6683,6 +7117,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
   function dismissProgressToastUi() {
     clearProgressToastEyeHide();
     t._progressToastFp = "";
+    t._progressToastIdlePeek = !1;
     setProgressToastEye(!1).catch(() => {
     });
   }
@@ -6692,6 +7127,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     t._progressToastRoot = null;
     t._progressToastShown = !1;
     t._progressToastFp = "";
+    t._progressToastIdlePeek = !1;
     try {
       root && typeof root.remove == "function" && await root.remove();
     } catch {
@@ -6734,6 +7170,19 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     t._progressToastShown = !1;
     return root;
   }
+  async function paintProgressToastHtml(html, opts = {}) {
+    if (!html) return;
+    const root = await ensureProgressToastRoot();
+    if (!root) return;
+    try {
+      if (typeof root.setInnerHTML == "function") await root.setInnerHTML(html);
+    } catch {
+      return;
+    }
+    await setProgressToastEye(!0);
+    if (opts.armHide) armProgressToastEyeHide();
+    else clearProgressToastEyeHide();
+  }
   async function syncProgressToast() {
     if (t._progressToastSyncing) return;
     t._progressToastSyncing = !0;
@@ -6743,6 +7192,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         await destroyProgressToast();
         return;
       }
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
       const B = t.jobProgress;
       const info = formatViewerJob(B);
       const idx = readIndexProgress(B);
@@ -6754,26 +7204,88 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       const liveBusy = jobBusy || indexBusy;
       const hasPayload = liveBusy || isTerminal && !!B;
       await ensureProgressToastRoot();
-      if (!hasPayload) return;
+      if (liveBusy) t._progressToastIdlePeek = !1;
+      if (!hasPayload) {
+        if (!t._progressToastIdlePeek) return;
+        const O = t.selectedMessage;
+        if (!O) {
+          t._progressToastIdlePeek = !1;
+          return;
+        }
+        let count = 0;
+        try {
+          count = typeof linkedCards == "function" ? linkedCards(O).length : Number(O.cardCount) || 0;
+        } catch {
+          count = Number(O.cardCount) || 0;
+        }
+        const msgNo = Number(O.message_index);
+        const msgLabel = Number.isFinite(msgNo) && msgNo >= 0 ? \`msg #\${msgNo + 1}\` : O.domIndex != null ? \`DOM#\${O.domIndex}\` : "메시지";
+        const stage = count > 0 ? \`\${count}장\` : "이미지 없음";
+        const meta = msgLabel;
+        const fp = \`idle|\${stage}|\${meta}|\${O.hash || O.domIndex || ""}\`;
+        if (fp === t._progressToastFp) return;
+        t._progressToastFp = fp;
+        const html = typeof VC?.composeProgressToastHtml == "function" ? VC.composeProgressToastHtml({
+          stage,
+          meta,
+          pct: 0,
+          busy: !0,
+          showBar: !1,
+          tone: "job",
+          escapeHtml: h
+        }) : \`<div data-inlay-progress-toast="1" style="padding:10px 14px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:12px;cursor:pointer">\${h(stage + " · " + meta)}</div>\`;
+        await paintProgressToastHtml(html, { armHide: !0 });
+        return;
+      }
       const indexOnly = !jobBusy && indexBusy;
+      // Indexing toast: show once, always hide after 2s (don't keep refreshing / re-arming).
+      if (indexOnly && t._progressToastArmed) return;
       const stage = jobBusy
         ? info.stage || "작업 중"
         : indexBusy
           ? idx.label || "인덱싱"
           : info?.stage || "작업 중";
       const pct = jobBusy ? info.pct : indexBusy ? idx.pct : info ? info.pct : 0;
+      // Near-complete: drop from view (errors keep a brief peek below).
+      if (!isError && Number(pct) >= 99) {
+        clearProgressToastEyeHide();
+        t._progressToastFp = "";
+        await setProgressToastEye(!1);
+        return;
+      }
+      const jobKey = String(B?.jobId || B?.kind || (indexBusy ? "index" : "job"));
+      if (liveBusy && !indexOnly) {
+        if (t._progressToastElapsedJob !== jobKey) {
+          t._progressToastElapsedJob = jobKey;
+          t._progressToastElapsedAt = Date.now();
+        }
+      } else {
+        t._progressToastElapsedJob = "";
+        t._progressToastElapsedAt = 0;
+      }
+      const elapsedMs = liveBusy && !indexOnly && t._progressToastElapsedAt ? Date.now() - t._progressToastElapsedAt : 0;
+      const elapsedSec = Math.floor(elapsedMs / 1000);
+      const elapsedLabel = liveBusy && !indexOnly
+        ? typeof VC?.formatProgressElapsedSec == "function"
+          ? VC.formatProgressElapsedSec(elapsedMs)
+          : elapsedSec < 60 ? \`\${elapsedSec}s\` : \`\${Math.floor(elapsedSec / 60)}m \${String(elapsedSec % 60).padStart(2, "0")}s\`
+        : "";
       const shot = info?.shot || "";
-      const detail = info?.detail ? String(info.detail).slice(0, 80) : "";
-      const meta = shot
-        ? \`\${shot} · \${pct}%\`
-        : detail
-          ? \`\${detail} · \${pct}%\`
-          : \`\${pct}%\`;
+      const detail = info?.detail ? String(info.detail).slice(0, 100) : "";
+      let meta = "";
+      if (isError) meta = detail || "실패";
+      else if (shot && elapsedLabel) meta = \`\${shot} · \${pct}% · \${elapsedLabel}\`;
+      else if (shot) meta = \`\${shot} · \${pct}%\`;
+      else if (detail && elapsedLabel) meta = \`\${detail} · \${pct}% · \${elapsedLabel}\`;
+      else if (detail) meta = \`\${detail} · \${pct}%\`;
+      else if (elapsedLabel) meta = \`\${pct}% · \${elapsedLabel}\`;
+      else meta = \`\${pct}%\`;
       const tone = indexOnly ? "index" : "job";
-      const fp = \`\${stage}|\${pct}|\${meta}|\${state}|\${tone}|\${isError ? 1 : 0}\`;
+      const fp = indexOnly
+        ? \`index|\${stage}|\${Math.round(Number(pct) || 0)}\`
+        : \`\${stage}|\${pct}|\${meta}|\${state}|\${tone}|\${isError ? 1 : 0}|\${elapsedSec}\`;
       if (fp === t._progressToastFp) return;
       t._progressToastFp = fp;
-      const VC = globalThis.__INLAY_VIEWER_CORE__;
       const html = typeof VC?.composeProgressToastHtml == "function" ? VC.composeProgressToastHtml({
         stage,
         meta,
@@ -6783,16 +7295,8 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         tone,
         escapeHtml: h
       }) : \`<div data-inlay-progress-toast="1" style="padding:10px 14px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:12px;cursor:pointer">\${h(stage + " " + meta)}</div>\`;
-      if (!html) return;
-      const root = await ensureProgressToastRoot();
-      if (!root) return;
-      try {
-        if (typeof root.setInnerHTML == "function") await root.setInnerHTML(html);
-      } catch {
-        return;
-      }
-      await setProgressToastEye(!0);
-      armProgressToastEyeHide();
+      // Busy jobs stay; indexing + error/terminal peek hide after 2s.
+      await paintProgressToastHtml(html, { armHide: !liveBusy || indexOnly });
     } finally {
       t._progressToastSyncing = !1;
     }
@@ -6806,11 +7310,22 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           });
           return;
         }
+        const B = t.jobProgress;
+        const info = B ? formatViewerJob(B) : null;
+        const idx = readIndexProgress(B);
+        const liveBusy = !!(info && info.busy) || !!idx.busy;
+        if (liveBusy) {
+          // Tick elapsed seconds while tagging/generating stalls on %.
+          syncProgressToast().catch(() => {
+          });
+          return;
+        }
         if (t._progressToastShown && t._progressToastUntil && Date.now() > t._progressToastUntil + 200) {
           setProgressToastEye(!1).catch(() => {
           });
           t._progressToastUntil = 0;
           t._progressToastArmed = !1;
+          t._progressToastIdlePeek = !1;
         }
       } catch {
       }
@@ -6999,6 +7514,56 @@ const VENDOR_FORCE_REGEN_INLINE_PATCH =
     const u = {
       session_id: e.sessionId,`;
 
+/** Soft-stop mid message reroll loop (현재 장 끝난 뒤 나머지 스킵). */
+const VENDOR_REROLL_LIVE_STOP_NEEDLE =
+  `  async function rerollMessageImagesLive(msg, opts = {}) {
+    const scope = opts.scope || await Z({ useOverride: !1 }).catch(() => null);
+    const sessionId = msg?.sessionId || scope?.sessionId || "";
+    let targets = messageCardsByY(msg);
+    if (!targets.length) throw new Error("재생성할 이미지 없음");
+    const total = targets.length;
+    const cards = [], replaced = [], failed = [];
+    const report = typeof opts.report == "function" ? opts.report : () => {
+    };
+    const onShot = typeof opts.onShot == "function" ? opts.onShot : null;
+    for (let i = 0; i < total; i += 1) {
+      // Re-resolve left strip each time — card ids change after each replace.
+      if (sessionId) await ce(sessionId, !0);`;
+const VENDOR_REROLL_LIVE_STOP_PATCH =
+  `  async function rerollMessageImagesLive(msg, opts = {}) {
+    const scope = opts.scope || await Z({ useOverride: !1 }).catch(() => null);
+    const sessionId = msg?.sessionId || scope?.sessionId || "";
+    let targets = messageCardsByY(msg);
+    if (!targets.length) throw new Error("재생성할 이미지 없음");
+    const total = targets.length;
+    const cards = [], replaced = [], failed = [];
+    const report = typeof opts.report == "function" ? opts.report : () => {
+    };
+    const onShot = typeof opts.onShot == "function" ? opts.onShot : null;
+    t._rerollStopRequested = !1;
+    let stopped = !1;
+    for (let i = 0; i < total; i += 1) {
+      if (t._rerollStopRequested) {
+        stopped = !0;
+        y("info", "reroll.stop", \`done=\${cards.length}/\${total}\`);
+        break;
+      }
+      // Re-resolve left strip each time — card ids change after each replace.
+      if (sessionId) await ce(sessionId, !0);`;
+
+const VENDOR_REROLL_LIVE_STOP_END_NEEDLE =
+  `    if (!cards.length) throw new Error(failed[0]?.error || "전체 재생성 실패");
+    return { ok: !0, count: cards.length, replaced, cards, failed };
+  }`;
+const VENDOR_REROLL_LIVE_STOP_END_PATCH =
+  `    if (stopped) {
+      y("info", "reroll.stopped", \`count=\${cards.length}/\${total}\`);
+      return { ok: cards.length > 0, count: cards.length, replaced, cards, failed, stopped: !0 };
+    }
+    if (!cards.length) throw new Error(failed[0]?.error || "전체 재생성 실패");
+    return { ok: !0, count: cards.length, replaced, cards, failed };
+  }`;
+
 const VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE = `    const a = setInterval(() => {
       if (!t.jobProgress || t.jobProgress.jobId !== "reroll") return;
       const r = Number(t.jobProgress.progress) || 12;
@@ -7054,6 +7619,106 @@ const VENDOR_SESSION_PENDING_PATCH = `    if (S && S !== b) {
       return C;
     }`;
 
+/** Hide floating image viewer only while Risu host settings (`.rs-setting-cont`) are open. */
+const VENDOR_RISU_SETTINGS_HIDE_VIEWER_NEEDLE =
+  `  async function restoreFloatingViewerAfterModal() {
+    if (!t._viewerHiddenForModal) return;
+    t._viewerHiddenForModal = !1;
+    const g = t.galleryUi;
+    if (!g) return;
+    try {
+      if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:1;visibility:visible;");
+      if (g.geo) g.geo = clampViewerGeo(g.geo, !!g.minimized);
+      if (typeof g.applyChrome == "function") await g.applyChrome();
+      else if (g.panel) await g.panel.setStyleAttribute(Ft(g.geo || se, !!g.minimized));
+    } catch {
+    }
+  }
+  function cornerFixedStyle(extra = []) {`;
+const VENDOR_RISU_SETTINGS_HIDE_VIEWER_PATCH =
+  `  async function restoreFloatingViewerAfterModal() {
+    if (!t._viewerHiddenForModal) return;
+    t._viewerHiddenForModal = !1;
+    if (t._viewerHiddenForRisuSettings || t.uiOpen || t._hostChromeBlocked) return;
+    const g = t.galleryUi;
+    if (!g) return;
+    try {
+      if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:1;visibility:visible;");
+      if (g.geo) g.geo = clampViewerGeo(g.geo, !!g.minimized);
+      if (typeof g.applyChrome == "function") await g.applyChrome();
+      else if (g.panel) await g.panel.setStyleAttribute(Ft(g.geo || se, !!g.minimized));
+    } catch {
+    }
+  }
+  async function hideFloatingViewerForRisuSettings() {
+    if (t._viewerHiddenForRisuSettings) return;
+    t._viewerHiddenForRisuSettings = !0;
+    const g = t.galleryUi;
+    if (g?.drag) g.drag.expandOnTap = !1;
+    if (g?._actionsLpTimer) clearTimeout(g._actionsLpTimer), g._actionsLpTimer = null;
+    if (!g?.panel) return;
+    try {
+      if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:0;visibility:hidden;");
+      await g.panel.setStyleAttribute("position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;visibility:hidden;z-index:1;");
+    } catch {
+    }
+  }
+  async function restoreFloatingViewerAfterRisuSettings() {
+    if (!t._viewerHiddenForRisuSettings) return;
+    t._viewerHiddenForRisuSettings = !1;
+    if (t._viewerHiddenForModal || t.uiOpen || t._hostChromeBlocked) return;
+    const g = t.galleryUi;
+    if (!g) return;
+    try {
+      if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:1;visibility:visible;");
+      if (g.geo) g.geo = clampViewerGeo(g.geo, !!g.minimized);
+      if (typeof g.applyChrome == "function") await g.applyChrome();
+      else if (g.panel) await g.panel.setStyleAttribute(Ft(g.geo || se, !!g.minimized));
+    } catch {
+    }
+  }
+  async function syncFloatingViewerForRisuSettings() {
+    if (t.unloading || t.uiOpen || t._hostChromeBlocked) return;
+    try {
+      const doc = await ue().catch(() => null);
+      const el = doc ? await D("rsSettingCont", () => doc.querySelector?.(".rs-setting-cont"), null) : null;
+      if (el) await hideFloatingViewerForRisuSettings();
+      else await restoreFloatingViewerAfterRisuSettings();
+    } catch {
+    }
+  }
+  function startRisuSettingsViewerWatch() {
+    if (t._risuSettingsWatch) return;
+    t._risuSettingsWatch = setInterval(() => {
+      if (t.unloading) {
+        clearInterval(t._risuSettingsWatch), t._risuSettingsWatch = null;
+        return;
+      }
+      syncFloatingViewerForRisuSettings().catch(() => {
+      });
+    }, 400);
+  }
+  function cornerFixedStyle(extra = []) {`;
+
+const VENDOR_RISU_SETTINGS_WATCH_ARM_NEEDLE = `    startHostUiWatchdog();`;
+const VENDOR_RISU_SETTINGS_WATCH_ARM_PATCH = `    startHostUiWatchdog();
+    startRisuSettingsViewerWatch();`;
+
+const VENDOR_RISU_SETTINGS_POINTER_NEEDLE =
+  `      if (t.uiOpen || t._hostChromeBlocked || t.charEditUi || t._viewerHiddenForModal) return;`;
+const VENDOR_RISU_SETTINGS_POINTER_PATCH =
+  `      if (t.uiOpen || t._hostChromeBlocked || t.charEditUi || t._viewerHiddenForModal || t._viewerHiddenForRisuSettings) return;`;
+
+const VENDOR_RISU_SETTINGS_PAINT_NEEDLE =
+  `      if (t.galleryUi !== d || t._viewerHiddenForModal) return;`;
+const VENDOR_RISU_SETTINGS_PAINT_PATCH =
+  `      if (t.galleryUi !== d || t._viewerHiddenForModal || t._viewerHiddenForRisuSettings) return;`;
+
+const VENDOR_RISU_SETTINGS_UNLOAD_NEEDLE =
+  `t._hostWatch && clearInterval(t._hostWatch), t._settingsWatch && clearInterval(t._settingsWatch)`;
+const VENDOR_RISU_SETTINGS_UNLOAD_PATCH =
+  `t._hostWatch && clearInterval(t._hostWatch), t._settingsWatch && clearInterval(t._settingsWatch), t._risuSettingsWatch && clearInterval(t._risuSettingsWatch)`;
+
 /** Third minimize mode: actions floating (tag/regen + preset); long-press expands. */
 const VENDOR_ACTIONS_HELP_NEEDLE =
   `"nx-minimize-mode": { title: "접힘 표시 방식", body: "플로팅 아이콘: 접으면 작은 아이콘으로 따로 둔 자리로 갑니다. 상단 툴바 한 줄: 접어도 지금 창 자리 그대로 얇은 바로만 줄어듭니다." },`;
@@ -7090,21 +7755,97 @@ const VENDOR_ACTIONS_CLAMP_NEEDLE =
         dispH = 40;
       } else dispW = 48, dispH = 48;
     } else {`;
+
+/** Expanded viewer header: 중단 after 재생성; index shift for 상시/설정/접기. */
+const VENDOR_VIEWER_STOP_HDR_NEEDLE =
+  `        '<span style="cursor:pointer;background:#7c6cff;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="이 메시지의 모든 샷 재생성">재생성</span>',
+        \`<span style="cursor:pointer;background:\${Nt() ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">\${Nt() ? "상시ON" : "상시"}</span>\`,`;
+const VENDOR_VIEWER_STOP_HDR_PATCH =
+  `        '<span style="cursor:pointer;background:#7c6cff;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="이 메시지의 모든 샷 재생성">재생성</span>',
+        '<span style="cursor:pointer;background:#b91c1c;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="남은 생성 중단(진행 중은 끝까지)">중단</span>',
+        \`<span style="cursor:pointer;background:\${Nt() ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">\${Nt() ? "상시ON" : "상시"}</span>\`,`;
+
+const VENDOR_VIEWER_STOP_CLICK_NEEDLE =
+  `                W === 0 ? await selectGalIndex(d.index - 1) : W === 1 ? await selectGalIndex(d.index + 1) : W === 2 ? await te() : W === 3 ? await rerollAllImages() : W === 4 ? await ae() : W === 5 ? (t.backendSettings?.card || {}).show_risu_settings_button !== !1 && await At() : W === 6 && await toggleMinimizeBtn();`;
+const VENDOR_VIEWER_STOP_CLICK_PATCH =
+  `                W === 0 ? await selectGalIndex(d.index - 1) : W === 1 ? await selectGalIndex(d.index + 1) : W === 2 ? await te() : W === 3 ? await rerollAllImages() : W === 4 ? await optimisticStopJobs() : W === 5 ? await ae() : W === 6 ? (t.backendSettings?.card || {}).show_risu_settings_button !== !1 && await At() : W === 7 && await toggleMinimizeBtn();`;
+
+const VENDOR_VIEWER_STOP_LABEL_NEEDLE =
+  `        // 0◀ 1▶ 2태그 3재생성 4상시 5설정 6접기
+        const labels = [
+          null,
+          null,
+          null,
+          null,
+          inlineOn ? "상시ON" : "상시",
+          (t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "설정" : "",
+          d.minimized ? "펼치기" : "접기"
+        ], colors = [
+          null,
+          null,
+          null,
+          null,
+          inlineOn ? "#0f766e" : "#334155",
+          "#334155",
+          "#1e293b"
+        ];
+        for (let idx = 4; idx <= 6; idx += 1) {
+          const el = A[idx];
+          if (!el) continue;
+          if (idx === 5 && !labels[idx]) {
+            typeof el.setStyleAttribute == "function" && await el.setStyleAttribute("display:none");
+            continue;
+          }
+          typeof el.setInnerHTML == "function" && labels[idx] && await el.setInnerHTML(labels[idx]);
+          typeof el.setStyleAttribute == "function" && colors[idx] && await el.setStyleAttribute(\`cursor:pointer;\${idx === 5 ? "display:inline-flex;" : ""}background:\${colors[idx]};color:\${idx === 4 ? "#fff" : "#dbe4f5"};padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)\`);
+        }`;
+const VENDOR_VIEWER_STOP_LABEL_PATCH =
+  `        // 0◀ 1▶ 2태그 3재생성 4중단 5상시 6설정 7접기
+        const labels = [
+          null,
+          null,
+          null,
+          null,
+          null,
+          inlineOn ? "상시ON" : "상시",
+          (t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "설정" : "",
+          d.minimized ? "펼치기" : "접기"
+        ], colors = [
+          null,
+          null,
+          null,
+          null,
+          null,
+          inlineOn ? "#0f766e" : "#334155",
+          "#334155",
+          "#1e293b"
+        ];
+        for (let idx = 5; idx <= 7; idx += 1) {
+          const el = A[idx];
+          if (!el) continue;
+          if (idx === 6 && !labels[idx]) {
+            typeof el.setStyleAttribute == "function" && await el.setStyleAttribute("display:none");
+            continue;
+          }
+          typeof el.setInnerHTML == "function" && labels[idx] && await el.setInnerHTML(labels[idx]);
+          typeof el.setStyleAttribute == "function" && colors[idx] && await el.setStyleAttribute(\`cursor:pointer;\${idx === 6 ? "display:inline-flex;" : ""}background:\${colors[idx]};color:\${idx === 5 ? "#fff" : "#dbe4f5"};padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)\`);
+        }`;
+
 const VENDOR_ACTIONS_CLAMP_PATCH =
   `    if (minimized) {
       if (mode === "toolbar") {
         dispW = Math.max(280, Math.min(storeW, vw - margin * 2));
         dispH = 40;
       } else if (mode === "actions") {
-        dispW = 168;
-        dispH = 76;
+        dispW = 200;
+        dispH = 112;
       } else dispW = 48, dispH = 48;
     } else {`;
 
 const VENDOR_ACTIONS_FT_NEEDLE =
   `      minimized && mode === "icon" ? "min-width:48px" : minimized ? "min-width:280px" : "min-width:260px",`;
 const VENDOR_ACTIONS_FT_PATCH =
-  `      minimized && mode === "icon" ? "min-width:48px" : minimized && mode === "actions" ? "min-width:168px" : minimized ? "min-width:280px" : "min-width:260px",`;
+  `      minimized && mode === "icon" ? "min-width:48px" : minimized && mode === "actions" ? "min-width:200px" : minimized ? "min-width:280px" : "min-width:260px",`;
 
 const VENDOR_ACTIONS_OVERFLOW_NEEDLE =
   `      if (d.presetMenuOpen && (!d.minimized || viewerMinimizeMode() === "toolbar")) {`;
@@ -7123,9 +7864,18 @@ const VENDOR_ACTIONS_CHROME_PATCH =
       const mode = viewerMinimizeMode(), toolbarMin = d.minimized && mode === "toolbar", iconMin = d.minimized && mode === "icon", actionsMin = d.minimized && mode === "actions";
       try {
         if (actionsMin) {
-          await s.setInnerHTML('<span data-nx-act="tag" style="cursor:pointer;background:#0f766e;color:#fff;padding:5px 10px;border-radius:7px;font-size:11px;line-height:1;font-weight:600;flex:1;text-align:center">태그</span><span data-nx-act="regen" style="cursor:pointer;background:#7c6cff;color:#fff;padding:5px 10px;border-radius:7px;font-size:11px;line-height:1;font-weight:600;flex:1;text-align:center">재생성</span>'), await i.setStyleAttribute("height:76px;display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:6px;padding:8px;background:rgba(255,255,255,.04);border-bottom:0;cursor:move;user-select:none;flex-shrink:0;touch-action:none;"), await s.setStyleAttribute("display:flex;gap:6px;align-items:center;width:100%;flex:0 0 auto;"), await viewerPresetBtn.setStyleAttribute("max-width:none;min-width:0;flex:0 0 auto;width:100%;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;font-size:11px;padding:0 8px;cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;"), await viewerPresetMenu.setStyleAttribute(\`display:\${d.presetMenuOpen ? "block" : "none"};position:absolute;top:72px;left:8px;right:8px;min-width:0;max-width:none;max-height:220px;overflow:auto;z-index:20;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setStyleAttribute("display:none;");
+          await s.setInnerHTML('<span data-nx-drag-pad style="display:flex;align-items:center;justify-content:center;width:100%;height:28px;flex:0 0 28px;cursor:move;touch-action:none" title="끌어서 이동"><span style="width:40px;height:4px;border-radius:999px;background:rgba(255,255,255,.38)"></span></span><div style="display:flex;gap:6px;align-items:center;width:100%"><span data-nx-act="tag" style="cursor:pointer;background:#0f766e;color:#fff;padding:5px 10px;border-radius:7px;font-size:11px;line-height:1;font-weight:600;flex:1;text-align:center">태그</span><span data-nx-act="regen" style="cursor:pointer;background:#7c6cff;color:#fff;padding:5px 10px;border-radius:7px;font-size:11px;line-height:1;font-weight:600;flex:1;text-align:center">재생성</span></div>'), await i.setStyleAttribute("height:112px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;align-items:center;justify-content:stretch;gap:6px;padding:8px;background:rgba(255,255,255,.04);border-bottom:0;cursor:move;user-select:none;flex-shrink:0;touch-action:none;"), await s.setStyleAttribute("display:flex;flex-direction:column;gap:6px;align-items:stretch;width:100%;flex:0 0 auto;grid-column:1/-1;"), await viewerPresetBtn.setStyleAttribute("max-width:none;min-width:0;flex:1 1 auto;width:auto;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;font-size:11px;padding:0 8px;cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;grid-column:1;"), await viewerPresetMenu.setStyleAttribute(\`display:\${d.presetMenuOpen ? "block" : "none"};position:absolute;top:108px;left:8px;right:8px;min-width:0;max-width:none;max-height:220px;overflow:auto;z-index:20;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML('<span data-nx-act="stop" style="cursor:pointer;background:#b91c1c;color:#fff;padding:5px 10px;border-radius:7px;font-size:11px;line-height:1;font-weight:600;white-space:nowrap">중단</span>'), await c.setStyleAttribute("display:flex;gap:0;align-items:center;flex-shrink:0;justify-content:flex-end;grid-column:2;");
         } else {
-          await s.setInnerHTML(iconMin ? "🖼️" : "Inlay Viewer"), await s.setStyleAttribute(iconMin ? "font-weight:600;font-size:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;" : "font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;"), await i.setStyleAttribute(\`height:\${iconMin ? 48 : toolbarMin ? 40 : 36}px;display:flex;align-items:center;justify-content:\${iconMin ? "center" : "space-between"};gap:8px;padding:\${iconMin ? "0" : "0 10px"};background:rgba(255,255,255,.04);border-bottom:\${d.minimized && !toolbarMin ? "0" : "1px solid rgba(255,255,255,.06)"};cursor:move;user-select:none;flex-shrink:0;touch-action:none;\`), await viewerPresetBtn.setStyleAttribute(\`max-width:140px;min-width:88px;flex:0 1 140px;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;font-size:11px;padding:0 8px;cursor:pointer;pointer-events:auto;display:\${iconMin ? "none" : "inline-flex"};align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!iconMin && d.presetMenuOpen ? "block" : "none"};position:absolute;top:34px;left:10px;min-width:140px;max-width:220px;max-height:220px;overflow:auto;z-index:5;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:5px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;\`);
+          await s.setInnerHTML(iconMin ? "🖼️" : "Inlay Viewer"), await s.setStyleAttribute(iconMin ? "font-weight:600;font-size:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;" : "font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;"), await i.setStyleAttribute(\`height:\${iconMin ? 48 : toolbarMin ? 40 : 36}px;display:flex;align-items:center;justify-content:\${iconMin ? "center" : "space-between"};gap:8px;padding:\${iconMin ? "0" : "0 10px"};background:rgba(255,255,255,.04);border-bottom:\${d.minimized && !toolbarMin ? "0" : "1px solid rgba(255,255,255,.06)"};cursor:move;user-select:none;flex-shrink:0;touch-action:none;\`), await viewerPresetBtn.setStyleAttribute(\`max-width:140px;min-width:88px;flex:0 1 140px;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;font-size:11px;padding:0 8px;cursor:pointer;pointer-events:auto;display:\${iconMin ? "none" : "inline-flex"};align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!iconMin && d.presetMenuOpen ? "block" : "none"};position:absolute;top:34px;left:10px;min-width:140px;max-width:220px;max-height:220px;overflow:auto;z-index:5;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML([
+            '<span style="cursor:pointer;background:#475569;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">◀</span>',
+            '<span style="cursor:pointer;background:#475569;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">▶</span>',
+            '<span style="cursor:pointer;background:#0f766e;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="LLM 태그 재생성">태그</span>',
+            '<span style="cursor:pointer;background:#7c6cff;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="이 메시지의 모든 샷 재생성">재생성</span>',
+            '<span style="cursor:pointer;background:#b91c1c;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="남은 생성 중단(진행 중은 끝까지)">중단</span>',
+            \`<span style="cursor:pointer;background:\${Nt() ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">\${Nt() ? "상시ON" : "상시"}</span>\`,
+            \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};background:#334155;color:#dbe4f5;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
+            \`<span style="cursor:pointer;background:#1e293b;color:#dbe4f5;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)">\${d.minimized ? "펼치기" : "접기"}</span>\`
+          ].join("")), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:5px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;\`);
         }
       } catch {
       }`;
@@ -7539,14 +8289,31 @@ const VENDOR_ACTIONS_POINTER_PATCH =
           await syncViewerPresetSelect();
           return;
         }
+        if (await X(c, _, O)) {
+          try {
+            await optimisticStopJobs();
+          } catch {
+          }
+          return;
+        }
         if (await X(s, _, O)) {
           try {
             const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await s.getChildren()) : [];
-            for (let W = 0; W < kids.length; W += 1) {
-              const J = await kids[W].getBoundingClientRect();
-              if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
-                W === 0 ? await te() : W === 1 && await rerollAllImages();
-                return;
+            // Layout: [0]=drag pad, [1]=tag/regen row. Pad must not fire buttons.
+            let onPad = !1;
+            if (kids[0]) {
+              const pad = await kids[0].getBoundingClientRect();
+              if (_ >= pad.left && _ <= pad.right && O >= pad.top && O <= pad.bottom) onPad = !0;
+            }
+            if (!onPad) {
+              const row = kids.length > 1 ? kids[kids.length - 1] : null;
+              const btns = row && typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await row.getChildren()) : row ? [row] : [];
+              for (let W = 0; W < btns.length; W += 1) {
+                const J = await btns[W].getBoundingClientRect();
+                if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
+                  W === 0 ? await te() : W === 1 && await rerollAllImages();
+                  return;
+                }
               }
             }
           } catch {
@@ -7599,6 +8366,60 @@ const VENDOR_ACTIONS_END_CLEAR_PATCH =
       if (d._actionsLpTimer) clearTimeout(d._actionsLpTimer), d._actionsLpTimer = null;
       const { moveId: A, upId: _, cancelId: cancelId, moved: moved, expandOnTap: expandOnTap } = d.drag;
       d.drag = null;`;
+
+/** Icon tap-expand must not fire after settings/modal already opened (same gesture pointerup). */
+const VENDOR_ICON_EXPAND_GUARD_NEEDLE =
+  `      if (!moved && expandOnTap && d.minimized) {
+        await toggleMinimizeBtn();
+        await refreshThumbsRect();
+        return;
+      }`;
+const VENDOR_ICON_EXPAND_GUARD_PATCH =
+  `      if (!moved && expandOnTap && d.minimized) {
+        if (t.uiOpen || t._hostChromeBlocked || t._viewerHiddenForModal || t._viewerHiddenForRisuSettings) {
+          await refreshThumbsRect();
+          return;
+        }
+        try {
+          const doc = await ue().catch(() => null);
+          const el = doc ? await D("rsSettingCont", () => doc.querySelector?.(".rs-setting-cont"), null) : null;
+          if (el) {
+            try { await hideFloatingViewerForRisuSettings(); } catch {}
+            await refreshThumbsRect();
+            return;
+          }
+        } catch {
+        }
+        await toggleMinimizeBtn();
+        await refreshThumbsRect();
+        return;
+      }`;
+
+/** Settings/modal hide: cancel pending icon expandOnTap so pointerup cannot re-show the viewer. */
+const VENDOR_HIDE_MODAL_CANCEL_EXPAND_NEEDLE =
+  `  async function hideFloatingViewerForModal() {
+    t._viewerHiddenForModal = !0;
+    const g = t.galleryUi;
+    if (!g?.panel) return;
+    try {
+      if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:0;visibility:hidden;");
+      await g.panel.setStyleAttribute("position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;visibility:hidden;z-index:1;");
+    } catch {
+    }
+  }`;
+const VENDOR_HIDE_MODAL_CANCEL_EXPAND_PATCH =
+  `  async function hideFloatingViewerForModal() {
+    t._viewerHiddenForModal = !0;
+    const g = t.galleryUi;
+    if (g?.drag) g.drag.expandOnTap = !1;
+    if (g?._actionsLpTimer) clearTimeout(g._actionsLpTimer), g._actionsLpTimer = null;
+    if (!g?.panel) return;
+    try {
+      if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:0;visibility:hidden;");
+      await g.panel.setStyleAttribute("position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;visibility:hidden;z-index:1;");
+    } catch {
+    }
+  }`;
 
 const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
 //@display-name Inlay Nexus ${PLUGIN_VERSION}
@@ -7864,6 +8685,12 @@ const loadVendorUi = (): string => {
     [VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_NEEDLE, 'char tab clear looks evt'],
     [VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE, 'char edit lock preset'],
     [VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE, 'char create lock preset'],
+    [VENDOR_CHAR_REF_DASH_HTML_NEEDLE, 'char ref dash html'],
+    [VENDOR_CHAR_REF_DASH_SAVE_NEEDLE, 'char ref dash save'],
+    [VENDOR_CHAR_REF_HELP_NEEDLE, 'char ref help'],
+    [VENDOR_CHAR_REF_EDIT_HTML_NEEDLE, 'char ref edit html'],
+    [VENDOR_CHAR_REF_TAB_EVT_NEEDLE, 'char ref tab events'],
+    [VENDOR_CHAR_REF_EDIT_EVT_NEEDLE, 'char ref edit events'],
     [VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, 'char create wear attire'],
     [VENDOR_CHAR_CREATE_WEAR_ACC_NEEDLE, 'char create wear accessories'],
     [VENDOR_TAB_NOWRAP_NEEDLE, 'settings tab nowrap'],
@@ -7879,6 +8706,8 @@ const loadVendorUi = (): string => {
     [VENDOR_INSPECT_REROLL_INLINE_NEEDLE, 'inspect sheet reroll inline'],
     [VENDOR_INSPECT_REGEN_INLINE_NEEDLE, 'inspect sheet regen inline'],
     [VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE, 'reroll toast heartbeat'],
+    [VENDOR_REROLL_LIVE_STOP_NEEDLE, 'reroll live soft-stop'],
+    [VENDOR_REROLL_LIVE_STOP_END_NEEDLE, 'reroll live soft-stop end'],
     [VENDOR_REROLL_IMAGE_INLINE_NEEDLE, 'reroll image inline refresh'],
     [VENDOR_REROLL_ALL_INLINE_NEEDLE, 'reroll all inline refresh'],
     [VENDOR_FORCE_REGEN_INLINE_NEEDLE, 'force regen inline clear'],
@@ -7918,12 +8747,20 @@ const loadVendorUi = (): string => {
     [VENDOR_ACTIONS_SAVE_NEEDLE, 'actions minimize save'],
     [VENDOR_ACTIONS_MODE_FN_NEEDLE, 'actions minimize mode fn'],
     [VENDOR_ACTIONS_CLAMP_NEEDLE, 'actions minimize clamp'],
+    [VENDOR_VIEWER_STOP_HDR_NEEDLE, 'viewer stop header btn'],
+    [VENDOR_VIEWER_STOP_CLICK_NEEDLE, 'viewer stop click'],
+    [VENDOR_VIEWER_STOP_LABEL_NEEDLE, 'viewer stop label sync'],
     [VENDOR_ACTIONS_FT_NEEDLE, 'actions minimize Ft'],
     [VENDOR_ACTIONS_OVERFLOW_NEEDLE, 'actions minimize overflow'],
     [VENDOR_ACTIONS_CHROME_NEEDLE, 'actions minimize chrome'],
     [VENDOR_ACTIONS_SAVE_ICON_GEO_NEEDLE, 'actions minimize save icon geo'],
     [VENDOR_ACTIONS_TOGGLE_SAVE_NEEDLE, 'actions minimize toggle save'],
     [VENDOR_ACTIONS_PRESET_LIVE_NEEDLE, 'actions minimize preset live'],
+    [VENDOR_RISU_SETTINGS_HIDE_VIEWER_NEEDLE, 'risu settings hide viewer'],
+    [VENDOR_RISU_SETTINGS_WATCH_ARM_NEEDLE, 'risu settings watch arm'],
+    [VENDOR_RISU_SETTINGS_POINTER_NEEDLE, 'risu settings pointer guard'],
+    [VENDOR_RISU_SETTINGS_PAINT_NEEDLE, 'risu settings paint guard'],
+    [VENDOR_RISU_SETTINGS_UNLOAD_NEEDLE, 'risu settings unload clear'],
     [VENDOR_PRESET_MENU_HIT_NEEDLE, 'preset menu hit outside panel'],
     [VENDOR_THUMBS_MOUNT_NEEDLE, 'thumbs transform mount'],
     [VENDOR_THUMBS_STATE_NEEDLE, 'thumbs transform state'],
@@ -7941,6 +8778,8 @@ const loadVendorUi = (): string => {
     [VENDOR_ACTIONS_POINTER_NEEDLE, 'actions minimize pointer'],
     [VENDOR_ACTIONS_DRAG_CLEAR_NEEDLE, 'actions minimize drag clear'],
     [VENDOR_ACTIONS_END_CLEAR_NEEDLE, 'actions minimize end clear'],
+    [VENDOR_ICON_EXPAND_GUARD_NEEDLE, 'icon expand settings guard'],
+    [VENDOR_HIDE_MODAL_CANCEL_EXPAND_NEEDLE, 'hide modal cancel expand'],
   ] as const) {
     assertOnce(raw, needle, label);
   }
@@ -8098,6 +8937,12 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_NEEDLE, VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_PATCH)
     .replace(VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE, VENDOR_CHAR_EDIT_LOCK_PRESET_PATCH)
     .replace(VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE, VENDOR_CHAR_CREATE_LOCK_PRESET_PATCH)
+    .replace(VENDOR_CHAR_REF_DASH_HTML_NEEDLE, VENDOR_CHAR_REF_DASH_HTML_PATCH)
+    .replace(VENDOR_CHAR_REF_DASH_SAVE_NEEDLE, VENDOR_CHAR_REF_DASH_SAVE_PATCH)
+    .replace(VENDOR_CHAR_REF_HELP_NEEDLE, VENDOR_CHAR_REF_HELP_PATCH)
+    .replace(VENDOR_CHAR_REF_EDIT_HTML_NEEDLE, VENDOR_CHAR_REF_EDIT_HTML_PATCH)
+    .replace(VENDOR_CHAR_REF_TAB_EVT_NEEDLE, VENDOR_CHAR_REF_TAB_EVT_PATCH)
+    .replace(VENDOR_CHAR_REF_EDIT_EVT_NEEDLE, VENDOR_CHAR_REF_EDIT_EVT_PATCH)
     .replace(VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, VENDOR_CHAR_CREATE_WEAR_ATTIRE_PATCH)
     .replace(VENDOR_CHAR_CREATE_WEAR_ACC_NEEDLE, VENDOR_CHAR_CREATE_WEAR_ACC_PATCH)
     .replace(VENDOR_TAB_NOWRAP_NEEDLE, VENDOR_TAB_NOWRAP_PATCH)
@@ -8113,6 +8958,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INSPECT_REROLL_INLINE_NEEDLE, VENDOR_INSPECT_REROLL_INLINE_PATCH)
     .replace(VENDOR_INSPECT_REGEN_INLINE_NEEDLE, VENDOR_INSPECT_REGEN_INLINE_PATCH)
     .replace(VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE, VENDOR_REROLL_TOAST_HEARTBEAT_PATCH)
+    .replace(VENDOR_REROLL_LIVE_STOP_NEEDLE, VENDOR_REROLL_LIVE_STOP_PATCH)
+    .replace(VENDOR_REROLL_LIVE_STOP_END_NEEDLE, VENDOR_REROLL_LIVE_STOP_END_PATCH)
     .replace(VENDOR_REROLL_IMAGE_INLINE_NEEDLE, VENDOR_REROLL_IMAGE_INLINE_PATCH)
     .replace(VENDOR_REROLL_ALL_INLINE_NEEDLE, VENDOR_REROLL_ALL_INLINE_PATCH)
     .replace(VENDOR_FORCE_REGEN_INLINE_NEEDLE, VENDOR_FORCE_REGEN_INLINE_PATCH)
@@ -8152,12 +8999,20 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_ACTIONS_SAVE_NEEDLE, VENDOR_ACTIONS_SAVE_PATCH)
     .replace(VENDOR_ACTIONS_MODE_FN_NEEDLE, VENDOR_ACTIONS_MODE_FN_PATCH)
     .replace(VENDOR_ACTIONS_CLAMP_NEEDLE, VENDOR_ACTIONS_CLAMP_PATCH)
+    .replace(VENDOR_VIEWER_STOP_HDR_NEEDLE, VENDOR_VIEWER_STOP_HDR_PATCH)
+    .replace(VENDOR_VIEWER_STOP_CLICK_NEEDLE, VENDOR_VIEWER_STOP_CLICK_PATCH)
+    .replace(VENDOR_VIEWER_STOP_LABEL_NEEDLE, VENDOR_VIEWER_STOP_LABEL_PATCH)
     .replace(VENDOR_ACTIONS_FT_NEEDLE, VENDOR_ACTIONS_FT_PATCH)
     .replace(VENDOR_ACTIONS_OVERFLOW_NEEDLE, VENDOR_ACTIONS_OVERFLOW_PATCH)
     .replace(VENDOR_ACTIONS_CHROME_NEEDLE, VENDOR_ACTIONS_CHROME_PATCH)
     .replace(VENDOR_ACTIONS_SAVE_ICON_GEO_NEEDLE, VENDOR_ACTIONS_SAVE_ICON_GEO_PATCH)
     .replace(VENDOR_ACTIONS_TOGGLE_SAVE_NEEDLE, VENDOR_ACTIONS_TOGGLE_SAVE_PATCH)
     .replace(VENDOR_ACTIONS_PRESET_LIVE_NEEDLE, VENDOR_ACTIONS_PRESET_LIVE_PATCH)
+    .replace(VENDOR_RISU_SETTINGS_HIDE_VIEWER_NEEDLE, VENDOR_RISU_SETTINGS_HIDE_VIEWER_PATCH)
+    .replace(VENDOR_RISU_SETTINGS_WATCH_ARM_NEEDLE, VENDOR_RISU_SETTINGS_WATCH_ARM_PATCH)
+    .replace(VENDOR_RISU_SETTINGS_POINTER_NEEDLE, VENDOR_RISU_SETTINGS_POINTER_PATCH)
+    .replace(VENDOR_RISU_SETTINGS_PAINT_NEEDLE, VENDOR_RISU_SETTINGS_PAINT_PATCH)
+    .replace(VENDOR_RISU_SETTINGS_UNLOAD_NEEDLE, VENDOR_RISU_SETTINGS_UNLOAD_PATCH)
     .replace(VENDOR_PRESET_MENU_HIT_NEEDLE, VENDOR_PRESET_MENU_HIT_PATCH)
     .replace(VENDOR_THUMBS_MOUNT_NEEDLE, VENDOR_THUMBS_MOUNT_PATCH)
     .replace(VENDOR_THUMBS_STATE_NEEDLE, VENDOR_THUMBS_STATE_PATCH)
@@ -8176,6 +9031,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_ACTIONS_POINTER_NEEDLE, VENDOR_ACTIONS_POINTER_PATCH)
     .replace(VENDOR_ACTIONS_DRAG_CLEAR_NEEDLE, VENDOR_ACTIONS_DRAG_CLEAR_PATCH)
     .replace(VENDOR_ACTIONS_END_CLEAR_NEEDLE, VENDOR_ACTIONS_END_CLEAR_PATCH)
+    .replace(VENDOR_ICON_EXPAND_GUARD_NEEDLE, VENDOR_ICON_EXPAND_GUARD_PATCH)
+    .replace(VENDOR_HIDE_MODAL_CANCEL_EXPAND_NEEDLE, VENDOR_HIDE_MODAL_CANCEL_EXPAND_PATCH)
     .replace(VENDOR_OVERLAY_MOUNT_NEEDLE, VENDOR_OVERLAY_MOUNT_PATCH)
     .replace(VENDOR_OVERLAY_WATCH_NEEDLE, VENDOR_OVERLAY_WATCH_PATCH)
     .replace(VENDOR_OVERLAY_RETRY_NEEDLE, VENDOR_OVERLAY_RETRY_PATCH)

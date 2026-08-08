@@ -2166,9 +2166,18 @@ export function composeSingleProgressBarHtml(args: {
   return `<span style="flex:0 0 120px;display:block;height:6px;border-radius:3px;background:#1e2633;overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:${color}"></span></span>`;
 }
 
+/** Elapsed label for progress toast (`18s`, `1m 05s`). */
+export function formatProgressElapsedSec(ms: unknown): string {
+  const n = Math.max(0, Math.floor(finiteNumber(ms, 0) / 1000));
+  if (n < 60) return `${n}s`;
+  const m = Math.floor(n / 60);
+  const s = n % 60;
+  return `${m}m ${String(s).padStart(2, '0')}s`;
+}
+
 /**
  * Top-center progress toast chip HTML (inline styles only — no CSS runtime).
- * One stage + one bar. Empty string when there is nothing to show.
+ * Row1: stage + bar. Row2: meta (one line, ellipsis). Empty when nothing to show.
  */
 export function composeProgressToastHtml(args: {
   stage?: unknown;
@@ -2181,6 +2190,8 @@ export function composeProgressToastHtml(args: {
   indexBusy?: unknown;
   busy?: unknown;
   error?: unknown;
+  /** Idle selection chip — omit the progress rail */
+  showBar?: unknown;
   /** `index` = mint bar (indexing); otherwise purple */
   tone?: unknown;
   escapeHtml?: ((s: string) => string) | null;
@@ -2205,14 +2216,20 @@ export function composeProgressToastHtml(args: {
     else if (indexBusy) pct = args.indexPct;
     else pct = Math.max(finiteNumber(args.jobPct, 0), finiteNumber(args.indexPct, 0));
   }
-  const bar = composeSingleProgressBarHtml({
-    pct,
-    busy: busy || Boolean(args.error),
-    error: args.error,
-    tone,
-  });
+  const showBar = args.showBar !== false && args.showBar !== 0 && args.showBar !== 'false';
+  const bar = showBar
+    ? composeSingleProgressBarHtml({
+      pct,
+      busy: busy || Boolean(args.error),
+      error: args.error,
+      tone,
+    })
+    : '';
   const accent = args.error ? '#f87171' : tone === 'index' ? '#5eead4' : '#c4b5fd';
-  return `<div data-inlay-progress-toast="1" style="display:flex;align-items:center;gap:10px;min-width:220px;max-width:min(420px,92vw);padding:10px 14px;border-radius:8px;background:#121820;border:1px solid #2a3344;cursor:pointer;user-select:none"><span style="flex:0 0 auto;font-weight:700;color:${accent};font-size:11px;white-space:nowrap">${stage}</span><span style="min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8b97ab;font-size:11px">${meta}</span>${bar}</div>`;
+  const metaRow = meta
+    ? `<div style="min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8b97ab;font-size:10px;line-height:1.3">${meta}</div>`
+    : '';
+  return `<div data-inlay-progress-toast="1" style="display:flex;flex-direction:column;gap:5px;min-width:220px;max-width:min(420px,92vw);padding:10px 14px;border-radius:8px;background:#121820;border:1px solid #2a3344;cursor:pointer;user-select:none"><div style="display:flex;align-items:center;gap:10px;min-width:0"><span style="flex:1 1 auto;min-width:0;font-weight:700;color:${accent};font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stage}</span>${bar}</div>${metaRow}</div>`;
 }
 
 // ── anchor / reading / segment index ──────────────────────────────────────

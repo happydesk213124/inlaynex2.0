@@ -28,7 +28,7 @@ import {
   setVibePreviewUrl,
 } from '../services/context';
 import { migrateAppearanceToCharacters, migrateCharacterIdentity } from '../services/characters';
-import { hydratePresetVibePreviews } from '../services/nai-assets';
+import { hydrateCharRefPreviews, hydratePresetVibePreviews } from '../services/nai-assets';
 import { seedPrompts } from '../services/settings';
 
 let readyPromise: Promise<void> | null = null;
@@ -54,6 +54,7 @@ async function boot(): Promise<void> {
   const vibe = await idbGet('meta', 'vibe_transfer');
   if (vibe?.png) setVibePreviewUrl(pngToDataUrl(vibe.png));
   await hydratePresetVibePreviews();
+  await hydrateCharRefPreviews();
 
   dbg('boot.ready.done', {
     message: VERSION,

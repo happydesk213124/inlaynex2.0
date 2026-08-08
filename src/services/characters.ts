@@ -51,7 +51,7 @@ import {
 import { restoreAssetTagWeights } from '../domain/nai-meta/prompt-tags.ts';
 import { idbDelete, idbGet, idbGetAll, idbPut } from '../storage/stores';
 import { getLastAssetWeightMap } from './asset-tags';
-import { getConfig } from './context';
+import { getCharRefPreviewUrl, getConfig } from './context';
 
 export interface ReplaceOptions {
   prune?: boolean;
@@ -178,6 +178,16 @@ export async function listCharacters(scope: string): Promise<CharacterRecord[]> 
       scope: row.scope,
     };
     rec.tags = fullTags(rec);
+    const cid = cleanText(rec.id, 80);
+    if (cid) {
+      const preview = getCharRefPreviewUrl(cid);
+      if (preview) {
+        rec.ref_configured = true;
+        rec.ref_preview_url = preview;
+      } else {
+        rec.ref_configured = false;
+      }
+    }
     out.push(rec);
   }
   return out;

@@ -8,7 +8,7 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.2.7';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.2.8';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
@@ -54,6 +54,12 @@ export const vibePresetMetaKey = (presetId: string): string => `vibe_preset_${St
 export const isVibePresetMetaKey = (key: unknown): boolean =>
   typeof key === 'string' && key.startsWith('vibe_preset_');
 export const presetIdFromVibeMetaKey = (key: string): string => key.slice('vibe_preset_'.length);
+
+/** Per-character reference image (webp/png/jpeg bytes as-is — no re-encode). */
+export const charRefMetaKey = (characterId: string): string => `char_ref_${String(characterId)}`;
+export const isCharRefMetaKey = (key: unknown): boolean =>
+  typeof key === 'string' && key.startsWith('char_ref_');
+export const characterIdFromCharRefMetaKey = (key: string): string => key.slice('char_ref_'.length);
 
 // --- legacy save-file keys (one-time migration source) ---
 export const LEGACY_SETTINGS_KEY = 'native_settings';

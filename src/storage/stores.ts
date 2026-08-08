@@ -20,6 +20,8 @@
  */
 
 import {
+  CHAR_REF_DATA_KEY,
+  CHAR_REF_IMAGE_KEY,
   IMAGE_KEY,
   LEGACY_IMAGE_KEY,
   LEGACY_REF_IMAGE_KEY,
@@ -31,6 +33,8 @@ import {
   VIBE_IMAGE_KEY,
   VIBE_PRESET_DATA_KEY,
   VIBE_PRESET_IMAGE_KEY,
+  characterIdFromCharRefMetaKey,
+  isCharRefMetaKey,
   isVibePresetMetaKey,
   presetIdFromVibeMetaKey,
 } from '../core/constants';
@@ -222,6 +226,19 @@ function snapshotOf(store: StoreName): Record<string, unknown> {
       };
       continue;
     }
+    // Never JSON-embed ArrayBuffers into the meta blob — they become `{}` and
+    // leave "configured" ghosts with no preview after reload (same as vibe).
+    if (store === 'meta' && isCharRefMetaKey(row?.key)) {
+      obj[k] = {
+        key: row.key,
+        has_png: Boolean(row.png && (row.png as ArrayBuffer).byteLength > 0),
+        has_encoded: Boolean(row.encoded),
+        model: row.model || '',
+        information_extracted: row.information_extracted ?? 1.0,
+        updated_at: row.updated_at || 0,
+      };
+      continue;
+    }
     if (store === 'jobs') {
       obj[k] = slimJobRowForDisk(row as JobRow);
       continue;
@@ -333,6 +350,15 @@ const hydrating = new Map<string, Promise<ArrayBuffer | null>>();
 const decodeStoredPng = (raw: unknown): ArrayBuffer | null =>
   typeof raw === 'string' && raw ? base64ToAb(raw) : null;
 
+/** Recover bytes from a legacy meta row that still holds a live ArrayBuffer. */
+const legacyImageBytes = (raw: unknown): ArrayBuffer | null => {
+  if (raw instanceof ArrayBuffer && raw.byteLength > 32) return raw;
+  if (ArrayBuffer.isView(raw) && raw.byteLength > 32) {
+    return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength).slice().buffer;
+  }
+  return null;
+};
+
 async function hydrateImage(id: string, row: ImageMemRow): Promise<ArrayBuffer | null> {
   if (row.hydrated) return row.png;
   const existing = hydrating.get(id);
@@ -430,6 +456,58 @@ export async function openDb(): Promise<boolean> {
             model: (d.model as string) || (v.model as string) || '',
             information_extracted: (d.information_extracted ?? v.information_extracted ?? 1.0) as number,
           });
+        } else if (store === 'meta' && isCharRefMetaKey(v.key || k)) {
+          const metaKey = String(v.key || k);
+          const characterId = characterIdFromCharRefMetaKey(metaKey);
+          let png = decodeStoredPng(await psGet(CHAR_REF_IMAGE_KEY(characterId)));
+          // Pre-2.2.9 wrote ArrayBuffers into the meta blob; recover once if the
+          // dedicated key is empty and the host still has a live buffer.
+          if (!png) {
+            png = legacyImageBytes(v.png);
+            if (png) {
+              const migrate = png;
+              imagePersistChain = imagePersistChain
+                .then(async () => {
+                  await psSet(CHAR_REF_IMAGE_KEY(characterId), await bytesToBase64Async(new Uint8Array(migrate)));
+                })
+                .catch((err: unknown) =>
+                  console.warn('[Inlay Nexus] char ref migrate failed', characterId, (err as Error)?.message || err),
+                );
+            }
+          }
+          let data = await psGet(CHAR_REF_DATA_KEY(characterId));
+          if (typeof data === 'string') {
+            try {
+              data = JSON.parse(data);
+            } catch {
+              data = null;
+            }
+          }
+          const d = (data ?? {}) as Record<string, unknown>;
+          // Legacy rows may still carry encoded on the meta blob itself.
+          const encoded =
+            (d.encoded as string) || (typeof v.encoded === 'string' ? v.encoded : '') || '';
+          memStores.meta.set(metaKey, {
+            key: metaKey,
+            png,
+            encoded,
+            model: (d.model as string) || (v.model as string) || '',
+            information_extracted: (d.information_extracted ?? v.information_extracted ?? 1.0) as number,
+          });
+          if (encoded && !d.encoded) {
+            const enc = encoded;
+            const model = (d.model as string) || (v.model as string) || '';
+            const ie = (d.information_extracted ?? v.information_extracted ?? 1.0) as number;
+            imagePersistChain = imagePersistChain
+              .then(async () => {
+                await psSet(CHAR_REF_DATA_KEY(characterId), {
+                  encoded: enc,
+                  model,
+                  information_extracted: ie,
+                });
+              })
+              .catch(() => {});
+          }
         } else if (store === 'cards') {
           const row = v as unknown as CardRow;
           memStores.cards.set(k, row);
@@ -596,6 +674,38 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
     return metaKey;
   }
 
+  if (store === 'meta' && isCharRefMetaKey(value.key)) {
+    const metaKey = String(value.key);
+    const characterId = characterIdFromCharRefMetaKey(metaKey);
+    const row: MetaRow = {
+      key: metaKey,
+      png: (value.png as ArrayBuffer | null) || null,
+      encoded: (value.encoded as string) || '',
+      model: (value.model as string) || '',
+      information_extracted: (value.information_extracted ?? 1.0) as number,
+    };
+    memStores.meta.set(metaKey, row);
+    imagePersistChain = imagePersistChain
+      .then(async () => {
+        if (row.png) await psSet(CHAR_REF_IMAGE_KEY(characterId), await bytesToBase64Async(new Uint8Array(row.png)));
+        else await psRemove(CHAR_REF_IMAGE_KEY(characterId));
+        if (row.encoded) {
+          await psSet(CHAR_REF_DATA_KEY(characterId), {
+            encoded: row.encoded,
+            model: row.model,
+            information_extracted: row.information_extracted,
+          });
+        } else {
+          await psRemove(CHAR_REF_DATA_KEY(characterId));
+        }
+      })
+      .catch((err: unknown) =>
+        console.warn('[Inlay Nexus] char ref persist failed', characterId, (err as Error)?.message || err),
+      );
+    if (persist) schedulePersist('meta');
+    return metaKey;
+  }
+
   if (store === 'cards') {
     deindexCard(memStores.cards.get(k));
     const row = value as unknown as CardRow;
@@ -629,6 +739,11 @@ export async function idbDelete(store: StoreName, key: unknown): Promise<boolean
     const presetId = presetIdFromVibeMetaKey(k);
     await psRemove(VIBE_PRESET_IMAGE_KEY(presetId));
     await psRemove(VIBE_PRESET_DATA_KEY(presetId));
+  }
+  if (store === 'meta' && isCharRefMetaKey(k)) {
+    const characterId = characterIdFromCharRefMetaKey(k);
+    await psRemove(CHAR_REF_IMAGE_KEY(characterId));
+    await psRemove(CHAR_REF_DATA_KEY(characterId));
   }
   schedulePersist(store);
   if (store === 'images') dropBlobUrl(k);

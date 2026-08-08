@@ -59,6 +59,11 @@ export interface CardSettings {
    * generation uses 832×1216 / 1024×1024 / 1216×832 instead of nai.width/height.
    */
   auto_aspect: boolean;
+  /**
+   * When true, main-tagger JSON parse failure appends the error and retries the
+   * LLM once before failing the job.
+   */
+  llm_json_retry: boolean;
   char_info: boolean;
   user_info: boolean;
   char_appearance: boolean;
@@ -84,6 +89,27 @@ export interface CardSettings {
   person_tag_weight: number;
   /** When true, tagger picks curated composition leaf ids instead of freeform camera/pose. */
   composition_curation?: boolean;
+  /**
+   * Per-character NAI reference mode (dashboard). Applied to every shot character
+   * that has a reference image: off | vibe | image.
+   */
+  char_ref_mode: string;
+  /** 0.01–1 — vibe strength or image Reference Strength. */
+  char_ref_strength: number;
+  /** 0.01–1 — vibe information_extracted or image Reference Fidelity. */
+  char_ref_fidelity: number;
+  /** When char_ref_mode is image: character | style | character&style. */
+  char_ref_image_type: string;
+  /**
+   * Always prepended to the assembled positive (after person-count tags, before
+   * style preset / scene). Empty = unused.
+   */
+  fixed_prompt_prefix: string;
+  /**
+   * Always appended to the assembled positive (before NAI quality tags).
+   * Empty = unused.
+   */
+  fixed_prompt_suffix: string;
   original_text: string;
   custom_pos: string;
   custom_neg: string;
@@ -210,6 +236,10 @@ export interface CharacterRecord {
   gender?: string;
   scope?: Scope;
   schema_version?: number;
+  /** True when a per-character reference image is stored (UI). */
+  ref_configured?: boolean;
+  /** Data URL preview when available in-memory. */
+  ref_preview_url?: string;
   /** Convenience field the UI reads: original + appearance + attire + accessories. */
   tags?: string;
   [key: string]: unknown;

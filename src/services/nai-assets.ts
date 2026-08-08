@@ -13,17 +13,26 @@
  */
 
 import type { ApiResult, MetaRow } from '../core/types';
-import { isVibePresetMetaKey, presetIdFromVibeMetaKey, vibePresetMetaKey } from '../core/constants';
+import {
+  charRefMetaKey,
+  characterIdFromCharRefMetaKey,
+  isCharRefMetaKey,
+  isVibePresetMetaKey,
+  presetIdFromVibeMetaKey,
+  vibePresetMetaKey,
+} from '../core/constants';
 import { cleanText } from '../core/util/text';
 import { modelToNaia, resolveModel } from '../providers/nai/payload';
 import { encodeVibe } from '../providers/nai/vibe';
 import { pngToDataUrl } from '../storage/image-urls';
 import { idbDelete, idbGet, idbGetAll, idbPut } from '../storage/stores';
 import {
+  getCharRefPreviewUrl,
   getConfig,
   getPresetVibePreviewUrl,
   getRefPreviewUrl,
   getVibePreviewUrl,
+  setCharRefPreviewUrl,
   setPresetVibePreviewUrl,
   setRefPreviewUrl,
   setVibePreviewUrl,
@@ -297,5 +306,155 @@ export async function hydratePresetVibePreviews(): Promise<void> {
     const png = (row as MetaRow).png;
     if (!png || png.byteLength < MIN_IMAGE_BYTES) continue;
     setPresetVibePreviewUrl(presetIdFromVibeMetaKey(key), pngToDataUrl(png));
+  }
+}
+
+// ── per-character reference images (bytes stored as-is; webp/png/jpeg OK) ──
+
+export function hasCharRefImageSync(characterId: string): boolean {
+  return Boolean(getCharRefPreviewUrl(characterId));
+}
+
+export async function hasCharRefImage(characterId: string): Promise<boolean> {
+  const id = cleanText(characterId, 200);
+  if (!id) return false;
+  const row = await idbGet('meta', charRefMetaKey(id));
+  return Boolean(row?.png && row.png.byteLength > MIN_IMAGE_BYTES);
+}
+
+/** Rebuild the in-memory preview data URL from durable bytes when missing. */
+export async function ensureCharRefPreviewUrl(characterId: string): Promise<string> {
+  const id = cleanText(characterId, 200);
+  if (!id) return '';
+  const existing = getCharRefPreviewUrl(id);
+  if (existing) return existing;
+  const bytes = await getCharRefImageBytes(id);
+  if (!bytes || bytes.byteLength < MIN_IMAGE_BYTES) return '';
+  const preview = pngToDataUrl(bytes);
+  setCharRefPreviewUrl(id, preview);
+  return preview;
+}
+
+export async function getCharRefImageBytes(characterId: string): Promise<ArrayBuffer | null> {
+  const id = cleanText(characterId, 200);
+  if (!id) return null;
+  const row = await idbGet('meta', charRefMetaKey(id));
+  return row?.png || null;
+}
+
+export async function getCharRefTransfer(characterId: string): Promise<MetaRow | null> {
+  const id = cleanText(characterId, 200);
+  if (!id) return null;
+  return (await idbGet('meta', charRefMetaKey(id))) || null;
+}
+
+/**
+ * Store a character reference image without re-encoding. Prefer smaller webp
+ * uploads as-is — NovelAI accepts the original bytes on image-reference mode,
+ * and vibe mode encodes from the same buffer only when generating.
+ */
+export async function setCharRefImage(
+  characterId: string,
+  bytes: ArrayBuffer,
+  opts: { overwrite?: boolean } = {},
+): Promise<ApiResult> {
+  const id = cleanText(characterId, 200);
+  if (!id) throw new Error('character_id required');
+  if (!bytes || bytes.byteLength < MIN_IMAGE_BYTES) throw new Error('참고 이미지가 비어 있습니다');
+  if (bytes.byteLength > MAX_IMAGE_BYTES) throw new Error('참고 이미지가 너무 큽니다 (최대 12MB)');
+  const metaKey = charRefMetaKey(id);
+  if (opts.overwrite === false) {
+    const existing = await idbGet('meta', metaKey);
+    if (existing?.png && existing.png.byteLength > MIN_IMAGE_BYTES) {
+      return {
+        ok: true,
+        character_id: id,
+        configured: true,
+        skipped: true,
+        bytes: existing.png.byteLength,
+        preview_url: getCharRefPreviewUrl(id) || pngToDataUrl(existing.png),
+      };
+    }
+  }
+  await idbPut('meta', {
+    key: metaKey,
+    png: bytes,
+    encoded: '',
+    model: '',
+    information_extracted: 1,
+  });
+  const preview = pngToDataUrl(bytes);
+  setCharRefPreviewUrl(id, preview);
+  return {
+    ok: true,
+    character_id: id,
+    configured: true,
+    bytes: bytes.byteLength,
+    preview_url: preview,
+  };
+}
+
+export async function clearCharRefImage(characterId: string): Promise<ApiResult> {
+  const id = cleanText(characterId, 200);
+  if (!id) throw new Error('character_id required');
+  await idbDelete('meta', charRefMetaKey(id));
+  setCharRefPreviewUrl(id, '');
+  return { ok: true, character_id: id, configured: false };
+}
+
+export async function copyCharRefImage(fromId: string, toId: string): Promise<boolean> {
+  const src = await getCharRefTransfer(fromId);
+  if (!src?.png || src.png.byteLength < MIN_IMAGE_BYTES) return false;
+  const dest = cleanText(toId, 200);
+  if (!dest) return false;
+  await idbPut('meta', {
+    key: charRefMetaKey(dest),
+    png: src.png,
+    encoded: src.encoded || '',
+    model: src.model || '',
+    information_extracted: src.information_extracted ?? 1.0,
+  });
+  const preview = getCharRefPreviewUrl(fromId) || pngToDataUrl(src.png);
+  if (preview) setCharRefPreviewUrl(dest, preview);
+  return true;
+}
+
+/**
+ * Re-encode for vibe mode using dashboard fidelity as information_extracted.
+ * Returns null when this character has no reference image.
+ */
+export async function ensureCharRefVibeEncoded(
+  characterId: string,
+  informationExtracted?: number,
+): Promise<MetaRow | null> {
+  const vibe = await getCharRefTransfer(characterId);
+  if (!vibe?.png || vibe.png.byteLength < MIN_IMAGE_BYTES) return null;
+  const cfg = getConfig();
+  const token = cleanText(cfg.nai.api_key);
+  if (!token) throw new Error('NAI api_key가 설정되지 않았습니다.');
+  const model = resolveModel(modelToNaia(cfg.nai.model || 'nai-diffusion-4-5-full'));
+  const ie = normalizeInformationExtracted(
+    informationExtracted ?? cfg.card?.char_ref_fidelity ?? 1,
+  );
+  const needEncode =
+    !cleanText(vibe.encoded) ||
+    cleanText(vibe.model) !== model ||
+    Math.abs(Number(vibe.information_extracted ?? 1) - ie) > 0.001;
+  if (!needEncode) return vibe;
+  const encoded = await encodeVibe(token, vibe.png, model, ie);
+  const metaKey = charRefMetaKey(cleanText(characterId, 200));
+  const next: MetaRow = { ...vibe, key: metaKey, encoded, model, information_extracted: ie };
+  await idbPut('meta', next);
+  return next;
+}
+
+/** Warm preview URLs for per-character reference images after boot. */
+export async function hydrateCharRefPreviews(): Promise<void> {
+  for (const row of await idbGetAll('meta')) {
+    const key = String((row as MetaRow)?.key || '');
+    if (!isCharRefMetaKey(key)) continue;
+    const png = (row as MetaRow).png;
+    if (!png || png.byteLength < MIN_IMAGE_BYTES) continue;
+    setCharRefPreviewUrl(characterIdFromCharRefMetaKey(key), pngToDataUrl(png));
   }
 }

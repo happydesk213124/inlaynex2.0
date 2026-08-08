@@ -50,6 +50,11 @@ export interface JobRunMeta {
   key: string;
   epoch: number;
   cancelRequested: boolean;
+  /**
+   * User soft-stop: keep already-published cards; do not abort in-flight LLM/NAI.
+   * Distinct from supersession (which discards publishedIds).
+   */
+  userStop?: boolean;
   publishedIds: string[];
   /**
    * Hash written onto new cards. May diverge from the lock `key` hash when the
@@ -78,12 +83,32 @@ export const jobRunMeta = new Map<string, JobRunMeta>();
 /** Message-level reroll lock. Distinct from jobs: no epoch, no shots. */
 export const messageBusyKeys = new Set<string>();
 
+/**
+ * Soft-stop for message reroll batches (`rerollMessageCards`) and UI live loops.
+ * Set by `/v1/jobs/stop`; cleared when a new message reroll batch starts.
+ */
+let messageRerollStopRequested = false;
+
+export function requestMessageRerollStop(): void {
+  messageRerollStopRequested = true;
+}
+
+export function clearMessageRerollStop(): void {
+  messageRerollStopRequested = false;
+}
+
+export function isMessageRerollStopRequested(): boolean {
+  return messageRerollStopRequested;
+}
+
 // ── preview data URLs for the two singleton reference images ────────────────
 
 let refPreviewUrl = '';
 let vibePreviewUrl = '';
 /** Per-style-preset vibe preview data URLs (device-local uploads). */
 const presetVibePreviewUrls = new Map<string, string>();
+/** Per-character reference image preview data URLs. */
+const charRefPreviewUrls = new Map<string, string>();
 
 export function getRefPreviewUrl(): string {
   return refPreviewUrl;
@@ -116,13 +141,30 @@ export function clearAllPresetVibePreviewUrls(): void {
   presetVibePreviewUrls.clear();
 }
 
+export function getCharRefPreviewUrl(characterId: string): string {
+  return charRefPreviewUrls.get(String(characterId || '')) || '';
+}
+
+export function setCharRefPreviewUrl(characterId: string, url: string): void {
+  const id = String(characterId || '');
+  if (!id) return;
+  if (url) charRefPreviewUrls.set(id, url);
+  else charRefPreviewUrls.delete(id);
+}
+
+export function clearAllCharRefPreviewUrls(): void {
+  charRefPreviewUrls.clear();
+}
+
 /** Test seam: returns the module to its post-import state. */
 export function resetContext(): void {
   config = deepcopy(DEFAULT_CONFIG);
   jobEpochByKey.clear();
   jobRunMeta.clear();
   messageBusyKeys.clear();
+  messageRerollStopRequested = false;
   refPreviewUrl = '';
   vibePreviewUrl = '';
   presetVibePreviewUrls.clear();
+  charRefPreviewUrls.clear();
 }

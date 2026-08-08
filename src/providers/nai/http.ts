@@ -389,7 +389,7 @@ export async function naiPost(
     url: String(apiUrl || API_URL).slice(0, 100),
     has_nativeFetch: hostHas('nativeFetch'),
   });
-  if (bodyStr.length > 1_500_000) {
+  if (bodyStr.length > 2_500_000) {
     dbg('nai.payload', { message: 'too large', bytes: bodyStr.length }, 'error');
     throw new Error(`NAI 페이로드가 너무 큼 (${Math.round(bodyStr.length / 1024)}KB). 참조 이미지/프롬프트를 줄이세요.`);
   }

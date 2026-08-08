@@ -1,0 +1,1 @@
+    [VENDOR_INLINE_PTR_STICKY_NEEDLE, 'inline pointer sticky sync'],

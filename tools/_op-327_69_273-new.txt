@@ -1,0 +1,4 @@
+    [VENDOR_INLINE_PTR_STICKY_NEEDLE, 'inline pointer sticky sync'],
+    [VENDOR_HOVER_PREVIEW_OFF_NEEDLE, 'hover preview force off'],
+    [VENDOR_HOVER_PREVIEW_TOGGLE_NEEDLE, 'hover preview toggle remove'],
+    [VENDOR_HOVER_ANCHOR_NEEDLE, 'hover preview anchor remove'],

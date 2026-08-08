@@ -89,6 +89,7 @@ import {
   resolveIndexProgress,
   composeDualProgressBarsHtml,
   composeProgressToastHtml,
+  formatProgressElapsedSec,
   galleryStripSplitAt,
   galleryIndexFromChildIndex,
   thumbIndexAtStripX,
@@ -762,17 +763,18 @@ test("composeProgressToastHtml shows stage and a single rail when busy", () => {
   assert.equal(composeProgressToastHtml({}), "");
   const html = composeProgressToastHtml({
     stage: "장면 태깅",
-    meta: "2/4 · 30%",
+    meta: "2/4 · 30% · 18s",
     pct: 30,
     busy: true,
   });
   assert.match(html, /data-inlay-progress-toast/);
   assert.match(html, /장면 태깅/);
-  assert.match(html, /2\/4 · 30%/);
+  assert.match(html, /2\/4 · 30% · 18s/);
   assert.match(html, /#7c6cff/);
   assert.match(html, /width:30%/);
+  assert.match(html, /flex-direction:column/);
+  assert.match(html, /text-overflow:ellipsis/);
   assert.doesNotMatch(html, /#2dd4bf/);
-  assert.doesNotMatch(html, /flex-direction:column/);
 });
 
 test("composeProgressToastHtml uses mint rail for indexing tone", () => {
@@ -786,6 +788,25 @@ test("composeProgressToastHtml uses mint rail for indexing tone", () => {
   assert.match(html, /#2dd4bf/);
   assert.match(html, /#5eead4/);
   assert.doesNotMatch(html, /#7c6cff/);
+});
+
+test("composeProgressToastHtml can omit the bar for idle selection peeks", () => {
+  const html = composeProgressToastHtml({
+    stage: "3장",
+    meta: "msg #12",
+    busy: true,
+    showBar: false,
+  });
+  assert.match(html, /3장/);
+  assert.match(html, /msg #12/);
+  assert.doesNotMatch(html, /height:6px/);
+  assert.doesNotMatch(html, /#7c6cff/);
+});
+
+test("formatProgressElapsedSec formats seconds and minutes", () => {
+  assert.equal(formatProgressElapsedSec(0), "0s");
+  assert.equal(formatProgressElapsedSec(18_000), "18s");
+  assert.equal(formatProgressElapsedSec(65_000), "1m 05s");
 });
 
 test("mergeViewerPaintJob keeps the fuller pending mode", () => {

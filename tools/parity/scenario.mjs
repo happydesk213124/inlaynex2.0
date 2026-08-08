@@ -136,6 +136,7 @@ export async function runScenario(N, handles) {
       inline_chat_images: card.inline_chat_images === true,
       progress_toast: card.progress_toast === true,
       viewer_minimize_mode: String(card.viewer_minimize_mode || 'icon'),
+      llm_json_retry: card.llm_json_retry === true,
     };
   });
   await rec('settings.export', () => get('/v1/settings/export'));
@@ -304,6 +305,8 @@ export async function runScenario(N, handles) {
   // Finish the overlapping job before reroll so 1.x/2.0 do not race on busy locks
   // (2.0 finishes the duplicate faster; without this wait, cards.reroll is busy on 1.x only).
   await rec('job.wait_busy_duplicate', () => waitForJob(busyDup?.job_id));
+  // 2.0-only soft-stop route (1.x 404 → NEW_ONLY_STEPS). Idle session → stopped:0.
+  await rec('job.stop_idle', () => post('/v1/jobs/stop', { session_id: 'sess_stop_idle' }));
 
   await rec('cards.tags', () => post(`/v1/cards/${cardId}/tags`, {
     main_prompt: 'PARITY EDITED PROMPT',

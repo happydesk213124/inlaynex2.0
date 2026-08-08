@@ -37,13 +37,14 @@ import {
 import { dimsForAspect } from '../domain/nai-meta/aspect.ts';
 import { resolveGenerationSeed } from '../domain/prompt/command-rewrite';
 import { resolveGenerationCfgParams } from '../domain/style-preset-overrides';
+import { prepareDirectorReferenceWebp } from '../core/util/image';
 import { generateViaComfy, imageBackendKind } from '../providers/comfy/client';
 import { generateT2i } from '../providers/nai/client';
 import { modelToNaia, type CharacterReference, type T2iRequest, type VibeReference } from '../providers/nai/payload';
 import { imageLocation, putImageLocation } from '../storage/stores';
 import { getConfig } from './context';
 import { loadCurationCatalog } from './curation';
-import { ensurePresetVibeEncoded, ensureVibeEncoded, getReferenceImageBytes } from './nai-assets';
+import { ensureCharRefVibeEncoded, ensurePresetVibeEncoded, ensureVibeEncoded, getCharRefImageBytes, getReferenceImageBytes } from './nai-assets';
 import { getPrompt } from './settings';
 
 /** NAI width/height: accept any positive size up to 5000 (no 832/1216 portrait ceiling). */
@@ -68,6 +69,8 @@ export interface NaiCaption {
 /** A caption plus the bookkeeping the card row and the reroll path need. */
 export interface GenerationCharacter extends NaiCaption {
   name: string;
+  /** Roster id when resolved — used for per-character NAI reference images. */
+  id?: string;
   /** The tagger's original entry, replayed verbatim when the card is rerolled. */
   raw: ShotCharacter;
 }
@@ -101,6 +104,11 @@ export type ImageRequest = Pick<GenerationPlan, 'main' | 'neg' | 'captions'> & {
    * `nai.seed`, then a random seed — same as a normal generation.
    */
   seed?: number;
+  /**
+   * Shot cast with roster ids — used to attach per-character NAI refs when
+   * dashboard `char_ref_mode` is vibe|image.
+   */
+  characters?: Array<{ id?: string; name?: string }>;
 };
 
 export interface GeneratedImage {
@@ -242,6 +250,10 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
     body = stripPersonCountTags(body);
     setup = stripPersonCountTags(setup);
   }
+  // Card-level fixed prompts always wrap style/scene (after person tags, before quality).
+  const lead = cleanText(card.fixed_prompt_prefix, 8000);
+  const trail = cleanText(card.fixed_prompt_suffix, 8000);
+  body = joinTags(lead, body, trail);
   let main = person ? (body ? `${person}, ${body}` : person) : body;
   const naiaModel = modelToNaia(nai.model || 'nai-diffusion-4-5-full');
   if (nai.apply_quality_tags !== false) main += QUALITY_TAGS[naiaModel] || '';
@@ -259,7 +271,15 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
     const cx = n === 1 ? 0.5 : Math.round((0.1 + (0.8 * idx) / Math.max(1, n - 1)) * 10) / 10;
     const cy = 0.5;
     captions.push({ prompt: prompt || 'girl', uc, center_x: cx, center_y: cy });
-    charMeta.push({ name: stored?.name || name, prompt, uc, center_x: cx, center_y: cy, raw: char });
+    charMeta.push({
+      name: stored?.name || name,
+      id: cleanText(stored?.id || '', 80) || undefined,
+      prompt,
+      uc,
+      center_x: cx,
+      center_y: cy,
+      raw: char,
+    });
   }
   return { main, neg, captions, meta: { setup, person, characters: charMeta, paragraph: shot.paragraph } };
 }
@@ -293,12 +313,16 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
       let fidelity = Number(nai.image_reference_fidelity ?? 1.0);
       if (Number.isNaN(strength)) strength = 0.6;
       if (Number.isNaN(fidelity)) fidelity = 1.0;
-      characterRefs.push({
-        image: refBytes,
-        type: refType,
-        strength: Math.max(0, Math.min(1, strength)),
-        fidelity: Math.max(0, Math.min(1, fidelity)),
-      });
+      try {
+        characterRefs.push({
+          image: await prepareDirectorReferenceWebp(refBytes, 0.5),
+          type: refType,
+          strength: Math.max(0, Math.min(1, strength)),
+          fidelity: Math.max(0, Math.min(1, fidelity)),
+        });
+      } catch (err) {
+        dbg('nai.ref.prepare_fail', { message: String((err as Error)?.message || err) }, 'warn');
+      }
     }
   }
   // Active style preset may override CFG; preset vibe image replaces NAI vibe when set.
@@ -320,24 +344,88 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
   const cfgParams = resolveGenerationCfgParams(nai, activePreset as StylePreset | null);
 
   const vibes: VibeReference[] = [];
-  let vibeRow = presetId ? await ensurePresetVibeEncoded(presetId) : null;
-  if (!vibeRow) {
-    const vibeMode = cleanText(nai.vibe_transfer || 'none').toLowerCase();
-    if (!['', 'none', 'off', 'false', '0'].includes(vibeMode)) {
-      vibeRow = await ensureVibeEncoded();
+  // Skip vibe attach when Precise Reference will be used — NAI rejects the combo,
+  // and encode-vibe would waste Anlas for nothing.
+  const directorLikely =
+    characterRefs.length > 0 || String(card.char_ref_mode || 'off').toLowerCase() === 'image';
+  if (!directorLikely) {
+    let vibeRow = presetId ? await ensurePresetVibeEncoded(presetId) : null;
+    if (!vibeRow) {
+      const vibeMode = cleanText(nai.vibe_transfer || 'none').toLowerCase();
+      if (!['', 'none', 'off', 'false', '0'].includes(vibeMode)) {
+        vibeRow = await ensureVibeEncoded();
+      }
+    }
+    if (vibeRow?.encoded) {
+      let strength = Number(nai.vibe_transfer_strength ?? 0.6);
+      let ie = Number(nai.vibe_transfer_information_extracted ?? vibeRow.information_extracted ?? 1.0);
+      if (Number.isNaN(strength)) strength = 0.6;
+      if (Number.isNaN(ie)) ie = 1.0;
+      vibes.push({
+        encoded: vibeRow.encoded,
+        strength: Math.max(0, Math.min(1, strength)),
+        information_extracted: Math.max(0, Math.min(1, ie)),
+      });
     }
   }
-  if (vibeRow?.encoded) {
-    let strength = Number(nai.vibe_transfer_strength ?? 0.6);
-    let ie = Number(nai.vibe_transfer_information_extracted ?? vibeRow.information_extracted ?? 1.0);
+
+  // Per-character refs from dashboard mode (additive with global NAI model vibe/ref).
+  const charRefMode = String(card.char_ref_mode || 'off').toLowerCase();
+  if (charRefMode === 'vibe' || charRefMode === 'image') {
+    let strength = Number(card.char_ref_strength ?? 0.6);
+    let fidelity = Number(card.char_ref_fidelity ?? 1);
     if (Number.isNaN(strength)) strength = 0.6;
-    if (Number.isNaN(ie)) ie = 1.0;
-    vibes.push({
-      encoded: vibeRow.encoded,
-      strength: Math.max(0, Math.min(1, strength)),
-      information_extracted: Math.max(0, Math.min(1, ie)),
-    });
+    if (Number.isNaN(fidelity)) fidelity = 1;
+    strength = Math.max(0.01, Math.min(1, strength));
+    fidelity = Math.max(0.01, Math.min(1, fidelity));
+    const cast = Array.isArray(plan.characters) ? plan.characters : [];
+    for (const entry of cast) {
+      const cid = cleanText(entry?.id || '', 80);
+      if (!cid) continue;
+      if (charRefMode === 'image') {
+        // NAI blends multiple Precise Refs (not per-character placement). Soft-cap
+        // keeps JSON under budget; webp@q0.5 on official canvases is ~0.2–0.4MB each.
+        if (characterRefs.length >= 4) break;
+        const bytes = await getCharRefImageBytes(cid);
+        if (!bytes) continue;
+        let refType = cleanText(card.char_ref_image_type || 'character&style') || 'character&style';
+        if (!['character', 'style', 'character&style'].includes(refType)) refType = 'character&style';
+        try {
+          characterRefs.push({
+            image: await prepareDirectorReferenceWebp(bytes, 0.5),
+            type: refType,
+            strength,
+            fidelity,
+          });
+        } catch (err) {
+          dbg(
+            'nai.char_ref.prepare_fail',
+            { message: String((err as Error)?.message || err), character_id: cid },
+            'warn',
+          );
+        }
+      } else {
+        const row = await ensureCharRefVibeEncoded(cid, fidelity);
+        if (!row?.encoded) continue;
+        vibes.push({
+          encoded: row.encoded,
+          strength,
+          information_extracted: fidelity,
+        });
+      }
+    }
   }
+
+  // Official NAI: Precise Reference and Vibe Transfer cannot be combined.
+  // Prefer director refs when both would be present (global/preset vibe + image mode).
+  if (characterRefs.length && vibes.length) {
+    dbg('nai.ref.drop_vibes', {
+      message: `Precise Reference ${characterRefs.length}개 — 동시 vibe ${vibes.length}개 제외`,
+      focus: true,
+    });
+    vibes.length = 0;
+  }
+
   const req: T2iRequest = {
     prompt: plan.main,
     negative_prompt: plan.neg,

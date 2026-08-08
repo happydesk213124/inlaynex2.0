@@ -167,7 +167,12 @@ const normalize = (root) => {
     }
     if (node && typeof node === 'object') {
       const out = {};
+      // 2.0 generation cast rows carry roster `id` for per-character NAI refs.
+      // 1.x caption objects had no id; unit tests assert ref wiring, not this wire field.
+      const isGenCaption =
+        'center_x' in node && 'prompt' in node && ('uc' in node || 'raw' in node);
       for (const k of Object.keys(node).sort()) {
+        if (isGenCaption && k === 'id') continue;
         // 2.0 curation tab settings have no 1.x equivalent. Drop from wire compare;
         // unit tests + scenario assert the new behaviour. composition_curation is
         // legacy→migrated false and would otherwise spam absent→false diffs.
@@ -182,15 +187,22 @@ const normalize = (root) => {
         if (k === 'costumes' || k === 'active_costume') continue;
         // 2.0 card.costume toggle (main-tagger catalog inject) — no 1.x field.
         if (k === 'costume') continue;
-        // 2.0 asset NAI / auto aspect / person_tag_solo — no 1.x card fields;
+        // 2.0 asset NAI / auto aspect / person_tag_solo / llm_json_retry — no 1.x card fields;
         // schema defaults + UI/unit tests assert behaviour.
-        if (k === 'asset_nai_tags' || k === 'auto_aspect' || k === 'person_tag_solo') continue;
+        if (k === 'asset_nai_tags' || k === 'auto_aspect' || k === 'person_tag_solo' || k === 'llm_json_retry') continue;
         // 2.0 wear locks default ON (`!== false`). 1.x/legacy seeds stored false;
         // compose + unit tests assert lock behaviour — wire presence is not comparable.
         if (k === 'attire_locked' || k === 'accessories_locked') continue;
         // 2.0 bubble inline shots + progress toast — no 1.x card fields.
         // Defaults false; UI/schema + unit tests assert behaviour.
         if (k === 'inline_chat_images' || k === 'progress_toast') continue;
+        // 2.0 per-character NAI reference (dashboard mode + per-char image).
+        // No 1.x fields; schema defaults + UI/unit tests assert behaviour.
+        if (k === 'char_ref_mode' || k === 'char_ref_strength' || k === 'char_ref_fidelity' || k === 'char_ref_image_type') continue;
+        if (k === 'ref_configured' || k === 'ref_preview_url') continue;
+        // 2.0 always-on fixed prompt wrappers around style/scene. No 1.x fields;
+        // empty-string defaults; generation + card UI assert merge behaviour.
+        if (k === 'fixed_prompt_prefix' || k === 'fixed_prompt_suffix') continue;
         // 2.0 bubble inline scale % — no 1.x field; default 100.
         if (k === 'inline_chat_scale_pct') continue;
         // Sticky pin hover preview removed in 2.0 (force-off + default false).
@@ -202,6 +214,9 @@ const normalize = (root) => {
         // 2.0 card/gallery `line` (1-based chat line for inline placement). 1.x
         // has no field; unset serialises as null and would spam absent→null.
         if (k === 'line') continue;
+        // 2.0 message-reroll soft-stop flag (`stopped`). 1.x has no field; idle
+        // reroll returns false — unit/scenario assert stop behaviour, not wire.
+        if (k === 'stopped') continue;
         out[k] = walk(node[k], k);
       }
       return out;
@@ -299,6 +314,12 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (v?.ok === true && v?.look_kept === true && v?.action === 'waving'
       ? null
       : `2.0 command-rewrite must keep look + apply action, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'job.stop_idle',
+    (v) => (v?.ok === true && Number(v?.stopped) === 0 && v?.reroll_stop === true
+      ? null
+      : `2.0 soft-stop with no active jobs must return stopped:0 + reroll_stop, got ${JSON.stringify(v)}`),
   ],
 ]);
 

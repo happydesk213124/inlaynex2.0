@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.14';
+const PLUGIN_VERSION = '2.2.8';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -480,17 +480,7 @@ const VENDOR_ASSET_NAI_CARD_PATCH =
               <option value="inline" \${i.asset_nai_tags === "inline" ? "selected" : ""}>그냥 옛날버전 (통째로 보내기)</option>
               <option value="prepass" \${i.asset_nai_tags === "prepass" ? "selected" : ""}>LLM 따로 호출</option>
               <option value="prepass_vision" \${i.asset_nai_tags === !0 || i.asset_nai_tags === "prepass_vision" ? "selected" : ""}>LLM 따로 호출 + 이미지 파일 보내기</option>
-            </select></label>
-            <div class="model-form-pair" style="margin-top:4px">
-              <label data-nx-help-id="nx-fixed-prompt-prefix"><span>선행 고정 프롬프트</span><textarea id="nx-fixed-prompt-prefix" rows="4" maxlength="8000" placeholder="프리셋·장면 앞에 항상 붙음">\${h(i.fixed_prompt_prefix || "")}</textarea></label>
-              <label data-nx-help-id="nx-fixed-prompt-suffix"><span>후행 고정 프롬프트</span><textarea id="nx-fixed-prompt-suffix" rows="4" maxlength="8000" placeholder="품질 태그 앞에 항상 붙음">\${h(i.fixed_prompt_suffix || "")}</textarea></label>
-            </div>
-            <div class="row" style="grid-column:1/-1;margin-top:4px;gap:8px;flex-wrap:wrap">
-              <button type="button" id="nx-fixed-prompt-save">고정 프롬프트 저장</button>
-              <button type="button" id="nx-fixed-prompt-export" class="secondary">고정 프롬프트 JSON 내보내기</button>
-              <button type="button" id="nx-fixed-prompt-import" class="secondary">JSON 파일 열기</button>
-              <input id="nx-fixed-prompt-file" type="file" accept=".json,application/json,text/plain" style="display:none">
-            </div>`;
+            </select></label>`;
 
 const VENDOR_ASSET_NAI_CT_NEEDLE =
   `      natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",`;
@@ -498,9 +488,7 @@ const VENDOR_ASSET_NAI_CT_NEEDLE =
 const VENDOR_ASSET_NAI_CT_PATCH =
   `      natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",
       asset_nai_tags: document.getElementById("nx-asset-nai-tags") ? N("nx-asset-nai-tags") || "off" : e.asset_nai_tags || "off",
-      costume: document.getElementById("nx-costume") ? !!document.getElementById("nx-costume").checked : !!e.costume,
-      fixed_prompt_prefix: document.getElementById("nx-fixed-prompt-prefix") ? String(N("nx-fixed-prompt-prefix") || "").slice(0, 8000) : String(e.fixed_prompt_prefix || "").slice(0, 8000),
-      fixed_prompt_suffix: document.getElementById("nx-fixed-prompt-suffix") ? String(N("nx-fixed-prompt-suffix") || "").slice(0, 8000) : String(e.fixed_prompt_suffix || "").slice(0, 8000),`;
+      costume: document.getElementById("nx-costume") ? !!document.getElementById("nx-costume").checked : !!e.costume,`;
 
 const VENDOR_ASSET_NAI_HELP_NEEDLE =
   `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
@@ -512,8 +500,6 @@ const VENDOR_ASSET_NAI_HELP_PATCH =
     "nx-costume": { title: "코스튬", body: "켜면 메인 태거가 캐릭터별 코스튬 목록을 보고 샷마다 복장을 고릅니다(이름·번호). 꺼도 에셋으로 캐릭을 만들 때는 복장이 코스튬으로 나뉘어 저장됩니다. 샷에 고른 값이 없으면 항상 index 0(기본)을 씁니다." },
     "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(Asset Maid 기본 사이즈). ComfyUI는 워크플로 Empty Latent 등에 [[width]]/[[height]]를 넣어야 반영됩니다. 끄면 NAI Width/Height 설정을 씁니다." },
     "nx-llm-json-retry": { title: "JSON 오류 시 재시도", body: "메인 태거 응답이 JSON으로 파싱되지 않으면, 오류 내용을 붙여 LLM에 한 번 더 요청합니다. 재시도도 실패하면 작업이 오류로 끝납니다." },
-    "nx-fixed-prompt-prefix": { title: "선행 고정 프롬프트", body: "값이 있으면 사람 태그 다음·스타일 프리셋/장면 앞에 항상 붙습니다. 프리셋이 바뀌어도 유지됩니다." },
-    "nx-fixed-prompt-suffix": { title: "후행 고정 프롬프트", body: "값이 있으면 장면·큐레이션 뒤·NAI 품질 태그 앞에 항상 붙습니다. JSON으로 내보내/가져오기 할 수 있습니다." },
 `;
 
 /** Models → ComfyUI: document [[width]]/[[height]] (auto_aspect / NAI W·H). */
@@ -558,26 +544,24 @@ const VENDOR_CURATION_TABS_NEEDLE = `S = {
 
 const VENDOR_CURATION_TABS_PATCH = `S = {
       dashboard: "대시보드",
-      gen_options: "생성 옵션",
-      style_presets: "스타일 프리셋",
+      card: "카드 설정",
       characters: "캐릭터",
-      models: "모델 설정",
-      explorer: "이미지 탐색",
-      curation: "큐레이팅",
       prompts: "프롬프트",
-      changelog: "업데이트 내역",
-      debug: "디버그"
+      models: "모델 설정",
+      curation: "큐레이팅",
+      explorer: "이미지 탐색",
+      debug: "디버그",
+      changelog: "업데이트 내역"
     }, E = [
       "dashboard",
-      "gen_options",
-      "style_presets",
+      "card",
       "characters",
-      "models",
-      "explorer",
-      "curation",
       "prompts",
-      "changelog",
-      "debug"
+      "models",
+      "curation",
+      "explorer",
+      "debug",
+      "changelog"
     ]`;
 
 const VENDOR_CURATION_PANEL_NEEDLE =
@@ -642,59 +626,6 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.2.14</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>탐색기 선택바: 선택ZIP · 저장 · ★/☆ · 선택해제 (짧은 라벨)</li>
-            <li>탐색기 하단 조작 안내 notice 박스 제거(그리드 공간 확보)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.2.13</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>탐색기 탭에서만 상단 전체저장·설정 내보내기/불러오기·도움말 숨김(DOM :has 기반 — 다른 탭 복귀 시 항상 복구)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.2.12</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>탐색기: 폴더 ZIP 앞에 폴더 접기/펼치기 · ≤900px에서도 2열 유지(접을 때만 전체 너비)</li>
-            <li>탐색기: 즐겨찾기만/삭제/선택해제·카드 ★ — 이미지에 가리지 않도록 z-index 보정</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.2.11</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>카드 설정 탭 분리: 생성 옵션 / 스타일 프리셋 · 탭 순서 재배치(모델 설정 포함)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.2.10</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>고정 프롬프트: 저장 버튼(JSON 내보내기 왼쪽) · 8000자 상한으로 전체저장 setItem Error 완화</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.2.9</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>재생성·태그 플로팅: 버튼 한 줄씩 크게(태그/재생성/중단/프리셋) · 접기→여백+펼치기만</li>
-            <li>참고 Strength/Fidelity: parseInt 저장 버그 수정(소수점이 0·0.01로 깨지던 문제)</li>
-            <li>캐릭터 참고 image: character / character&style / style 선택</li>
-            <li>이미지 뷰어: 헤더 버튼·프리셋 목록·리롤 터치 크게</li>
-            <li>뷰어 base/char 칩 키움 · 이미지 영역 예약 높이 조정(칩 잘림 방지)</li>
-            <li>펼친 뷰어: 태그/재생성/중단 → 이미지 옵션바 왼쪽(리롤 맞은편)</li>
-            <li>헤더 ◀▶상시·설정·접기 우측 고정 · 상시 라벨은 색만 변경</li>
-            <li>이미지 옵션: 태그/재생성/중단 좌하단 · 리롤 포함 투명도 40%</li>
-            <li>이미지 옵션 버튼 클릭: SafeDOM 좌표 hit-test로 복구</li>
-            <li>캐릭터 참고이미지 「끄기」 저장이 이전 vibe/image로 되돌아가던 버그 수정</li>
-            <li>캐릭터 참고이미지: 새로고침/업뎃 후 빈 미리보기+「설정됨」 — vibe처럼 전용 키로 저장·미리보기 복구</li>
-            <li>image reference: Precise Reference와 vibe 동시 전송 금지(NAI 비호환) · director용 PNG 변환</li>
-            <li>image reference: 원본 해상도 PNG로 페이로드 초과하던 문제 — NAI 캔버스에 맞춰 축소 후 전송</li>
-            <li>image reference 400: vibe 필드/normalize 제거 · 정확한 NAI 캔버스 PNG만 전송(webp 폴백 제거)</li>
-            <li>image reference: 비율→1024×1536/1536×1024/1472² 패딩 후 webp q0.5 전송(원본 크기 불일치가 400 원인)</li>
-            <li>카드 생성옵션: 선행/후행 고정 프롬프트 2열 + JSON 내보내기·가져오기 · 생성 시 프리셋/장면에 항상 합침</li>
-          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.8</strong>
@@ -1401,7 +1332,6 @@ const VENDOR_EXPLORER_ENSURE_PATCH =
     if (!t.explorer.folderKey) t.explorer.folderKey = "__pick__";
     if (!t.explorer.expandedChars || typeof t.explorer.expandedChars != "object") t.explorer.expandedChars = {};
     if (!t.explorer.folderScroll || typeof t.explorer.folderScroll != "object") t.explorer.folderScroll = {};
-    if (t.explorer.foldersCollapsed == null) t.explorer.foldersCollapsed = !1;
     return t.explorer;
   }`;
 
@@ -1443,27 +1373,7 @@ body:has(.explorer-shell){overflow:hidden;height:100dvh;max-height:100dvh}
 .explorer-loading-spin{width:28px;height:28px;border-radius:999px;border:2px solid rgba(255,255,255,.18);border-top-color:rgba(167,139,250,.95);animation:nxExSpin .7s linear infinite}
 @keyframes nxExSpin{to{transform:rotate(360deg)}}
 .explorer-foot{flex:0 0 auto;margin:0!important;padding:8px 12px!important;font-size:12px;line-height:1.4}
-.explorer-selbar{position:relative;z-index:6;flex-shrink:0;isolation:isolate}
-.explorer-main-head{position:relative;z-index:6;flex-shrink:0}
-.explorer-card .ex-star{z-index:8!important}
-.explorer-card .ex-check{z-index:7}
-.explorer-layout.folders-collapsed{grid-template-columns:minmax(0,1fr)!important}
-.explorer-layout.folders-collapsed .explorer-side{display:none}
-/* Explorer-only: hide global save/export/import + help. Gated on .explorer-shell in the
-   DOM — leaving the tab removes the shell and restores chrome (no sticky JS display:none). */
-#nx-shell:has(.explorer-shell) .head-help,
-#nx-shell:has(.explorer-shell) #nx-save-flash,
-#nx-shell:has(.explorer-shell) #nx-save-all,
-#nx-shell:has(.explorer-shell) #nx-export-all,
-#nx-shell:has(.explorer-shell) #nx-import-all{display:none!important}
-/* Other tabs: force chrome controls visible even if a prior inline style tried to hide them. */
-#nx-shell:not(:has(.explorer-shell)) .head-help{display:flex!important;visibility:visible!important;opacity:1!important;border-color:rgba(124,108,255,.32);background:rgba(14,18,30,.78);box-shadow:inset 0 0 0 1px rgba(124,108,255,.1)}
-#nx-shell:not(:has(.explorer-shell)) #nx-save-all,
-#nx-shell:not(:has(.explorer-shell)) #nx-export-all,
-#nx-shell:not(:has(.explorer-shell)) #nx-import-all{display:inline-flex!important;visibility:visible!important;opacity:1!important;font-weight:700}
-#nx-shell:not(:has(.explorer-shell)) #nx-save-flash{visibility:visible!important;opacity:1!important}
-/* Keep side+grid 2-col even at ≤900px; collapse is the only full-width mode. */
-@media(max-width:900px){.explorer-layout{grid-template-columns:minmax(120px,38%) minmax(0,1fr);grid-template-rows:none}.explorer-layout.folders-collapsed{grid-template-columns:minmax(0,1fr)!important}}`;
+@media(max-width:900px){.explorer-layout{grid-template-columns:1fr;grid-template-rows:minmax(140px,28%) minmax(0,1fr)}}`;
 
 const VENDOR_EXPLORER_GRID_CSS_NEEDLE =
   `.explorer-grid{position:relative;display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--ex-thumb,148px),1fr));gap:12px;padding:14px;max-height:620px;overflow:auto;user-select:none}`;
@@ -1478,30 +1388,16 @@ const VENDOR_EXPLORER_SHELL_OPEN_NEEDLE =
 const VENDOR_EXPLORER_SHELL_OPEN_PATCH =
   `    return \`
       <div class="explorer-shell">
-      <div class="explorer-layout\${e.foldersCollapsed ? " folders-collapsed" : ""}">`;
+      <div class="explorer-layout">`;
 
 const VENDOR_EXPLORER_SHELL_FOOT_NEEDLE =
   `      <div class="notice info" style="margin-top:12px">클릭=선택 · Shift 범위 · Ctrl/⌘ 토글 · 더블클릭=크게보기 · 드래그=박스선택 · Del=삭제 · ZIP에 manifest 포함(불러오기 시 content_hash 재부착).</div>
       <div id="nx-explorer-ctx" class="explorer-ctx">`;
 
 const VENDOR_EXPLORER_SHELL_FOOT_PATCH =
-  `      </div>
+  `      <div class="notice info explorer-foot">클릭=선택 · Shift 범위 · Ctrl/⌘ 토글 · 더블클릭=크게보기 · 드래그=박스선택 · Del=삭제 · ZIP에 manifest 포함(불러오기 시 content_hash 재부착).</div>
+      </div>
       <div id="nx-explorer-ctx" class="explorer-ctx">`;
-
-/** One folders collapse toggle before 폴더 ZIP; keeps a reopen control when the side is hidden. */
-const VENDOR_EXPLORER_FOLDERS_TOGGLE_NEEDLE =
-  `              <button type="button" id="nx-explorer-export-folder" class="secondary" style="min-height:30px;padding:4px 10px">폴더 ZIP</button>`;
-
-const VENDOR_EXPLORER_FOLDERS_TOGGLE_PATCH =
-  `              <button type="button" id="nx-explorer-folders-toggle" class="secondary" style="min-height:30px;padding:4px 10px" title="폴더 패널 접기/펼치기">\${e.foldersCollapsed ? "폴더 펼치기" : "폴더 접기"}</button>
-              <button type="button" id="nx-explorer-export-folder" class="secondary" style="min-height:30px;padding:4px 10px">폴더 ZIP</button>`;
-
-/** Upstream ≤900px stacks explorer to 1 col — keep head wrap only so our 2-col CSS can win. */
-const VENDOR_EXPLORER_MOBILE_1COL_NEEDLE =
-  `@media(max-width:900px){.explorer-layout{grid-template-columns:1fr}.head{flex-wrap:wrap;min-height:0;align-items:stretch}.head-help{order:3;flex:1 1 100%;max-width:none;min-width:0;height:72px;min-height:72px;max-height:72px}.head-help-title{flex-basis:96px;width:96px;max-width:96px}}`;
-
-const VENDOR_EXPLORER_MOBILE_1COL_PATCH =
-  `@media(max-width:900px){.head{flex-wrap:wrap;min-height:0;align-items:stretch}.head-help{order:3;flex:1 1 100%;max-width:none;min-width:0;height:72px;min-height:72px;max-height:72px}.head-help-title{flex-basis:96px;width:96px;max-width:96px}}`;
 
 const VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE =
   `    const folderButtons = \`
@@ -1549,27 +1445,6 @@ const VENDOR_EXPLORER_GRID_HTML_NEEDLE =
 
 const VENDOR_EXPLORER_GRID_HTML_PATCH =
   `          <div class="explorer-grid" id="nx-explorer-grid" style="--ex-thumb:\${thumb}px"><div class="explorer-marquee" id="nx-explorer-marquee"></div>\${o === "__pick__" ? '<div class="explorer-pick-hint">왼쪽에서 캐릭터 채팅을 고르거나<br>통합 이미지보기를 눌러 주세요.</div>' : etWindowed(a, 0)}</div>`;
-
-/** Shorter selbar labels so mobile/narrow chrome fits. */
-const VENDOR_EXPLORER_SELBAR_LABELS_NEEDLE =
-  `            <button type="button" id="nx-explorer-export-sel" class="secondary" style="min-height:28px;padding:4px 10px">선택 ZIP</button>
-            <button type="button" id="nx-explorer-save-one" class="secondary" style="min-height:28px;padding:4px 10px">단건 저장</button>
-            <button type="button" id="nx-explorer-favonly" class="secondary ex-mobile-select \${e.favOnly ? "active" : ""}" style="min-height:28px;padding:4px 10px" title="별 표시한 이미지만 보기">\${e.favOnly ? "★ 즐겨찾기만" : "☆ 즐겨찾기만"}</button>
-            <button type="button" id="nx-explorer-delete-sel" style="min-height:28px;padding:4px 10px">삭제</button>
-            <button type="button" id="nx-explorer-clear-sel" class="secondary" style="min-height:28px;padding:4px 10px">선택 해제</button>`;
-
-const VENDOR_EXPLORER_SELBAR_LABELS_PATCH =
-  `            <button type="button" id="nx-explorer-export-sel" class="secondary" style="min-height:28px;padding:4px 10px">선택ZIP</button>
-            <button type="button" id="nx-explorer-save-one" class="secondary" style="min-height:28px;padding:4px 10px">저장</button>
-            <button type="button" id="nx-explorer-favonly" class="secondary ex-mobile-select \${e.favOnly ? "active" : ""}" style="min-height:28px;padding:4px 10px" title="별 표시한 이미지만 보기">\${e.favOnly ? "★" : "☆"}</button>
-            <button type="button" id="nx-explorer-delete-sel" style="min-height:28px;padding:4px 10px">삭제</button>
-            <button type="button" id="nx-explorer-clear-sel" class="secondary" style="min-height:28px;padding:4px 10px">선택해제</button>`;
-
-const VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE =
-  `favBtn && (favBtn.classList.toggle("active", !!ex.favOnly), favBtn.textContent = ex.favOnly ? "★ 즐겨찾기만" : "☆ 즐겨찾기만");`;
-
-const VENDOR_EXPLORER_FAVONLY_PAINT_PATCH =
-  `favBtn && (favBtn.classList.toggle("active", !!ex.favOnly), favBtn.textContent = ex.favOnly ? "★" : "☆");`;
 
 const VENDOR_EXPLORER_ET_FN_NEEDLE =
   `  function et(e) {
@@ -1967,16 +1842,6 @@ const VENDOR_EXPLORER_FOLDER_BIND_NEEDLE =
 const VENDOR_EXPLORER_FOLDER_BIND_PATCH =
   `    bindExplorerCharToggles();
     bindExplorerGridScroll();
-    const foldBtn = document.getElementById("nx-explorer-folders-toggle");
-    if (foldBtn && !foldBtn.dataset.nxBound) {
-      foldBtn.dataset.nxBound = "1";
-      foldBtn.addEventListener("click", () => {
-        const ex = ensureExplorerState();
-        ex.foldersCollapsed = !ex.foldersCollapsed;
-        document.querySelector(".explorer-layout")?.classList.toggle("folders-collapsed", !!ex.foldersCollapsed);
-        foldBtn.textContent = ex.foldersCollapsed ? "폴더 펼치기" : "폴더 접기";
-      });
-    }
     const o = document.getElementById("nx-explorer-folders");
     if (o && !o.dataset.nxBound) {
       o.dataset.nxBound = "1";
@@ -2014,7 +1879,7 @@ const VENDOR_PRESET_HEAD_SAVE_PATCH = `              <div class="prompt-title">�
             <div class="row" style="margin:0;gap:8px;align-items:center;flex-shrink:0">
               <span class="badge \${U.length ? "custom" : "default"}">\${U.length}개</span>
               <button type="button" id="nx-preset-from-image-head" class="secondary\${t.presetImageFocus ? " armed" : ""}" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">\${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
-              <button type="button" id="nx-save-card-head">스타일 프리셋 저장</button>
+              <button type="button" id="nx-save-card-head">카드 설정 저장</button>
             </div>
           </div>
           <div class="preset-chip-row">\${I || '<span class="muted">아직 프리셋이 없습니다. JSON을 불러오세요.</span>'}</div>`;
@@ -2053,74 +1918,7 @@ const VENDOR_PRESET_SAVE_EVT_PATCH = `    }), (() => {
       };
       document.getElementById("nx-save-card")?.addEventListener("click", saveCard);
       document.getElementById("nx-save-card-head")?.addEventListener("click", saveCard);
-      document.getElementById("nx-fixed-prompt-save")?.addEventListener("click", saveCard);
-      document.getElementById("nx-fixed-prompt-export")?.addEventListener("click", () => {
-        try {
-          const a = Ct(), payload = {
-            fixed_prompt_prefix: String(a.fixed_prompt_prefix || ""),
-            fixed_prompt_suffix: String(a.fixed_prompt_suffix || "")
-          }, blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), url = URL.createObjectURL(blob), link = document.createElement("a");
-          link.href = url, link.download = \`inlay-fixed-prompts-\${new Date().toISOString().slice(0, 10)}.json\`, document.body.appendChild(link), link.click(), link.remove(), setTimeout(() => URL.revokeObjectURL(url), 1e3);
-          t.uiMessage = { type: "success", text: "고정 프롬프트 JSON 내보내기" }, $e("내보냄");
-        } catch (err) {
-          t.uiMessage = { type: "error", text: z(err?.message || err) };
-        }
-        P().catch(() => null);
-      }), document.getElementById("nx-fixed-prompt-import")?.addEventListener("click", () => document.getElementById("nx-fixed-prompt-file")?.click()), document.getElementById("nx-fixed-prompt-file")?.addEventListener("change", async (ev) => {
-        const file = ev.target?.files?.[0];
-        ev.target && (ev.target.value = "");
-        if (!file) return;
-        try {
-          const raw = await file.text(), data = JSON.parse(raw), prefix = String(data?.fixed_prompt_prefix ?? data?.prefix ?? ""), suffix = String(data?.fixed_prompt_suffix ?? data?.suffix ?? ""), a = Ct();
-          a.fixed_prompt_prefix = prefix, a.fixed_prompt_suffix = suffix;
-          const prefixEl = document.getElementById("nx-fixed-prompt-prefix"), suffixEl = document.getElementById("nx-fixed-prompt-suffix");
-          prefixEl && (prefixEl.value = prefix), suffixEl && (suffixEl.value = suffix);
-          await flushSettingsSave(), await pe({ card: a }), t.uiMessage = { type: "success", text: "고정 프롬프트 JSON 가져옴" }, $e("가져옴");
-        } catch (err) {
-          t.uiMessage = { type: "error", text: z(err?.message || err) };
-        }
-        await P();
-      });
     })();`;
-
-/** Split former 카드 설정 into 생성 옵션 / 스타일 프리셋 tabs (late: after card HTML patches). */
-const VENDOR_CARD_TAB_SPLIT_COND_NEEDLE = `    else if (t.uiTab === "card") {`;
-const VENDOR_CARD_TAB_SPLIT_COND_PATCH = `    else if (t.uiTab === "card" || t.uiTab === "gen_options" || t.uiTab === "style_presets") {
-      if (t.uiTab === "card") t.uiTab = "gen_options";`;
-
-const VENDOR_CARD_TAB_SPLIT_OPEN_NEEDLE = `      u = \`
-        <div class="card model-card">
-          <div class="prompt-group-label">생성 옵션</div>`;
-const VENDOR_CARD_TAB_SPLIT_OPEN_PATCH = `      u = \`\${t.uiTab === "style_presets" ? "" : \`
-        <div class="card model-card">
-          <div class="prompt-group-label">생성 옵션</div>`;
-
-const VENDOR_CARD_TAB_SPLIT_MID_NEEDLE = `          <div class="notice info" style="margin-top:12px">캐릭터 수 제한 N이면 LLM 프롬프트에 반영되며, 생성 시에도 char1~char\${h(i.character_max ?? 6)}까지만 들어갑니다.</div>
-        </div>
-        <div class="card model-card">
-          <div class="model-head">`;
-const VENDOR_CARD_TAB_SPLIT_MID_PATCH = `          <div class="notice info" style="margin-top:12px">캐릭터 수 제한 N이면 LLM 프롬프트에 반영되며, 생성 시에도 char1~char\${h(i.character_max ?? 6)}까지만 들어갑니다.</div>
-          <div class="row" style="margin-top:14px"><button type="button" id="nx-save-gen-options">생성 옵션 저장</button></div>
-        </div>\`}\${t.uiTab === "gen_options" ? "" : \`
-        <div class="card model-card">
-          <div class="model-head">`;
-
-const VENDOR_CARD_TAB_SPLIT_CLOSE_NEEDLE = `            <input id="nx-preset-file-input" type="file" accept=".json,application/json,text/plain" style="display:none">
-          </div>
-        </div>\`;
-    } else if (t.uiTab === "characters") {`;
-const VENDOR_CARD_TAB_SPLIT_CLOSE_PATCH = `            <input id="nx-preset-file-input" type="file" accept=".json,application/json,text/plain" style="display:none">
-          </div>
-        </div>\`}\`;
-    } else if (t.uiTab === "characters") {`;
-
-const VENDOR_CT_GATE_NEEDLE = `  function Ct() {
-    if (!document.getElementById("nx-mode") && !document.getElementById("nx-char-max")) return null;`;
-const VENDOR_CT_GATE_PATCH = `  function Ct() {
-    if (!document.getElementById("nx-mode") && !document.getElementById("nx-char-max") && !document.getElementById("nx-custom-pos") && !document.getElementById("nx-preset-select") && !document.getElementById("nx-fixed-prompt-prefix")) return null;`;
-
-const VENDOR_SHOW_CARD_TAB_NEEDLE = `        if (opts?.showCardTab) t.uiTab = "card";`;
-const VENDOR_SHOW_CARD_TAB_PATCH = `        if (opts?.showCardTab) t.uiTab = "style_presets";`;
 
 const VENDOR_PRESET_QT_NEEDLE = `}, mt = ($, L) => \`\${String($ || "preset").toLowerCase().replace(/[^a-z0-9\\uac00-\\ud7a3]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 48) || "preset"}_\${L}_\${Math.random().toString(36).slice(2, 7)}\`, Qt = ($, L) => {
   if (!$ || typeof $ != "object") return null;
@@ -2221,7 +2019,7 @@ const VENDOR_PRESET_HTML_PATCH = `            <label class="wide"><span>프리�
             <button type="button" id="nx-preset-from-image" class="secondary\${t.presetImageFocus ? " armed" : ""}" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">\${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
             <span class="autotag-badge\${t.presetImageFocus ? " show" : ""}" data-preset-image-badge>\${t.presetImageFocus ? "선택됨 · Ctrl+V" : ""}</span>
             <input id="nx-preset-from-image-file" type="file" accept="image/*" style="display:none">
-            <button id="nx-save-card">스타일 프리셋 저장</button>
+            <button id="nx-save-card">카드 설정 저장</button>
             <button type="button" id="nx-preset-export" class="secondary">JSON 내보내기</button>
             <button type="button" id="nx-preset-file" class="secondary">JSON 파일 열기</button>
             <input id="nx-preset-file-input" type="file" accept=".json,application/json,text/plain" style="display:none">
@@ -2458,7 +2256,7 @@ const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
         await runPresetFromImage(f);
       });
       t._presetImagePasteBound || (t._presetImagePasteBound = !0, window.addEventListener("paste", async (ev) => {
-        if (!t.presetImageFocus || !t.uiOpen || t.uiTab !== "style_presets" && t.uiTab !== "card") return;
+        if (!t.presetImageFocus || !t.uiOpen || t.uiTab !== "card") return;
         const item = Array.from(ev.clipboardData?.items || []).find((x) => x.type.startsWith("image/"));
         if (!item) return;
         ev.preventDefault();
@@ -4996,13 +4794,6 @@ const VENDOR_CHAR_REF_DASH_HTML_PATCH =
             </label>
             <label data-nx-help-id="nx-char-ref-fidelity"><span>참고 Fidelity</span>
               <input id="nx-char-ref-fidelity" type="number" min="0.01" max="1" step="0.01" value="\${h(i.char_ref_fidelity ?? 1)}">
-            </label>
-            <label data-nx-help-id="nx-char-ref-image-type"><span>참고 Image 종류</span>
-              <select id="nx-char-ref-image-type">
-                <option value="character" \${i.char_ref_image_type === "character" ? "selected" : ""}>character</option>
-                <option value="character&style" \${(i.char_ref_image_type || "character&style") === "character&style" ? "selected" : ""}>character & style</option>
-                <option value="style" \${i.char_ref_image_type === "style" ? "selected" : ""}>style</option>
-              </select>
             </label>`;
 
 const VENDOR_CHAR_REF_DASH_SAVE_NEEDLE =
@@ -5011,19 +4802,13 @@ const VENDOR_CHAR_REF_DASH_SAVE_NEEDLE =
 const VENDOR_CHAR_REF_DASH_SAVE_PATCH =
   `      hover_preview_corner: Ut(N("nx-hover-corner")),
       char_ref_mode: (() => {
-        const v = String(N("nx-char-ref-mode") || "").toLowerCase();
-        if (v === "vibe" || v === "image" || v === "off") return v;
-        const b = String(t.backendSettings?.card?.char_ref_mode || "off").toLowerCase();
+        const v = N("nx-char-ref-mode");
+        if (v === "vibe" || v === "image") return v;
+        const b = String(t.backendSettings?.card?.char_ref_mode || "off");
         return b === "vibe" || b === "image" ? b : "off";
       })(),
-      char_ref_strength: Math.max(0.01, Math.min(1, Number(N("nx-char-ref-strength") || t.backendSettings?.card?.char_ref_strength || 0.6) || 0.6)),
-      char_ref_fidelity: Math.max(0.01, Math.min(1, Number(N("nx-char-ref-fidelity") || t.backendSettings?.card?.char_ref_fidelity || 1) || 1)),
-      char_ref_image_type: (() => {
-        const v = N("nx-char-ref-image-type");
-        if (v === "character" || v === "style" || v === "character&style") return v;
-        const b = String(t.backendSettings?.card?.char_ref_image_type || "character&style");
-        return b === "character" || b === "style" || b === "character&style" ? b : "character&style";
-      })(),
+      char_ref_strength: Math.max(0.01, Math.min(1, Ne(N("nx-char-ref-strength"), Number(t.backendSettings?.card?.char_ref_strength ?? 0.6) || 0.6))),
+      char_ref_fidelity: Math.max(0.01, Math.min(1, Ne(N("nx-char-ref-fidelity"), Number(t.backendSettings?.card?.char_ref_fidelity ?? 1) || 1))),
       viewer_minimize_mode: N("nx-minimize-mode") === "toolbar" ? "toolbar" : "icon"`;
 
 const VENDOR_CHAR_REF_HELP_NEEDLE =
@@ -5032,8 +4817,7 @@ const VENDOR_CHAR_REF_HELP_PATCH =
   `    "nx-hover-corner": { title: "이미지 모서리", body: "모바일 모서리 고정이 켜져 있을 때 상시 이미지를 붙일 모서리(우상·우하·좌상·좌하)를 고릅니다. 스티키 핀은 그 이미지 상단 중앙에 따라갑니다." },
     "nx-char-ref-mode": { title: "캐릭터 참고이미지", body: "캐릭터 탭/수정에 올린 참고이미지를 샷 생성에 넣습니다. vibe는 Anlas가 적고, image reference는 더 강하지만 Anlas를 많이 씁니다. 끄면 참고이미지를 보관만 합니다." },
     "nx-char-ref-strength": { title: "참고 Strength", body: "캐릭터 참고이미지 영향 강도(0.01~1)." },
-    "nx-char-ref-fidelity": { title: "참고 Fidelity", body: "vibe면 information_extracted, image면 Reference Fidelity(0.01~1)." },
-    "nx-char-ref-image-type": { title: "참고 Image 종류", body: "image reference 모드일 때만 사용. character / character & style / style." },`;
+    "nx-char-ref-fidelity": { title: "참고 Fidelity", body: "vibe면 information_extracted, image면 Reference Fidelity(0.01~1)." },`;
 
 /** Edit popup: hide regenerate button UI; put 참고이미지 in that slot (handlers kept). */
 const VENDOR_CHAR_REF_EDIT_HTML_NEEDLE =
@@ -7043,7 +6827,7 @@ const VENDOR_OVERLAY_HELP_PATCH =
 const VENDOR_TOOLBAR_SANGSI_NEEDLE =
   `\`<span style="cursor:pointer;background:\${Nt() ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">\${Nt() ? "상시ON" : "상시"}</span>\`,`;
 const VENDOR_TOOLBAR_SANGSI_PATCH =
-  `\`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">상시</span>\`,`;
+  `\`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "상시ON" : "상시"}</span>\`,`;
 
 const VENDOR_TOOLBAR_SANGSI_REFRESH_NEEDLE =
   `const A = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await c.getChildren()) : [], inlineOn = Nt();`;
@@ -7058,8 +6842,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.14",
-    body: "탐색기 선택바 짧은 라벨·하단 안내 제거. 업데이트 내역 탭 참고."
+    title: "2.2.8",
+    body: "캐릭 참고이미지 · 작업 중단 · 플로팅/설정 겹침 수정 · 진행 토스트. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -7939,7 +7723,7 @@ const VENDOR_RISU_SETTINGS_UNLOAD_PATCH =
 const VENDOR_ACTIONS_HELP_NEEDLE =
   `"nx-minimize-mode": { title: "접힘 표시 방식", body: "플로팅 아이콘: 접으면 작은 아이콘으로 따로 둔 자리로 갑니다. 상단 툴바 한 줄: 접어도 지금 창 자리 그대로 얇은 바로만 줄어듭니다." },`;
 const VENDOR_ACTIONS_HELP_PATCH =
-  `"nx-minimize-mode": { title: "접힘 표시 방식", body: "플로팅 아이콘: 작은 🖼️, 클릭하면 펼침. 상단 툴바 한 줄: 창 자리에서 얇은 바. 재생성·태그 플로팅: 큰 세로 버튼(태그/재생성/중단/프리셋), 접기면 여백+펼치기만, 길게 누르면 전체 뷰어." },`;
+  `"nx-minimize-mode": { title: "접힘 표시 방식", body: "플로팅 아이콘: 작은 🖼️, 클릭하면 펼침. 상단 툴바 한 줄: 창 자리에서 얇은 바. 재생성·태그 플로팅: 접으면 태그/재생성 + 프리셋 미니 패널, 길게 누르면 전체 뷰어 펼침." },`;
 
 const VENDOR_ACTIONS_SELECT_NEEDLE =
   `                <option value="icon" \${(i.viewer_minimize_mode || "icon") === "icon" ? "selected" : ""}>플로팅 아이콘</option>
@@ -7972,17 +7756,19 @@ const VENDOR_ACTIONS_CLAMP_NEEDLE =
       } else dispW = 48, dispH = 48;
     } else {`;
 
-/** Expanded header drops 태그/재생성 — those live on the image options bar (left). */
+/** Expanded viewer header: 중단 after 재생성; index shift for 상시/설정/접기. */
 const VENDOR_VIEWER_STOP_HDR_NEEDLE =
   `        '<span style="cursor:pointer;background:#7c6cff;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="이 메시지의 모든 샷 재생성">재생성</span>',
         \`<span style="cursor:pointer;background:\${Nt() ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">\${Nt() ? "상시ON" : "상시"}</span>\`,`;
 const VENDOR_VIEWER_STOP_HDR_PATCH =
-  `        \`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">상시</span>\`,`;
+  `        '<span style="cursor:pointer;background:#7c6cff;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="이 메시지의 모든 샷 재생성">재생성</span>',
+        '<span style="cursor:pointer;background:#b91c1c;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="남은 생성 중단(진행 중은 끝까지)">중단</span>',
+        \`<span style="cursor:pointer;background:\${Nt() ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">\${Nt() ? "상시ON" : "상시"}</span>\`,`;
 
 const VENDOR_VIEWER_STOP_CLICK_NEEDLE =
   `                W === 0 ? await selectGalIndex(d.index - 1) : W === 1 ? await selectGalIndex(d.index + 1) : W === 2 ? await te() : W === 3 ? await rerollAllImages() : W === 4 ? await ae() : W === 5 ? (t.backendSettings?.card || {}).show_risu_settings_button !== !1 && await At() : W === 6 && await toggleMinimizeBtn();`;
 const VENDOR_VIEWER_STOP_CLICK_PATCH =
-  `                W === 0 ? await selectGalIndex(d.index - 1) : W === 1 ? await selectGalIndex(d.index + 1) : W === 2 ? await ae() : W === 3 ? (t.backendSettings?.card || {}).show_risu_settings_button !== !1 && await At() : W === 4 && await toggleMinimizeBtn();`;
+  `                W === 0 ? await selectGalIndex(d.index - 1) : W === 1 ? await selectGalIndex(d.index + 1) : W === 2 ? await te() : W === 3 ? await rerollAllImages() : W === 4 ? await optimisticStopJobs() : W === 5 ? await ae() : W === 6 ? (t.backendSettings?.card || {}).show_risu_settings_button !== !1 && await At() : W === 7 && await toggleMinimizeBtn();`;
 
 const VENDOR_VIEWER_STOP_LABEL_NEEDLE =
   `        // 0◀ 1▶ 2태그 3재생성 4상시 5설정 6접기
@@ -8014,29 +7800,35 @@ const VENDOR_VIEWER_STOP_LABEL_NEEDLE =
           typeof el.setStyleAttribute == "function" && colors[idx] && await el.setStyleAttribute(\`cursor:pointer;\${idx === 5 ? "display:inline-flex;" : ""}background:\${colors[idx]};color:\${idx === 4 ? "#fff" : "#dbe4f5"};padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)\`);
         }`;
 const VENDOR_VIEWER_STOP_LABEL_PATCH =
-  `        // 0◀ 1▶ 2상시 3설정 4접기 (태그/재생성/중단 → 이미지 옵션바; 상시는 색만)
+  `        // 0◀ 1▶ 2태그 3재생성 4중단 5상시 6설정 7접기
         const labels = [
           null,
           null,
-          "상시",
+          null,
+          null,
+          null,
+          inlineOn ? "상시ON" : "상시",
           (t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "설정" : "",
           d.minimized ? "펼치기" : "접기"
         ], colors = [
+          null,
+          null,
+          null,
           null,
           null,
           inlineOn ? "#0f766e" : "#334155",
           "#334155",
           "#1e293b"
         ];
-        for (let idx = 2; idx <= 4; idx += 1) {
+        for (let idx = 5; idx <= 7; idx += 1) {
           const el = A[idx];
           if (!el) continue;
-          if (idx === 3 && !labels[idx]) {
+          if (idx === 6 && !labels[idx]) {
             typeof el.setStyleAttribute == "function" && await el.setStyleAttribute("display:none");
             continue;
           }
           typeof el.setInnerHTML == "function" && labels[idx] && await el.setInnerHTML(labels[idx]);
-          typeof el.setStyleAttribute == "function" && colors[idx] && await el.setStyleAttribute(\`cursor:pointer;\${idx === 3 ? "display:inline-flex;" : ""}background:\${colors[idx]};color:\${idx === 2 ? "#fff" : "#dbe4f5"};padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.12)\`);
+          typeof el.setStyleAttribute == "function" && colors[idx] && await el.setStyleAttribute(\`cursor:pointer;\${idx === 6 ? "display:inline-flex;" : ""}background:\${colors[idx]};color:\${idx === 5 ? "#fff" : "#dbe4f5"};padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)\`);
         }`;
 
 const VENDOR_ACTIONS_CLAMP_PATCH =
@@ -8045,154 +7837,15 @@ const VENDOR_ACTIONS_CLAMP_PATCH =
         dispW = Math.max(280, Math.min(storeW, vw - margin * 2));
         dispH = 40;
       } else if (mode === "actions") {
-        dispW = 160;
-        dispH = t.galleryUi?.actionsFolded ? 88 : 328;
+        dispW = 200;
+        dispH = 112;
       } else dispW = 48, dispH = 48;
     } else {`;
-
-/** Mobile-friendlier viewer header: bigger nav/tag buttons + taller chrome. */
-const VENDOR_VIEWER_HDR_TOUCH_NEEDLE =
-  `        '<span style="cursor:pointer;background:#475569;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">◀</span>',
-        '<span style="cursor:pointer;background:#475569;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">▶</span>',
-        '<span style="cursor:pointer;background:#0f766e;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="LLM 태그 재생성">태그</span>',`;
-const VENDOR_VIEWER_HDR_TOUCH_PATCH =
-  `        '<span style="cursor:pointer;background:#475569;color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">◀</span>',
-        '<span style="cursor:pointer;background:#475569;color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">▶</span>',`;
-
-const VENDOR_VIEWER_HDR_TAIL_TOUCH_NEEDLE =
-  `        \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};background:#334155;color:#dbe4f5;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
-        \`<span style="cursor:pointer;background:#1e293b;color:#dbe4f5;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)">\${minimizedInit ? "펼치기" : "접기"}</span>\``;
-const VENDOR_VIEWER_HDR_TAIL_TOUCH_PATCH =
-  `        \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};align-items:center;justify-content:center;background:#334155;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
-        \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${minimizedInit ? "펼치기" : "접기"}</span>\``;
-
-const VENDOR_VIEWER_HDR_CHROME_TOUCH_NEEDLE =
-  `    const r = await H(e, "div", { style: Ft(startGeo, minimizedInit) }), i = await H(e, "div", { style: "height:36px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 10px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06);cursor:move;user-select:none;flex-shrink:0;touch-action:none;" }), s = await H(e, "span", {
-      style: "font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;",
-      html: "Inlay Viewer"
-    }), viewerPresetLabel = (() => {
-      const card = kt(t.backendSettings?.card || {}), presets = Array.isArray(card.presets) ? card.presets : [], activeId = resolveActivePresetId(card), active = presets.find((p) => presetIdEq(p.id, activeId));
-      const name = String(active?.name || (presets.length ? "프리셋" : "없음"));
-      return \`\${name.length > 12 ? \`\${name.slice(0, 11)}…\` : name} ▾\`;
-    })(), viewerPresetBtn = await H(e, "span", {
-      // Risu SafeDOM blocks change/input events — use clickable control + pointer hit-test instead of <select>.
-      style: "max-width:140px;min-width:88px;flex:0 1 140px;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;font-size:11px;padding:0 8px;cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;",
-      text: viewerPresetLabel
-    }), viewerPresetMenu = await H(e, "div", {
-      style: "display:none;position:absolute;top:34px;left:10px;min-width:140px;max-width:220px;max-height:220px;overflow:auto;z-index:5;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;",
-      html: ""
-    }), c = await H(e, "div", {
-      style: "display:flex;gap:5px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;",`;
-const VENDOR_VIEWER_HDR_CHROME_TOUCH_PATCH =
-  `    const r = await H(e, "div", { style: Ft(startGeo, minimizedInit) }), i = await H(e, "div", { style: "min-height:52px;height:auto;display:flex;align-items:center;justify-content:flex-start;gap:8px;padding:8px 10px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06);cursor:move;user-select:none;flex-shrink:0;touch-action:none;flex-wrap:nowrap;" }), s = await H(e, "span", {
-      style: "font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;",
-      html: "Inlay Viewer"
-    }), viewerPresetLabel = (() => {
-      const card = kt(t.backendSettings?.card || {}), presets = Array.isArray(card.presets) ? card.presets : [], activeId = resolveActivePresetId(card), active = presets.find((p) => presetIdEq(p.id, activeId));
-      const name = String(active?.name || (presets.length ? "프리셋" : "없음"));
-      return \`\${name.length > 18 ? \`\${name.slice(0, 17)}…\` : name} ▾\`;
-    })(), viewerPresetBtn = await H(e, "span", {
-      // Risu SafeDOM blocks change/input events — use clickable control + pointer hit-test instead of <select>.
-      style: "max-width:200px;min-width:120px;flex:0 1 200px;height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:13px;font-weight:600;padding:0 12px;cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;",
-      text: viewerPresetLabel
-    }), viewerPresetMenu = await H(e, "div", {
-      style: "display:none;position:absolute;top:52px;left:10px;min-width:200px;max-width:min(92vw,320px);max-height:min(50vh,360px);overflow:auto;z-index:5;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;",
-      html: ""
-    }), c = await H(e, "div", {
-      style: "display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:nowrap;justify-content:flex-end;margin-left:auto;",`;
-
-const VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE =
-  `      const label = \`\${String(active?.name || (presets.length ? "프리셋" : "없음")).slice(0, 12)}\${String(active?.name || "").length > 12 ? "…" : ""} ▾\`;
-      try {
-        typeof d.presetSelect.setTextContent == "function" ? await d.presetSelect.setTextContent(label) : await d.presetSelect.setInnerHTML(h(label));
-      } catch {
-      }
-      if (d.presetMenu && typeof d.presetMenu.setInnerHTML == "function") {
-        const menuHtml = presets.length ? presets.map((p) => {
-          const on = presetIdEq(p.id, activeId);
-          return \`<div style="padding:7px 10px;cursor:pointer;font-size:11px;line-height:1.3;color:\${on ? "#e8eef8" : "#a6b1c2"};background:\${on ? "rgba(124,108,255,.22)" : "transparent"};border-bottom:1px solid rgba(255,255,255,.06)">\${h(p.name || p.id)}</div>\`;
-        }).join("") : '<div style="padding:8px 10px;font-size:11px;color:#778398">프리셋 없음</div>';
-        try {
-          await d.presetMenu.setInnerHTML(menuHtml);
-        } catch {
-        }
-      }
-      const presetChromeLive = !d.minimized || viewerMinimizeMode() === "toolbar";
-      try {
-        await d.presetMenu?.setStyleAttribute?.(\`display:\${d.presetMenuOpen && presetChromeLive ? "block" : "none"};position:absolute;top:34px;left:10px;min-width:140px;max-width:220px;max-height:220px;overflow:auto;z-index:20;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`);
-      } catch {
-      }`;
-const VENDOR_VIEWER_PRESET_MENU_TOUCH_PATCH =
-  `      const label = \`\${String(active?.name || (presets.length ? "프리셋" : "없음")).slice(0, 18)}\${String(active?.name || "").length > 18 ? "…" : ""} ▾\`;
-      try {
-        typeof d.presetSelect.setTextContent == "function" ? await d.presetSelect.setTextContent(label) : await d.presetSelect.setInnerHTML(h(label));
-      } catch {
-      }
-      if (d.presetMenu && typeof d.presetMenu.setInnerHTML == "function") {
-        const menuHtml = presets.length ? presets.map((p) => {
-          const on = presetIdEq(p.id, activeId);
-          return \`<div style="padding:14px 14px;cursor:pointer;font-size:14px;line-height:1.35;min-height:44px;box-sizing:border-box;display:flex;align-items:center;color:\${on ? "#e8eef8" : "#a6b1c2"};background:\${on ? "rgba(124,108,255,.22)" : "transparent"};border-bottom:1px solid rgba(255,255,255,.06)">\${h(p.name || p.id)}</div>\`;
-        }).join("") : '<div style="padding:14px;font-size:14px;color:#778398">프리셋 없음</div>';
-        try {
-          await d.presetMenu.setInnerHTML(menuHtml);
-        } catch {
-        }
-      }
-      const presetChromeLive = !d.minimized || viewerMinimizeMode() === "toolbar" || viewerMinimizeMode() === "actions";
-      const actionsMin = d.minimized && viewerMinimizeMode() === "actions", folded = !!(actionsMin && d.actionsFolded);
-      try {
-        await d.presetMenu?.setStyleAttribute?.(\`display:\${d.presetMenuOpen && presetChromeLive && !folded ? "block" : "none"};position:absolute;top:\${actionsMin ? "auto" : "52px"};\${actionsMin ? "bottom:56px;" : ""}left:10px;right:\${actionsMin ? "10px" : "auto"};min-width:\${actionsMin ? "0" : "200px"};max-width:\${actionsMin ? "none" : "min(92vw,320px)"};max-height:min(50vh,360px);overflow:auto;z-index:20;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`);
-      } catch {
-      }`;
-
-const VENDOR_VIEWER_IMG_REROLL_TOUCH_NEEDLE =
-  `      return \`<div style="position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center">\${spin}<span data-nx-img-reroll="1" style="position:absolute;right:8px;top:8px;z-index:3;cursor:pointer;background:rgba(124,108,255,.92);color:#fff;padding:5px 10px;border-radius:8px;font-size:11px;line-height:1;font-weight:600;border:1px solid rgba(255,255,255,.18);box-shadow:0 2px 10px rgba(0,0,0,.35);user-select:none" title="이 이미지만 리롤">리롤</span><img data-nx-main-img="1" src="\${src}" style="max-width:100%;max-height:100%;object-fit:contain" loading="eager" decoding="async" /></div>\`;`;
-const VENDOR_VIEWER_IMG_REROLL_TOUCH_PATCH =
-  `      const imgAct = (act, bg, label, title) => \`<span data-nx-img-act="\${act}" style="cursor:pointer;background:\${bg};color:#fff;padding:12px 14px;border-radius:10px;font-size:14px;line-height:1.2;font-weight:700;border:1px solid rgba(255,255,255,.18);box-shadow:0 2px 10px rgba(0,0,0,.35);user-select:none;min-height:44px;box-sizing:border-box;display:inline-flex;align-items:center;opacity:.4" title="\${title}">\${label}</span>\`;
-      const leftActs = \`<div data-nx-img-acts="1" style="position:absolute;left:8px;bottom:8px;z-index:3;display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 96px)">\${imgAct("tag", "#0f766e", "태그", "LLM 태그 재생성")}\${imgAct("regen", "#7c6cff", "재생성", "이 메시지의 모든 샷 재생성")}\${imgAct("stop", "#b91c1c", "중단", "남은 생성 중단(진행 중은 끝까지)")}</div>\`;
-      const spinBusy = busy ? \`<svg data-nx-busy-spin="1" width="18" height="18" viewBox="0 0 18 18" style="position:absolute;left:8px;top:8px;z-index:3;pointer-events:none" aria-hidden="true"><circle cx="9" cy="9" r="7" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="2"/><circle cx="9" cy="9" r="7" fill="none" stroke="#c4b5fd" stroke-width="2" stroke-linecap="round" stroke-dasharray="11 33"><animateTransform attributeName="transform" type="rotate" from="0 9 9" to="360 9 9" dur="0.7s" repeatCount="indefinite"/></circle></svg>\` : "";
-      return \`<div style="position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center">\${spinBusy}\${leftActs}<span data-nx-img-reroll="1" style="position:absolute;right:8px;top:8px;z-index:3;cursor:pointer;background:rgba(124,108,255,.92);color:#fff;padding:12px 14px;border-radius:10px;font-size:14px;line-height:1.2;font-weight:700;border:1px solid rgba(255,255,255,.18);box-shadow:0 2px 10px rgba(0,0,0,.35);user-select:none;min-height:44px;box-sizing:border-box;display:inline-flex;align-items:center;opacity:.4" title="이 이미지만 리롤">리롤</span><img data-nx-main-img="1" src="\${src}" style="max-width:100%;max-height:100%;object-fit:contain" loading="eager" decoding="async" /></div>\`;`;
-
-/** Hit-test image option bar: left 태그/재생성/중단 + right 리롤 (SafeDOM children walk). */
-const VENDOR_VIEWER_IMG_ACT_HIT_NEEDLE =
-  `        if (await X(S, _, O)) {
-          try {
-            const B = await S.getBoundingClientRect();
-            if (B && _ >= B.right - 78 && _ <= B.right - 4 && O >= B.top + 4 && O <= B.top + 40) {
-              await rerollImage();
-              return;
-            }
-          } catch {
-          }
-        }`;
-const VENDOR_VIEWER_IMG_ACT_HIT_PATCH =
-  `        if (await X(S, _, O)) {
-          try {
-            // SafeDOM: innerHTML kids often lack getChildren/getAttribute — hit by geometry vs stage rect.
-            const B = await S.getBoundingClientRect();
-            if (B) {
-              const inYTop = O >= B.top + 4 && O <= B.top + 56;
-              const inYBot = O >= B.bottom - 56 && O <= B.bottom - 4;
-              if (inYTop && _ >= B.right - 96 && _ <= B.right - 4) {
-                await rerollImage();
-                return;
-              }
-              if (inYBot && _ >= B.left + 4 && _ <= B.left + 240) {
-                const x = _ - (B.left + 8);
-                // Approx widths: 태그~56 + gap6 + 재생성~78 + gap6 + 중단~56
-                if (x < 58) { await te(); return; }
-                if (x < 142) { await rerollAllImages(); return; }
-                if (x < 220) { await optimisticStopJobs(); return; }
-              }
-            }
-          } catch {
-          }
-        }`;
 
 const VENDOR_ACTIONS_FT_NEEDLE =
   `      minimized && mode === "icon" ? "min-width:48px" : minimized ? "min-width:280px" : "min-width:260px",`;
 const VENDOR_ACTIONS_FT_PATCH =
-  `      minimized && mode === "icon" ? "min-width:48px" : minimized && mode === "actions" ? "min-width:160px" : minimized ? "min-width:280px" : "min-width:260px",`;
+  `      minimized && mode === "icon" ? "min-width:48px" : minimized && mode === "actions" ? "min-width:200px" : minimized ? "min-width:280px" : "min-width:260px",`;
 
 const VENDOR_ACTIONS_OVERFLOW_NEEDLE =
   `      if (d.presetMenuOpen && (!d.minimized || viewerMinimizeMode() === "toolbar")) {`;
@@ -8211,20 +7864,18 @@ const VENDOR_ACTIONS_CHROME_PATCH =
       const mode = viewerMinimizeMode(), toolbarMin = d.minimized && mode === "toolbar", iconMin = d.minimized && mode === "icon", actionsMin = d.minimized && mode === "actions";
       try {
         if (actionsMin) {
-          if (d.actionsFolded == null) d.actionsFolded = !1;
-          const folded = !!d.actionsFolded;
-          const btn = (act, bg, label) => \`<span data-nx-act="\${act}" style="cursor:pointer;background:\${bg};color:#fff;padding:14px 12px;border-radius:10px;font-size:15px;line-height:1.15;font-weight:700;width:100%;text-align:center;box-sizing:border-box;user-select:none">\${label}</span>\`;
-          const pad = '<span data-nx-drag-pad style="display:flex;align-items:center;justify-content:center;width:100%;height:28px;flex:0 0 28px;cursor:move;touch-action:none" title="끌어서 이동"><span style="width:44px;height:4px;border-radius:999px;background:rgba(255,255,255,.38)"></span></span>';
-          await s.setInnerHTML(folded ? pad : pad + btn("tag", "#0f766e", "태그") + btn("regen", "#7c6cff", "재생성") + btn("stop", "#b91c1c", "중단")), await i.setStyleAttribute(\`height:\${folded ? 88 : 328}px;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:8px;padding:10px;background:rgba(255,255,255,.04);border-bottom:0;cursor:move;user-select:none;flex-shrink:0;touch-action:none;box-sizing:border-box;\`), await s.setStyleAttribute("display:flex;flex-direction:column;gap:8px;align-items:stretch;width:100%;flex:0 0 auto;"), await viewerPresetBtn.setStyleAttribute(\`max-width:none;min-width:0;width:100%;height:auto;min-height:48px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:15px;font-weight:700;padding:14px 12px;cursor:pointer;pointer-events:auto;display:\${folded ? "none" : "inline-flex"};align-items:center;justify-content:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!folded && d.presetMenuOpen ? "block" : "none"};position:absolute;top:auto;bottom:56px;left:10px;right:10px;min-width:0;max-width:none;max-height:220px;overflow:auto;z-index:20;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML(btn(folded ? "expand" : "fold", "#1e293b", folded ? "펼치기" : "접기")), await c.setStyleAttribute("display:flex;flex-direction:column;gap:8px;align-items:stretch;flex-shrink:0;width:100%;");
+          await s.setInnerHTML('<span data-nx-drag-pad style="display:flex;align-items:center;justify-content:center;width:100%;height:28px;flex:0 0 28px;cursor:move;touch-action:none" title="끌어서 이동"><span style="width:40px;height:4px;border-radius:999px;background:rgba(255,255,255,.38)"></span></span><div style="display:flex;gap:6px;align-items:center;width:100%"><span data-nx-act="tag" style="cursor:pointer;background:#0f766e;color:#fff;padding:5px 10px;border-radius:7px;font-size:11px;line-height:1;font-weight:600;flex:1;text-align:center">태그</span><span data-nx-act="regen" style="cursor:pointer;background:#7c6cff;color:#fff;padding:5px 10px;border-radius:7px;font-size:11px;line-height:1;font-weight:600;flex:1;text-align:center">재생성</span></div>'), await i.setStyleAttribute("height:112px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;align-items:center;justify-content:stretch;gap:6px;padding:8px;background:rgba(255,255,255,.04);border-bottom:0;cursor:move;user-select:none;flex-shrink:0;touch-action:none;"), await s.setStyleAttribute("display:flex;flex-direction:column;gap:6px;align-items:stretch;width:100%;flex:0 0 auto;grid-column:1/-1;"), await viewerPresetBtn.setStyleAttribute("max-width:none;min-width:0;flex:1 1 auto;width:auto;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;font-size:11px;padding:0 8px;cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;grid-column:1;"), await viewerPresetMenu.setStyleAttribute(\`display:\${d.presetMenuOpen ? "block" : "none"};position:absolute;top:108px;left:8px;right:8px;min-width:0;max-width:none;max-height:220px;overflow:auto;z-index:20;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML('<span data-nx-act="stop" style="cursor:pointer;background:#b91c1c;color:#fff;padding:5px 10px;border-radius:7px;font-size:11px;line-height:1;font-weight:600;white-space:nowrap">중단</span>'), await c.setStyleAttribute("display:flex;gap:0;align-items:center;flex-shrink:0;justify-content:flex-end;grid-column:2;");
         } else {
-          d.actionsFolded = !1;
-          await s.setInnerHTML(iconMin ? "🖼️" : "Inlay Viewer"), await s.setStyleAttribute(iconMin ? "font-weight:600;font-size:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;" : "font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;"), await i.setStyleAttribute(\`min-height:\${iconMin ? 48 : toolbarMin ? 56 : 52}px;height:\${iconMin ? "48px" : "auto"};display:flex;align-items:center;justify-content:\${iconMin ? "center" : "flex-start"};gap:8px;padding:\${iconMin ? "0" : "8px 10px"};background:rgba(255,255,255,.04);border-bottom:\${d.minimized && !toolbarMin ? "0" : "1px solid rgba(255,255,255,.06)"};cursor:move;user-select:none;flex-shrink:0;touch-action:none;flex-wrap:nowrap;\`), await viewerPresetBtn.setStyleAttribute(\`max-width:200px;min-width:120px;flex:0 1 200px;height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:13px;font-weight:600;padding:0 12px;cursor:pointer;pointer-events:auto;display:\${iconMin ? "none" : "inline-flex"};align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!iconMin && d.presetMenuOpen ? "block" : "none"};position:absolute;top:52px;left:10px;min-width:200px;max-width:min(92vw,320px);max-height:min(50vh,360px);overflow:auto;z-index:5;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML([
-            '<span style="cursor:pointer;background:#475569;color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">◀</span>',
-            '<span style="cursor:pointer;background:#475569;color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">▶</span>',
-            \`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">상시</span>\`,
-            \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};align-items:center;justify-content:center;background:#334155;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
-            \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${d.minimized ? "펼치기" : "접기"}</span>\`
-          ].join("")), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:8px;align-items:center;flex-shrink:0;flex-wrap:nowrap;justify-content:flex-end;margin-left:auto;\`);
+          await s.setInnerHTML(iconMin ? "🖼️" : "Inlay Viewer"), await s.setStyleAttribute(iconMin ? "font-weight:600;font-size:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;" : "font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;"), await i.setStyleAttribute(\`height:\${iconMin ? 48 : toolbarMin ? 40 : 36}px;display:flex;align-items:center;justify-content:\${iconMin ? "center" : "space-between"};gap:8px;padding:\${iconMin ? "0" : "0 10px"};background:rgba(255,255,255,.04);border-bottom:\${d.minimized && !toolbarMin ? "0" : "1px solid rgba(255,255,255,.06)"};cursor:move;user-select:none;flex-shrink:0;touch-action:none;\`), await viewerPresetBtn.setStyleAttribute(\`max-width:140px;min-width:88px;flex:0 1 140px;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;font-size:11px;padding:0 8px;cursor:pointer;pointer-events:auto;display:\${iconMin ? "none" : "inline-flex"};align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!iconMin && d.presetMenuOpen ? "block" : "none"};position:absolute;top:34px;left:10px;min-width:140px;max-width:220px;max-height:220px;overflow:auto;z-index:5;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML([
+            '<span style="cursor:pointer;background:#475569;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">◀</span>',
+            '<span style="cursor:pointer;background:#475569;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">▶</span>',
+            '<span style="cursor:pointer;background:#0f766e;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="LLM 태그 재생성">태그</span>',
+            '<span style="cursor:pointer;background:#7c6cff;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="이 메시지의 모든 샷 재생성">재생성</span>',
+            '<span style="cursor:pointer;background:#b91c1c;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="남은 생성 중단(진행 중은 끝까지)">중단</span>',
+            \`<span style="cursor:pointer;background:\${Nt() ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">\${Nt() ? "상시ON" : "상시"}</span>\`,
+            \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};background:#334155;color:#dbe4f5;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
+            \`<span style="cursor:pointer;background:#1e293b;color:#dbe4f5;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)">\${d.minimized ? "펼치기" : "접기"}</span>\`
+          ].join("")), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:5px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;\`);
         }
       } catch {
       }`;
@@ -8291,30 +7942,8 @@ const VENDOR_THUMBS_MOUNT_NEEDLE =
     await b.appendChild(S), await b.appendChild(C), await b.appendChild(E), await b.appendChild(j), await r.appendChild(i), await r.appendChild(viewerPresetMenu), await r.appendChild(p), await r.appendChild(b), await a.appendChild(r);`;
 const VENDOR_THUMBS_MOUNT_PATCH =
   `    // Custom transform scroll — we own the offset (native scrollLeft is untrustworthy in SafeDOM).
-    }), E = await H(e, "div", { style: "overflow:hidden;position:relative;padding-bottom:2px;flex-shrink:0;min-height:92px;max-height:92px;width:100%;box-sizing:border-box;touch-action:none;cursor:grab;" }), thumbsTrack = await H(e, "div", { style: "display:flex;gap:8px;align-items:center;width:max-content;max-width:none;transform:translate3d(0,0,0);will-change:transform;touch-action:none;" }), j = await H(e, "div", { style: "display:flex;flex-wrap:nowrap;gap:8px;align-items:center;color:#a6b1c2;font-size:13px;flex:0 0 auto;min-height:56px;height:56px;max-height:56px;overflow-x:auto;overflow-y:hidden;cursor:pointer;pointer-events:auto;box-sizing:border-box;padding:4px 0;" });
+    }), E = await H(e, "div", { style: "overflow:hidden;position:relative;padding-bottom:2px;flex-shrink:0;min-height:92px;max-height:92px;width:100%;box-sizing:border-box;touch-action:none;cursor:grab;" }), thumbsTrack = await H(e, "div", { style: "display:flex;gap:8px;align-items:center;width:max-content;max-width:none;transform:translate3d(0,0,0);will-change:transform;touch-action:none;" }), j = await H(e, "div", { style: "display:flex;flex-wrap:nowrap;gap:6px;align-items:center;color:#a6b1c2;font-size:11px;flex:0 0 auto;min-height:34px;height:34px;max-height:34px;overflow:hidden;cursor:pointer;pointer-events:auto;box-sizing:border-box;" });
     await b.appendChild(S), await b.appendChild(C), await E.appendChild(thumbsTrack), await b.appendChild(E), await b.appendChild(j), await r.appendChild(i), await r.appendChild(viewerPresetMenu), await r.appendChild(p), await r.appendChild(b), await a.appendChild(r);`;
-
-/** Taller header + chip row: keep image stage from eating the meta chips. */
-const VENDOR_VIEWER_STAGE_RESERVE_NEEDLE =
-  `  function imageStageStyle(geo = {}) {
-    const panelH = Math.max(280, Number(geo.h) || 560);
-    // header + gaps + status + thumbs + chip row + padding. Prompt block removed — image can grow with panel.
-    const reserved = 36 + 14 + 22 + 96 + 40 + 16;`;
-const VENDOR_VIEWER_STAGE_RESERVE_PATCH =
-  `  function imageStageStyle(geo = {}) {
-    const panelH = Math.max(280, Number(geo.h) || 560);
-    // header(~52) + gaps + status + thumbs + chip row(~56) + padding — match enlarged chrome.
-    const reserved = 56 + 14 + 28 + 96 + 64 + 16;`;
-
-const VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE =
-  `      const chipStyle = (on, accent) => \`cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:11px;line-height:1.2;white-space:nowrap;border:1px solid \${accent || (on ? "rgba(255,255,255,.14)" : "rgba(248,113,113,.45)")};background:\${accent ? "rgba(124,108,255,.18)" : on ? "rgba(255,255,255,.06)" : "rgba(248,113,113,.12)"};color:\${on ? "#e8eef8" : "#fecaca"};opacity:\${on ? 1 : 0.72}\`, Yt = Array.isArray(Q.characters) ? Q.characters : [], cast = R(Q);`;
-const VENDOR_VIEWER_META_CHIP_TOUCH_PATCH =
-  `      const chipStyle = (on, accent) => \`cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;padding:10px 14px;border-radius:999px;font-size:13px;line-height:1.2;min-height:44px;box-sizing:border-box;white-space:nowrap;border:1px solid \${accent || (on ? "rgba(255,255,255,.14)" : "rgba(248,113,113,.45)")};background:\${accent ? "rgba(124,108,255,.18)" : on ? "rgba(255,255,255,.06)" : "rgba(248,113,113,.12)"};color:\${on ? "#e8eef8" : "#fecaca"};opacity:\${on ? 1 : 0.72}\`, Yt = Array.isArray(Q.characters) ? Q.characters : [], cast = R(Q);`;
-
-const VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE =
-  `          await addChip(\`\${Math.round(Math.max(0, Math.min(100, yNum)))}%\`, "y", "padding:4px 8px;border-radius:999px;font-size:11px;line-height:1.2;border:1px solid rgba(255,255,255,.12);background:rgba(15,23,42,.72);color:#94a3b8;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;pointer-events:none");`;
-const VENDOR_VIEWER_META_Y_CHIP_TOUCH_PATCH =
-  `          await addChip(\`\${Math.round(Math.max(0, Math.min(100, yNum)))}%\`, "y", "padding:10px 14px;border-radius:999px;font-size:13px;line-height:1.2;min-height:44px;box-sizing:border-box;display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.12);background:rgba(15,23,42,.72);color:#94a3b8;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;pointer-events:none");`;
 
 const VENDOR_THUMBS_STATE_NEEDLE =
   `      preview: S,
@@ -8640,8 +8269,7 @@ const VENDOR_ACTIONS_POINTER_PATCH =
         return;
       }
       if (d.minimized && viewerMinimizeMode() === "actions") {
-        if (d.actionsFolded == null) d.actionsFolded = !1;
-        if (!d.actionsFolded && d.presetMenuOpen && d.presetMenu && await X(d.presetMenu, _, O)) {
+        if (d.presetMenuOpen && d.presetMenu && await X(d.presetMenu, _, O)) {
           try {
             const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await d.presetMenu.getChildren()) : [];
             for (let W = 0; W < kids.length; W += 1) {
@@ -8656,31 +8284,36 @@ const VENDOR_ACTIONS_POINTER_PATCH =
           }
           return;
         }
-        if (!d.actionsFolded && d.presetSelect && await X(d.presetSelect, _, O)) {
+        if (d.presetSelect && await X(d.presetSelect, _, O)) {
           d.presetMenuOpen = !d.presetMenuOpen;
           await syncViewerPresetSelect();
           return;
         }
         if (await X(c, _, O)) {
-          d.actionsFolded = !d.actionsFolded;
-          d.presetMenuOpen = !1;
           try {
-            await syncViewerPresetSelect();
+            await optimisticStopJobs();
           } catch {
           }
-          d.geo = clampViewerGeo(d.geo, !0);
-          await applyViewerChrome();
           return;
         }
-        if (!d.actionsFolded && await X(s, _, O)) {
+        if (await X(s, _, O)) {
           try {
             const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await s.getChildren()) : [];
-            // Layout: [0]=drag pad, [1]=tag, [2]=regen, [3]=stop
-            for (let W = 1; W < kids.length; W += 1) {
-              const J = await kids[W].getBoundingClientRect();
-              if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
-                W === 1 ? await te() : W === 2 ? await rerollAllImages() : W === 3 && await optimisticStopJobs();
-                return;
+            // Layout: [0]=drag pad, [1]=tag/regen row. Pad must not fire buttons.
+            let onPad = !1;
+            if (kids[0]) {
+              const pad = await kids[0].getBoundingClientRect();
+              if (_ >= pad.left && _ <= pad.right && O >= pad.top && O <= pad.bottom) onPad = !0;
+            }
+            if (!onPad) {
+              const row = kids.length > 1 ? kids[kids.length - 1] : null;
+              const btns = row && typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await row.getChildren()) : row ? [row] : [];
+              for (let W = 0; W < btns.length; W += 1) {
+                const J = await btns[W].getBoundingClientRect();
+                if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
+                  W === 0 ? await te() : W === 1 && await rerollAllImages();
+                  return;
+                }
               }
             }
           } catch {
@@ -8932,12 +8565,8 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_EXPLORER_GRID_CSS_NEEDLE, 'explorer grid css viewport');
   assertOnce(raw, VENDOR_EXPLORER_SHELL_OPEN_NEEDLE, 'explorer shell open');
   assertOnce(raw, VENDOR_EXPLORER_SHELL_FOOT_NEEDLE, 'explorer shell foot');
-  assertOnce(raw, VENDOR_EXPLORER_FOLDERS_TOGGLE_NEEDLE, 'explorer folders toggle');
-  assertOnce(raw, VENDOR_EXPLORER_MOBILE_1COL_NEEDLE, 'explorer mobile 1col override');
   assertOnce(raw, VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE, 'explorer folders html');
   assertOnce(raw, VENDOR_EXPLORER_GRID_HTML_NEEDLE, 'explorer grid html');
-  assertOnce(raw, VENDOR_EXPLORER_SELBAR_LABELS_NEEDLE, 'explorer selbar short labels');
-  assertOnce(raw, VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE, 'explorer favonly paint star-only');
   assertOnce(raw, VENDOR_EXPLORER_ET_FN_NEEDLE, 'explorer et windowed');
   assertOnce(raw, VENDOR_EXPLORER_HA_NEEDLE, 'explorer ha window paint');
   assertOnce(raw, VENDOR_EXPLORER_TAB_LOAD_NEEDLE, 'explorer tab load optimistic');
@@ -8959,12 +8588,6 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_PRESET_DUP_NEEDLE, 'preset dup');
   assertOnce(raw, VENDOR_PRESET_DEL_NEEDLE, 'preset del clear vibe');
   assertOnce(raw, VENDOR_PRESET_VIBE_EVT_NEEDLE, 'preset vibe upload events');
-  assertOnce(raw, VENDOR_CARD_TAB_SPLIT_COND_NEEDLE, 'card tab split cond');
-  assertOnce(raw, VENDOR_CARD_TAB_SPLIT_OPEN_NEEDLE, 'card tab split open');
-  assertOnce(raw, VENDOR_CARD_TAB_SPLIT_MID_NEEDLE, 'card tab split mid');
-  // CLOSE needle matches post-PRESET_HTML shape — asserted in applyVendorPatches.
-  assertOnce(raw, VENDOR_CT_GATE_NEEDLE, 'Ct() gate for preset-only tab');
-  assertOnce(raw, VENDOR_SHOW_CARD_TAB_NEEDLE, 'showCardTab → style_presets');
   assertOnce(raw, VENDOR_MODELS_LLM_NEEDLE, 'models LLM role subtabs HTML');
   assertOnce(raw, VENDOR_OE_LLM_NEEDLE, 'Oe() llm roles read');
   assertOnce(raw, VENDOR_OE_RETURN_NEEDLE, 'Oe() return llm_roles');
@@ -9124,12 +8747,6 @@ const loadVendorUi = (): string => {
     [VENDOR_ACTIONS_SAVE_NEEDLE, 'actions minimize save'],
     [VENDOR_ACTIONS_MODE_FN_NEEDLE, 'actions minimize mode fn'],
     [VENDOR_ACTIONS_CLAMP_NEEDLE, 'actions minimize clamp'],
-    [VENDOR_VIEWER_HDR_TOUCH_NEEDLE, 'viewer header touch btns'],
-    [VENDOR_VIEWER_HDR_TAIL_TOUCH_NEEDLE, 'viewer header tail touch'],
-    [VENDOR_VIEWER_HDR_CHROME_TOUCH_NEEDLE, 'viewer header chrome touch'],
-    [VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE, 'viewer preset menu touch'],
-    [VENDOR_VIEWER_IMG_REROLL_TOUCH_NEEDLE, 'viewer img reroll touch'],
-    [VENDOR_VIEWER_IMG_ACT_HIT_NEEDLE, 'viewer img act hit'],
     [VENDOR_VIEWER_STOP_HDR_NEEDLE, 'viewer stop header btn'],
     [VENDOR_VIEWER_STOP_CLICK_NEEDLE, 'viewer stop click'],
     [VENDOR_VIEWER_STOP_LABEL_NEEDLE, 'viewer stop label sync'],
@@ -9146,9 +8763,6 @@ const loadVendorUi = (): string => {
     [VENDOR_RISU_SETTINGS_UNLOAD_NEEDLE, 'risu settings unload clear'],
     [VENDOR_PRESET_MENU_HIT_NEEDLE, 'preset menu hit outside panel'],
     [VENDOR_THUMBS_MOUNT_NEEDLE, 'thumbs transform mount'],
-    [VENDOR_VIEWER_STAGE_RESERVE_NEEDLE, 'viewer stage reserved height'],
-    [VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE, 'viewer meta chip touch'],
-    [VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE, 'viewer meta y chip touch'],
     [VENDOR_THUMBS_STATE_NEEDLE, 'thumbs transform state'],
     [VENDOR_THUMBS_HELPERS_NEEDLE, 'thumbs transform helpers'],
     [VENDOR_THUMB_HIT_NEEDLE, 'thumb hit owned offset'],
@@ -9224,12 +8838,8 @@ const loadVendorUi = (): string => {
       .replace(VENDOR_EXPLORER_GRID_CSS_NEEDLE, VENDOR_EXPLORER_GRID_CSS_PATCH)
     .replace(VENDOR_EXPLORER_SHELL_OPEN_NEEDLE, VENDOR_EXPLORER_SHELL_OPEN_PATCH)
     .replace(VENDOR_EXPLORER_SHELL_FOOT_NEEDLE, VENDOR_EXPLORER_SHELL_FOOT_PATCH)
-    .replace(VENDOR_EXPLORER_FOLDERS_TOGGLE_NEEDLE, VENDOR_EXPLORER_FOLDERS_TOGGLE_PATCH)
-    .replace(VENDOR_EXPLORER_MOBILE_1COL_NEEDLE, VENDOR_EXPLORER_MOBILE_1COL_PATCH)
     .replace(VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE, VENDOR_EXPLORER_FOLDERS_HTML_PATCH)
     .replace(VENDOR_EXPLORER_GRID_HTML_NEEDLE, VENDOR_EXPLORER_GRID_HTML_PATCH)
-    .replace(VENDOR_EXPLORER_SELBAR_LABELS_NEEDLE, VENDOR_EXPLORER_SELBAR_LABELS_PATCH)
-    .replace(VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE, VENDOR_EXPLORER_FAVONLY_PAINT_PATCH)
     .replace(VENDOR_EXPLORER_ET_FN_NEEDLE, VENDOR_EXPLORER_ET_FN_PATCH)
     .replace(VENDOR_EXPLORER_TAB_LOAD_NEEDLE, VENDOR_EXPLORER_TAB_LOAD_PATCH)
     .replace(VENDOR_EXPLORER_FOLDER_BIND_NEEDLE, VENDOR_EXPLORER_FOLDER_BIND_PATCH)
@@ -9247,14 +8857,6 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_PRESET_DUP_NEEDLE, VENDOR_PRESET_DUP_PATCH)
     .replace(VENDOR_PRESET_DEL_NEEDLE, VENDOR_PRESET_DEL_PATCH)
     .replace(VENDOR_PRESET_VIBE_EVT_NEEDLE, VENDOR_PRESET_VIBE_EVT_PATCH)
-    .replace(VENDOR_CARD_TAB_SPLIT_COND_NEEDLE, VENDOR_CARD_TAB_SPLIT_COND_PATCH)
-    .replace(VENDOR_CARD_TAB_SPLIT_OPEN_NEEDLE, VENDOR_CARD_TAB_SPLIT_OPEN_PATCH)
-    .replace(VENDOR_CARD_TAB_SPLIT_MID_NEEDLE, VENDOR_CARD_TAB_SPLIT_MID_PATCH);
-    assertOnce(out, VENDOR_CARD_TAB_SPLIT_CLOSE_NEEDLE, 'card tab split close (after preset HTML)');
-    out = out
-    .replace(VENDOR_CARD_TAB_SPLIT_CLOSE_NEEDLE, VENDOR_CARD_TAB_SPLIT_CLOSE_PATCH)
-    .replace(VENDOR_CT_GATE_NEEDLE, VENDOR_CT_GATE_PATCH)
-    .replace(VENDOR_SHOW_CARD_TAB_NEEDLE, VENDOR_SHOW_CARD_TAB_PATCH)
     .replace(VENDOR_MODELS_LLM_NEEDLE, VENDOR_MODELS_LLM_PATCH)
     .replace(VENDOR_OE_LLM_NEEDLE, VENDOR_OE_LLM_PATCH)
     .replace(VENDOR_OE_RETURN_NEEDLE, VENDOR_OE_RETURN_PATCH)
@@ -9397,12 +8999,6 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_ACTIONS_SAVE_NEEDLE, VENDOR_ACTIONS_SAVE_PATCH)
     .replace(VENDOR_ACTIONS_MODE_FN_NEEDLE, VENDOR_ACTIONS_MODE_FN_PATCH)
     .replace(VENDOR_ACTIONS_CLAMP_NEEDLE, VENDOR_ACTIONS_CLAMP_PATCH)
-    .replace(VENDOR_VIEWER_HDR_TOUCH_NEEDLE, VENDOR_VIEWER_HDR_TOUCH_PATCH)
-    .replace(VENDOR_VIEWER_HDR_TAIL_TOUCH_NEEDLE, VENDOR_VIEWER_HDR_TAIL_TOUCH_PATCH)
-    .replace(VENDOR_VIEWER_HDR_CHROME_TOUCH_NEEDLE, VENDOR_VIEWER_HDR_CHROME_TOUCH_PATCH)
-    .replace(VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE, VENDOR_VIEWER_PRESET_MENU_TOUCH_PATCH)
-    .replace(VENDOR_VIEWER_IMG_REROLL_TOUCH_NEEDLE, VENDOR_VIEWER_IMG_REROLL_TOUCH_PATCH)
-    .replace(VENDOR_VIEWER_IMG_ACT_HIT_NEEDLE, VENDOR_VIEWER_IMG_ACT_HIT_PATCH)
     .replace(VENDOR_VIEWER_STOP_HDR_NEEDLE, VENDOR_VIEWER_STOP_HDR_PATCH)
     .replace(VENDOR_VIEWER_STOP_CLICK_NEEDLE, VENDOR_VIEWER_STOP_CLICK_PATCH)
     .replace(VENDOR_VIEWER_STOP_LABEL_NEEDLE, VENDOR_VIEWER_STOP_LABEL_PATCH)
@@ -9419,9 +9015,6 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_RISU_SETTINGS_UNLOAD_NEEDLE, VENDOR_RISU_SETTINGS_UNLOAD_PATCH)
     .replace(VENDOR_PRESET_MENU_HIT_NEEDLE, VENDOR_PRESET_MENU_HIT_PATCH)
     .replace(VENDOR_THUMBS_MOUNT_NEEDLE, VENDOR_THUMBS_MOUNT_PATCH)
-    .replace(VENDOR_VIEWER_STAGE_RESERVE_NEEDLE, VENDOR_VIEWER_STAGE_RESERVE_PATCH)
-    .replace(VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE, VENDOR_VIEWER_META_CHIP_TOUCH_PATCH)
-    .replace(VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE, VENDOR_VIEWER_META_Y_CHIP_TOUCH_PATCH)
     .replace(VENDOR_THUMBS_STATE_NEEDLE, VENDOR_THUMBS_STATE_PATCH)
     .replace(VENDOR_THUMBS_HELPERS_NEEDLE, VENDOR_THUMBS_HELPERS_PATCH)
     .replace(VENDOR_THUMB_HIT_NEEDLE, VENDOR_THUMB_HIT_PATCH)

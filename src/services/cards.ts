@@ -42,13 +42,14 @@ import {
   mergeCommandRewriteMain,
 } from '../domain/prompt/command-rewrite';
 import { QUALITY_TAGS } from '../config/defaults';
+import { dbg } from '../core/debug';
 import { parseJsonLoose } from '../core/util/object';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
 import { idbGet, idbGetAll, idbPut } from '../storage/stores';
 import { callLlm } from '../providers/llm/client';
 import type { LlmMessage } from '../providers/llm/transform';
 import { rosterForSession } from './characters';
-import { getConfig, messageBusyKeys } from './context';
+import { getConfig, messageBusyKeys, clearMessageRerollStop, isMessageRerollStopRequested } from './context';
 import {
   buildGenerationForShot,
   cardMetaFromLocation,
@@ -435,7 +436,15 @@ export async function rerollCard(
   const ovSeed = ov && 'seed' in ov ? Number(ov.seed) : NaN;
   const seedOverride = Number.isFinite(ovSeed) && ovSeed > 0 ? Math.floor(ovSeed) : undefined;
   const { bytes, seed } = await generateImage(
-    { main, neg, captions, seed: seedOverride },
+    {
+      main,
+      neg,
+      captions,
+      seed: seedOverride,
+      characters: Array.isArray(charList)
+        ? (charList as Array<{ id?: string; name?: string }>)
+        : undefined,
+    },
     meta.aspect ?? ov?.aspect,
   );
   const newId = uuid();
@@ -694,12 +703,19 @@ export async function rerollMessageCards({
   if (busy) return busy;
 
   const key = jobKey(keyReq, sid);
+  clearMessageRerollStop();
   messageBusyKeys.add(key);
   const cards: unknown[] = [];
   const replaced: unknown[] = [];
   const failed: Array<{ id: string; error: unknown }> = [];
+  let stopped = false;
   try {
     for (const item of targets) {
+      if (isMessageRerollStopRequested()) {
+        stopped = true;
+        dbg('cards.reroll_message.stop', { done: cards.length, total: targets.length, focus: true });
+        break;
+      }
       const row = item.row;
       try {
         const result = (await rerollCard(row.id, 'nai', null, { skipBusyCheck: true })) as Record<string, unknown>;
@@ -720,7 +736,7 @@ export async function rerollMessageCards({
         failed.push({ id: row.id, error: cleanText((error as Error)?.message || error, 400) });
       }
     }
-    return { ok: cards.length > 0, count: cards.length, replaced, cards, failed };
+    return { ok: cards.length > 0 || stopped, count: cards.length, replaced, cards, failed, stopped };
   } finally {
     messageBusyKeys.delete(key);
   }

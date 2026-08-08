@@ -160,6 +160,20 @@ const GET_ROUTES: readonly Route[] = [
     },
   },
   {
+    match: exact('/v1/characters/ref'),
+    handler: async ({ query }) => {
+      const cid = cleanText(q(query, 'character_id') || q(query, 'id'), 200);
+      if (!cid) throw new Error('character_id required');
+      const configured = await naiAssets.hasCharRefImage(cid);
+      return ok({
+        ok: true,
+        character_id: cid,
+        configured,
+        preview_url: configured ? await naiAssets.ensureCharRefPreviewUrl(cid) : '',
+      });
+    },
+  },
+  {
     match: under('/v1/characters'),
     handler: async ({ query }) =>
       ok(await characters.getCharactersPayload(q(query, 'session_id'), q(query, 'character_id'))),
@@ -273,6 +287,15 @@ const WRITE_ROUTES: readonly Route[] = [
       ),
   },
   {
+    match: exact('/v1/jobs/stop'),
+    handler: async ({ body }) =>
+      ok(
+        await jobs.requestJobStop({
+          session_id: String(body.session_id || body.sessionId || ''),
+        }),
+      ),
+  },
+  {
     match: exact('/v1/gallery/unlink', '/v1/cards/unlink'),
     handler: async ({ body }) =>
       ok(
@@ -360,6 +383,39 @@ const WRITE_ROUTES: readonly Route[] = [
           body.include_target !== false,
         ),
       ),
+  },
+  {
+    match: exact('/v1/characters/ref', '/v1/characters/ref/upload'),
+    handler: async ({ body }) => {
+      const cid = cleanText(body.character_id || body.characterId || body.id || '', 200);
+      if (!cid) throw new Error('character_id required');
+      if (body.clear) return ok(await naiAssets.clearCharRefImage(cid));
+      if (body.copy_from) {
+        const from = cleanText(body.copy_from, 200);
+        const copied = from ? await naiAssets.copyCharRefImage(from, cid) : false;
+        return ok({
+          ok: true,
+          character_id: cid,
+          configured: copied,
+          preview_url: copied ? await naiAssets.ensureCharRefPreviewUrl(cid) : '',
+        });
+      }
+      const rawB64 = uploadBase64(body);
+      if (!cleanText(rawB64)) throw new Error('image_b64 required');
+      return ok(
+        await naiAssets.setCharRefImage(cid, u8ToArrayBuffer(base64ToBytes(rawB64)), {
+          overwrite: body.overwrite !== false,
+        }),
+      );
+    },
+  },
+  {
+    match: exact('/v1/characters/ref/clear'),
+    handler: async ({ body }) => {
+      const cid = cleanText(body?.character_id || body?.characterId || body?.id || '', 200);
+      if (!cid) throw new Error('character_id required');
+      return ok(await naiAssets.clearCharRefImage(cid));
+    },
   },
   { match: exact('/v1/characters', '/v1/characters/update'), handler: ({ body }) => updateCharacters(body) },
   {

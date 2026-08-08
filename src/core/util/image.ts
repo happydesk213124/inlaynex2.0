@@ -10,6 +10,7 @@ import {
   asU8,
   type BytesLike,
   dataUrlToArrayBuffer,
+  isPngBytes,
   isWebpBytes,
   sniffImageMime,
   u8ToArrayBuffer,
@@ -148,6 +149,130 @@ export async function encodeWebpQuality(buf: BytesLike, quality = 0.8): Promise<
   } catch (err) {
     dbg('image.webp.encode.fail', { message: String((err as Error)?.message || err) }, 'warn');
     return null;
+  }
+}
+
+/**
+ * Re-encode to PNG for NovelAI endpoints that reject webp/jpeg (director /
+ * Precise Reference encoding). Returns the original buffer when already PNG
+ * or when canvas encode is unavailable.
+ */
+export async function ensurePngBytes(buf: BytesLike): Promise<ArrayBuffer> {
+  const src = asU8(buf);
+  if (!src.length) return u8ToArrayBuffer(src);
+  if (isPngBytes(src)) return u8ToArrayBuffer(src);
+  const mime = sniffImageMime(src);
+  try {
+    const image = await decodeImage(src, mime, true);
+    if (!image || !(image.width > 0 && image.height > 0)) {
+      image?.close();
+      return u8ToArrayBuffer(src);
+    }
+    const drawn = drawToCanvas(image, image.width, image.height, true);
+    if (!drawn) {
+      image.close();
+      return u8ToArrayBuffer(src);
+    }
+    let encoded: ArrayBuffer | null = null;
+    if (drawn.kind === 'offscreen') {
+      const outBlob = await drawn.canvas.convertToBlob({ type: 'image/png' });
+      image.close();
+      if (outBlob?.size) encoded = await outBlob.arrayBuffer();
+    } else {
+      encoded = dataUrlToArrayBuffer(drawn.canvas.toDataURL('image/png'));
+      image.close();
+    }
+    if (encoded && isPngBytes(asU8(encoded))) return encoded;
+  } catch (err) {
+    dbg('image.png.encode.fail', { message: String((err as Error)?.message || err) }, 'warn');
+  }
+  return u8ToArrayBuffer(src);
+}
+
+/** NAI Precise Reference exact canvases (other sizes encode-400). */
+const DIRECTOR_PORTRAIT = { w: 1024, h: 1536 } as const;
+const DIRECTOR_LANDSCAPE = { w: 1536, h: 1024 } as const;
+const DIRECTOR_SQUARE = { w: 1472, h: 1472 } as const;
+
+/** Pick portrait / landscape / square from aspect (1:1 → square). */
+function pickDirectorCanvas(srcW: number, srcH: number): { w: number; h: number } {
+  const aspect = srcW / Math.max(1, srcH);
+  // ~square band; otherwise taller→portrait, wider→landscape.
+  if (aspect >= 0.9 && aspect <= 1.1) return DIRECTOR_SQUARE;
+  if (aspect < 1) return DIRECTOR_PORTRAIT;
+  return DIRECTOR_LANDSCAPE;
+}
+
+async function canvasToWebp(drawn: DrawnCanvas, quality: number): Promise<ArrayBuffer | null> {
+  if (drawn.kind === 'offscreen') {
+    const outBlob = await drawn.canvas.convertToBlob({ type: 'image/webp', quality });
+    if (!outBlob?.size) return null;
+    return outBlob.arrayBuffer();
+  }
+  const blob = await new Promise<Blob | null>((resolve) => {
+    drawn.canvas.toBlob(resolve, 'image/webp', quality);
+  });
+  if (!blob?.size) return null;
+  return blob.arrayBuffer();
+}
+
+function letterboxDirector(
+  drawn: DrawnCanvas,
+  image: DecodedImage,
+  cw: number,
+  ch: number,
+): void {
+  const paint = (ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void => {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, cw, ch);
+    const fit = Math.min(cw / image.width, ch / image.height);
+    const dw = Math.max(1, Math.round(image.width * fit));
+    const dh = Math.max(1, Math.round(image.height * fit));
+    ctx.drawImage(image.source, Math.floor((cw - dw) / 2), Math.floor((ch - dh) / 2), dw, dh);
+  };
+  if (drawn.kind === 'offscreen') {
+    const ctx = drawn.canvas.getContext('2d');
+    if (ctx) paint(ctx);
+  } else {
+    const ctx = drawn.canvas.getContext('2d');
+    if (ctx) paint(ctx);
+  }
+}
+
+/**
+ * Letterbox onto an NAI Precise Reference canvas and emit webp @ ~0.5.
+ * Live probe: raw 1024² webp 400s; same image padded to 1472²/1024×1536/1536×1024
+ * webp succeeds and stays small. Half-size canvases encode-400 — full size only.
+ */
+export async function prepareDirectorReferenceWebp(
+  buf: BytesLike,
+  quality = 0.5,
+): Promise<ArrayBuffer> {
+  const src = asU8(buf);
+  if (!src.length) throw new Error('참고 이미지가 비어 있습니다');
+  const mime = sniffImageMime(src);
+  const image = await decodeImage(src, mime, true);
+  if (!image || !(image.width > 0 && image.height > 0)) {
+    image?.close();
+    throw new Error('참고 이미지를 디코딩하지 못했습니다');
+  }
+  try {
+    const { w: cw, h: ch } = pickDirectorCanvas(image.width, image.height);
+    // DOM canvas preferred for webp encode reliability in the plugin host.
+    const drawn = drawToCanvas(image, cw, ch, false) || drawToCanvas(image, cw, ch, true);
+    if (!drawn) throw new Error('참고 이미지 캔버스를 만들지 못했습니다');
+    letterboxDirector(drawn, image, cw, ch);
+    const encoded = await canvasToWebp(drawn, Math.max(0.05, Math.min(1, quality)));
+    if (!encoded || !isWebpBytes(asU8(encoded))) {
+      throw new Error('참고 이미지를 webp로 인코딩하지 못했습니다');
+    }
+    dbg('image.director.webp', {
+      message: `${cw}x${ch} · q${quality} · ${Math.round(encoded.byteLength / 1024)}KB · from ${mime}`,
+      bytes: encoded.byteLength,
+    });
+    return encoded;
+  } finally {
+    image.close();
   }
 }
 

@@ -50,10 +50,11 @@ import { characterHasAppearance, characterMaxLimit } from '../domain/character/t
 import { dedupeShotCharacters } from '../domain/character/roster';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
 import { flushPersist, idbGet, idbPut } from '../storage/stores';
-import { getConfig, jobEpochByKey, jobRunMeta } from './context';
-import { mergeRosterFromTagged } from './characters';
+import { getConfig, jobEpochByKey, jobRunMeta, requestMessageRerollStop } from './context';
+import { mergeRosterFromTagged, rosterForSession } from './characters';
 import { buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage, readImageLocation } from './generation';
 import { buildCharacterLooksMessages, buildTaggerMessages, collectAssetTagsForTagger, extractTaggerChatContext, flattenShots } from './tagger';
+import { applyCharRefsFromPreviewTargets } from './asset-tags';
 import {
   getCurationMode,
   refineShotsWithCuration,
@@ -274,6 +275,12 @@ async function discardJobPublished(jobId: string): Promise<number> {
 /** Returns true when the job was stale and has now been cancelled. */
 async function cancelJobIfStale(jobId: string, note = 'interrupted'): Promise<boolean> {
   if (isJobCurrent(jobId)) return false;
+  const meta = jobRunMeta.get(jobId);
+  // User soft-stop: keep published cards (already paid / already shown).
+  if (meta?.userStop) {
+    await finishUserStoppedJob(jobId, note);
+    return true;
+  }
   const dropped = await discardJobPublished(jobId);
   await setJob(
     jobId,
@@ -289,6 +296,73 @@ async function cancelJobIfStale(jobId: string, note = 'interrupted'): Promise<bo
   );
   dbg('job.cancelled', { job_id: jobId, message: note, discarded: dropped, focus: true });
   return true;
+}
+
+/** Soft-stop terminal: cancelled UI, no card discard. */
+async function finishUserStoppedJob(jobId: string, note = '사용자 중단'): Promise<void> {
+  const meta = jobRunMeta.get(jobId);
+  const n = meta?.publishedIds?.length || 0;
+  await setJob(
+    jobId,
+    'cancelled',
+    {
+      phase: 'cancelled',
+      progress: 100,
+      message: `${note}${n ? ` · 유지 ${n}장` : ''}`,
+      shot_count: n,
+      shot_done: n,
+    },
+    null,
+  );
+  dbg('job.user_stop', { job_id: jobId, message: note, kept: n, focus: true });
+}
+
+/**
+ * Optimistic stop: mark active jobs cancelRequested+userStop so in-flight
+ * LLM/NAI finish, remaining shots skip, published cards stay.
+ */
+export async function requestJobStop(args: { session_id?: string } = {}): Promise<ApiResult> {
+  // Soft-stop message-level reroll batches / UI live loops (do not abort in-flight NAI).
+  requestMessageRerollStop();
+  const sid = cleanText(args.session_id || '', 200);
+  const stopped: string[] = [];
+  for (const [jobId, meta] of jobRunMeta.entries()) {
+    if (sid && meta.sessionId && meta.sessionId !== sid) continue;
+    const row = await idbGet('jobs', jobId);
+    const state = String(row?.state || '');
+    if (!ACTIVE_JOB_STATES.includes(state)) continue;
+    meta.cancelRequested = true;
+    meta.userStop = true;
+    const prev = (row?.result_json && (() => {
+      try {
+        return JSON.parse(String(row.result_json));
+      } catch {
+        return null;
+      }
+    })()) as Record<string, unknown> | null;
+    const shotDone = toInt(prev?.shot_done, meta.publishedIds?.length || 0);
+    const shotCount = toInt(prev?.shot_count, Math.max(shotDone, meta.publishedIds?.length || 0));
+    await setJob(
+      jobId,
+      'cancelled',
+      {
+        phase: 'cancelled',
+        progress: Number(prev?.progress) || Math.round((shotDone / Math.max(1, shotCount || 1)) * 100) || 0,
+        message: '사용자 중단',
+        shot_count: shotCount,
+        shot_done: shotDone,
+      },
+      null,
+    );
+    stopped.push(jobId);
+    dbg('job.stop_requested', { job_id: jobId, session: (sid || meta.sessionId || '').slice(-8), focus: true });
+  }
+  return {
+    ok: true,
+    stopped: stopped.length,
+    job_ids: stopped,
+    reroll_stop: true,
+  };
 }
 
 // ── progress and state ─────────────────────────────────────────────────────
@@ -344,6 +418,16 @@ async function setJob(
   result: unknown = null,
   error: string | null = null,
 ): Promise<void> {
+  const meta = jobRunMeta.get(jobId);
+  // After optimistic user-stop, ignore non-terminal progress (heartbeat / mid-shot).
+  if (
+    meta?.userStop
+    && state !== 'cancelled'
+    && state !== 'error'
+    && state !== 'done'
+  ) {
+    return;
+  }
   const row = await idbGet('jobs', jobId);
   if (!row) return;
   const prevState = row.state;
@@ -565,6 +649,26 @@ async function runJob(jobId: string): Promise<void> {
               sourceSessionIds,
               assetLooks: true,
             });
+            try {
+              const lookRoster = await rosterForSession(
+                sessionId,
+                unifiedSessionId,
+                characterId,
+                sourceSessionIds,
+              );
+              const refN = await applyCharRefsFromPreviewTargets(
+                newChars,
+                assetCollected.previewTargets || [],
+                lookRoster,
+              );
+              if (refN) dbg('job.char_looks.char_refs', { applied: refN });
+            } catch (refErr) {
+              dbg(
+                'job.char_looks.char_refs.fail',
+                { message: String((refErr as Error)?.message || refErr) },
+                'warn',
+              );
+            }
           }
           const filledLooks = newChars.filter((c) => characterHasAppearance(c)).length;
           skipAssetInject = true;
@@ -601,9 +705,38 @@ async function runJob(jobId: string): Promise<void> {
         });
       }
     }
-    const taggedRaw = await callLlm(resolveLlmRole(getConfig(), 'main'), messages);
+    const taggedRaw0 = await callLlm(resolveLlmRole(getConfig(), 'main'), messages);
     if (await cancelJobIfStale(jobId, 'superseded after tagging')) return;
-    const tagged = parseJsonLoose(taggedRaw) as TaggerResult;
+    let taggedRaw = taggedRaw0;
+    let tagged: TaggerResult;
+    try {
+      tagged = parseJsonLoose(taggedRaw) as TaggerResult;
+    } catch (parseErr) {
+      const retryOn = getConfig().card?.llm_json_retry === true;
+      if (!retryOn) throw parseErr;
+      if (await cancelJobIfStale(jobId, 'superseded before json retry')) return;
+      const errMsg = String((parseErr as Error)?.message || parseErr).slice(0, 800);
+      dbg('job.tagger.json_retry', { err: errMsg.slice(0, 160), raw_len: String(taggedRaw || '').length }, 'warn');
+      await setJob(jobId, 'tagging', {
+        phase: 'tagging',
+        progress: 0.28,
+        message: '태거 JSON 오류 → 재시도 중…',
+        shot_count: 0,
+        shot_done: 0,
+        debug_stage: 'job.tagger_json_retry',
+      });
+      messages.push(
+        { role: 'assistant', content: String(taggedRaw || '').slice(0, 12000) },
+        {
+          role: 'user',
+          content:
+            `이전 응답 JSON 파싱 실패:\n${errMsg}\nformat 스키마에 맞는 JSON 객체 하나만 다시 출력하세요.`,
+        },
+      );
+      taggedRaw = await callLlm(resolveLlmRole(getConfig(), 'main'), messages);
+      if (await cancelJobIfStale(jobId, 'superseded after json retry')) return;
+      tagged = parseJsonLoose(taggedRaw) as TaggerResult;
+    }
     let shots = flattenShots(tagged, request.assistant_text);
     dbg('job.tagger.done', { shots: shots.length, raw_len: String(taggedRaw || '').length });
     if (!shots.length) throw new Error('태거가 shot을 반환하지 않았습니다.');
@@ -768,13 +901,22 @@ async function runJob(jobId: string): Promise<void> {
       try {
         // Not cancelled mid-flight on purpose: the image is already being paid
         // for, so let it land and discard afterwards if the job went stale.
-        ({ bytes: raw, seed } = await generateImage({ main, neg, captions }, shot.aspect));
+        ({ bytes: raw, seed } = await generateImage(
+          { main, neg, captions, characters: meta.characters },
+          shot.aspect,
+        ));
       } finally {
         clearInterval(hb);
       }
       dbg('job.shot.nai_done', { shot: idx, bytes: raw?.byteLength || 0, seed });
 
-      if (await cancelJobIfStale(jobId, `superseded after shot ${idx + 1} nai`)) return;
+      // Supersession: drop without saving. User soft-stop: save this paid shot, then exit.
+      {
+        const metaAfterNai = jobRunMeta.get(jobId);
+        if (!isJobCurrent(jobId) && !metaAfterNai?.userStop) {
+          if (await cancelJobIfStale(jobId, `superseded after shot ${idx + 1} nai`)) return;
+        }
+      }
 
       await setJob(
         jobId,

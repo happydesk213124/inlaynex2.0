@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.35';
+const PLUGIN_VERSION = '2.2.36';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.36</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>펼친 이미지 뷰어 드래그: 고스트 위치를 v()가 원위치으로 덮어쓰던 버그 수정 · 헤더 빈칸도 드래그</li>
+            <li>상시·설정·접기 버튼 padding 아주 살짝 축소</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.35</strong>
@@ -7612,8 +7619,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.35",
-    body: "프리셋 hit 보정 · 뷰어 드래그 고스트. 업데이트 내역 참고."
+    title: "2.2.36",
+    body: "펼친 뷰어 드래그 복구 · 버튼 살짝 축소. 업데이트 내역 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8722,7 +8729,7 @@ const VENDOR_VIEWER_STOP_HDR_NEEDLE =
   `        '<span style="cursor:pointer;background:#7c6cff;color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1" title="이 메시지의 모든 샷 재생성">재생성</span>',
         \`<span style="cursor:pointer;background:\${Nt() ? "#0f766e" : "#334155"};color:#fff;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1">\${Nt() ? "상시ON" : "상시"}</span>\`,`;
 const VENDOR_VIEWER_STOP_HDR_PATCH =
-  `        \`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">상시</span>\`,`;
+  `        \`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">상시</span>\`,`;
 
 const VENDOR_VIEWER_STOP_CLICK_NEEDLE =
   `                W === 0 ? await selectGalIndex(d.index - 1) : W === 1 ? await selectGalIndex(d.index + 1) : W === 2 ? await te() : W === 3 ? await rerollAllImages() : W === 4 ? await ae() : W === 5 ? (t.backendSettings?.card || {}).show_risu_settings_button !== !1 && await At() : W === 6 && await toggleMinimizeBtn();`;
@@ -8781,7 +8788,7 @@ const VENDOR_VIEWER_STOP_LABEL_PATCH =
             continue;
           }
           typeof el.setInnerHTML == "function" && labels[idx] && await el.setInnerHTML(labels[idx]);
-          typeof el.setStyleAttribute == "function" && colors[idx] && await el.setStyleAttribute(\`cursor:pointer;\${idx === 3 ? "display:inline-flex;" : ""}background:\${colors[idx]};color:\${idx === 2 ? "#fff" : "#dbe4f5"};padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.12)\`);
+          typeof el.setStyleAttribute == "function" && colors[idx] && await el.setStyleAttribute(\`cursor:pointer;\${idx === 3 ? "display:inline-flex;" : ""}background:\${colors[idx]};color:\${idx === 2 ? "#fff" : "#dbe4f5"};padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.12)\`);
         }`;
 
 const VENDOR_ACTIONS_CLAMP_PATCH =
@@ -8811,8 +8818,8 @@ const VENDOR_VIEWER_HDR_TAIL_TOUCH_NEEDLE =
   `        \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};background:#334155;color:#dbe4f5;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
         \`<span style="cursor:pointer;background:#1e293b;color:#dbe4f5;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)">\${minimizedInit ? "펼치기" : "접기"}</span>\``;
 const VENDOR_VIEWER_HDR_TAIL_TOUCH_PATCH =
-  `        \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};align-items:center;justify-content:center;background:#334155;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
-        \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${minimizedInit ? "펼치기" : "접기"}</span>\``;
+  `        \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};align-items:center;justify-content:center;background:#334155;color:#dbe4f5;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
+        \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${minimizedInit ? "펼치기" : "접기"}</span>\``;
 
 const VENDOR_VIEWER_HDR_CHROME_TOUCH_NEEDLE =
   `    const r = await H(e, "div", { style: Ft(startGeo, minimizedInit) }), i = await H(e, "div", { style: "height:36px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 10px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06);cursor:move;user-select:none;flex-shrink:0;touch-action:none;" }), s = await H(e, "span", {
@@ -8847,8 +8854,8 @@ const VENDOR_VIEWER_HDR_CHROME_TOUCH_PATCH =
       style: "display:none;position:absolute;top:52px;left:10px;min-width:200px;max-width:min(92vw,320px);max-height:min(50vh,360px);overflow:auto;z-index:5;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;",
       html: ""
     }), c = await H(e, "div", {
-      // Constrained width so ◀▶상시 / 설정·접기 can wrap to 2–3 lines when the panel is narrow.
-      style: "display:flex;gap:8px;align-items:center;flex:1 1 auto;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;max-width:100%;min-width:0;box-sizing:border-box;",`;
+      // flex-grow would fill the header and steal drags on empty chrome; shrink/wrap only.
+      style: "display:flex;gap:8px;align-items:center;flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;max-width:100%;min-width:0;box-sizing:border-box;",`;
 
 const VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE =
   `      const label = \`\${String(active?.name || (presets.length ? "프리셋" : "없음")).slice(0, 12)}\${String(active?.name || "").length > 12 ? "…" : ""} ▾\`;
@@ -9065,6 +9072,8 @@ const VENDOR_VIEWER_PTR_ORDER_PATCH =
             }
           } catch {
           }
+          // Empty space inside button row (flex grow / wrap gaps) — drag, don't swallow.
+          await startViewerDrag(A, _, O, !1);
           return;
         }`;
 
@@ -9154,10 +9163,10 @@ const VENDOR_ACTIONS_CHROME_PATCH =
           await s.setInnerHTML(iconMin ? "🖼️" : "Inlay Viewer"), await s.setStyleAttribute(iconMin ? "font-weight:600;font-size:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;" : "font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;"), await i.setStyleAttribute(\`min-height:\${iconMin ? 48 : toolbarMin ? 56 : 52}px;height:\${iconMin ? "48px" : "auto"};display:flex;align-items:center;justify-content:\${iconMin ? "center" : "flex-start"};gap:8px;padding:\${iconMin ? "0" : "8px 10px"};background:rgba(255,255,255,.04);border-bottom:\${d.minimized && !toolbarMin ? "0" : "1px solid rgba(255,255,255,.06)"};cursor:move;user-select:none;flex-shrink:0;touch-action:none;flex-wrap:\${iconMin ? "nowrap" : "wrap"};\`), await viewerPresetBtn.setStyleAttribute(\`max-width:200px;min-width:72px;flex:0 1 160px;height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:13px;font-weight:600;padding:0 12px;cursor:pointer;pointer-events:auto;display:\${iconMin ? "none" : "inline-flex"};align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!iconMin && d.presetMenuOpen ? "block" : "none"};position:absolute;top:52px;left:10px;min-width:200px;max-width:min(92vw,320px);max-height:min(50vh,360px);overflow:auto;z-index:5;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML([
             '<span style="cursor:pointer;background:#475569;color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">◀</span>',
             '<span style="cursor:pointer;background:#475569;color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">▶</span>',
-            \`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">상시</span>\`,
-            \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};align-items:center;justify-content:center;background:#334155;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
-            \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${d.minimized ? "펼치기" : "접기"}</span>\`
-          ].join("")), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:8px;align-items:center;flex:1 1 auto;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;max-width:100%;min-width:0;box-sizing:border-box;\`);
+            \`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">상시</span>\`,
+            \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};align-items:center;justify-content:center;background:#334155;color:#dbe4f5;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
+            \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${d.minimized ? "펼치기" : "접기"}</span>\`
+          ].join("")), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:8px;align-items:center;flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;max-width:100%;min-width:0;box-sizing:border-box;\`);
         }
       } catch {
       }`;
@@ -9896,6 +9905,19 @@ const VENDOR_ACTIONS_END_CLEAR_PATCH =
       }
       if (moved && Number.isFinite(ghostLeft) && Number.isFinite(ghostTop)) {
         d.geo.left = ghostLeft, d.geo.top = ghostTop, d.geo = clampViewerGeo(d.geo, d.minimized);
+        // Expanded x()→v() reads the unmoved panel rect and rewinds the ghost commit.
+        if (!d.minimized) {
+          d.expandedGeo = {
+            left: d.geo.left,
+            top: d.geo.top,
+            w: d.geo.w,
+            h: d.geo.h
+          };
+          try { await qt(d.expandedGeo); } catch {}
+          try { await f(); } catch {}
+          await refreshThumbsRect();
+          return;
+        }
       }
       await x();
       await refreshThumbsRect();

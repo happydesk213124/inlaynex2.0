@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.20';
+const PLUGIN_VERSION = '2.2.21';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.21</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>선택 토스트: 챗·캐릭터명 / 아래 작은 메시지 앞부분 · 토스트 너비 고정</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.20</strong>
@@ -7437,8 +7443,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.20",
-    body: "진행 토스트·인덱싱 바 개선. 업데이트 내역 탭 참고."
+    title: "2.2.21",
+    body: "선택 토스트 챗/캐릭터 + 고정 너비. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -7676,10 +7682,10 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }
   }
   /** Progress toast root — gated by card.progress_toast. */
-  const PROGRESS_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:auto;max-width:min(360px,92vw);display:block;";
-  const PROGRESS_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:none;max-width:min(360px,92vw);display:none;";
-  const HOST_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;max-width:min(360px,92vw);display:block;background:rgba(37,99,235,.95);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.4);";
-  const HOST_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;max-width:min(360px,92vw);display:none;";
+  const PROGRESS_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:auto;width:min(280px,92vw);display:block;";
+  const PROGRESS_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:none;width:min(280px,92vw);display:none;";
+  const HOST_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;width:min(280px,92vw);box-sizing:border-box;display:block;background:rgba(37,99,235,.95);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.4);";
+  const HOST_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;width:min(280px,92vw);display:none;";
   const PROGRESS_TOAST_HIDE_MS = 2e3;
   async function setProgressToastEye(visible) {
     const root = t._progressToastRoot;
@@ -7848,12 +7854,13 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         } catch {
           count = Number(O.cardCount) || 0;
         }
-        const msgNo = Number(O.message_index);
-        const msgLabel = Number.isFinite(msgNo) && msgNo >= 0 ? \`#\${msgNo + 1}\` : O.domIndex != null ? \`DOM#\${O.domIndex}\` : "";
-        const preview = String(O.preview || O.text || "").replace(/\\s+/g, " ").trim().slice(0, 52);
-        const head = count > 0 ? \`\${count}장\` : "이미지 없음";
-        const stage = preview ? \`\${head} · \${preview}\` : head;
-        const meta = msgLabel;
+        const chatName = String(O.chatName || t.lastScope?.chatName || "").trim();
+        const charName = String(O.characterName || t.lastScope?.characterName || "").trim();
+        const stage = [chatName, charName].filter(Boolean).join(" · ") || "메시지";
+        const preview = String(O.preview || O.text || "").replace(/\\s+/g, " ").trim().slice(0, 40);
+        const metaParts = [count > 0 ? \`\${count}장\` : "이미지 없음"];
+        if (preview) metaParts.push(preview);
+        const meta = metaParts.join(" · ");
         const fp = \`idle|\${stage}|\${meta}|\${O.hash || O.domIndex || ""}\`;
         if (fp === t._progressToastFp) return;
         t._progressToastFp = fp;
@@ -7865,7 +7872,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           showBar: !1,
           tone: "job",
           escapeHtml: h
-        }) : \`<div data-inlay-progress-toast="1" style="padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px;cursor:pointer">\${h(stage)}\${meta ? " · " + h(meta) : ""}</div>\`;
+        }) : \`<div data-inlay-progress-toast="1" style="box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px;cursor:pointer"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(stage)}</div><div style="color:#8b97ab;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(meta)}</div></div>\`;
         await paintProgressToastHtml(html, { armHide: !0 });
         return;
       }

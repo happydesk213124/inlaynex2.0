@@ -2230,7 +2230,7 @@ export function composeProgressToastHtml(args: {
   const metaRow = meta
     ? `<div style="min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8b97ab;font-size:10px;line-height:1.25">${meta}</div>`
     : '';
-  return `<div data-inlay-progress-toast="1" style="display:flex;flex-direction:column;gap:4px;min-width:0;width:max-content;max-width:min(360px,92vw);padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;cursor:pointer;user-select:none"><div style="min-width:0;font-weight:700;color:${accent};font-size:11px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stage}</div>${metaRow}${bar ? `<div style="width:min(200px,72vw);max-width:100%">${bar}</div>` : ''}</div>`;
+  return `<div data-inlay-progress-toast="1" style="display:flex;flex-direction:column;gap:4px;box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;cursor:pointer;user-select:none"><div style="min-width:0;font-weight:700;color:${accent};font-size:11px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stage}</div>${metaRow}${bar ? `<div style="width:100%">${bar}</div>` : ''}</div>`;
 }
 
 // ── anchor / reading / segment index ──────────────────────────────────────

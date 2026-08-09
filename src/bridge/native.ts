@@ -17,7 +17,7 @@ import { errorBody, isFetchError, makeFetchError } from '../core/errors';
 import { hostHas } from '../core/host';
 import { routeFetch } from '../api/router';
 import { getDeviceStore } from '../storage/device-store';
-import { ensureBlobUrl, pngToDataUrl, resolveImageUrl, warmImages, warmProgress, onWarmProgress, pinImageUrls, retainImageUrls, dropImageUrl, prioritizeWarmFocus, clearWarmFocus } from '../storage/image-urls';
+import { ensureBlobUrl, pngToDataUrl, resolveImageUrl, warmImages, warmProgress, warmFocusProgress, onWarmProgress, pinImageUrls, retainImageUrls, dropImageUrl, prioritizeWarmFocus, clearWarmFocus } from '../storage/image-urls';
 import { loadSettingsFromStorage } from '../storage/settings-store';
 import { blobUrlCount, idbGet, openDb, storeSize } from '../storage/stores';
 import {
@@ -128,6 +128,7 @@ export function installNativeBridge(): void {
     retainImageUrls,
     dropImageUrl,
     warmProgress,
+    warmFocusProgress,
     onWarmProgress,
     debug: debugSnapshot,
     clearDebug,

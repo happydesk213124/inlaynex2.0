@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.29';
+const PLUGIN_VERSION = '2.2.30';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.30</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>민트 인덱싱 토스트: 선택±이웃 포커스 워밍만 표시(전체 갤러리 백그라운드 워밍은 토스트 비개입)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.29</strong>
@@ -5767,7 +5773,7 @@ const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
     "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 ±1(역할 무관). 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-chat-scale": { title: "말풍선 삽화 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
-    "nx-progress-toast": { title: "진행 토스트", body: "태깅/생성/리롤/인덱싱 진행 표시. 메시지 선택은 별도 토스트. 토스트 위를 직접 누르면 닫힘(채팅 다른 곳 클릭은 무시). busy 중엔 유지. 인덱싱=민트, 그 외=보라." },`;
+    "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>`;
@@ -7572,8 +7578,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.29",
-    body: "인덱싱 토스트: 끝나면 바로 사라짐. 업데이트 내역 탭 참고."
+    title: "2.2.30",
+    body: "인덱싱 토스트=선택 이미지 준비만. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8091,19 +8097,28 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       const VC = globalThis.__INLAY_VIEWER_CORE__;
       const B = t.jobProgress;
       const info = formatViewerJob(B);
-      const idx = readIndexProgress(B);
+      // Mint toast tracks selection-focus warm only — NOT full gallery warmProgress.
+      let indexBusy = !1, indexPct = 0, indexLabel = "인덱싱";
+      try {
+        const N = globalThis.__INLAY_NATIVE__;
+        const focus = typeof N?.warmFocusProgress == "function" ? N.warmFocusProgress() : null;
+        if (focus) {
+          indexBusy = !!focus.busy;
+          indexPct = Math.max(0, Math.min(100, Math.round(Number(focus.pct) || 0)));
+          indexLabel = "인덱싱";
+        }
+      } catch {
+      }
       const jobBusy = !!(info && info.busy);
-      const indexBusy = !!idx.busy;
       const state = info?.state || "";
       const isError = state === "error";
       const isTerminal = state === "done" || state === "cancelled" || isError;
       await ensureProgressToastRoot();
-      // Warm idle: mint toast must drop immediately (leaving last % painted was the hang).
+      // Warm focus idle: mint toast must drop immediately (do not leave last %).
       if (!indexBusy && !jobBusy) {
         t._progressToastIndexStallPct = null;
         t._progressToastIndexStallAt = 0;
         t._progressToastIndexShownAt = 0;
-        t._progressToastIndexStallSuppress = !1;
         if (!isTerminal || !B) {
           if (t._progressToastShown) {
             clearProgressToastEyeHide();
@@ -8113,13 +8128,12 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           }
           return;
         }
-        // else: job terminal finish frame below
       }
       const indexOnly = !jobBusy && indexBusy;
-      // % not advancing → hide mint (warm may continue quietly).
+      // Focus % not advancing → hide mint (encode may be stuck on one id).
       if (indexOnly) {
         if (!t._progressToastIndexShownAt) t._progressToastIndexShownAt = Date.now();
-        const rp = Math.round(Number(idx.pct) || 0);
+        const rp = indexPct;
         const prevPct = Number(t._progressToastIndexStallPct);
         const prevAt = Number(t._progressToastIndexStallAt) || 0;
         const advanced = Number.isFinite(prevPct) && rp > prevPct;
@@ -8145,9 +8159,9 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       let stage = jobBusy
         ? info.stage || "작업 중"
         : indexBusy
-          ? idx.label || "인덱싱"
+          ? indexLabel
           : info?.stage || "작업 중";
-      let pct = jobBusy ? info.pct : indexBusy ? idx.pct : info ? info.pct : 0;
+      let pct = jobBusy ? info.pct : indexBusy ? indexPct : info ? info.pct : 0;
       // Finish frame: show 100% once before auto-hide (do not drop at 99).
       if (!jobBusy && !indexBusy && isTerminal && !isError) pct = Math.max(Number(pct) || 0, 100), stage = info?.stage || "완료";
       const liveBusy = jobBusy || indexBusy;
@@ -8215,10 +8229,16 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         }
         const B = t.jobProgress;
         const info = B ? formatViewerJob(B) : null;
-        const idx = readIndexProgress(B);
         const jobBusy = !!(info && info.busy);
-        const indexBusy = !!idx.busy;
-        // Warm went idle but eye stuck — clear without waiting on hung sync.
+        let indexBusy = !1;
+        try {
+          const N = globalThis.__INLAY_NATIVE__;
+          const focus = typeof N?.warmFocusProgress == "function" ? N.warmFocusProgress() : null;
+          indexBusy = !!focus?.busy;
+        } catch {
+          indexBusy = !1;
+        }
+        // Focus warm idle but eye stuck — clear without waiting on hung sync.
         if (t._progressToastShown && !jobBusy && !indexBusy && !(info && (info.state === "done" || info.state === "error" || info.state === "cancelled"))) {
           setProgressToastEye(!1, !0).catch(() => {
           });

@@ -145,6 +145,32 @@ export function warmProgress(): WarmProgress {
   return { pending, active: warmActive, done, total, pct, busy: pending > 0 };
 }
 
+/**
+ * Selection-focus warm only — drives the mint progress toast.
+ * Full-gallery / deferred background warm must NOT keep that toast alive.
+ */
+export function warmFocusProgress(): WarmProgress {
+  if (!warmFocus?.size) {
+    return { pending: 0, active: 0, done: 0, total: 0, pct: 0, busy: false };
+  }
+  let done = 0;
+  for (const id of warmFocus) {
+    if (getBlobUrl(id) !== undefined) done += 1;
+  }
+  const total = warmFocus.size;
+  const pending = Math.max(0, total - done);
+  const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0;
+  const busy = pending > 0;
+  return {
+    pending,
+    active: busy ? Math.min(warmActive, pending) : 0,
+    done,
+    total,
+    pct: busy ? Math.max(6, pct) : pct,
+    busy,
+  };
+}
+
 /** UI hooks this to repaint the dual status bars while images index. */
 export function onWarmProgress(fn: (() => void) | null): void {
   warmNotify = typeof fn === 'function' ? fn : null;

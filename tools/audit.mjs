@@ -97,6 +97,8 @@ else {
     ['pinImageUrls', 'function'],
     ['prioritizeWarmFocus', 'function'],
     ['clearWarmFocus', 'function'],
+    ['warmProgress', 'function'],
+    ['warmFocusProgress', 'function'],
     ['debug', 'function'],
     ['clearDebug', 'function'],
   ];

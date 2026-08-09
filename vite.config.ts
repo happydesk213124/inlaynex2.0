@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.25';
+const PLUGIN_VERSION = '2.2.26';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.26</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>토스트 클릭 닫기: SafeDOM이 document 전역으로 받는 클릭을 hit-test로 걸러, 채팅 아무 곳 클릭 시 깜빡임 제거</li>
+            <li>리롤/인덱싱 busy 중에는 토스트 클릭으로도 강제 숨김하지 않음</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.25</strong>
@@ -5742,7 +5749,7 @@ const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
     "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 ±1(역할 무관). 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-chat-scale": { title: "말풍선 삽화 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
-    "nx-progress-toast": { title: "진행 토스트", body: "태깅/생성/리롤/인덱싱 진행 표시. 메시지 선택 알림은 별도 토스트(같은 메시지 재클릭 생략). 인덱싱 % 정체 시 100% 후 숨김. 인덱싱=민트, 그 외=보라." },`;
+    "nx-progress-toast": { title: "진행 토스트", body: "태깅/생성/리롤/인덱싱 진행 표시. 메시지 선택은 별도 토스트. 토스트 위를 직접 누르면 닫힘(채팅 다른 곳 클릭은 무시). busy 중엔 유지. 인덱싱=민트, 그 외=보라." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>`;
@@ -7547,8 +7554,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.25",
-    body: "리롤 중 클릭해도 진행 토스트 유지. 업데이트 내역 탭 참고."
+    title: "2.2.26",
+    body: "토스트 전역 클릭 dismiss 수정(hit-test). 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -7867,19 +7874,30 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-progress-toast");
     } catch {
     }
-    const onDismiss = (ev) => {
+    // SafeDOM SafeElement.addEventListener attaches to the HOST document with
+    // no target filter — a bare dismiss here fires on every click in the chat.
+    // Only dismiss when the pointer is inside this toast's rect; never touch
+    // preventDefault on misses (that would break chat/viewer input).
+    const onDismiss = async (ev) => {
+      if (!t._progressToastShown) return;
       try {
-        ev && ev.preventDefault && ev.preventDefault();
-        ev && ev.stopPropagation && ev.stopPropagation();
+        if (t.jobProgress && formatViewerJob(t.jobProgress)?.busy) return;
+        if (readIndexProgress(t.jobProgress)?.busy) return;
       } catch {
+      }
+      const x = Number(ev?.clientX), y = Number(ev?.clientY);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      try {
+        const G = await root.getBoundingClientRect();
+        if (!G || x < G.left || x > G.right || y < G.top || y > G.bottom) return;
+      } catch {
+        return;
       }
       dismissProgressToastUi();
     };
-    for (const evName of ["pointerdown", "click", "touchstart"]) {
-      try {
-        typeof root.addEventListener == "function" && root.addEventListener(evName, onDismiss);
-      } catch {
-      }
+    try {
+      typeof root.addEventListener == "function" && await root.addEventListener("pointerdown", onDismiss);
+    } catch {
     }
     await body.appendChild(root);
     t._progressToastRoot = root;
@@ -7955,20 +7973,23 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-selection-toast");
     } catch {
     }
-    const onDismiss = (ev) => {
+    // Same SafeDOM document-wide listener pitfall as progress toast — hit-test only.
+    const onDismiss = async (ev) => {
+      if (!t._selectionToastShown) return;
+      const x = Number(ev?.clientX), y = Number(ev?.clientY);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
       try {
-        ev && ev.preventDefault && ev.preventDefault();
-        ev && ev.stopPropagation && ev.stopPropagation();
+        const G = await root.getBoundingClientRect();
+        if (!G || x < G.left || x > G.right || y < G.top || y > G.bottom) return;
       } catch {
+        return;
       }
       hideSelectionToast().catch(() => {
       });
     };
-    for (const evName of ["pointerdown", "click", "touchstart"]) {
-      try {
-        typeof root.addEventListener == "function" && root.addEventListener(evName, onDismiss);
-      } catch {
-      }
+    try {
+      typeof root.addEventListener == "function" && await root.addEventListener("pointerdown", onDismiss);
+    } catch {
     }
     await body.appendChild(root);
     t._selectionToastRoot = root;

@@ -235,8 +235,25 @@ function focusWorkPending(): boolean {
 
 function maybeReleaseWarmFocus(): void {
   if (!warmFocus) return;
-  if (focusWorkPending()) return;
-  clearWarmFocus();
+  for (const id of [...warmFocus]) {
+    if (getBlobUrl(id) !== undefined) warmFocus.delete(id);
+  }
+  if (!warmFocus.size) {
+    warmFocus = null;
+    flushWarmDeferred();
+    notifyWarm();
+    pumpWarm();
+    return;
+  }
+  // Focus ids remain but nothing is queued/running for them (encode failed / missing
+  // bytes) — release monopoly so deferred work and the mint toast can finish.
+  const focusQueued = warmQueue.some((id) => warmFocus!.has(id));
+  if (!focusQueued && warmActive === 0) {
+    warmFocus = null;
+    flushWarmDeferred();
+    notifyWarm();
+    pumpWarm();
+  }
 }
 
 /** Non-focus encodes wait so selection images own the CPU slots. */
@@ -282,6 +299,8 @@ function pumpWarm(): void {
         warmActive -= 1;
         warmQueued.delete(id);
         warmWaveDone += 1;
+        // Failed/missing encode must not keep selection monopoly forever.
+        if (warmFocus?.has(id) && getBlobUrl(id) === undefined) warmFocus.delete(id);
         maybeReleaseWarmFocus();
         if (warmQueue.length === 0 && warmActive === 0 && !warmDeferred.length) {
           // Hold totals so UI can paint ~100% once before the wave clears.

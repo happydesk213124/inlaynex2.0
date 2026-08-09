@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.26';
+const PLUGIN_VERSION = '2.2.27';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.27</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>인덱싱 토스트: %가 안 오르면(정체·감소) 1.5초 후 100%→숨김 · 워밍 포커스 데드락 해제</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.26</strong>
@@ -7554,8 +7560,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.26",
-    body: "토스트 전역 클릭 dismiss 수정(hit-test). 업데이트 내역 탭 참고."
+    title: "2.2.27",
+    body: "인덱싱 토스트 정체 시 자동 종료 강화. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8089,17 +8095,22 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       // Selection toast is separate — idle peek no longer uses this slot.
       if (!hasPayload) return;
       const indexOnly = !jobBusy && indexBusy;
-      // Indexing % stuck: flash 100% for 0.5s then hide; suppress until warm ends.
+      // Indexing % stuck/regressing: flash 100% briefly, hide, unblock warm focus.
+      // Only reset the stall clock when pct actually advances (jitter 74↔75 used to
+      // reset forever and leave the mint toast hanging at ~59/75).
       if (indexOnly) {
         if (t._progressToastIndexStallSuppress) {
-          // Hide mint-only stall leftover — never while a job/reroll is running.
-          if (t._progressToastShown && !jobBusy) await setProgressToastEye(!1);
+          if (t._progressToastShown && !jobBusy) await setProgressToastEye(!1, !0);
           return;
         }
         const rp = Math.round(Number(idx.pct) || 0);
-        const prevPct = t._progressToastIndexStallPct;
+        const prevPct = Number(t._progressToastIndexStallPct);
         const prevAt = Number(t._progressToastIndexStallAt) || 0;
-        if (prevPct === rp && prevAt && Date.now() - prevAt >= 2500) {
+        const advanced = Number.isFinite(prevPct) && rp > prevPct;
+        if (!prevAt || advanced) {
+          t._progressToastIndexStallPct = rp;
+          t._progressToastIndexStallAt = Date.now();
+        } else if (Date.now() - prevAt >= 1500) {
           const stageDone = idx.label || "인덱싱";
           const metaDone = "100%";
           const fpDone = \`index|\${stageDone}|100|\${metaDone}|stall-done|0|0|0\`;
@@ -8107,6 +8118,11 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           t._progressToastIndexStallSuppress = !0;
           t._progressToastIndexStallPct = null;
           t._progressToastIndexStallAt = 0;
+          try {
+            const N = globalThis.__INLAY_NATIVE__;
+            typeof N?.clearWarmFocus == "function" && N.clearWarmFocus();
+          } catch {
+          }
           const htmlDone = typeof VC?.composeProgressToastHtml == "function" ? VC.composeProgressToastHtml({
             stage: stageDone,
             meta: metaDone,
@@ -8117,10 +8133,6 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           }) : \`<div data-inlay-progress-toast="1" style="padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px">\${h(stageDone + " 100%")}</div>\`;
           await paintProgressToastHtml(htmlDone, { armHide: !0, armHideMs: 500 });
           return;
-        }
-        if (prevPct !== rp || !prevAt) {
-          t._progressToastIndexStallPct = rp;
-          t._progressToastIndexStallAt = Date.now();
         }
       }
       let stage = jobBusy

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.18';
+const PLUGIN_VERSION = '2.2.19';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.19</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>설정 닫기: 창 먼저 닫고 뷰어/상시 복구는 백그라운드 + 토스트</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.18</strong>
@@ -4423,21 +4429,28 @@ const VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE = `    document.getElementById("nx-clo
       }
     }),`;
 const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `    document.getElementById("nx-close")?.addEventListener("click", async () => {
-      // Optimistic close: hide UI first, persist settings in the background.
+      // Instant close: hide shell now; remount viewer/sticky in background with toast.
       t.uiOpen = !1, t._debugTabTimer && (clearInterval(t._debugTabTimer), t._debugTabTimer = null), t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), t._settingsWatch && (clearInterval(t._settingsWatch), t._settingsWatch = null);
       if (t.overlayUi) t.overlayUi._stickyEditorOpen = !1;
-      try { await restoreFloatingViewerAfterModal(); } catch {}
-      try {
-        await blockHostChrome(!1);
-      } catch {
-      }
-      typeof k.hideContainer == "function" && await k.hideContainer(), invalidateOverlayLayoutCache();
+      typeof k.hideContainer == "function" && await k.hideContainer();
+      invalidateOverlayLayoutCache();
       flushSettingsSave().catch(() => {});
+      const toastHtml = (msg) => \`<div data-inlay-progress-toast="1" style="padding:10px 14px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:12px">\${msg}</div>\`;
       try {
-        // it() already re-applies pin layout (he/Ce); do not await them again.
-        await it();
+        typeof paintProgressToastHtml == "function" && paintProgressToastHtml(toastHtml("뷰어 복구 중…"), { armHide: !0 }).catch(() => {});
       } catch {
       }
+      Promise.resolve().then(async () => {
+        try { await restoreFloatingViewerAfterModal(); } catch {}
+        try { await blockHostChrome(!1); } catch {}
+        try { await it(); } catch {}
+        try {
+          typeof paintProgressToastHtml == "function" && await paintProgressToastHtml(toastHtml("뷰어 복구됨"), { armHide: !0 });
+        } catch {
+        }
+      }).catch((err) => {
+        y("warn", "settings.close.restore", err?.message || err);
+      });
     }),`;
 
 /** Viewer 상시 chip: flip overlay_markers in memory + layout first, persist after. */
@@ -4488,10 +4501,33 @@ const VENDOR_SETTINGS_WATCH_STICKY_NEEDLE = `        t.uiOpen = !1, t._hostReape
         }), y("info", "settings.closed", "host ui restore");`;
 const VENDOR_SETTINGS_WATCH_STICKY_PATCH = `        t.uiOpen = !1, t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), clearInterval(t._settingsWatch), t._settingsWatch = null;
         if (t.overlayUi) t.overlayUi._stickyEditorOpen = !1;
-        restoreFloatingViewerAfterModal().catch(() => {}), Ht().catch(() => {});
-        flushSettingsSave().catch(() => {
-        }), blockHostChrome(!1).catch(() => {
-        }), y("info", "settings.closed", "host ui restore");`;
+        flushSettingsSave().catch(() => {});
+        Promise.resolve().then(async () => {
+          try { await restoreFloatingViewerAfterModal(); } catch {}
+          try { await blockHostChrome(!1); } catch {}
+          try { await it(); } catch {}
+        }).catch(() => {});
+        y("info", "settings.closed", "host ui restore");`;
+
+const VENDOR_BLOCK_HOST_UNBLOCK_NEEDLE = `      if (t.galleryUi?.applyChrome) await t.galleryUi.applyChrome();
+      else if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+      invalidateOverlayLayoutCache();
+      await it();
+      try {
+        await he();
+      } catch {
+      }
+      Ce();
+    } catch {
+    }
+  }`;
+const VENDOR_BLOCK_HOST_UNBLOCK_PATCH = `      if (t.galleryUi?.applyChrome) await t.galleryUi.applyChrome();
+      else if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+      // Remount (it/he/Ce) is scheduled by settings close — keep unblock style-only for instant hide.
+      invalidateOverlayLayoutCache();
+    } catch {
+    }
+  }`;
 
 /** Char create/edit: gender select + autotag gender (asserted vendor patches). */
 const VENDOR_AUTOTAG_LT_NEEDLE = `    return o(\`LLM 태그 완료 · 외형/의상/악세 \${count ? \`\${count}토큰\` : "반영"}\`, "ok"), {
@@ -7385,8 +7421,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.18",
-    body: "상시 ON 시 이미지 복구·설정 열기/상시 렉 완화. 업데이트 내역 탭 참고."
+    title: "2.2.19",
+    body: "설정 닫기 즉시 반영(복구는 토스트). 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -9418,6 +9454,7 @@ const loadVendorUi = (): string => {
     [VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, 'settings open sticky hide'],
     [VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, 'settings At hide panel + rehide'],
     [VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, 'settings close sticky restore'],
+    [VENDOR_BLOCK_HOST_UNBLOCK_NEEDLE, 'blockHostChrome unblock style-only'],
     [VENDOR_SANGSI_TOGGLE_NEEDLE, 'viewer 상시 optimistic toggle'],
     [VENDOR_SETTINGS_WATCH_STICKY_NEEDLE, 'settings watch sticky restore'],
     [VENDOR_OVERLAY_MOUNT_NEEDLE, 'overlay keep Ya shell'],
@@ -9719,6 +9756,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, VENDOR_SETTINGS_OPEN_STICKY_PATCH)
     .replace(VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH)
     .replace(VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, VENDOR_SETTINGS_CLOSE_STICKY_PATCH)
+    .replace(VENDOR_BLOCK_HOST_UNBLOCK_NEEDLE, VENDOR_BLOCK_HOST_UNBLOCK_PATCH)
     .replace(VENDOR_SANGSI_TOGGLE_NEEDLE, VENDOR_SANGSI_TOGGLE_PATCH)
     .replace(VENDOR_SETTINGS_WATCH_STICKY_NEEDLE, VENDOR_SETTINGS_WATCH_STICKY_PATCH)
     .replace(VENDOR_CARD_TAG_ROSTER_REFRESH_NEEDLE, VENDOR_CARD_TAG_ROSTER_REFRESH_PATCH)

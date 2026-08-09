@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.24';
+const PLUGIN_VERSION = '2.2.25';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.25</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>재생성/리롤 중 메시지 클릭해도 진행 토스트가 깜빡이지 않음(워밍 sync 분리·숨김 가드·동일 HTML 재페인트 생략)</li>
+            <li>선택 토스트는 진행 바가 있을 때 항상 그 아래에 표시</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.24</strong>
@@ -1414,8 +1421,17 @@ const VENDOR_EXPLORER_WARM_PROGRESS_PATCH = `          N.onWarmProgress(() => {
             t._indexPaintQueued = !0;
             Promise.resolve().then(() => {
               t._indexPaintQueued = !1;
-              syncProgressToast().catch(() => {
-              });
+              // Job/reroll owns the progress toast — warm ticks must not repaint it (click flicker).
+              let jobBusy = !1;
+              try {
+                jobBusy = !!(t.jobProgress && formatViewerJob(t.jobProgress)?.busy);
+              } catch {
+                jobBusy = !1;
+              }
+              if (!jobBusy) {
+                syncProgressToast().catch(() => {
+                });
+              }
               if (t.galleryUi?.paintStatus) t.galleryUi.paintStatus().catch(() => {
               });
             });
@@ -7531,8 +7547,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.24",
-    body: "선택 토스트 분리 — 리롤/인덱싱 바와 간섭 없음. 업데이트 내역 탭 참고."
+    title: "2.2.25",
+    body: "리롤 중 클릭해도 진행 토스트 유지. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -7782,9 +7798,16 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     return \`position:fixed;top:\${top}px;left:50%;transform:translateX(-50%);z-index:100001;pointer-events:\${pe};width:min(280px,92vw);box-sizing:border-box;display:\${eye};\`;
   }
   const PROGRESS_TOAST_HIDE_MS = 2e3;
-  async function setProgressToastEye(visible) {
+  async function setProgressToastEye(visible, force) {
     const root = t._progressToastRoot;
     if (!root) return;
+    // Never blank the job/reroll bar while a job is live (selection click / stall / timers).
+    if (!visible && !force) {
+      try {
+        if (t.jobProgress && formatViewerJob(t.jobProgress)?.busy) return;
+      } catch {
+      }
+    }
     t._progressToastShown = !!visible;
     try {
       if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(visible ? PROGRESS_TOAST_STYLE_SHOW : PROGRESS_TOAST_STYLE_HIDE);
@@ -7815,7 +7838,8 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
   function dismissProgressToastUi() {
     clearProgressToastEyeHide();
     t._progressToastFp = "";
-    setProgressToastEye(!1).catch(() => {
+    t._progressToastLastHtml = "";
+    setProgressToastEye(!1, !0).catch(() => {
     });
   }
   async function destroyProgressToast() {
@@ -7824,6 +7848,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     t._progressToastRoot = null;
     t._progressToastShown = !1;
     t._progressToastFp = "";
+    t._progressToastLastHtml = "";
     try {
       root && typeof root.remove == "function" && await root.remove();
     } catch {
@@ -7866,7 +7891,11 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     const root = await ensureProgressToastRoot();
     if (!root) return;
     try {
-      if (typeof root.setInnerHTML == "function") await root.setInnerHTML(html);
+      // Skip identical HTML — SafeDOM setInnerHTML flashes empty then content.
+      if (html !== t._progressToastLastHtml) {
+        if (typeof root.setInnerHTML == "function") await root.setInnerHTML(html);
+        t._progressToastLastHtml = html;
+      }
     } catch {
       return;
     }
@@ -7990,7 +8019,13 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     if (!root) return;
     try {
       if (typeof root.setInnerHTML == "function") await root.setInnerHTML(html);
-      const below = !!t._progressToastShown;
+      // Never cover the progress slot — sit below while job/index/progress eye is active.
+      let below = !!t._progressToastShown;
+      try {
+        if (!below && t.jobProgress && formatViewerJob(t.jobProgress)?.busy) below = !0;
+        if (!below && readIndexProgress(t.jobProgress)?.busy) below = !0;
+      } catch {
+      }
       if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(selectionToastStyle(!0, below));
       t._selectionToastShown = !0;
     } catch {
@@ -8036,7 +8071,8 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       // Indexing % stuck: flash 100% for 0.5s then hide; suppress until warm ends.
       if (indexOnly) {
         if (t._progressToastIndexStallSuppress) {
-          if (t._progressToastShown) await setProgressToastEye(!1);
+          // Hide mint-only stall leftover — never while a job/reroll is running.
+          if (t._progressToastShown && !jobBusy) await setProgressToastEye(!1);
           return;
         }
         const rp = Math.round(Number(idx.pct) || 0);

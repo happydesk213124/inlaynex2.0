@@ -1,7 +1,7 @@
 {
   "name": "inlaynex2-0",
   "displayName": "Inlay Nexus 2.0",
-  "version": "2.2.24",
+  "version": "2.2.25",
   "description": "Inlay Nexus LLM tagging + NovelAI overlay",
   "type": "module",
   "private": true,

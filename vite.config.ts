@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.17';
+const PLUGIN_VERSION = '2.2.18';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.18</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>상시 ON/OFF: 이미지 표시가 overlayVisualOn을 따르고, 뷰어 전체 리페인트 없이 즉시 반영</li>
+            <li>설정 열기: sticky/뷰어 숨김을 설정 UI 표시 뒤로 미뤄 체감 렉 완화</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.17</strong>
@@ -2947,7 +2954,7 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
       segment: l,
       reading,
       pinSize: Pt,
-      showSticky: typeof Nt == "function" ? Nt() : !0,
+      showSticky: typeof overlayVisualOn == "function" ? overlayVisualOn() : !0,
       mobileOn,
       corner: typeof Ea == "function" ? Ea() : "top-right",
       env: typeof La == "function" ? La() : { w: 528, h: 720, pct: 100 },
@@ -3178,7 +3185,8 @@ const VENDOR_STICKY_HT_NEAR_PATCH = `    const markerPcts = e.markers.map((T) =>
       l = Math.trunc(Number(e._stickyPointerSeg));
       e._stickyPointerSeg = null;
     }
-    const p = Nt(), mobileOn = mobilePinOn(), m = La(), cornerNow = Ea();
+    // Visual on/off for sticky image — Nt() stays true so sync keeps running.
+    const p = typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt(), mobileOn = mobilePinOn(), m = La(), cornerNow = Ea();
     // Sticky v2 only — skip legacy frame / mini-arrow layout that follows.
     await nxStickyV2ApplyFromHt({ segment: l, reading: c, pinSize: o, showSticky: p, mobileOn, corner: cornerNow, env: m, vh: r });
     return;`;
@@ -3475,7 +3483,7 @@ const VENDOR_STICKY_LA_PATCH = `  function La() {
     n = Math.max(0, n);
     const ov = t.overlayUi || {};
     const VC = globalThis.__INLAY_VIEWER_CORE__;
-    const alwaysOn = Nt();
+    const alwaysOn = typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt();
     const userCollapsed = !!ov._stickyThumbCollapsed;
     // Settings panel (t.uiOpen) same as shot/char edit: collapse always-image to 0%.
     const editorOpen = !!ov._stickyEditorOpen || !!t.uiOpen || !!t.cardTagUi || !!t.charEditUi;
@@ -4335,9 +4343,8 @@ const VENDOR_SETTINGS_OPEN_STICKY_NEEDLE = `  async function At() {
     t.uiOpen = !0;
     // Re-open settings with whatever the viewer last selected.`;
 const VENDOR_SETTINGS_OPEN_STICKY_PATCH = `  async function At() {
+    // Flag first so La()/pin park while settings shell paints — do not await Ht here.
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
-    try { await hideFloatingViewerForModal(); } catch {}
-    try { await Ht(); } catch {}
     t.uiOpen = !0;
     // Re-open settings with whatever the viewer last selected.`;
 
@@ -4389,10 +4396,12 @@ const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH = `      const hide = "position:fixed;
     } catch {
     }
     typeof k.showContainer == "function" && await k.showContainer("fullscreen");
-    // xe() must not restore viewer while settings stay open; re-assert hide after showContainer.
+    // xe() must not restore viewer while settings stay open; hide after shell is visible.
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
-    try { await hideFloatingViewerForModal(); } catch {}
-    try { await Ht(); } catch {}`;
+    Promise.resolve().then(() => {
+      hideFloatingViewerForModal().catch(() => {});
+      Ht().catch(() => {});
+    });`;
 
 /** Settings close (nx-close): hide first, flush in background; restore viewer; no duplicate he/Ce after it(). */
 const VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE = `    document.getElementById("nx-close")?.addEventListener("click", async () => {
@@ -4449,17 +4458,25 @@ const VENDOR_SANGSI_TOGGLE_PATCH = `    }, ae = async () => {
         overlay_markers: nextOn,
         inline_previews: nextOn
       };
-      // Visual first (0% / off-screen pin via overlayVisualOn); save does not block the chip.
+      // Bust sticky v2 cache so ON repaints image (showSticky follows overlayVisualOn).
+      if (t.overlayUi) t.overlayUi._v2LayoutKey = null, t.overlayUi._lastThumbPct = null;
+      // Sticky layout only — full T() rebuild was the main lag on 상시 toggle.
       try { await he(); } catch {}
-      try { await T(); } catch {}
+      try { await T("chrome"); } catch {}
       y("info", "overlay.toggle", String(nextOn));
-      Promise.resolve().then(() => flushSettingsSave()).then(() => pe({
+      pe({
         card: {
           ...(t.backendSettings?.card || {}),
           overlay_markers: nextOn,
           inline_previews: nextOn
         }
-      })).catch((err) => {
+      }).then(() => {
+        // PUT echo must not rewind optimistic flags.
+        if (t.backendSettings?.card) {
+          t.backendSettings.card.overlay_markers = nextOn;
+          t.backendSettings.card.inline_previews = nextOn;
+        }
+      }).catch((err) => {
         y("warn", "overlay.toggle.fail", err?.message || err);
       });
     }, Za = async (A) => {`;
@@ -7368,8 +7385,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.17",
-    body: "설정 닫기·상시 토글 반응 개선. 업데이트 내역 탭 참고."
+    title: "2.2.18",
+    body: "상시 ON 시 이미지 복구·설정 열기/상시 렉 완화. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.27';
+const PLUGIN_VERSION = '2.2.28';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.28</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>인덱싱(민트) 토스트: 최대 12초·정체 1.5초면 강제 숨김(워밍은 백그라운드 계속) · sync 행 가드</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.27</strong>
@@ -7560,8 +7566,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.27",
-    body: "인덱싱 토스트 정체 시 자동 종료 강화. 업데이트 내역 탭 참고."
+    title: "2.2.28",
+    body: "인덱싱 토스트 강제 종료(최대 12초). 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8068,6 +8074,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
   async function syncProgressToast() {
     if (t._progressToastSyncing) return;
     t._progressToastSyncing = !0;
+    t._progressToastSyncingAt = Date.now();
     try {
       const enabled = t.backendSettings?.card?.progress_toast === !0 || t.backendSettings?.card?.progress_toast === 1 || t.backendSettings?.card?.progress_toast === "true";
       if (!enabled) {
@@ -8087,20 +8094,48 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       const liveBusy = jobBusy || indexBusy;
       const hasPayload = liveBusy || isTerminal && !!B;
       await ensureProgressToastRoot();
+      // Debounce suppress clear — a one-tick !busy between warm waves used to revive the mint toast.
       if (!indexBusy) {
-        t._progressToastIndexStallSuppress = !1;
-        t._progressToastIndexStallPct = null;
-        t._progressToastIndexStallAt = 0;
+        if (!t._progressToastIndexIdleSince) t._progressToastIndexIdleSince = Date.now();
+        if (Date.now() - t._progressToastIndexIdleSince >= 2500) {
+          t._progressToastIndexStallSuppress = !1;
+          t._progressToastIndexStallPct = null;
+          t._progressToastIndexStallAt = 0;
+          t._progressToastIndexShownAt = 0;
+          t._progressToastIndexIdleSince = 0;
+        }
+      } else {
+        t._progressToastIndexIdleSince = 0;
       }
       // Selection toast is separate — idle peek no longer uses this slot.
       if (!hasPayload) return;
       const indexOnly = !jobBusy && indexBusy;
-      // Indexing % stuck/regressing: flash 100% briefly, hide, unblock warm focus.
-      // Only reset the stall clock when pct actually advances (jitter 74↔75 used to
-      // reset forever and leave the mint toast hanging at ~59/75).
+      const INDEX_TOAST_MAX_MS = 12e3;
+      const INDEX_STALL_MS = 1500;
+      const forceHideIndexToast = async (why) => {
+        t._progressToastIndexStallSuppress = !0;
+        t._progressToastIndexStallPct = null;
+        t._progressToastIndexStallAt = 0;
+        try {
+          const N = globalThis.__INLAY_NATIVE__;
+          typeof N?.clearWarmFocus == "function" && N.clearWarmFocus();
+        } catch {
+        }
+        y("info", "inline.indexToast.hide", why || "stall");
+        if (t._progressToastShown) await setProgressToastEye(!1, !0);
+        clearProgressToastEyeHide();
+        t._progressToastFp = "";
+        t._progressToastLastHtml = "";
+      };
       if (indexOnly) {
+        if (!t._progressToastIndexShownAt) t._progressToastIndexShownAt = Date.now();
         if (t._progressToastIndexStallSuppress) {
-          if (t._progressToastShown && !jobBusy) await setProgressToastEye(!1, !0);
+          await forceHideIndexToast("suppress");
+          return;
+        }
+        const age = Date.now() - Number(t._progressToastIndexShownAt || Date.now());
+        if (age >= INDEX_TOAST_MAX_MS) {
+          await forceHideIndexToast("max-age");
           return;
         }
         const rp = Math.round(Number(idx.pct) || 0);
@@ -8110,28 +8145,8 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         if (!prevAt || advanced) {
           t._progressToastIndexStallPct = rp;
           t._progressToastIndexStallAt = Date.now();
-        } else if (Date.now() - prevAt >= 1500) {
-          const stageDone = idx.label || "인덱싱";
-          const metaDone = "100%";
-          const fpDone = \`index|\${stageDone}|100|\${metaDone}|stall-done|0|0|0\`;
-          t._progressToastFp = fpDone;
-          t._progressToastIndexStallSuppress = !0;
-          t._progressToastIndexStallPct = null;
-          t._progressToastIndexStallAt = 0;
-          try {
-            const N = globalThis.__INLAY_NATIVE__;
-            typeof N?.clearWarmFocus == "function" && N.clearWarmFocus();
-          } catch {
-          }
-          const htmlDone = typeof VC?.composeProgressToastHtml == "function" ? VC.composeProgressToastHtml({
-            stage: stageDone,
-            meta: metaDone,
-            pct: 100,
-            busy: !0,
-            tone: "index",
-            escapeHtml: h
-          }) : \`<div data-inlay-progress-toast="1" style="padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px">\${h(stageDone + " 100%")}</div>\`;
-          await paintProgressToastHtml(htmlDone, { armHide: !0, armHideMs: 500 });
+        } else if (Date.now() - prevAt >= INDEX_STALL_MS) {
+          await forceHideIndexToast("stall");
           return;
         }
       }
@@ -8200,11 +8215,26 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           });
           return;
         }
+        // Unstick if a SafeDOM await hung inside syncProgressToast.
+        if (t._progressToastSyncing && t._progressToastSyncingAt && Date.now() - t._progressToastSyncingAt > 4e3) {
+          t._progressToastSyncing = !1;
+          t._progressToastSyncingAt = 0;
+        }
         const B = t.jobProgress;
         const info = B ? formatViewerJob(B) : null;
         const idx = readIndexProgress(B);
-        const liveBusy = !!(info && info.busy) || !!idx.busy;
-        if (liveBusy) {
+        const jobBusy = !!(info && info.busy);
+        const indexBusy = !!idx.busy;
+        const indexOnly = !jobBusy && indexBusy;
+        // Mint toast hard kill — does not wait on syncProgressToast (can hang).
+        if (t._progressToastShown && (t._progressToastIndexStallSuppress || indexOnly && t._progressToastIndexShownAt && Date.now() - t._progressToastIndexShownAt >= 12e3)) {
+          t._progressToastIndexStallSuppress = !0;
+          setProgressToastEye(!1, !0).catch(() => {
+          });
+          clearProgressToastEyeHide();
+          if (indexOnly) return;
+        }
+        if (jobBusy || indexBusy && !t._progressToastIndexStallSuppress) {
           syncProgressToast().catch(() => {
           });
           return;

@@ -94,6 +94,9 @@ else {
     ['vibePreviewUrl', 'function'],
     ['ensureImageUrl', 'function'],
     ['warmImages', 'function'],
+    ['pinImageUrls', 'function'],
+    ['prioritizeWarmFocus', 'function'],
+    ['clearWarmFocus', 'function'],
     ['debug', 'function'],
     ['clearDebug', 'function'],
   ];

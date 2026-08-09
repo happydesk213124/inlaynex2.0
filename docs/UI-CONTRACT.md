@@ -18,6 +18,8 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 | `ensureImageUrl` | `(id) => Promise<string>` | Loads and caches |
 | `warmImages` | `(ids: string[]) => Promise<void>` | Fire-and-forget prefetch |
 | `pinImageUrls` | `(ids: string[]) => void` | Pin sticky-window ids against data-URL LRU eviction; prioritizes their warm queue |
+| `prioritizeWarmFocus` | `(ids: string[]) => void` | Selection monopoly: encode these ids first; park others until done / `clearWarmFocus` |
+| `clearWarmFocus` | `() => void` | End selection monopoly and resume parked warm work |
 | `refPreviewUrl` | `() => string` | Reference-image preview `src` |
 | `vibePreviewUrl` | `() => string` | Vibe-image preview `src` |
 | `VERSION` | `string` | Not read by the UI; kept for diagnostics |

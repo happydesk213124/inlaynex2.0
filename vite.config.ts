@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.21';
+const PLUGIN_VERSION = '2.2.22';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.22</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 삽화: 캐시된 샷부터 즉시 붙이고, 나머지는 인코딩되는 족족 추가</li>
+            <li>선택±이웃 이미지 워밍 우선 + 선택 인코딩 슬롯 독점(나머지 일시 대기)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.21</strong>
@@ -5773,6 +5780,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       ? Array.isArray(pendingRows) ? pendingRows : Array.isArray(t._inlinePending) ? t._inlinePending : []
       : [];
     const placements = [];
+    const encodeLater = [];
     const seenCard = new Set();
     const seenLine = new Set();
     const seenShot = new Set();
@@ -5785,13 +5793,22 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // paint a circle on a turn that already has images (even if bytes are slow).
       if (Number.isFinite(shotIndex) && shotIndex >= 0) seenShot.add(shotIndex);
       if (Number.isFinite(line) && line >= 1) seenLine.add(line);
+      if (!Number.isFinite(line) || line < 1) continue;
+      // Sync cache only — do not await the whole bubble on the first miss.
       let src = "";
       try {
-        src = await ensureStickyCardImage(card) || "";
+        const N = globalThis.__INLAY_NATIVE__;
+        src = typeof N?.resolveImageUrl == "function" ? String(N.resolveImageUrl(card) || "") : "";
+        if (!src || !/^data:image\\//i.test(src)) {
+          const fb = typeof Ie == "function" ? Ie(card) : "";
+          if (typeof fb == "string" && /^data:image\\//i.test(fb)) src = fb;
+        }
       } catch {
       }
-      if (!src || !/^data:image\\//i.test(src)) continue;
-      if (!Number.isFinite(line) || line < 1) continue;
+      if (!src || !/^data:image\\//i.test(src)) {
+        if (cardId) encodeLater.push(card);
+        continue;
+      }
       if (cardId) seenCard.add(cardId);
       placements.push({
         line,
@@ -5826,7 +5843,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       return Array.isArray(arr) ? arr : [arr];
     };
     try {
-      const wantIds = placements.map((p) => String(p.cardId || "")).filter(Boolean).sort();
+      const wantIds = [
+        ...placements.map((p) => String(p.cardId || "")),
+        ...encodeLater.map((c) => String(c?.id || ""))
+      ].filter(Boolean).sort();
       const scaleNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
       let prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
       if (prev.length === wantIds.length && t._inlinePaintScale === scaleNow) {
@@ -5841,7 +5861,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           htmlNow = "";
         }
         if (wantIds.every((id) => htmlNow.includes(\`data-inlay-inline-shot="\${id}"\`))) {
-          y("info", "inline.inject.skip", \`shots=\${placements.length} already\`);
+          y("info", "inline.inject.skip", \`shots=\${wantIds.length} already\`);
           return;
         }
       }
@@ -5861,9 +5881,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         }
       };
-      // Nothing to paint: strip leftover pending circles only — never wipe already-shown shots.
-      // (Job done clears pending then reinjects; empty linked/URLs used to erase 1..N.)
-      if (!placements.length) {
+      // Nothing to paint and nothing to encode: strip leftover pending only.
+      if (!placements.length && !encodeLater.length) {
         try {
           const pendOnly = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-pending]"));
           for (const node of pendOnly) {
@@ -5877,17 +5896,20 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         y("info", "inline.inject", "shots=0 keep existing");
         return;
       }
-      await removeAllMarkers();
-      await removeAllMarkers();
-      // Nuclear: leftover duplicate circles/images → rewrite bubble HTML without markers.
-      try {
-        const left = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
-        if (left.length && typeof msgEl.setInnerHTML == "function") {
-          let htmlLeft = String(await msgEl.getInnerHTML() || "");
-          if (typeof VC.stripInlayInlineHtml == "function") htmlLeft = VC.stripInlayInlineHtml(htmlLeft);
-          await msgEl.setInnerHTML(htmlLeft);
+      const wipeFirst = placements.length > 0;
+      if (wipeFirst) {
+        await removeAllMarkers();
+        await removeAllMarkers();
+        // Nuclear: leftover duplicate circles/images → rewrite bubble HTML without markers.
+        try {
+          const left = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+          if (left.length && typeof msgEl.setInnerHTML == "function") {
+            let htmlLeft = String(await msgEl.getInnerHTML() || "");
+            if (typeof VC.stripInlayInlineHtml == "function") htmlLeft = VC.stripInlayInlineHtml(htmlLeft);
+            await msgEl.setInnerHTML(htmlLeft);
+          }
+        } catch {
         }
-      } catch {
       }
       const html = String(await msgEl.getInnerHTML() || "");
       const cleaned = typeof VC.stripInlayInlineHtml == "function" ? VC.stripInlayInlineHtml(html) : html;
@@ -5950,10 +5972,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       let placed = 0;
       const placedIds = new Set();
       const placedHosts = new Set();
-      for (const [line, shot] of byLine) {
+      const placeShot = async (shot) => {
         const id = String(shot.cardId || "");
-        if (id && placedIds.has(id)) continue;
-        // Hard: never double-insert same shot id (image or pending circle).
+        if (id && placedIds.has(id)) return !1;
         if (id) {
           let already = [];
           try {
@@ -5963,25 +5984,26 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
           if (already.length) {
             placedIds.add(id);
-            continue;
+            return !1;
           }
         }
+        const line = Number(shot.line);
+        if (!line || !Number.isFinite(line)) return !1;
         const hit = VC.findElementIndexForLineWithFallback(hostTexts, hostTags, messageLines, line, ["P"]);
-        if (!hit || hit.elementIndex < 0 || hit.elementIndex >= hosts.length) continue;
-        if (placedHosts.has(hit.elementIndex)) continue;
+        if (!hit || hit.elementIndex < 0 || hit.elementIndex >= hosts.length) return !1;
+        if (placedHosts.has(hit.elementIndex)) return !1;
         const host = hosts[hit.elementIndex];
-        if (!host || typeof host.prepend != "function") continue;
-        // Hard: one marker per host — leftover circle must not stack a second.
+        if (!host || typeof host.prepend != "function") return !1;
         try {
           const hostMarks = await unwrapSafe(await host.querySelectorAll("[data-inlay-inline-shot]"));
           if (hostMarks.length) {
             placedHosts.add(hit.elementIndex);
-            continue;
+            return !1;
           }
         } catch {
         }
         const markerHtml = VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100);
-        if (!markerHtml) continue;
+        if (!markerHtml) return !1;
         try {
           const tmp = await H(doc, "div", { html: markerHtml });
           const kids = await unwrapSafe(typeof tmp?.getChildren == "function" ? await tmp.getChildren() : null);
@@ -5991,11 +6013,43 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             placed += 1;
             placedHosts.add(hit.elementIndex);
             if (id) placedIds.add(id);
+            return !0;
           }
         } catch {
         }
+        return !1;
+      };
+      for (const [, shot] of byLine) {
+        await placeShot(shot);
       }
-      y("info", "inline.inject", \`shots=\${placements.length} placed=\${placed} pending=\${placements.filter((p) => p.pending).length}\`);
+      // Progressive: encode cache misses one-by-one; prepend without wiping ready shots.
+      for (const card of encodeLater) {
+        if (t._inlineInjectQueued) break;
+        let src = "";
+        try {
+          src = await ensureStickyCardImage(card) || "";
+        } catch {
+        }
+        if (!src || !/^data:image\\//i.test(src)) continue;
+        const line0 = Number(card?.line);
+        const cardId = String(card?.id || "");
+        if (!Number.isFinite(line0) || line0 < 1) continue;
+        if (cardId && placedIds.has(cardId)) continue;
+        const line = typeof VC.clampShotLine == "function"
+          ? VC.clampShotLine(line0, messageLines.length)
+          : Math.floor(line0);
+        if (!line || byLine.has(line)) continue;
+        const shot = {
+          line,
+          src,
+          shotIndex: card.shot_index,
+          cardId,
+          pending: !1
+        };
+        byLine.set(line, shot);
+        await placeShot(shot);
+      }
+      y("info", "inline.inject", \`shots=\${placements.length}+enc\${encodeLater.length} placed=\${placed} pending=\${placements.filter((p) => p.pending).length}\`);
       t._inlinePaintScale = scaleNow;
     } catch (err) {
       y("warn", "inline.inject.fail", z(err?.message || err, 120));
@@ -6247,13 +6301,40 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       t._inlineKeepLinkedKey = linkedKey;
       const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
       y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=\${elsRemounted ? "full" : "diff"}\`);
-      if (keep.has(selIdx) && els[selIdx]) {
-        await injectChatInlineImages(els[selIdx], linkedCards(sel), t._inlinePending);
-      }
+      const N = globalThis.__INLAY_NATIVE__;
+      const selCards = linkedCards(sel);
+      const selIds = selCards.map((card) => String(card?.id || "")).filter(Boolean);
+      const neighborCardLists = [];
       for (const row of neighborMsgs) {
         if (row?.idx == null || !els[row.idx] || !row.msg) continue;
         if (!keep.has(row.idx)) continue;
-        await injectChatInlineImages(els[row.idx], linkedCards(row.msg), []);
+        neighborCardLists.push({
+          idx: row.idx,
+          cards: linkedCards(row.msg)
+        });
+      }
+      const neighborIds = neighborCardLists.flatMap((row) =>
+        row.cards.map((card) => String(card?.id || "")).filter(Boolean)
+      );
+      try {
+        if (typeof N?.prioritizeWarmFocus == "function" && selIds.length) N.prioritizeWarmFocus(selIds);
+      } catch {
+      }
+      if (keep.has(selIdx) && els[selIdx]) {
+        await injectChatInlineImages(els[selIdx], selCards, t._inlinePending);
+      }
+      try {
+        if (typeof N?.prioritizeWarmFocus == "function" && neighborIds.length) {
+          N.prioritizeWarmFocus([...selIds, ...neighborIds]);
+        }
+      } catch {
+      }
+      for (const row of neighborCardLists) {
+        await injectChatInlineImages(els[row.idx], row.cards, []);
+      }
+      try {
+        if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
+      } catch {
       }
     } catch (err) {
       y("warn", "inline.refresh.fail", z(err?.message || err, 100));
@@ -7443,8 +7524,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.21",
-    body: "선택 토스트 챗/캐릭터 + 고정 너비. 업데이트 내역 탭 참고."
+    title: "2.2.22",
+    body: "말풍선 삽화 즉시/순차 붙이기 + 선택 워밍 우선. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

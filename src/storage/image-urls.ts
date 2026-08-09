@@ -24,6 +24,10 @@ export async function ensureBlobUrl(id: string): Promise<string> {
   if (!id) return '';
   const cached = getBlobUrl(id);
   if (cached !== undefined) return cached;
+  // Selection focus owns encoding slots — non-focus waits (or was deferred).
+  await waitOutOfWarmFocus(id);
+  const cached2 = getBlobUrl(id);
+  if (cached2 !== undefined) return cached2;
   const span = dbgSpan('image.data_url');
   const rec = await idbGet('images', id);
   if (!rec?.png) {
@@ -112,6 +116,11 @@ const WARM_CONCURRENCY = 2;
 
 const warmQueued = new Set<string>();
 const warmQueue: string[] = [];
+/** Ids parked while a selection focus monopolizes encoding slots. */
+const warmDeferred: string[] = [];
+const warmDeferredSet = new Set<string>();
+/** When set, only these ids may encode; others wait / stay deferred. */
+let warmFocus: Set<string> | null = null;
 let warmActive = 0;
 /** Lifetime counters for the current warm wave (reset when the queue drains). */
 let warmWaveTotal = 0;
@@ -129,7 +138,7 @@ export interface WarmProgress {
 
 /** Snapshot of background image-indexing (data-URL encode) progress. */
 export function warmProgress(): WarmProgress {
-  const pending = warmQueue.length + warmActive;
+  const pending = warmQueue.length + warmDeferred.length + warmActive;
   const total = Math.max(warmWaveTotal, warmWaveDone + pending);
   const done = Math.min(warmWaveDone, total);
   const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0;
@@ -149,8 +158,121 @@ function notifyWarm(): void {
   }
 }
 
+function deferWarmId(id: string): void {
+  if (!id || getBlobUrl(id) !== undefined) return;
+  if (warmFocus?.has(id)) return;
+  if (warmDeferredSet.has(id)) return;
+  warmDeferredSet.add(id);
+  warmDeferred.push(id);
+}
+
+function undeferWarmId(id: string): void {
+  if (!warmDeferredSet.has(id)) return;
+  warmDeferredSet.delete(id);
+  const at = warmDeferred.indexOf(id);
+  if (at >= 0) warmDeferred.splice(at, 1);
+}
+
+/**
+ * Selection monopoly: encode these ids first; park everything else.
+ * Cleared automatically when all focus ids are cached, or via clearWarmFocus().
+ */
+export function prioritizeWarmFocus(ids: unknown[] = []): void {
+  const list = [...new Set((ids || []).map(String).filter(Boolean))];
+  pinBlobUrls(list);
+  const nextFocus = new Set(list.filter((id) => getBlobUrl(id) === undefined));
+  const keepFront: string[] = [];
+  for (const id of warmQueue) {
+    if (nextFocus.has(id)) keepFront.push(id);
+    else {
+      warmQueued.delete(id);
+      deferWarmId(id);
+    }
+  }
+  warmQueue.length = 0;
+  for (const id of list) {
+    undeferWarmId(id);
+    if (getBlobUrl(id) !== undefined) continue;
+    if (!warmQueued.has(id)) {
+      warmQueued.add(id);
+      warmWaveTotal += 1;
+    }
+    if (!keepFront.includes(id)) keepFront.push(id);
+  }
+  warmFocus = nextFocus.size ? nextFocus : null;
+  warmQueue.push(...keepFront);
+  if (!warmFocus) flushWarmDeferred();
+  notifyWarm();
+  pumpWarm();
+}
+
+/** End selection monopoly and resume parked warm work. */
+export function clearWarmFocus(): void {
+  warmFocus = null;
+  flushWarmDeferred();
+  notifyWarm();
+  pumpWarm();
+}
+
+function flushWarmDeferred(): void {
+  for (const id of warmDeferred) {
+    if (getBlobUrl(id) !== undefined) continue;
+    if (!warmQueued.has(id)) warmQueued.add(id);
+    if (!warmQueue.includes(id)) warmQueue.push(id);
+  }
+  warmDeferred.length = 0;
+  warmDeferredSet.clear();
+}
+
+function focusWorkPending(): boolean {
+  if (!warmFocus?.size) return false;
+  for (const id of warmFocus) {
+    if (getBlobUrl(id) !== undefined) continue;
+    return true;
+  }
+  return false;
+}
+
+function maybeReleaseWarmFocus(): void {
+  if (!warmFocus) return;
+  if (focusWorkPending()) return;
+  clearWarmFocus();
+}
+
+/** Non-focus encodes wait so selection images own the CPU slots. */
+function waitOutOfWarmFocus(id: string): Promise<void> {
+  if (!warmFocus?.size || warmFocus.has(id)) return Promise.resolve();
+  deferWarmId(id);
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const tick = () => {
+      if (!warmFocus?.size || warmFocus.has(id) || getBlobUrl(id) !== undefined || Date.now() - t0 > 90_000) {
+        resolve();
+        return;
+      }
+      setTimeout(tick, 40);
+    };
+    tick();
+  });
+}
+
 function pumpWarm(): void {
   while (warmActive < WARM_CONCURRENCY && warmQueue.length) {
+    if (warmFocus?.size) {
+      const idx = warmQueue.findIndex((id) => warmFocus!.has(id));
+      if (idx < 0) {
+        maybeReleaseWarmFocus();
+        if (!warmFocus) continue;
+        break;
+      }
+      if (idx > 0) {
+        const parked = warmQueue.splice(0, idx);
+        for (const p of parked) {
+          warmQueued.delete(p);
+          deferWarmId(p);
+        }
+      }
+    }
     const id = warmQueue.shift() as string;
     warmActive += 1;
     notifyWarm();
@@ -160,11 +282,12 @@ function pumpWarm(): void {
         warmActive -= 1;
         warmQueued.delete(id);
         warmWaveDone += 1;
-        if (warmQueue.length === 0 && warmActive === 0) {
+        maybeReleaseWarmFocus();
+        if (warmQueue.length === 0 && warmActive === 0 && !warmDeferred.length) {
           // Hold totals so UI can paint ~100% once before the wave clears.
           notifyWarm();
           setTimeout(() => {
-            if (warmQueue.length === 0 && warmActive === 0) {
+            if (warmQueue.length === 0 && warmActive === 0 && !warmDeferred.length) {
               warmWaveTotal = 0;
               warmWaveDone = 0;
               notifyWarm();
@@ -181,6 +304,12 @@ function pumpWarm(): void {
 export function enqueueWarm(id: unknown): void {
   const key = String(id || '');
   if (!key || getBlobUrl(key) !== undefined || warmQueued.has(key)) return;
+  if (warmFocus?.size && !warmFocus.has(key)) {
+    deferWarmId(key);
+    warmWaveTotal += 1;
+    notifyWarm();
+    return;
+  }
   warmQueued.add(key);
   warmQueue.push(key);
   warmWaveTotal += 1;
@@ -201,12 +330,21 @@ export function pinImageUrls(ids: unknown[] = []): void {
   const kept: string[] = [];
   for (const id of warmQueue) {
     if (pinned.has(id)) kept.push(id);
-    else warmQueued.delete(id);
+    else {
+      warmQueued.delete(id);
+      // Under selection focus, park rather than drop so work resumes after clearWarmFocus.
+      if (warmFocus?.size) deferWarmId(id);
+    }
   }
   warmQueue.length = 0;
   const front: string[] = [];
   for (const id of list) {
+    undeferWarmId(id);
     if (getBlobUrl(id) !== undefined) continue;
+    if (warmFocus?.size && !warmFocus.has(id)) {
+      deferWarmId(id);
+      continue;
+    }
     if (!warmQueued.has(id)) {
       warmQueued.add(id);
       warmWaveTotal += 1;
@@ -216,7 +354,7 @@ export function pinImageUrls(ids: unknown[] = []): void {
   const rest = kept.filter((id) => !front.includes(id));
   warmQueue.push(...front, ...rest);
   const dropped = prevPending - kept.length;
-  if (dropped > 0) {
+  if (dropped > 0 && !warmFocus?.size) {
     warmWaveTotal = Math.max(warmWaveDone + warmQueue.length + warmActive, warmWaveTotal - dropped);
   }
   notifyWarm();
@@ -250,19 +388,26 @@ export async function warmImages(ids: unknown[] = [], { concurrency = WARM_CONCU
   const list = [...new Set((ids || []).map(String).filter(Boolean))];
   const limit = Math.max(1, Number(concurrency) || WARM_CONCURRENCY);
   const need = list.filter((id) => getBlobUrl(id) === undefined);
-  if (need.length) {
-    warmWaveTotal += need.length;
+  const focusNeed = warmFocus?.size ? need.filter((id) => warmFocus!.has(id)) : need;
+  const otherNeed = warmFocus?.size ? need.filter((id) => !warmFocus!.has(id)) : [];
+  for (const id of otherNeed) {
+    deferWarmId(id);
+    if (!warmQueued.has(id)) warmWaveTotal += 1;
+  }
+  if (focusNeed.length) {
+    warmWaveTotal += focusNeed.length;
     notifyWarm();
   }
-  for (let i = 0; i < need.length; i += limit) {
-    const chunk = need.slice(i, i + limit);
+  for (let i = 0; i < focusNeed.length; i += limit) {
+    const chunk = focusNeed.slice(i, i + limit);
     await Promise.all(
       chunk.map((id) =>
         ensureBlobUrl(id)
           .catch(() => '')
           .finally(() => {
             warmWaveDone += 1;
-            if (warmQueue.length === 0 && warmActive === 0 && warmWaveDone >= warmWaveTotal) {
+            maybeReleaseWarmFocus();
+            if (warmQueue.length === 0 && warmActive === 0 && !warmDeferred.length && warmWaveDone >= warmWaveTotal) {
               warmWaveTotal = 0;
               warmWaveDone = 0;
             }
@@ -271,7 +416,7 @@ export async function warmImages(ids: unknown[] = [], { concurrency = WARM_CONCU
       ),
     );
   }
-  if (warmQueue.length === 0 && warmActive === 0) {
+  if (warmQueue.length === 0 && warmActive === 0 && !warmDeferred.length) {
     warmWaveTotal = 0;
     warmWaveDone = 0;
     notifyWarm();

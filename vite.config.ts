@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.39';
+const PLUGIN_VERSION = '2.2.40';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.40</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>이미지 없을 때도 스테이지에 태그·재생성·중단·리롤 버튼 표시(클릭 hit 동일)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.39</strong>
@@ -7637,8 +7643,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.39",
-    body: "드래그 고스트 100ms. 업데이트 내역 참고."
+    title: "2.2.40",
+    body: "빈 뷰어도 태그/재생성. 업데이트 내역 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -9149,6 +9155,16 @@ const VENDOR_VIEWER_IMG_ACT_HIT_PATCH =
           }
         }`;
 
+/** Empty gallery stage still shows 태그/재생성/중단/리롤 (same geometry hit as mainImgHtml). */
+const VENDOR_VIEWER_EMPTY_ACTS_NEEDLE =
+  `        const Le = busy ? \`<span style="color:#8b97ab;font-size:12px">생성 중… 상태표시줄을 확인하세요</span>\` : \`<span style="color:#778398;font-size:12px">\${O ? "연결된 이미지 없음" : "메시지를 선택하면 여기에 표시됩니다"}</span>\`;`;
+const VENDOR_VIEWER_EMPTY_ACTS_PATCH =
+  `        const emptyMsg = busy ? "생성 중… 상태표시줄을 확인하세요" : O ? "연결된 이미지 없음" : "메시지를 선택하면 여기에 표시됩니다";
+        const emptyColor = busy ? "#8b97ab" : "#778398";
+        const imgActEmpty = (act, bg, label, title) => \`<span data-nx-img-act="\${act}" style="cursor:pointer;background:\${bg};color:#fff;padding:12px 14px;border-radius:10px;font-size:14px;line-height:1.2;font-weight:700;border:1px solid rgba(255,255,255,.18);box-shadow:0 2px 10px rgba(0,0,0,.35);user-select:none;min-height:44px;box-sizing:border-box;display:inline-flex;align-items:center;opacity:.4" title="\${title}">\${label}</span>\`;
+        const leftActsEmpty = \`<div data-nx-img-acts="1" style="position:absolute;left:8px;bottom:8px;z-index:3;display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 96px)">\${imgActEmpty("tag", "#0f766e", "태그", "LLM 태그 재생성")}\${imgActEmpty("regen", "#7c6cff", "재생성", "이 메시지의 모든 샷 재생성")}\${imgActEmpty("stop", "#b91c1c", "중단", "남은 생성 중단(진행 중은 끝까지)")}</div>\`;
+        const Le = \`<div style="position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center">\${leftActsEmpty}<span data-nx-img-reroll="1" style="position:absolute;right:8px;top:8px;z-index:3;cursor:pointer;background:rgba(124,108,255,.92);color:#fff;padding:12px 14px;border-radius:10px;font-size:14px;line-height:1.2;font-weight:700;border:1px solid rgba(255,255,255,.18);box-shadow:0 2px 10px rgba(0,0,0,.35);user-select:none;min-height:44px;box-sizing:border-box;display:inline-flex;align-items:center;opacity:.4" title="이 이미지만 리롤">리롤</span><span style="color:\${emptyColor};font-size:12px;padding:0 12px;text-align:center">\${emptyMsg}</span></div>\`;`;
+
 const VENDOR_ACTIONS_FT_NEEDLE =
   `      minimized && mode === "icon" ? "min-width:48px" : minimized ? "min-width:280px" : "min-width:260px",`;
 const VENDOR_ACTIONS_FT_PATCH =
@@ -10374,6 +10390,7 @@ const loadVendorUi = (): string => {
     [VENDOR_VIEWER_PRESET_HITS_STATE_NEEDLE, 'viewer presetHits state'],
     [VENDOR_VIEWER_IMG_REROLL_TOUCH_NEEDLE, 'viewer img reroll touch'],
     [VENDOR_VIEWER_IMG_ACT_HIT_NEEDLE, 'viewer img act hit'],
+    [VENDOR_VIEWER_EMPTY_ACTS_NEEDLE, 'viewer empty stage acts'],
     [VENDOR_VIEWER_STOP_HDR_NEEDLE, 'viewer stop header btn'],
     [VENDOR_VIEWER_STOP_CLICK_NEEDLE, 'viewer stop click'],
     [VENDOR_VIEWER_STOP_LABEL_NEEDLE, 'viewer stop label sync'],
@@ -10663,6 +10680,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_VIEWER_PRESET_HITS_STATE_NEEDLE, VENDOR_VIEWER_PRESET_HITS_STATE_PATCH)
     .replace(VENDOR_VIEWER_IMG_REROLL_TOUCH_NEEDLE, VENDOR_VIEWER_IMG_REROLL_TOUCH_PATCH)
     .replace(VENDOR_VIEWER_IMG_ACT_HIT_NEEDLE, VENDOR_VIEWER_IMG_ACT_HIT_PATCH)
+    .replace(VENDOR_VIEWER_EMPTY_ACTS_NEEDLE, VENDOR_VIEWER_EMPTY_ACTS_PATCH)
     .replace(VENDOR_VIEWER_STOP_HDR_NEEDLE, VENDOR_VIEWER_STOP_HDR_PATCH)
     .replace(VENDOR_VIEWER_STOP_CLICK_NEEDLE, VENDOR_VIEWER_STOP_CLICK_PATCH)
     .replace(VENDOR_VIEWER_STOP_LABEL_NEEDLE, VENDOR_VIEWER_STOP_LABEL_PATCH)

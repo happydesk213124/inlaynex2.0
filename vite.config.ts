@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.36';
+const PLUGIN_VERSION = '2.2.37';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.37</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>뷰어 창 이동: 놓자마자 화면 확정 · 저장·리스너 정리는 백그라운드(확정 렉 완화)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.36</strong>
@@ -7619,8 +7625,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.36",
-    body: "펼친 뷰어 드래그 복구 · 버튼 살짝 축소. 업데이트 내역 참고."
+    title: "2.2.37",
+    body: "뷰어 이동 낙관적 확정. 업데이트 내역 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -9853,6 +9859,14 @@ const VENDOR_ACTIONS_DRAG_CLEAR_PATCH =
 
 const VENDOR_ACTIONS_END_CLEAR_NEEDLE =
   `      try {
+        A != null && await e.removeEventListener(A);
+      } catch {
+      }
+      try {
+        _ != null && await e.removeEventListener(_);
+      } catch {
+      }
+      try {
         cancelId != null && await e.removeEventListener(cancelId);
       } catch {
       }
@@ -9870,24 +9884,27 @@ const VENDOR_ACTIONS_END_CLEAR_NEEDLE =
       await refreshThumbsRect();
     }, en = async () => {`;
 const VENDOR_ACTIONS_END_CLEAR_PATCH =
-  `      try {
-        cancelId != null && await e.removeEventListener(cancelId);
-      } catch {
-      }
-      try {
-        if (d.dragGhost) {
-          try { await a.removeChild(d.dragGhost); } catch { try { d.dragGhost.remove?.(); } catch {} }
-        }
-      } catch {}
+  `      const ghostEl = d.dragGhost;
       d.dragGhost = null;
+      const cleanupDragChrome = async () => {
+        try { A != null && await e.removeEventListener(A); } catch {}
+        try { _ != null && await e.removeEventListener(_); } catch {}
+        try { cancelId != null && await e.removeEventListener(cancelId); } catch {}
+        if (ghostEl) {
+          try { await a.removeChild(ghostEl); } catch { try { ghostEl.remove?.(); } catch {} }
+        }
+      };
       if (opts.cancelled) {
+        try { if (ghostEl) await ghostEl.setStyleAttribute("display:none;pointer-events:none;opacity:0"); } catch {}
         try { await f(); } catch {}
-        await refreshThumbsRect();
+        void cleanupDragChrome();
+        void refreshThumbsRect().catch(() => {});
         return;
       }
       if (!moved && expandOnTap && d.minimized) {
+        void cleanupDragChrome();
         if (t.uiOpen || t._hostChromeBlocked || t._viewerHiddenForModal || t._viewerHiddenForRisuSettings) {
-          await refreshThumbsRect();
+          void refreshThumbsRect().catch(() => {});
           return;
         }
         try {
@@ -9895,32 +9912,44 @@ const VENDOR_ACTIONS_END_CLEAR_PATCH =
           const el = doc ? await D("rsSettingCont", () => doc.querySelector?.(".rs-setting-cont"), null) : null;
           if (el) {
             try { await hideFloatingViewerForRisuSettings(); } catch {}
-            await refreshThumbsRect();
+            void refreshThumbsRect().catch(() => {});
             return;
           }
         } catch {}
         await toggleMinimizeBtn();
-        await refreshThumbsRect();
+        void refreshThumbsRect().catch(() => {});
         return;
       }
       if (moved && Number.isFinite(ghostLeft) && Number.isFinite(ghostTop)) {
         d.geo.left = ghostLeft, d.geo.top = ghostTop, d.geo = clampViewerGeo(d.geo, d.minimized);
-        // Expanded x()→v() reads the unmoved panel rect and rewinds the ghost commit.
-        if (!d.minimized) {
-          d.expandedGeo = {
-            left: d.geo.left,
-            top: d.geo.top,
-            w: d.geo.w,
-            h: d.geo.h
-          };
-          try { await qt(d.expandedGeo); } catch {}
-          try { await f(); } catch {}
-          await refreshThumbsRect();
-          return;
-        }
+        // Optimistic: paint first, persist/listeners behind (was: removeListener×3 → qt → f).
+        try { if (ghostEl) await ghostEl.setStyleAttribute("display:none;pointer-events:none;opacity:0"); } catch {}
+        try { await f(); } catch {}
+        void (async () => {
+          await cleanupDragChrome();
+          try {
+            const left = Math.round(d.geo.left), top = Math.round(d.geo.top);
+            if (!d.minimized) {
+              d.expandedGeo = { left, top, w: d.geo.w, h: d.geo.h };
+              await qt(d.expandedGeo);
+            } else if (viewerMinimizeMode() !== "toolbar") {
+              d.iconGeo = { left, top };
+              await saveViewerIconGeo(d.iconGeo);
+            } else {
+              d.expandedGeo = {
+                ...(d.expandedGeo || { w: d.geo.w, h: d.geo.h }),
+                left,
+                top
+              };
+              await qt(d.expandedGeo);
+            }
+          } catch {}
+          try { await refreshThumbsRect(); } catch {}
+        })();
+        return;
       }
-      await x();
-      await refreshThumbsRect();
+      void cleanupDragChrome();
+      void refreshThumbsRect().catch(() => {});
     }, en = async () => {`;
 
 /** Icon tap-expand must not fire after settings/modal already opened (same gesture pointerup). */

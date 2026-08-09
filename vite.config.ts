@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.32';
+const PLUGIN_VERSION = '2.2.33';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,14 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.33</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>이미지 뷰어: 우하단 터치 리사이즈 손잡이(CSS 코너 의존 제거) · 창 이동 시 크기 유지</li>
+            <li>이미지 뷰어: 헤더 버튼 max-width로 좁을 때 2~3줄 줄바꿈(설정·접기 포함)</li>
+            <li>프리셋 메뉴: 열린 동안 헤더 버튼보다 먼저 hit · 헤더 높이 아래 배치 · hitPad 확대(좌표 방식 유지)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.32</strong>
@@ -7591,8 +7599,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.32",
-    body: "뷰어 헤더: 좁을 때만 줄바꿈. 업데이트 내역 탭 참고."
+    title: "2.2.33",
+    body: "뷰어: 터치 리사이즈 손잡이 · 이동 시 크기 유지. 업데이트 내역 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8823,8 +8831,8 @@ const VENDOR_VIEWER_HDR_CHROME_TOUCH_PATCH =
       style: "display:none;position:absolute;top:52px;left:10px;min-width:200px;max-width:min(92vw,320px);max-height:min(50vh,360px);overflow:auto;z-index:5;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;",
       html: ""
     }), c = await H(e, "div", {
-      // Shrink title/preset first; button cluster wraps as a unit only when the row is too narrow.
-      style: "display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;box-sizing:border-box;",`;
+      // Constrained width so ◀▶상시 / 설정·접기 can wrap to 2–3 lines when the panel is narrow.
+      style: "display:flex;gap:8px;align-items:center;flex:1 1 auto;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;max-width:100%;min-width:0;box-sizing:border-box;",`;
 
 const VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE =
   `      const label = \`\${String(active?.name || (presets.length ? "프리셋" : "없음")).slice(0, 12)}\${String(active?.name || "").length > 12 ? "…" : ""} ▾\`;
@@ -8870,7 +8878,7 @@ const VENDOR_VIEWER_PRESET_MENU_TOUCH_PATCH =
               const el = await H(e, "div", { text: String(p.name || p.id || ""), style });
               try { await el.setAttribute("data-nx-preset-id", id); } catch {}
               await d.presetMenu.appendChild(el);
-              d.presetHits.push({ el, id, hitPad: 12 });
+              d.presetHits.push({ el, id, hitPad: 22 });
             } catch {
             }
           }
@@ -8884,8 +8892,16 @@ const VENDOR_VIEWER_PRESET_MENU_TOUCH_PATCH =
       }
       const presetChromeLive = !d.minimized || viewerMinimizeMode() === "toolbar" || viewerMinimizeMode() === "actions";
       const actionsMin = d.minimized && viewerMinimizeMode() === "actions", folded = !!(actionsMin && d.actionsFolded);
+      let menuTopPx = 52;
       try {
-        await d.presetMenu?.setStyleAttribute?.(\`display:\${d.presetMenuOpen && presetChromeLive && !folded ? "block" : "none"};position:absolute;top:\${actionsMin ? "auto" : "52px"};\${actionsMin ? "bottom:56px;" : ""}left:10px;right:\${actionsMin ? "10px" : "auto"};min-width:\${actionsMin ? "0" : "200px"};max-width:\${actionsMin ? "none" : "min(92vw,320px)"};max-height:min(50vh,360px);overflow:auto;z-index:20;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`);
+        if (!actionsMin && d.header && d.panel) {
+          const hr = await d.header.getBoundingClientRect(), pr = await d.panel.getBoundingClientRect();
+          if (hr && pr) menuTopPx = Math.max(48, Math.round(hr.bottom - pr.top + 4));
+        }
+      } catch {
+      }
+      try {
+        await d.presetMenu?.setStyleAttribute?.(\`display:\${d.presetMenuOpen && presetChromeLive && !folded ? "block" : "none"};position:absolute;top:\${actionsMin ? "auto" : menuTopPx + "px"};\${actionsMin ? "bottom:56px;" : ""}left:10px;right:\${actionsMin ? "10px" : "auto"};min-width:\${actionsMin ? "0" : "200px"};max-width:\${actionsMin ? "none" : "min(92vw,320px)"};max-height:min(50vh,360px);overflow:auto;z-index:30;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`);
       } catch {
       }`;
 
@@ -8899,7 +8915,7 @@ const VENDOR_PRESET_HIT_HELPER_PATCH =
       for (const zone of zones) {
         if (!zone?.el || !zone?.id) continue;
         try {
-          const R = await zone.el.getBoundingClientRect(), g = Number(zone.hitPad) || 12;
+          const R = await zone.el.getBoundingClientRect(), g = Number(zone.hitPad) || 22;
           if (x >= R.left - g && x <= R.right + g && y >= R.top - g && y <= R.bottom + g) return zone;
         } catch {
         }
@@ -8911,7 +8927,7 @@ const VENDOR_PRESET_HIT_HELPER_PATCH =
         for (let W = 0; W < kids.length; W += 1) {
           const id = String(d.viewerPresetIds?.[W] || zones[W]?.id || "");
           if (!id) continue;
-          const J = await kids[W].getBoundingClientRect(), g = 12;
+          const J = await kids[W].getBoundingClientRect(), g = 22;
           if (x >= J.left - g && x <= J.right + g && y >= J.top - g && y <= J.bottom + g) return { el: kids[W], id, hitPad: g };
         }
       } catch {
@@ -8947,6 +8963,76 @@ const VENDOR_PRESET_EXPANDED_HIT_PATCH =
             return;
           }
           if (await X(d.presetMenu, _, O)) return;
+        }`;
+
+/** Touch resize grip + preset-before-header (menu overlays wrapped chrome; button hits stole taps). */
+const VENDOR_VIEWER_PTR_ORDER_NEEDLE =
+  `      let G = !1;
+      try {
+        const B = await r.getBoundingClientRect();
+        _ > B.right - 22 && O > B.bottom - 22 && (G = !0);
+      } catch {
+      }
+      if (!G) {
+        if (await X(c, _, O)) {
+          try {
+            const B = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await c.getChildren()) : [];
+            for (let W = 0; W < B.length; W += 1) {
+              const J = await B[W].getBoundingClientRect();
+              if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
+                W === 0 ? await selectGalIndex(d.index - 1) : W === 1 ? await selectGalIndex(d.index + 1) : W === 2 ? await te() : W === 3 ? await rerollAllImages() : W === 4 ? await ae() : W === 5 ? (t.backendSettings?.card || {}).show_risu_settings_button !== !1 && await At() : W === 6 && await toggleMinimizeBtn();
+                return;
+              }
+            }
+          } catch {
+          }
+          return;
+        }
+        // Preset dropdown (SafeDOM forbids change/input — drive via pointer hit-test).
+        if (d.presetMenuOpen && d.presetMenu && await X(d.presetMenu, _, O)) {
+          try {
+            const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await d.presetMenu.getChildren()) : [];
+            for (let W = 0; W < kids.length; W += 1) {
+              const J = await kids[W].getBoundingClientRect();
+              if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
+                const id = d.viewerPresetIds?.[W] || "";
+                id && await pickViewerPreset(id);
+                return;
+              }
+            }
+          } catch {
+          }
+          return;
+        }`;
+const VENDOR_VIEWER_PTR_ORDER_PATCH =
+  `      if (d.resize) return;
+      if (!d.minimized && d.resizeGrip && await X(d.resizeGrip, _, O)) {
+        await startViewerResize(A, _, O);
+        return;
+      }
+      // Preset menu FIRST — absolute menu sits over wrapped header; c-button hit was eating taps.
+      if (d.presetMenuOpen && d.presetMenu) {
+        const zone = await hitPresetItemAt(_, O);
+        if (zone?.id) {
+          await pickViewerPreset(zone.id);
+          return;
+        }
+        if (await X(d.presetMenu, _, O)) return;
+      }
+      {
+        if (await X(c, _, O)) {
+          try {
+            const B = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await c.getChildren()) : [];
+            for (let W = 0; W < B.length; W += 1) {
+              const J = await B[W].getBoundingClientRect();
+              if (_ >= J.left && _ <= J.right && O >= J.top && O <= J.bottom) {
+                W === 0 ? await selectGalIndex(d.index - 1) : W === 1 ? await selectGalIndex(d.index + 1) : W === 2 ? await ae() : W === 3 ? (t.backendSettings?.card || {}).show_risu_settings_button !== !1 && await At() : W === 4 && await toggleMinimizeBtn();
+                return;
+              }
+            }
+          } catch {
+          }
+          return;
         }`;
 
 const VENDOR_VIEWER_PRESET_HITS_STATE_NEEDLE =
@@ -9038,7 +9124,7 @@ const VENDOR_ACTIONS_CHROME_PATCH =
             \`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">상시</span>\`,
             \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};align-items:center;justify-content:center;background:#334155;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
             \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${d.minimized ? "펼치기" : "접기"}</span>\`
-          ].join("")), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;box-sizing:border-box;\`);
+          ].join("")), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:8px;align-items:center;flex:1 1 auto;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;max-width:100%;min-width:0;box-sizing:border-box;\`);
         }
       } catch {
       }`;
@@ -9105,8 +9191,12 @@ const VENDOR_THUMBS_MOUNT_NEEDLE =
     await b.appendChild(S), await b.appendChild(C), await b.appendChild(E), await b.appendChild(j), await r.appendChild(i), await r.appendChild(viewerPresetMenu), await r.appendChild(p), await r.appendChild(b), await a.appendChild(r);`;
 const VENDOR_THUMBS_MOUNT_PATCH =
   `    // Custom transform scroll — we own the offset (native scrollLeft is untrustworthy in SafeDOM).
-    }), E = await H(e, "div", { style: "overflow:hidden;position:relative;padding-bottom:2px;flex-shrink:0;min-height:92px;max-height:92px;width:100%;box-sizing:border-box;touch-action:none;cursor:grab;" }), thumbsTrack = await H(e, "div", { style: "display:flex;gap:8px;align-items:center;width:max-content;max-width:none;transform:translate3d(0,0,0);will-change:transform;touch-action:none;" }), j = await H(e, "div", { style: "display:flex;flex-wrap:nowrap;gap:8px;align-items:center;color:#a6b1c2;font-size:13px;flex:0 0 auto;min-height:56px;height:56px;max-height:56px;overflow-x:auto;overflow-y:hidden;cursor:pointer;pointer-events:auto;box-sizing:border-box;padding:4px 0;" });
-    await b.appendChild(S), await b.appendChild(C), await E.appendChild(thumbsTrack), await b.appendChild(E), await b.appendChild(j), await r.appendChild(i), await r.appendChild(viewerPresetMenu), await r.appendChild(p), await r.appendChild(b), await a.appendChild(r);`;
+    }), E = await H(e, "div", { style: "overflow:hidden;position:relative;padding-bottom:2px;flex-shrink:0;min-height:92px;max-height:92px;width:100%;box-sizing:border-box;touch-action:none;cursor:grab;" }), thumbsTrack = await H(e, "div", { style: "display:flex;gap:8px;align-items:center;width:max-content;max-width:none;transform:translate3d(0,0,0);will-change:transform;touch-action:none;" }), j = await H(e, "div", { style: "display:flex;flex-wrap:nowrap;gap:8px;align-items:center;color:#a6b1c2;font-size:13px;flex:0 0 auto;min-height:56px;height:56px;max-height:56px;overflow-x:auto;overflow-y:hidden;cursor:pointer;pointer-events:auto;box-sizing:border-box;padding:4px 0;" }), resizeGrip = await H(e, "div", {
+      // Big touch target — CSS resize:both corner is unusable on mobile.
+      style: "position:absolute;right:0;bottom:0;width:56px;height:56px;z-index:50;cursor:nwse-resize;touch-action:none;pointer-events:auto;display:flex;align-items:flex-end;justify-content:flex-end;padding:10px;box-sizing:border-box;background:linear-gradient(135deg,transparent 52%,rgba(148,163,184,.35) 52%)",
+      html: ""
+    });
+    await b.appendChild(S), await b.appendChild(C), await E.appendChild(thumbsTrack), await b.appendChild(E), await b.appendChild(j), await r.appendChild(i), await r.appendChild(viewerPresetMenu), await r.appendChild(p), await r.appendChild(b), await r.appendChild(resizeGrip), await a.appendChild(r);`;
 
 /** Taller header + chip row: keep image stage from eating the meta chips. */
 const VENDOR_VIEWER_STAGE_RESERVE_NEEDLE =
@@ -9169,6 +9259,7 @@ const VENDOR_THUMBS_STATE_PATCH =
   `      preview: S,
       thumbs: E,
       thumbsTrack,
+      resizeGrip,
       meta: j,`;
 
 const VENDOR_THUMBS_HELPERS_NEEDLE =
@@ -9324,7 +9415,11 @@ const VENDOR_VIEWER_BODY_OVERFLOW_PATCH =
 const VENDOR_VIEWER_BODY_OVERFLOW_CHROME_NEEDLE =
   `await b.setStyleAttribute(\`flex:1;min-height:0;overflow:auto;padding:8px 10px;display:\${d.minimized ? "none" : "flex"};flex-direction:column;gap:6px;\`);`;
 const VENDOR_VIEWER_BODY_OVERFLOW_CHROME_PATCH =
-  `await b.setStyleAttribute(\`flex:1;min-height:0;overflow:hidden;padding:8px 10px;display:\${d.minimized ? "none" : "flex"};flex-direction:column;gap:6px;\`);`;
+  `await b.setStyleAttribute(\`flex:1;min-height:0;overflow:hidden;padding:8px 10px;display:\${d.minimized ? "none" : "flex"};flex-direction:column;gap:6px;\`);
+      try {
+        d.resizeGrip && await d.resizeGrip.setStyleAttribute(\`position:absolute;right:0;bottom:0;width:56px;height:56px;z-index:50;cursor:nwse-resize;touch-action:none;pointer-events:auto;display:\${d.minimized ? "none" : "flex"};align-items:flex-end;justify-content:flex-end;padding:10px;box-sizing:border-box;background:linear-gradient(135deg,transparent 52%,rgba(148,163,184,.35) 52%)\`);
+      } catch {
+      }`;
 
 const VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE =
   `        thumbBits.push(\`<img data-gal-idx="\${ut}" src="\${src}" style="\${thumbShellStyle(on, split)}" loading="lazy" decoding="async" />\`);
@@ -9453,7 +9548,8 @@ const VENDOR_THUMBS_DRAG_PATCH =
         cancelId
       };
     }, startViewerDrag = async (A, _, O, expandOnTap) => {
-      if (!expandOnTap) await v();
+      // Capture live CSS-resized size before f() reapplies Ft — otherwise move resets the panel.
+      await v(d.minimized ? {} : { syncSize: !0 });
       const B = await e.addEventListener("pointermove", Za), W = await e.addEventListener("pointerup", en), cancelId = await e.addEventListener("pointercancel", onViewerDragCancel);
       d.drag = {
         startCX: _,
@@ -9464,6 +9560,65 @@ const VENDOR_THUMBS_DRAG_PATCH =
         expandOnTap: !!expandOnTap,
         moveId: B,
         upId: W,
+        cancelId,
+        lastApply: 0
+      };
+    }, onViewerResizeMove = async (A) => {
+      if (!d.resize || d.drag) return;
+      const cx = Number(A?.clientX), cy = Number(A?.clientY);
+      if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+      const dw = cx - d.resize.startCX, dh = cy - d.resize.startCY;
+      if (!d.resize.moved && Math.abs(dw) + Math.abs(dh) > 2) d.resize.moved = !0;
+      try {
+        A.preventDefault?.();
+      } catch {
+      }
+      d.geo.w = Math.max(260, d.resize.originW + dw);
+      d.geo.h = Math.max(280, d.resize.originH + dh);
+      d.expandedH = d.geo.h;
+      d.geo = clampViewerGeo(d.geo, !1);
+      const now = Date.now();
+      if (now - (d.resize.lastApply || 0) < 16) return;
+      d.resize.lastApply = now;
+      await f();
+    }, endViewerResize = async () => {
+      if (!d.resize) return;
+      const { moveId, upId, cancelId } = d.resize;
+      d.resize = null;
+      try {
+        moveId != null && await e.removeEventListener(moveId);
+      } catch {
+      }
+      try {
+        upId != null && await e.removeEventListener(upId);
+      } catch {
+      }
+      try {
+        cancelId != null && await e.removeEventListener(cancelId);
+      } catch {
+      }
+      await v({ syncSize: !0 });
+      try {
+        await qt(d.geo);
+      } catch {
+      }
+      typeof d.applyChrome == "function" ? await d.applyChrome() : await f();
+    }, startViewerResize = async (A, _, O) => {
+      if (d.minimized || d.drag || d.resize) return;
+      await v({ syncSize: !0 });
+      try {
+        A.preventDefault?.();
+      } catch {
+      }
+      const moveId = await e.addEventListener("pointermove", onViewerResizeMove), upId = await e.addEventListener("pointerup", endViewerResize), cancelId = await e.addEventListener("pointercancel", endViewerResize);
+      d.resize = {
+        startCX: _,
+        startCY: O,
+        originW: Math.max(260, Number(d.geo.w) || 260),
+        originH: Math.max(280, Number(d.geo.h) || 280),
+        moved: !1,
+        moveId,
+        upId,
         cancelId,
         lastApply: 0
       };
@@ -9551,7 +9706,7 @@ const VENDOR_ACTIONS_DRAG_CLEAR_NEEDLE =
       !d.drag.moved && Math.abs(_) + Math.abs(O) > 4 && (d.drag.moved = !0);`;
 const VENDOR_ACTIONS_DRAG_CLEAR_PATCH =
   `    }, Za = async (A) => {
-      if (!d.drag) return;
+      if (!d.drag || d.resize) return;
       const cx = Number(A?.clientX), cy = Number(A?.clientY);
       if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
       const _ = cx - d.drag.startCX, O = cy - d.drag.startCY;
@@ -9978,6 +10133,7 @@ const loadVendorUi = (): string => {
     [VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE, 'viewer preset menu touch'],
     [VENDOR_PRESET_HIT_HELPER_NEEDLE, 'preset hitPresetItemAt helper'],
     [VENDOR_PRESET_EXPANDED_HIT_NEEDLE, 'preset expanded hit cache'],
+    [VENDOR_VIEWER_PTR_ORDER_NEEDLE, 'viewer ptr resize+preset order'],
     [VENDOR_VIEWER_PRESET_HITS_STATE_NEEDLE, 'viewer presetHits state'],
     [VENDOR_VIEWER_IMG_REROLL_TOUCH_NEEDLE, 'viewer img reroll touch'],
     [VENDOR_VIEWER_IMG_ACT_HIT_NEEDLE, 'viewer img act hit'],
@@ -10263,6 +10419,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_VIEWER_HDR_TAIL_TOUCH_NEEDLE, VENDOR_VIEWER_HDR_TAIL_TOUCH_PATCH)
     .replace(VENDOR_VIEWER_HDR_CHROME_TOUCH_NEEDLE, VENDOR_VIEWER_HDR_CHROME_TOUCH_PATCH)
     .replace(VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE, VENDOR_VIEWER_PRESET_MENU_TOUCH_PATCH)
+    .replace(VENDOR_VIEWER_PTR_ORDER_NEEDLE, VENDOR_VIEWER_PTR_ORDER_PATCH)
     .replace(VENDOR_PRESET_HIT_HELPER_NEEDLE, VENDOR_PRESET_HIT_HELPER_PATCH)
     .replace(VENDOR_PRESET_EXPANDED_HIT_NEEDLE, VENDOR_PRESET_EXPANDED_HIT_PATCH)
     .replace(VENDOR_VIEWER_PRESET_HITS_STATE_NEEDLE, VENDOR_VIEWER_PRESET_HITS_STATE_PATCH)

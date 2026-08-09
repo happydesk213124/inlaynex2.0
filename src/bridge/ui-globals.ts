@@ -17,6 +17,7 @@
 
 import * as explorerSelection from '../ui-contract/explorer-selection';
 import * as loreExtra from '../domain/lore/extra';
+import * as stylePresetIo from '../domain/style-presets/io';
 import * as llmProviders from '../providers/llm/providers';
 import * as llmRoles from '../domain/llm/roles';
 import * as llmForm from '../ui-contract/llm-form';
@@ -42,5 +43,12 @@ export function installUiContractGlobals(): void {
     embeddingProviderNeedsApiKey: embeddingProviders.embeddingProviderNeedsApiKey,
   });
   Reflect.set(globalThis, '__INLAY_LORE_EXTRA__', { ...loreExtra });
+  // Style preset card.json + Risu lorebook_export parse/export (2.0-only).
+  Reflect.set(globalThis, '__INLAY_STYLE_PRESETS__', {
+    parseStylePresetsFromJson: stylePresetIo.parseStylePresetsFromJson,
+    toLorebookExport: stylePresetIo.toLorebookExport,
+    toPresetsJson: stylePresetIo.toPresetsJson,
+    splitPositiveNegative: stylePresetIo.splitPositiveNegative,
+  });
   Reflect.set(globalThis, '__INLAY_EXPLORER__', { ...explorerSelection });
 }

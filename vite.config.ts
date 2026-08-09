@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.15';
+const PLUGIN_VERSION = '2.2.16';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.16</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스타일 프리셋: Risu lorebook_export JSON 불러오기·내보내기 (card.json과 동일 [Positive]/[Negative])</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.15</strong>
@@ -2015,7 +2021,7 @@ const VENDOR_PRESET_HEAD_SAVE_NEEDLE = `              <div class="prompt-title">
           <div class="preset-chip-row">\${I || '<span class="muted">아직 프리셋이 없습니다. JSON을 불러오세요.</span>'}</div>`;
 
 const VENDOR_PRESET_HEAD_SAVE_PATCH = `              <div class="prompt-title">스타일 프리셋</div>
-              <div class="muted">card.json / 로어북 [Positive]·[Negative] 항목을 불러와 바로 씁니다.</div>
+              <div class="muted">card.json · lorebook_export · [Positive]/[Negative] 로어를 불러와 바로 씁니다.</div>
             </div>
             <div class="row" style="margin:0;gap:8px;align-items:center;flex-shrink:0">
               <span class="badge \${U.length ? "custom" : "default"}">\${U.length}개</span>
@@ -2173,6 +2179,117 @@ const VENDOR_PRESET_QT_PATCH = `}, mt = ($, L) => \`\${String($ || "preset").toL
   };
 }, pn = ($) => {`;
 
+const VENDOR_PRESET_PN_NEEDLE = `pn = ($) => {
+  const L = String($ || "").trim();
+  if (!L) return [];
+  if (!L.startsWith("{") && !L.startsWith("[") && /\\[Positive\\]/i.test(L)) {
+    const q = ht(L);
+    return q ? [{
+      id: mt("imported", 0),
+      name: "가져온 프리셋",
+      positive: q.positive,
+      negative: q.negative
+    }] : [];
+  }
+  let M;
+  try {
+    M = JSON.parse(L);
+  } catch {
+    return [];
+  }
+  const V = [], Y = (q) => {
+    if (!q) return;
+    const ne = \`\${q.name}::\${q.positive.slice(0, 80)}\`;
+    V.some((ie) => \`\${ie.name}::\${ie.positive.slice(0, 80)}\` === ne) || V.push(q);
+  };
+  if (Array.isArray(M))
+    return M.forEach((q, ne) => Y(Qt(q, ne))), V;
+  if (M && typeof M == "object") {
+    const q = M;
+    if (Array.isArray(q.presets) && (q.presets.forEach((ie, se) => Y(Qt(ie, se))), V.length))
+      return V;
+    const ne = (q.data?.character_book || q.character_book || q.data?.characterBook)?.entries;
+    Array.isArray(ne) && ne.forEach((ie, se) => {
+      if (!ie || typeof ie != "object") return;
+      const be = ie, Te = String(be.content || ""), k = ht(Te);
+      if (!k) return;
+      const t = String(be.comment || be.name || \`프리셋 \${se + 1}\`).trim().replace(/^프리셋\\s*/i, (Ae) => Ae);
+      Y({
+        id: mt(t, se),
+        name: t || \`프리셋 \${se + 1}\`,
+        positive: k.positive,
+        negative: k.negative
+      });
+    });
+  }
+  return V;
+}, un = ($, L) => {`;
+
+const VENDOR_PRESET_PN_PATCH = `pn = ($) => {
+  const SP = globalThis.__INLAY_STYLE_PRESETS__;
+  if (SP && typeof SP.parseStylePresetsFromJson == "function") {
+    try {
+      const rows = SP.parseStylePresetsFromJson($) || [];
+      if (rows.length) return rows.map((row, i) => {
+        const name = String(row.name || \`프리셋 \${i + 1}\`);
+        return {
+          id: String(row.id || mt(name, i)),
+          name,
+          positive: String(row.positive || ""),
+          negative: String(row.negative || ""),
+          cfg_scale: row.cfg_scale ?? null,
+          cfg_rescale: row.cfg_rescale ?? null
+        };
+      });
+    } catch (err) {
+      console.warn("[Inlay Nexus] style preset parse failed", err);
+    }
+  }
+  const L = String($ || "").trim();
+  if (!L) return [];
+  if (!L.startsWith("{") && !L.startsWith("[") && /\\[Positive\\]/i.test(L)) {
+    const q = ht(L);
+    return q ? [{
+      id: mt("imported", 0),
+      name: "가져온 프리셋",
+      positive: q.positive,
+      negative: q.negative
+    }] : [];
+  }
+  let M;
+  try {
+    M = JSON.parse(L);
+  } catch {
+    return [];
+  }
+  const V = [], Y = (q) => {
+    if (!q) return;
+    const ne = \`\${q.name}::\${q.positive.slice(0, 80)}\`;
+    V.some((ie) => \`\${ie.name}::\${ie.positive.slice(0, 80)}\` === ne) || V.push(q);
+  };
+  if (Array.isArray(M))
+    return M.forEach((q, ne) => Y(Qt(q, ne))), V;
+  if (M && typeof M == "object") {
+    const q = M;
+    if (Array.isArray(q.presets) && (q.presets.forEach((ie, se) => Y(Qt(ie, se))), V.length))
+      return V;
+    const ne = (q.data?.character_book || q.character_book || q.data?.characterBook)?.entries;
+    Array.isArray(ne) && ne.forEach((ie, se) => {
+      if (!ie || typeof ie != "object") return;
+      const be = ie, Te = String(be.content || ""), k = ht(Te);
+      if (!k) return;
+      const t = String(be.comment || be.name || \`프리셋 \${se + 1}\`).trim().replace(/^프리셋\\s*/i, (Ae) => Ae);
+      Y({
+        id: mt(t, se),
+        name: t || \`프리셋 \${se + 1}\`,
+        positive: k.positive,
+        negative: k.negative
+      });
+    });
+  }
+  return V;
+}, un = ($, L) => {`;
+
 const VENDOR_PRESET_UN_NEEDLE = `    Y >= 0 ? M[Y] = {
       ...M[Y],
       positive: V.positive,
@@ -2308,7 +2425,14 @@ const VENDOR_PRESET_EXPORT_NEEDLE = `  function exportPresetsJson() {
       name: String(a.name || ""),
       positive: String(a.positive || ""),
       negative: String(a.negative || "")
-    })).filter((a) => a.name || a.positive || a.negative);`;
+    })).filter((a) => a.name || a.positive || a.negative);
+    if (!n.length) throw new Error("내보낼 프리셋이 없습니다.");
+    const o = JSON.stringify({
+      presets: n,
+      active_preset_id: String(e.active_preset_id || n[0].id || "")
+    }, null, 2), a = new Blob([o], { type: "application/json" }), r = URL.createObjectURL(a), i = document.createElement("a");
+    return i.href = r, i.download = \`inlay-nexus-presets-\${new Date().toISOString().slice(0, 10)}.json\`, document.body.appendChild(i), i.click(), i.remove(), setTimeout(() => URL.revokeObjectURL(r), 1e3), n.length;
+  }`;
 
 const VENDOR_PRESET_EXPORT_PATCH = `  function exportPresetsJson() {
     const e = _e(), n = (e.presets || []).map((a) => {
@@ -2321,7 +2445,25 @@ const VENDOR_PRESET_EXPORT_PATCH = `  function exportPresetsJson() {
         cfg_scale: cfg != null && Number.isFinite(cfg) ? cfg : null,
         cfg_rescale: rescale != null && Number.isFinite(rescale) ? rescale : null
       };
-    }).filter((a) => a.name || a.positive || a.negative || a.cfg_scale != null || a.cfg_rescale != null);`;
+    }).filter((a) => a.name || a.positive || a.negative || a.cfg_scale != null || a.cfg_rescale != null);
+    if (!n.length) throw new Error("내보낼 프리셋이 없습니다.");
+    const SP = globalThis.__INLAY_STYLE_PRESETS__;
+    const payload = SP && typeof SP.toLorebookExport == "function"
+      ? SP.toLorebookExport(n)
+      : { presets: n, active_preset_id: String(e.active_preset_id || n[0].id || "") };
+    const o = JSON.stringify(payload, null, 2), a = new Blob([o], { type: "application/json" }), r = URL.createObjectURL(a), i = document.createElement("a");
+    return i.href = r, i.download = \`inlay-nexus-lorebook-presets-\${new Date().toISOString().slice(0, 10)}.json\`, document.body.appendChild(i), i.click(), i.remove(), setTimeout(() => URL.revokeObjectURL(r), 1e3), n.length;
+  }`;
+
+const VENDOR_PRESET_ST_ERR_NEEDLE =
+  `if (!n.length) throw new Error("프리셋을 찾지 못했습니다. [Positive]/[Negative] 로어북 항목이 있는 card.json인지 확인하세요.");`;
+const VENDOR_PRESET_ST_ERR_PATCH =
+  `if (!n.length) throw new Error("프리셋을 찾지 못했습니다. card.json / lorebook_export / {presets:[…]} 에 [Positive]·[Negative] 항목이 있는지 확인하세요.");`;
+
+const VENDOR_PRESET_PASTE_DETECT_NEEDLE =
+  `if (!(!r || r.length < 40) && !(!/\\[Positive\\]/i.test(r) && !/"character_book"|"presets"/i.test(r)))`;
+const VENDOR_PRESET_PASTE_DETECT_PATCH =
+  `if (!(!r || r.length < 40) && !(!/\\[Positive\\]/i.test(r) && !/"character_book"|"presets"|"type"\\s*:\\s*"risu"/i.test(r)))`;
 
 const VENDOR_PRESET_NEW_NEEDLE = `      a.presets.push({
         id: r,
@@ -7165,8 +7307,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.15",
-    body: "캐릭 수정 팝업 오토태그/참고이미지 Ctrl+V 수정. 업데이트 내역 탭 참고."
+    title: "2.2.16",
+    body: "스타일 프리셋 lorebook_export 입출력. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -9136,6 +9278,7 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_EXPLORER_THUMB_WARM_NEEDLE, 'explorer thumb warm');
   assertOnce(raw, VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE, 'explorer warm progress');
   assertOnce(raw, VENDOR_PRESET_QT_NEEDLE, 'preset Qt()');
+  assertOnce(raw, VENDOR_PRESET_PN_NEEDLE, 'preset pn() lorebook_export');
   assertOnce(raw, VENDOR_PRESET_UN_NEEDLE, 'preset un() merge');
   assertOnce(raw, VENDOR_PRESET_HTML_NEEDLE, 'preset HTML cfg/vibe');
   assertOnce(raw, VENDOR_PRESET_HEAD_SAVE_NEEDLE, 'preset head save button');
@@ -9144,6 +9287,8 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_PRESET_FA_NEEDLE, 'preset fa() write');
   assertOnce(raw, VENDOR_PRESET_SYNC_NEEDLE, 'preset form sync');
   assertOnce(raw, VENDOR_PRESET_EXPORT_NEEDLE, 'preset JSON export');
+  assertOnce(raw, VENDOR_PRESET_ST_ERR_NEEDLE, 'preset St() error text');
+  assertOnce(raw, VENDOR_PRESET_PASTE_DETECT_NEEDLE, 'preset paste detect');
   assertOnce(raw, VENDOR_PRESET_NEW_NEEDLE, 'preset new');
   assertOnce(raw, VENDOR_PRESET_DUP_NEEDLE, 'preset dup');
   assertOnce(raw, VENDOR_PRESET_DEL_NEEDLE, 'preset del clear vibe');
@@ -9432,6 +9577,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_EXPLORER_FOLDER_BIND_NEEDLE, VENDOR_EXPLORER_FOLDER_BIND_PATCH)
     .replace(VENDOR_EXPLORER_FILTER_ET_NEEDLE, VENDOR_EXPLORER_FILTER_ET_PATCH)
     .replace(VENDOR_PRESET_QT_NEEDLE, VENDOR_PRESET_QT_PATCH)
+    .replace(VENDOR_PRESET_PN_NEEDLE, VENDOR_PRESET_PN_PATCH)
     .replace(VENDOR_PRESET_UN_NEEDLE, VENDOR_PRESET_UN_PATCH)
     .replace(VENDOR_PRESET_HTML_NEEDLE, VENDOR_PRESET_HTML_PATCH)
     .replace(VENDOR_PRESET_HEAD_SAVE_NEEDLE, VENDOR_PRESET_HEAD_SAVE_PATCH)
@@ -9440,6 +9586,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_PRESET_FA_NEEDLE, VENDOR_PRESET_FA_PATCH)
     .replace(VENDOR_PRESET_SYNC_NEEDLE, VENDOR_PRESET_SYNC_PATCH)
     .replace(VENDOR_PRESET_EXPORT_NEEDLE, VENDOR_PRESET_EXPORT_PATCH)
+    .replace(VENDOR_PRESET_ST_ERR_NEEDLE, VENDOR_PRESET_ST_ERR_PATCH)
+    .replace(VENDOR_PRESET_PASTE_DETECT_NEEDLE, VENDOR_PRESET_PASTE_DETECT_PATCH)
     .replace(VENDOR_PRESET_NEW_NEEDLE, VENDOR_PRESET_NEW_PATCH)
     .replace(VENDOR_PRESET_DUP_NEEDLE, VENDOR_PRESET_DUP_PATCH)
     .replace(VENDOR_PRESET_DEL_NEEDLE, VENDOR_PRESET_DEL_PATCH)

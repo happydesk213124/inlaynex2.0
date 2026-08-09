@@ -47,6 +47,7 @@ missing, which historically hid bugs — so we publish the full surface.
 | `__INLAY_VIEWER_CORE__` | overlay/pin geometry, gallery ordering, DOM↔API message matching; sticky always-image size via `resolveStickyThumbPct` / `stickyThumbBoxFromPct` (hide = 0%, not display:none) + `fitBoxInside` against NAI w×h; overlay toggle OFF keeps sync alive and parks via 0% thumb + off-screen pin (avoids hideStickyMarker thrash); with 말풍선 삽화 ON, `stickySegmentForInlineChat` picks the shot nearest the pointer for sticky activation; sticky thumb HTML/shell use transparent backgrounds (no opaque letterbox bars); `claimStickyMarkerByCardId` reuses a still-mounted pin on partial card-set swaps so sticky pins do not duplicate |
 | `__INLAY_LLM__` | provider list, endpoint defaults, model placeholders |
 | `__INLAY_LORE_EXTRA__` | `lb-xnai.lb.extra` lorebook trimming |
+| `__INLAY_STYLE_PRESETS__` | style-preset parse/export: card.json `character_book` + Risu `lorebook_export` (`type: risu`) |
 | `__INLAY_EXPLORER__` | explorer multi-select state machine |
 
 The UI also sets `globalThis.INLAY_NEXUS_RUNTIME` to its own state object, and

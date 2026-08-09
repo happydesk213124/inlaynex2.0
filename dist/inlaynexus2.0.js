@@ -2248,7 +2248,7 @@ button[data-char-autotag].armed{background:rgba(255,196,72,.24);border-color:rgb
 `;
   const HEAD_HELP_DEFAULT = {
     title: "2.2.22",
-    body: "말풍선 삽화 즉시/순차 붙이기 + 선택 워밍 우선. 업데이트 내역 탭 참고."
+    body: "설정·토스트·말풍선 삽화 체감 개선(2.2.17~22). 업데이트 내역 탭 참고."
   };
   const HEAD_HELP = {
     "nx-power": { title: "Power ON", body: "플러그인 전체를 켜거나 끕니다. 끄면 이미지 생성과 표시가 멈춥니다." },
@@ -4533,26 +4533,29 @@ button[data-char-autotag].armed{background:rgba(255,196,72,.24);border-color:rgb
           <strong>2.2.22</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
             <li>말풍선 삽화: 캐시된 샷부터 즉시 붙이고, 나머지는 인코딩되는 족족 추가</li>
-            <li>선택±이웃 이미지 워밍 우선 + 선택 인코딩 슬롯 독점(나머지 일시 대기)</li>
+            <li>선택±이웃 이미지 워밍을 큐 앞으로 · 선택 인코딩 중엔 다른 워밍 일시 대기(슬롯 독점)</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.21</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>선택 토스트: 챗·캐릭터명 / 아래 작은 메시지 앞부분 · 토스트 너비 고정</li>
+            <li>선택 토스트: 위줄 챗·캐릭터명 / 아래 작은 메시지 앞부분</li>
+            <li>선택 토스트 너비 고정(min 280px) — 메시지 길이에 따라 폭이 들쭉날쭉하지 않음</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.20</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>진행 토스트: 인덱싱 % 갱신·스크롤 깜박임 완화·얇은 프로그레스바 / 선택 시 메시지 앞부분</li>
-            <li>설정 닫기 알림은 별도 host 토스트(진행 토스트와 분리)</li>
+            <li>진행 토스트: 인덱싱(이미지 준비) %가 실제로 갱신 · 스크롤 시 깜박임 완화</li>
+            <li>진행 토스트 UI: 스피너 제거 · 얇은 프로그레스바 · 선택 시 메시지 앞부분 표시</li>
+            <li>설정 닫기/복구 알림은 별도 host 토스트(진행 토스트와 분리)</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.19</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>설정 닫기: 창 먼저 닫고 뷰어/상시 복구는 백그라운드 + 토스트</li>
+            <li>설정 닫기: 창을 먼저 닫고, 뷰어/상시 복구는 백그라운드에서 진행</li>
+            <li>복구 중·복구 완료를 토스트로 안내</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
@@ -4565,7 +4568,7 @@ button[data-char-autotag].armed{background:rgba(255,196,72,.24);border-color:rgb
         <div class="card" style="margin-top:14px">
           <strong>2.2.17</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>설정 닫기: 저장 기다리지 않고 바로 닫힘(저장은 백그라운드)</li>
+            <li>설정 닫기: 저장을 기다리지 않고 바로 닫힘(저장은 백그라운드)</li>
             <li>뷰어 상시 ON/OFF: 화면 먼저 반영 후 설정 저장(렉 완화)</li>
           </ul>
         </div>

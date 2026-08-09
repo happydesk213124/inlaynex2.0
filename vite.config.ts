@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.16';
+const PLUGIN_VERSION = '2.2.17';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.17</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>설정 닫기: 저장 기다리지 않고 바로 닫힘(저장은 백그라운드)</li>
+            <li>뷰어 상시 ON/OFF: 화면 먼저 반영 후 설정 저장(렉 완화)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.16</strong>
@@ -4387,21 +4394,75 @@ const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH = `      const hide = "position:fixed;
     try { await hideFloatingViewerForModal(); } catch {}
     try { await Ht(); } catch {}`;
 
-/** Settings close (nx-close): clear sticky editor flag + restore floating viewer before remount. */
-const VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE = `      t.uiOpen = !1, t._debugTabTimer && (clearInterval(t._debugTabTimer), t._debugTabTimer = null), t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), t._settingsWatch && (clearInterval(t._settingsWatch), t._settingsWatch = null);
+/** Settings close (nx-close): hide first, flush in background; restore viewer; no duplicate he/Ce after it(). */
+const VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE = `    document.getElementById("nx-close")?.addEventListener("click", async () => {
+      try {
+        await flushSettingsSave();
+      } catch {
+      }
+      t.uiOpen = !1, t._debugTabTimer && (clearInterval(t._debugTabTimer), t._debugTabTimer = null), t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), t._settingsWatch && (clearInterval(t._settingsWatch), t._settingsWatch = null);
       try {
         await blockHostChrome(!1);
       } catch {
       }
-      typeof k.hideContainer == "function" && await k.hideContainer(), invalidateOverlayLayoutCache();`;
-const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `      t.uiOpen = !1, t._debugTabTimer && (clearInterval(t._debugTabTimer), t._debugTabTimer = null), t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), t._settingsWatch && (clearInterval(t._settingsWatch), t._settingsWatch = null);
+      typeof k.hideContainer == "function" && await k.hideContainer(), invalidateOverlayLayoutCache();
+      try {
+        await it();
+        await he();
+        Ce();
+      } catch {
+      }
+    }),`;
+const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `    document.getElementById("nx-close")?.addEventListener("click", async () => {
+      // Optimistic close: hide UI first, persist settings in the background.
+      t.uiOpen = !1, t._debugTabTimer && (clearInterval(t._debugTabTimer), t._debugTabTimer = null), t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), t._settingsWatch && (clearInterval(t._settingsWatch), t._settingsWatch = null);
       if (t.overlayUi) t.overlayUi._stickyEditorOpen = !1;
       try { await restoreFloatingViewerAfterModal(); } catch {}
       try {
         await blockHostChrome(!1);
       } catch {
       }
-      typeof k.hideContainer == "function" && await k.hideContainer(), invalidateOverlayLayoutCache();`;
+      typeof k.hideContainer == "function" && await k.hideContainer(), invalidateOverlayLayoutCache();
+      flushSettingsSave().catch(() => {});
+      try {
+        // it() already re-applies pin layout (he/Ce); do not await them again.
+        await it();
+      } catch {
+      }
+    }),`;
+
+/** Viewer 상시 chip: flip overlay_markers in memory + layout first, persist after. */
+const VENDOR_SANGSI_TOGGLE_NEEDLE = `    }, ae = async () => {
+      const A = t.backendSettings?.card || {}, _ = A.overlay_markers === !1;
+      await flushSettingsSave(), await pe({ card: {
+        ...A,
+        overlay_markers: _,
+        inline_previews: _
+      } }), y("info", "overlay.toggle", String(_)), await he(), await T();
+    }, Za = async (A) => {`;
+const VENDOR_SANGSI_TOGGLE_PATCH = `    }, ae = async () => {
+      const A = t.backendSettings?.card || {}, nextOn = A.overlay_markers === !1;
+      t.backendSettings = t.backendSettings || {};
+      t.backendSettings.card = {
+        ...(t.backendSettings.card || {}),
+        ...A,
+        overlay_markers: nextOn,
+        inline_previews: nextOn
+      };
+      // Visual first (0% / off-screen pin via overlayVisualOn); save does not block the chip.
+      try { await he(); } catch {}
+      try { await T(); } catch {}
+      y("info", "overlay.toggle", String(nextOn));
+      Promise.resolve().then(() => flushSettingsSave()).then(() => pe({
+        card: {
+          ...(t.backendSettings?.card || {}),
+          overlay_markers: nextOn,
+          inline_previews: nextOn
+        }
+      })).catch((err) => {
+        y("warn", "overlay.toggle.fail", err?.message || err);
+      });
+    }, Za = async (A) => {`;
 
 /** Settings shell vanished (host closed UI): same sticky/viewer restore as nx-close. */
 const VENDOR_SETTINGS_WATCH_STICKY_NEEDLE = `        t.uiOpen = !1, t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), clearInterval(t._settingsWatch), t._settingsWatch = null;
@@ -7307,8 +7368,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.16",
-    body: "스타일 프리셋 lorebook_export 입출력. 업데이트 내역 탭 참고."
+    title: "2.2.17",
+    body: "설정 닫기·상시 토글 반응 개선. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -9340,6 +9401,7 @@ const loadVendorUi = (): string => {
     [VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, 'settings open sticky hide'],
     [VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, 'settings At hide panel + rehide'],
     [VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, 'settings close sticky restore'],
+    [VENDOR_SANGSI_TOGGLE_NEEDLE, 'viewer 상시 optimistic toggle'],
     [VENDOR_SETTINGS_WATCH_STICKY_NEEDLE, 'settings watch sticky restore'],
     [VENDOR_OVERLAY_MOUNT_NEEDLE, 'overlay keep Ya shell'],
     [VENDOR_OVERLAY_WATCH_NEEDLE, 'overlay watchdog always shell'],
@@ -9640,6 +9702,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, VENDOR_SETTINGS_OPEN_STICKY_PATCH)
     .replace(VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH)
     .replace(VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, VENDOR_SETTINGS_CLOSE_STICKY_PATCH)
+    .replace(VENDOR_SANGSI_TOGGLE_NEEDLE, VENDOR_SANGSI_TOGGLE_PATCH)
     .replace(VENDOR_SETTINGS_WATCH_STICKY_NEEDLE, VENDOR_SETTINGS_WATCH_STICKY_PATCH)
     .replace(VENDOR_CARD_TAG_ROSTER_REFRESH_NEEDLE, VENDOR_CARD_TAG_ROSTER_REFRESH_PATCH)
     .replace(VENDOR_CARD_TAG_STRIP_PERSON_NEEDLE, VENDOR_CARD_TAG_STRIP_PERSON_PATCH)

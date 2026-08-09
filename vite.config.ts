@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.33';
+const PLUGIN_VERSION = '2.2.34';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.34</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>접힘 「상단 툴바 한 줄」·펼침 헤더: 줄바꿈(2~3줄) 후 실제 헤더 높이에 패널/예약 높이 맞춤</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.33</strong>
@@ -7599,8 +7605,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.33",
-    body: "뷰어: 터치 리사이즈 손잡이 · 이동 시 크기 유지. 업데이트 내역 참고."
+    title: "2.2.34",
+    body: "툴바/헤더 줄바꿈 시 세로 높이 맞춤. 업데이트 내역 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8775,7 +8781,10 @@ const VENDOR_ACTIONS_CLAMP_PATCH =
   `    if (minimized) {
       if (mode === "toolbar") {
         dispW = Math.max(280, Math.min(storeW, vw - margin * 2));
-        dispH = 40;
+        // Follow measured/wrapped header height (was fixed 40 and clipped 2–3 row chrome).
+        const ch = Number(t.galleryUi?.chromeH) || 0;
+        const est = dispW < 240 ? 168 : dispW < 400 ? 112 : 56;
+        dispH = Math.max(56, Math.min(ch > 0 ? ch : est, vh - margin * 2));
       } else if (mode === "actions") {
         dispW = 160;
         dispH = t.galleryUi?.actionsFolded ? 88 : 328;
@@ -9207,8 +9216,9 @@ const VENDOR_VIEWER_STAGE_RESERVE_NEEDLE =
 const VENDOR_VIEWER_STAGE_RESERVE_PATCH =
   `  function imageStageStyle(geo = {}) {
     const panelH = Math.max(280, Number(geo.h) || 560);
-    // header(~52, wraps only when narrow) + gaps + status + thumbs + chip row(~56) + padding.
-    const reserved = 56 + 14 + 28 + 96 + 64 + 16;`;
+    // Live header height (wraps to 2–3 rows when narrow) + gaps + status + thumbs + chips + padding.
+    const headerH = Math.max(52, Number(t.galleryUi?.chromeH) || 56);
+    const reserved = headerH + 14 + 28 + 96 + 64 + 16;`;
 
 /** Larger resize corner + always re-apply panel style after CSS resize (min-width can be ignored live). */
 const VENDOR_VIEWER_RESIZE_HIT_NEEDLE =
@@ -9420,6 +9430,44 @@ const VENDOR_VIEWER_BODY_OVERFLOW_CHROME_PATCH =
         d.resizeGrip && await d.resizeGrip.setStyleAttribute(\`position:absolute;right:0;bottom:0;width:56px;height:56px;z-index:50;cursor:nwse-resize;touch-action:none;pointer-events:auto;display:\${d.minimized ? "none" : "flex"};align-items:flex-end;justify-content:flex-end;padding:10px;box-sizing:border-box;background:linear-gradient(135deg,transparent 52%,rgba(148,163,184,.35) 52%)\`);
       } catch {
       }`;
+
+/** After chrome layout: measure wrapped header and size toolbar/panel to match. */
+const VENDOR_CHROME_HEIGHT_MEASURE_NEEDLE =
+  `      try {
+        await p.setStyleAttribute("display:none;");
+      } catch {
+      }
+      await f();
+    }, x = async () => {
+      if (d.minimized) {
+        const left = Math.round(d.geo.left), top = Math.round(d.geo.top);`;
+const VENDOR_CHROME_HEIGHT_MEASURE_PATCH =
+  `      try {
+        await p.setStyleAttribute("display:none;");
+      } catch {
+      }
+      // Header height:auto + wrap — measure real chrome so toolbar/stage reserve aren't stuck at 1-line.
+      try {
+        const hr = await i.getBoundingClientRect();
+        if (hr && hr.height > 0) d.chromeH = Math.max(iconMin ? 48 : 56, Math.ceil(hr.height));
+        else if (!(d.chromeH > 0)) d.chromeH = iconMin ? 48 : 56;
+      } catch {
+        if (!(d.chromeH > 0)) d.chromeH = iconMin ? 48 : 56;
+      }
+      await f();
+      if (toolbarMin) {
+        try {
+          const hr2 = await i.getBoundingClientRect(), pr2 = await r.getBoundingClientRect();
+          if (hr2 && pr2 && Math.abs(hr2.height - pr2.height) > 2) {
+            d.chromeH = Math.max(56, Math.ceil(hr2.height));
+            await f();
+          }
+        } catch {
+        }
+      }
+    }, x = async () => {
+      if (d.minimized) {
+        const left = Math.round(d.geo.left), top = Math.round(d.geo.top);`;
 
 const VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE =
   `        thumbBits.push(\`<img data-gal-idx="\${ut}" src="\${src}" style="\${thumbShellStyle(on, split)}" loading="lazy" decoding="async" />\`);
@@ -10164,6 +10212,7 @@ const loadVendorUi = (): string => {
     [VENDOR_THUMB_SCROLL_WHEEL_NEEDLE, 'thumb transform wheel'],
     [VENDOR_VIEWER_BODY_OVERFLOW_NEEDLE, 'viewer body overflow hidden'],
     [VENDOR_VIEWER_BODY_OVERFLOW_CHROME_NEEDLE, 'viewer body chrome overflow hidden'],
+    [VENDOR_CHROME_HEIGHT_MEASURE_NEEDLE, 'viewer chrome height measure'],
     [VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE, 'thumb paint chrome track'],
     [VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE, 'thumb paint strip track'],
     [VENDOR_THUMBS_CLEAR_NEEDLE, 'thumbs clear track'],
@@ -10452,6 +10501,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_THUMB_SCROLL_WHEEL_NEEDLE, VENDOR_THUMB_SCROLL_WHEEL_PATCH)
     .replace(VENDOR_VIEWER_BODY_OVERFLOW_NEEDLE, VENDOR_VIEWER_BODY_OVERFLOW_PATCH)
     .replace(VENDOR_VIEWER_BODY_OVERFLOW_CHROME_NEEDLE, VENDOR_VIEWER_BODY_OVERFLOW_CHROME_PATCH)
+    .replace(VENDOR_CHROME_HEIGHT_MEASURE_NEEDLE, VENDOR_CHROME_HEIGHT_MEASURE_PATCH)
     .replace(VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE, VENDOR_THUMB_SCROLL_RESET_CHROME_PATCH)
     .replace(VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE, VENDOR_THUMB_SCROLL_RESET_STRIP_PATCH)
     .replaceAll(VENDOR_THUMBS_KIDS_NEEDLE, VENDOR_THUMBS_KIDS_PATCH)

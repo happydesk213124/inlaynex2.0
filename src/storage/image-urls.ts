@@ -224,15 +224,6 @@ function flushWarmDeferred(): void {
   warmDeferredSet.clear();
 }
 
-function focusWorkPending(): boolean {
-  if (!warmFocus?.size) return false;
-  for (const id of warmFocus) {
-    if (getBlobUrl(id) !== undefined) continue;
-    return true;
-  }
-  return false;
-}
-
 function maybeReleaseWarmFocus(): void {
   if (!warmFocus) return;
   for (const id of [...warmFocus]) {

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.23';
+const PLUGIN_VERSION = '2.2.24';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.24</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>선택 토스트를 진행/리롤 토스트와 분리(별도 DOM) — 메시지 클릭해도 리롤·인덱싱 바가 안 꺼짐</li>
+            <li>진행 토스트 위에 떠 있으면 선택 토스트는 그 아래에 표시</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.23</strong>
@@ -5719,7 +5726,7 @@ const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
     "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 ±1(역할 무관). 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-chat-scale": { title: "말풍선 삽화 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
-    "nx-progress-toast": { title: "진행 토스트", body: "진행·새 메시지 선택 시 표시. 같은 메시지 재클릭은 생략. 태깅/생성 중엔 유지, 인덱싱 % 정체 시 100% 후 숨김. 인덱싱=민트, 그 외=보라." },`;
+    "nx-progress-toast": { title: "진행 토스트", body: "태깅/생성/리롤/인덱싱 진행 표시. 메시지 선택 알림은 별도 토스트(같은 메시지 재클릭 생략). 인덱싱 % 정체 시 100% 후 숨김. 인덱싱=민트, 그 외=보라." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>`;
@@ -6363,10 +6370,8 @@ const VENDOR_INLINE_CALL_PATCH =
       }
     }
     if (source === "click" || source === "text") {
-      t._progressToastIdlePeek = !0;
-      t._progressToastFp = "";
       try {
-        typeof syncProgressToast == "function" && syncProgressToast().catch(() => {
+        typeof showSelectionToast == "function" && showSelectionToast(t.selectedMessage).catch(() => {
         });
       } catch {
       }
@@ -6387,7 +6392,7 @@ const VENDOR_INLINE_SAME_PATCH =
         } catch {
         }
       }
-      // Same message re-click: keep current progress toast (no selection peek).
+      // Same message re-click: no selection toast (progress toast untouched).
       if (linked.length) return !0;
       if (source === "scroll" || source === "provisional") return !0;
       if (source === "text") return !isSelectedCharRole(l) ? !0 : (y("info", "select.same", \`msg#\${i.chatIndex} noImage → retry\`), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
@@ -7526,8 +7531,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.23",
-    body: "선택 토스트 msg # · 같은 클릭 생략 · 인덱싱 정체 시 자동 숨김. 업데이트 내역 탭 참고."
+    title: "2.2.24",
+    body: "선택 토스트 분리 — 리롤/인덱싱 바와 간섭 없음. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -7769,6 +7774,13 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
   const PROGRESS_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:none;width:min(280px,92vw);display:none;";
   const HOST_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;width:min(280px,92vw);box-sizing:border-box;display:block;background:rgba(37,99,235,.95);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.4);";
   const HOST_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;width:min(280px,92vw);display:none;";
+  const SELECTION_TOAST_HIDE_MS = 2e3;
+  function selectionToastStyle(visible, belowProgress) {
+    const top = belowProgress ? 64 : 16;
+    const eye = visible ? "block" : "none";
+    const pe = visible ? "auto" : "none";
+    return \`position:fixed;top:\${top}px;left:50%;transform:translateX(-50%);z-index:100001;pointer-events:\${pe};width:min(280px,92vw);box-sizing:border-box;display:\${eye};\`;
+  }
   const PROGRESS_TOAST_HIDE_MS = 2e3;
   async function setProgressToastEye(visible) {
     const root = t._progressToastRoot;
@@ -7788,7 +7800,6 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       t._progressToastHideTimer = null;
       t._progressToastArmed = !1;
       t._progressToastUntil = 0;
-      t._progressToastIdlePeek = !1;
       setProgressToastEye(!1).catch(() => {
       });
     }, hideMs);
@@ -7804,7 +7815,6 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
   function dismissProgressToastUi() {
     clearProgressToastEyeHide();
     t._progressToastFp = "";
-    t._progressToastIdlePeek = !1;
     setProgressToastEye(!1).catch(() => {
     });
   }
@@ -7814,7 +7824,6 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     t._progressToastRoot = null;
     t._progressToastShown = !1;
     t._progressToastFp = "";
-    t._progressToastIdlePeek = !1;
     try {
       root && typeof root.remove == "function" && await root.remove();
     } catch {
@@ -7903,6 +7912,97 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       });
     }, ms);
   }
+  /** Selection toast — own DOM; never shares the progress/reroll slot. */
+  async function ensureSelectionToastRoot() {
+    if (t._selectionToastRoot) return t._selectionToastRoot;
+    const doc = await ue();
+    if (!doc || typeof doc.createElement != "function") return null;
+    const body = await Ee(doc);
+    if (!body) return null;
+    const root = await H(doc, "div", {
+      style: selectionToastStyle(!1, !1)
+    });
+    try {
+      typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-selection-toast");
+    } catch {
+    }
+    const onDismiss = (ev) => {
+      try {
+        ev && ev.preventDefault && ev.preventDefault();
+        ev && ev.stopPropagation && ev.stopPropagation();
+      } catch {
+      }
+      hideSelectionToast().catch(() => {
+      });
+    };
+    for (const evName of ["pointerdown", "click", "touchstart"]) {
+      try {
+        typeof root.addEventListener == "function" && root.addEventListener(evName, onDismiss);
+      } catch {
+      }
+    }
+    await body.appendChild(root);
+    t._selectionToastRoot = root;
+    t._selectionToastShown = !1;
+    return root;
+  }
+  async function hideSelectionToast() {
+    if (t._selectionToastTimer) clearTimeout(t._selectionToastTimer), t._selectionToastTimer = null;
+    const root = t._selectionToastRoot;
+    t._selectionToastShown = !1;
+    if (!root) return;
+    try {
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(selectionToastStyle(!1, !1));
+    } catch {
+    }
+  }
+  async function showSelectionToast(msg) {
+    const enabled = t.backendSettings?.card?.progress_toast === !0 || t.backendSettings?.card?.progress_toast === 1 || t.backendSettings?.card?.progress_toast === "true";
+    if (!enabled || !msg) return;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    let count = 0;
+    try {
+      count = typeof linkedCards == "function" ? linkedCards(msg).length : Number(msg.cardCount) || 0;
+    } catch {
+      count = Number(msg.cardCount) || 0;
+    }
+    const chatName = String(msg.chatName || t.lastScope?.chatName || "").trim();
+    const msgIdx = Number(msg.chatIndex ?? msg.messageIndex);
+    const msgPart = Number.isFinite(msgIdx) && msgIdx >= 0 ? \`msg #\${msgIdx + 1}\` : "msg #?";
+    const stage = chatName ? \`\${chatName} · \${msgPart}\` : msgPart;
+    const preview = String(msg.preview || msg.text || "").replace(/\\s+/g, " ").trim().slice(0, 40);
+    const metaParts = [count > 0 ? \`\${count}장\` : "이미지 없음"];
+    if (preview) metaParts.push(preview);
+    const meta = metaParts.join(" · ");
+    const fp = \`sel|\${stage}|\${meta}|\${msg.hash || msg.domIndex || ""}\`;
+    if (fp === t._selectionToastFp && t._selectionToastShown) return;
+    t._selectionToastFp = fp;
+    const html = typeof VC?.composeProgressToastHtml == "function" ? VC.composeProgressToastHtml({
+      stage,
+      meta,
+      pct: 0,
+      busy: !0,
+      showBar: !1,
+      tone: "job",
+      escapeHtml: h
+    }) : \`<div data-inlay-selection-toast="1" style="box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px;cursor:pointer"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(stage)}</div><div style="color:#8b97ab;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(meta)}</div></div>\`;
+    const root = await ensureSelectionToastRoot();
+    if (!root) return;
+    try {
+      if (typeof root.setInnerHTML == "function") await root.setInnerHTML(html);
+      const below = !!t._progressToastShown;
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(selectionToastStyle(!0, below));
+      t._selectionToastShown = !0;
+    } catch {
+      return;
+    }
+    if (t._selectionToastTimer) clearTimeout(t._selectionToastTimer);
+    t._selectionToastTimer = setTimeout(() => {
+      t._selectionToastTimer = null;
+      hideSelectionToast().catch(() => {
+      });
+    }, SELECTION_TOAST_HIDE_MS);
+  }
   async function syncProgressToast() {
     if (t._progressToastSyncing) return;
     t._progressToastSyncing = !0;
@@ -7910,6 +8010,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       const enabled = t.backendSettings?.card?.progress_toast === !0 || t.backendSettings?.card?.progress_toast === 1 || t.backendSettings?.card?.progress_toast === "true";
       if (!enabled) {
         await destroyProgressToast();
+        await hideSelectionToast();
         return;
       }
       const VC = globalThis.__INLAY_VIEWER_CORE__;
@@ -7924,48 +8025,13 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       const liveBusy = jobBusy || indexBusy;
       const hasPayload = liveBusy || isTerminal && !!B;
       await ensureProgressToastRoot();
-      if (liveBusy) t._progressToastIdlePeek = !1;
       if (!indexBusy) {
         t._progressToastIndexStallSuppress = !1;
         t._progressToastIndexStallPct = null;
         t._progressToastIndexStallAt = 0;
       }
-      if (!hasPayload) {
-        if (!t._progressToastIdlePeek) return;
-        const O = t.selectedMessage;
-        if (!O) {
-          t._progressToastIdlePeek = !1;
-          return;
-        }
-        let count = 0;
-        try {
-          count = typeof linkedCards == "function" ? linkedCards(O).length : Number(O.cardCount) || 0;
-        } catch {
-          count = Number(O.cardCount) || 0;
-        }
-        const chatName = String(O.chatName || t.lastScope?.chatName || "").trim();
-        const msgIdx = Number(O.chatIndex ?? O.messageIndex);
-        const msgPart = Number.isFinite(msgIdx) && msgIdx >= 0 ? \`msg #\${msgIdx + 1}\` : "msg #?";
-        const stage = chatName ? \`\${chatName} · \${msgPart}\` : msgPart;
-        const preview = String(O.preview || O.text || "").replace(/\\s+/g, " ").trim().slice(0, 40);
-        const metaParts = [count > 0 ? \`\${count}장\` : "이미지 없음"];
-        if (preview) metaParts.push(preview);
-        const meta = metaParts.join(" · ");
-        const fp = \`idle|\${stage}|\${meta}|\${O.hash || O.domIndex || ""}\`;
-        if (fp === t._progressToastFp) return;
-        t._progressToastFp = fp;
-        const html = typeof VC?.composeProgressToastHtml == "function" ? VC.composeProgressToastHtml({
-          stage,
-          meta,
-          pct: 0,
-          busy: !0,
-          showBar: !1,
-          tone: "job",
-          escapeHtml: h
-        }) : \`<div data-inlay-progress-toast="1" style="box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px;cursor:pointer"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(stage)}</div><div style="color:#8b97ab;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(meta)}</div></div>\`;
-        await paintProgressToastHtml(html, { armHide: !0 });
-        return;
-      }
+      // Selection toast is separate — idle peek no longer uses this slot.
+      if (!hasPayload) return;
       const indexOnly = !jobBusy && indexBusy;
       // Indexing % stuck: flash 100% for 0.5s then hide; suppress until warm ends.
       if (indexOnly) {
@@ -8061,6 +8127,8 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         if (!on) {
           destroyProgressToast().catch(() => {
           });
+          hideSelectionToast().catch(() => {
+          });
           return;
         }
         const B = t.jobProgress;
@@ -8077,7 +8145,6 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           });
           t._progressToastUntil = 0;
           t._progressToastArmed = !1;
-          t._progressToastIdlePeek = !1;
         }
       } catch {
       }
@@ -10105,6 +10172,7 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'async function nxUpdateStickyActiveOnScrollEnd', 'nx scroll-end sticky activate landed');
     assertOnce(out, 'async function nxActivateStickyByCardId', 'nx sticky by cardId landed');
     assertOnce(out, 'async function nxHostToast', 'nxHostToast landed');
+    assertOnce(out, 'async function showSelectionToast', 'selection toast landed');
     assertOnce(out, 'async function nxStickyV2ApplyFromHt', 'sticky v2 apply landed');
     assertOnce(out, 'function __nxDeadStickyFlashBody()', 'legacy flash body retired');
     assertOnce(out, 'Sticky v2 only — skip legacy frame', 'Ht early-return to v2 landed');

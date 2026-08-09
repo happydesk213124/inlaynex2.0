@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.19';
+const PLUGIN_VERSION = '2.2.20';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.20</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>진행 토스트: 인덱싱 % 갱신·스크롤 깜박임 완화·얇은 프로그레스바 / 선택 시 메시지 앞부분</li>
+            <li>설정 닫기 알림은 별도 host 토스트(진행 토스트와 분리)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.19</strong>
@@ -1377,9 +1384,9 @@ const VENDOR_EXPLORER_WARM_PROGRESS_PATCH = `          N.onWarmProgress(() => {
             t._indexPaintQueued = !0;
             Promise.resolve().then(() => {
               t._indexPaintQueued = !1;
-              if (t.galleryUi?.paintStatus) t.galleryUi.paintStatus().catch(() => {
+              syncProgressToast().catch(() => {
               });
-              else syncProgressToast().catch(() => {
+              if (t.galleryUi?.paintStatus) t.galleryUi.paintStatus().catch(() => {
               });
             });
           });`;
@@ -4435,9 +4442,8 @@ const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `    document.getElementById("nx-clos
       typeof k.hideContainer == "function" && await k.hideContainer();
       invalidateOverlayLayoutCache();
       flushSettingsSave().catch(() => {});
-      const toastHtml = (msg) => \`<div data-inlay-progress-toast="1" style="padding:10px 14px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:12px">\${msg}</div>\`;
       try {
-        typeof paintProgressToastHtml == "function" && paintProgressToastHtml(toastHtml("뷰어 복구 중…"), { armHide: !0 }).catch(() => {});
+        typeof nxHostToast == "function" && nxHostToast("뷰어 복구 중…", { ms: 8e3 });
       } catch {
       }
       Promise.resolve().then(async () => {
@@ -4445,7 +4451,7 @@ const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `    document.getElementById("nx-clos
         try { await blockHostChrome(!1); } catch {}
         try { await it(); } catch {}
         try {
-          typeof paintProgressToastHtml == "function" && await paintProgressToastHtml(toastHtml("뷰어 복구됨"), { armHide: !0 });
+          typeof nxHostToast == "function" && await nxHostToast("뷰어 복구됨", { ms: 1500 });
         } catch {
         }
       }).catch((err) => {
@@ -6262,6 +6268,11 @@ const VENDOR_INLINE_CALL_PATCH =
     if (source === "click" || source === "text") {
       t._progressToastIdlePeek = !0;
       t._progressToastFp = "";
+      try {
+        typeof syncProgressToast == "function" && syncProgressToast().catch(() => {
+        });
+      } catch {
+      }
     }
     return await onSelectionChanged("content"), scheduleOverlayPlace(80), t.debugUi?.refreshSoon && t.debugUi.refreshSoon(), (source === "click" || source === "text") && await ensureMessageInView(o), source === "provisional" ? !0 : !isSelectedCharRole(l) ? (y("info", "select.user", "유저 메시지 — 자동 생성 안 함"), !0) : u.length ? (y("info", "select.hasImage", \`cards=\${u.length} · 재생성은 뷰어 버튼\`), !0) : (y("info", "select.noImage", "해시 이미지 없음 → 태그부터 생성"), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
   }`;
@@ -6282,6 +6293,11 @@ const VENDOR_INLINE_SAME_PATCH =
       if (source === "click" || source === "text") {
         t._progressToastIdlePeek = !0;
         t._progressToastFp = "";
+        try {
+          typeof syncProgressToast == "function" && syncProgressToast().catch(() => {
+          });
+        } catch {
+        }
       }
       if (linked.length) return !0;
       if (source === "scroll" || source === "provisional") return !0;
@@ -7421,8 +7437,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.19",
-    body: "설정 닫기 즉시 반영(복구는 토스트). 업데이트 내역 탭 참고."
+    title: "2.2.20",
+    body: "진행 토스트·인덱싱 바 개선. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -7638,7 +7654,7 @@ const VENDOR_SELECT_UNBIND_NEEDLE =
 const VENDOR_SELECT_UNBIND_PATCH =
   `await de(e.doc, "dblclick", e.dblId), await de(e.doc, "click", e.clickId), await de(e.doc, "contextmenu", e.ctxId)), e?.body && await de(e.body, "scroll", e.bodyScrollId)`;
 
-/** Top-center progress toast: 2-line; busy stays; idle/error hide after 2s; hide at ≥99%. */
+/** Top-center progress toast: compact bar; busy stays; selection peek tight; host toast separate. */
 const VENDOR_PROGRESS_TOAST_FN_NEEDLE = `  async function dismissProgressToast() {
     t.jobProgress = null;
     try {
@@ -7659,9 +7675,11 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     } catch {
     }
   }
-  /** risutts-style: one SafeDOM toast; eye-hide via display none/block; never recreate while enabled. */
-  const PROGRESS_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:auto;max-width:min(420px,92vw);display:block;";
-  const PROGRESS_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:none;max-width:min(420px,92vw);display:none;";
+  /** Progress toast root — gated by card.progress_toast. */
+  const PROGRESS_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:auto;max-width:min(360px,92vw);display:block;";
+  const PROGRESS_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:none;max-width:min(360px,92vw);display:none;";
+  const HOST_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;max-width:min(360px,92vw);display:block;background:rgba(37,99,235,.95);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.4);";
+  const HOST_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;max-width:min(360px,92vw);display:none;";
   const PROGRESS_TOAST_HIDE_MS = 2e3;
   async function setProgressToastEye(visible) {
     const root = t._progressToastRoot;
@@ -7713,7 +7731,6 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }
   }
   async function ensureProgressToastRoot() {
-    // Do NOT probe isConnected — SafeDOM lies and caused infinite create + zombies.
     if (t._progressToastRoot) return t._progressToastRoot;
     const doc = await ue();
     if (!doc || typeof doc.createElement != "function") return null;
@@ -7724,10 +7741,6 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     });
     try {
       typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-progress-toast");
-    } catch {
-    }
-    try {
-      typeof root.setAttribute == "function" && await root.setAttribute("data-inlay-progress-toast-root", "1");
     } catch {
     }
     const onDismiss = (ev) => {
@@ -7758,9 +7771,47 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     } catch {
       return;
     }
-    await setProgressToastEye(!0);
+    // Avoid display toggle flicker when already visible (mobile scroll / % ticks).
+    if (!t._progressToastShown) await setProgressToastEye(!0);
     if (opts.armHide) armProgressToastEyeHide();
     else clearProgressToastEyeHide();
+  }
+  /** risutts-style one-shot host toast — independent of progress_toast setting. */
+  async function ensureHostToastRoot() {
+    if (t._hostToastRoot) return t._hostToastRoot;
+    const doc = await ue();
+    if (!doc || typeof doc.createElement != "function") return null;
+    const body = await Ee(doc);
+    if (!body) return null;
+    const root = await H(doc, "div", {
+      style: HOST_TOAST_STYLE_HIDE
+    });
+    try {
+      typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-host-toast");
+    } catch {
+    }
+    await body.appendChild(root);
+    t._hostToastRoot = root;
+    return root;
+  }
+  async function nxHostToast(text, opts = {}) {
+    const msg = String(text || "");
+    const root = await ensureHostToastRoot();
+    if (!root) return;
+    if (t._hostToastTimer) clearTimeout(t._hostToastTimer), t._hostToastTimer = null;
+    try {
+      if (typeof root.setInnerHTML == "function") await root.setInnerHTML(msg ? h(msg) : "");
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(msg ? HOST_TOAST_STYLE_SHOW : HOST_TOAST_STYLE_HIDE);
+    } catch {
+      return;
+    }
+    if (!msg) return;
+    const ms = Math.max(600, Number(opts.ms) || 1800);
+    t._hostToastTimer = setTimeout(() => {
+      t._hostToastTimer = null;
+      nxHostToast("").catch(() => {
+      });
+    }, ms);
   }
   async function syncProgressToast() {
     if (t._progressToastSyncing) return;
@@ -7798,8 +7849,10 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           count = Number(O.cardCount) || 0;
         }
         const msgNo = Number(O.message_index);
-        const msgLabel = Number.isFinite(msgNo) && msgNo >= 0 ? \`msg #\${msgNo + 1}\` : O.domIndex != null ? \`DOM#\${O.domIndex}\` : "메시지";
-        const stage = count > 0 ? \`\${count}장\` : "이미지 없음";
+        const msgLabel = Number.isFinite(msgNo) && msgNo >= 0 ? \`#\${msgNo + 1}\` : O.domIndex != null ? \`DOM#\${O.domIndex}\` : "";
+        const preview = String(O.preview || O.text || "").replace(/\\s+/g, " ").trim().slice(0, 52);
+        const head = count > 0 ? \`\${count}장\` : "이미지 없음";
+        const stage = preview ? \`\${head} · \${preview}\` : head;
         const meta = msgLabel;
         const fp = \`idle|\${stage}|\${meta}|\${O.hash || O.domIndex || ""}\`;
         if (fp === t._progressToastFp) return;
@@ -7812,33 +7865,26 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           showBar: !1,
           tone: "job",
           escapeHtml: h
-        }) : \`<div data-inlay-progress-toast="1" style="padding:10px 14px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:12px;cursor:pointer">\${h(stage + " · " + meta)}</div>\`;
+        }) : \`<div data-inlay-progress-toast="1" style="padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px;cursor:pointer">\${h(stage)}\${meta ? " · " + h(meta) : ""}</div>\`;
         await paintProgressToastHtml(html, { armHide: !0 });
         return;
       }
       const indexOnly = !jobBusy && indexBusy;
-      // Indexing toast: show once, always hide after 2s (don't keep refreshing / re-arming).
-      if (indexOnly && t._progressToastArmed) return;
-      const stage = jobBusy
+      let stage = jobBusy
         ? info.stage || "작업 중"
         : indexBusy
           ? idx.label || "인덱싱"
           : info?.stage || "작업 중";
-      const pct = jobBusy ? info.pct : indexBusy ? idx.pct : info ? info.pct : 0;
-      // Near-complete: drop from view (errors keep a brief peek below).
-      if (!isError && Number(pct) >= 99) {
-        clearProgressToastEyeHide();
-        t._progressToastFp = "";
-        await setProgressToastEye(!1);
-        return;
-      }
+      let pct = jobBusy ? info.pct : indexBusy ? idx.pct : info ? info.pct : 0;
+      // Finish frame: show 100% once before auto-hide (do not drop at 99).
+      if (!liveBusy && isTerminal && !isError) pct = Math.max(Number(pct) || 0, 100), stage = info?.stage || "완료";
       const jobKey = String(B?.jobId || B?.kind || (indexBusy ? "index" : "job"));
       if (liveBusy && !indexOnly) {
         if (t._progressToastElapsedJob !== jobKey) {
           t._progressToastElapsedJob = jobKey;
           t._progressToastElapsedAt = Date.now();
         }
-      } else {
+      } else if (!liveBusy) {
         t._progressToastElapsedJob = "";
         t._progressToastElapsedAt = 0;
       }
@@ -7859,10 +7905,8 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       else if (detail) meta = \`\${detail} · \${pct}%\`;
       else if (elapsedLabel) meta = \`\${pct}% · \${elapsedLabel}\`;
       else meta = \`\${pct}%\`;
-      const tone = indexOnly ? "index" : "job";
-      const fp = indexOnly
-        ? \`index|\${stage}|\${Math.round(Number(pct) || 0)}\`
-        : \`\${stage}|\${pct}|\${meta}|\${state}|\${tone}|\${isError ? 1 : 0}|\${elapsedSec}\`;
+      const tone = indexOnly || !jobBusy && indexBusy ? "index" : "job";
+      const fp = \`\${tone}|\${stage}|\${Math.round(Number(pct) || 0)}|\${meta}|\${state}|\${isError ? 1 : 0}|\${liveBusy ? 1 : 0}|\${elapsedSec}\`;
       if (fp === t._progressToastFp) return;
       t._progressToastFp = fp;
       const html = typeof VC?.composeProgressToastHtml == "function" ? VC.composeProgressToastHtml({
@@ -7873,9 +7917,9 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         error: isError,
         tone,
         escapeHtml: h
-      }) : \`<div data-inlay-progress-toast="1" style="padding:10px 14px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:12px;cursor:pointer">\${h(stage + " " + meta)}</div>\`;
-      // Busy jobs stay; indexing + error/terminal peek hide after 2s.
-      await paintProgressToastHtml(html, { armHide: !liveBusy || indexOnly });
+      }) : \`<div data-inlay-progress-toast="1" style="padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px;cursor:pointer">\${h(stage + " " + meta)}</div>\`;
+      // Stay up while busy; peek-hide only when idle/terminal/error.
+      await paintProgressToastHtml(html, { armHide: !liveBusy });
     } finally {
       t._progressToastSyncing = !1;
     }
@@ -7894,7 +7938,6 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         const idx = readIndexProgress(B);
         const liveBusy = !!(info && info.busy) || !!idx.busy;
         if (liveBusy) {
-          // Tick elapsed seconds while tagging/generating stalls on %.
           syncProgressToast().catch(() => {
           });
           return;
@@ -7913,7 +7956,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
   async function Se() {
     try {
       if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
-      else await syncProgressToast();
+      await syncProgressToast();
     } catch {
     }
   }`;
@@ -8179,10 +8222,7 @@ const VENDOR_PROGRESS_TOAST_PAINT_PATCH = `    }, paintStatus = async () => {
         else await C.setInnerHTML(\`<span style="color:#a6b1c2">메시지를 클릭해서 선택하세요</span>\`);
       } catch {
       }
-      try {
-        await syncProgressToast();
-      } catch {
-      }`;
+      // Progress toast syncs from onWarmProgress / job watchdog / Se — not every paintStatus (scroll flicker).`;
 
 const VENDOR_SESSION_PENDING_NEEDLE = `    if (S && S !== b) {
       if (t.pendingSessionId === b) t.pendingSessionCount += 1;
@@ -9934,6 +9974,7 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'ensureScrollPhaseBus = () =>', 'scroll phase bus landed');
     assertOnce(out, 'async function nxUpdateStickyActiveOnScrollEnd', 'nx scroll-end sticky activate landed');
     assertOnce(out, 'async function nxActivateStickyByCardId', 'nx sticky by cardId landed');
+    assertOnce(out, 'async function nxHostToast', 'nxHostToast landed');
     assertOnce(out, 'async function nxStickyV2ApplyFromHt', 'sticky v2 apply landed');
     assertOnce(out, 'function __nxDeadStickyFlashBody()', 'legacy flash body retired');
     assertOnce(out, 'Sticky v2 only — skip legacy frame', 'Ht early-return to v2 landed');

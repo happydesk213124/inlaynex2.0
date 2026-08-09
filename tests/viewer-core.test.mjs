@@ -774,6 +774,8 @@ test("composeProgressToastHtml shows stage and a single rail when busy", () => {
   assert.match(html, /width:30%/);
   assert.match(html, /flex-direction:column/);
   assert.match(html, /text-overflow:ellipsis/);
+  assert.match(html, /height:3px/);
+  assert.match(html, /padding:6px 10px/);
   assert.doesNotMatch(html, /#2dd4bf/);
 });
 
@@ -792,14 +794,14 @@ test("composeProgressToastHtml uses mint rail for indexing tone", () => {
 
 test("composeProgressToastHtml can omit the bar for idle selection peeks", () => {
   const html = composeProgressToastHtml({
-    stage: "3장",
+    stage: "3장 · 오늘 카페에서",
     meta: "msg #12",
     busy: true,
     showBar: false,
   });
-  assert.match(html, /3장/);
+  assert.match(html, /3장 · 오늘 카페에서/);
   assert.match(html, /msg #12/);
-  assert.doesNotMatch(html, /height:6px/);
+  assert.doesNotMatch(html, /height:3px/);
   assert.doesNotMatch(html, /#7c6cff/);
 });
 

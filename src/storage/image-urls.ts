@@ -161,12 +161,19 @@ function pumpWarm(): void {
         warmQueued.delete(id);
         warmWaveDone += 1;
         if (warmQueue.length === 0 && warmActive === 0) {
-          // Wave finished — allow the next enqueue batch to start a fresh total.
-          warmWaveTotal = 0;
-          warmWaveDone = 0;
+          // Hold totals so UI can paint ~100% once before the wave clears.
+          notifyWarm();
+          setTimeout(() => {
+            if (warmQueue.length === 0 && warmActive === 0) {
+              warmWaveTotal = 0;
+              warmWaveDone = 0;
+              notifyWarm();
+            }
+          }, 180);
+        } else {
+          notifyWarm();
+          pumpWarm();
         }
-        notifyWarm();
-        pumpWarm();
       });
   }
 }

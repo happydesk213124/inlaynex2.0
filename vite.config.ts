@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.34';
+const PLUGIN_VERSION = '2.2.35';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.35</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>프리셋 메뉴 hit: 세로 pad 제거·가장 가까운 행 선택(위 항목이 훔치던 문제)</li>
+            <li>뷰어 창 이동: 유체이탈 고스트만 따라감(본문은 반투명 고정) · 놓으면 확정 — 드래그 렉 완화</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.34</strong>
@@ -7605,8 +7612,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.34",
-    body: "툴바/헤더 줄바꿈 시 세로 높이 맞춤. 업데이트 내역 참고."
+    title: "2.2.35",
+    body: "프리셋 hit 보정 · 뷰어 드래그 고스트. 업데이트 내역 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8887,7 +8894,7 @@ const VENDOR_VIEWER_PRESET_MENU_TOUCH_PATCH =
               const el = await H(e, "div", { text: String(p.name || p.id || ""), style });
               try { await el.setAttribute("data-nx-preset-id", id); } catch {}
               await d.presetMenu.appendChild(el);
-              d.presetHits.push({ el, id, hitPad: 22 });
+              d.presetHits.push({ el, id, hitPadY: 0, hitPadX: 10 });
             } catch {
             }
           }
@@ -8920,28 +8927,45 @@ const VENDOR_PRESET_HIT_HELPER_NEEDLE =
       if (!selected || t._presetSwitching) return;`;
 const VENDOR_PRESET_HIT_HELPER_PATCH =
   `    }, hitPresetItemAt = async (x, y) => {
+      // Stacked rows: vertical hitPad overlaps neighbors (upper half of row N stole by row N-1).
+      // Strict Y bounds + nearest-center tiebreak. Only pad X for fat fingers.
       const zones = Array.isArray(d.presetHits) ? d.presetHits : [];
+      const score = async (el, id) => {
+        try {
+          const R = await el.getBoundingClientRect();
+          if (!R) return null;
+          const padX = 10;
+          if (x < R.left - padX || x > R.right + padX) return null;
+          const h = Math.max(1, R.bottom - R.top), cy = (R.top + R.bottom) / 2;
+          if (y >= R.top && y <= R.bottom) return { el, id, dist: Math.abs(y - cy), strict: 1 };
+          // Near miss: within 6px of edge only (not half the neighbor).
+          if (y >= R.top - 6 && y <= R.bottom + 6) return { el, id, dist: Math.abs(y - cy), strict: 0 };
+          return null;
+        } catch {
+          return null;
+        }
+      };
+      let best = null;
       for (const zone of zones) {
         if (!zone?.el || !zone?.id) continue;
-        try {
-          const R = await zone.el.getBoundingClientRect(), g = Number(zone.hitPad) || 22;
-          if (x >= R.left - g && x <= R.right + g && y >= R.top - g && y <= R.bottom + g) return zone;
-        } catch {
-        }
+        const hit = await score(zone.el, zone.id);
+        if (!hit) continue;
+        if (!best || hit.strict > best.strict || hit.strict === best.strict && hit.dist < best.dist) best = hit;
       }
-      // Fallback if cache empty/stale after scroll — still pad finger misses.
+      if (best) return { el: best.el, id: best.id, hitPad: 0 };
       try {
         if (!d.presetMenu) return null;
         const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await d.presetMenu.getChildren()) : [];
         for (let W = 0; W < kids.length; W += 1) {
           const id = String(d.viewerPresetIds?.[W] || zones[W]?.id || "");
           if (!id) continue;
-          const J = await kids[W].getBoundingClientRect(), g = 22;
-          if (x >= J.left - g && x <= J.right + g && y >= J.top - g && y <= J.bottom + g) return { el: kids[W], id, hitPad: g };
+          const hit = await score(kids[W], id);
+          if (!hit) continue;
+          if (!best || hit.strict > best.strict || hit.strict === best.strict && hit.dist < best.dist) best = hit;
         }
       } catch {
       }
-      return null;
+      return best ? { el: best.el, id: best.id, hitPad: 0 } : null;
     }, pickViewerPreset = async (selected) => {
       if (!selected || t._presetSwitching) return;`;
 
@@ -9751,7 +9775,19 @@ const VENDOR_ACTIONS_DRAG_CLEAR_NEEDLE =
       const cx = Number(A?.clientX), cy = Number(A?.clientY);
       if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
       const _ = cx - d.drag.startCX, O = cy - d.drag.startCY;
-      !d.drag.moved && Math.abs(_) + Math.abs(O) > 4 && (d.drag.moved = !0);`;
+      !d.drag.moved && Math.abs(_) + Math.abs(O) > 4 && (d.drag.moved = !0);
+      if (d.drag.moved) try {
+        A.preventDefault?.();
+      } catch {
+      }
+      d.geo.left = d.drag.originX + _, d.geo.top = d.drag.originY + O, d.geo = clampViewerGeo(d.geo, d.minimized);
+      const G = Date.now();
+      if (G - (d.drag.lastApply || 0) < 16) return;
+      d.drag.lastApply = G, await f();
+    }, endViewerDrag = async (opts = {}) => {
+      if (!d.drag) return;
+      const { moveId: A, upId: _, cancelId: cancelId, moved: moved, expandOnTap: expandOnTap } = d.drag;
+      d.drag = null;`;
 const VENDOR_ACTIONS_DRAG_CLEAR_PATCH =
   `    }, Za = async (A) => {
       if (!d.drag || d.resize) return;
@@ -9761,19 +9797,109 @@ const VENDOR_ACTIONS_DRAG_CLEAR_PATCH =
       if (!d.drag.moved && Math.abs(_) + Math.abs(O) > 4) {
         d.drag.moved = !0;
         if (d._actionsLpTimer) clearTimeout(d._actionsLpTimer), d._actionsLpTimer = null;
-      }`;
-
-const VENDOR_ACTIONS_END_CLEAR_NEEDLE =
-  `    }, endViewerDrag = async (opts = {}) => {
-      if (!d.drag) return;
-      const { moveId: A, upId: _, cancelId: cancelId, moved: moved, expandOnTap: expandOnTap } = d.drag;
-      d.drag = null;`;
-const VENDOR_ACTIONS_END_CLEAR_PATCH =
-  `    }, endViewerDrag = async (opts = {}) => {
+        // 유체이탈: keep heavy panel faded in place; only a light ghost tracks the pointer.
+        try {
+          const faded = Ft(d.geo, d.minimized);
+          await r.setStyleAttribute(/opacity:/i.test(faded) ? faded.replace(/opacity:[^;]+/i, "opacity:0.3") : faded + ";opacity:0.3");
+        } catch {
+        }
+        try {
+          if (!d.dragGhost) {
+            const gw = Math.max(48, Number(d.geo.dispW || d.geo.w) || 260), gh = Math.max(48, Number(d.geo.dispH || d.geo.h) || (d.minimized ? 56 : 280));
+            d.dragGhost = await H(e, "div", {
+              style: \`position:fixed;left:\${d.geo.left}px;top:\${d.geo.top}px;width:\${gw}px;height:\${gh}px;z-index:99995;pointer-events:none;box-sizing:border-box;border:2px solid rgba(167,139,250,.9);border-radius:16px;background:rgba(15,23,42,.4);box-shadow:0 16px 48px rgba(0,0,0,.5)\`
+            });
+            await a.appendChild(d.dragGhost);
+          }
+        } catch {
+        }
+      }
+      if (!d.drag.moved) return;
+      try {
+        A.preventDefault?.();
+      } catch {
+      }
+      const probe = clampViewerGeo({
+        ...d.geo,
+        left: d.drag.originX + _,
+        top: d.drag.originY + O
+      }, d.minimized);
+      d.drag.ghostLeft = probe.left, d.drag.ghostTop = probe.top;
+      const G = Date.now();
+      if (G - (d.drag.lastApply || 0) < 16) return;
+      d.drag.lastApply = G;
+      if (d.dragGhost) {
+        try {
+          await d.dragGhost.setStyleAttribute(\`position:fixed;left:\${probe.left}px;top:\${probe.top}px;width:\${probe.dispW}px;height:\${probe.dispH}px;z-index:99995;pointer-events:none;box-sizing:border-box;border:2px solid rgba(167,139,250,.9);border-radius:16px;background:rgba(15,23,42,.4);box-shadow:0 16px 48px rgba(0,0,0,.5)\`);
+        } catch {
+        }
+      }
+    }, endViewerDrag = async (opts = {}) => {
       if (!d.drag) return;
       if (d._actionsLpTimer) clearTimeout(d._actionsLpTimer), d._actionsLpTimer = null;
       const { moveId: A, upId: _, cancelId: cancelId, moved: moved, expandOnTap: expandOnTap } = d.drag;
+      const ghostLeft = d.drag.ghostLeft, ghostTop = d.drag.ghostTop;
       d.drag = null;`;
+
+
+const VENDOR_ACTIONS_END_CLEAR_NEEDLE =
+  `      try {
+        cancelId != null && await e.removeEventListener(cancelId);
+      } catch {
+      }
+      if (opts.cancelled) {
+        if (moved) await x();
+        await refreshThumbsRect();
+        return;
+      }
+      if (!moved && expandOnTap && d.minimized) {
+        await toggleMinimizeBtn();
+        await refreshThumbsRect();
+        return;
+      }
+      await x();
+      await refreshThumbsRect();
+    }, en = async () => {`;
+const VENDOR_ACTIONS_END_CLEAR_PATCH =
+  `      try {
+        cancelId != null && await e.removeEventListener(cancelId);
+      } catch {
+      }
+      try {
+        if (d.dragGhost) {
+          try { await a.removeChild(d.dragGhost); } catch { try { d.dragGhost.remove?.(); } catch {} }
+        }
+      } catch {}
+      d.dragGhost = null;
+      if (opts.cancelled) {
+        try { await f(); } catch {}
+        await refreshThumbsRect();
+        return;
+      }
+      if (!moved && expandOnTap && d.minimized) {
+        if (t.uiOpen || t._hostChromeBlocked || t._viewerHiddenForModal || t._viewerHiddenForRisuSettings) {
+          await refreshThumbsRect();
+          return;
+        }
+        try {
+          const doc = await ue().catch(() => null);
+          const el = doc ? await D("rsSettingCont", () => doc.querySelector?.(".rs-setting-cont"), null) : null;
+          if (el) {
+            try { await hideFloatingViewerForRisuSettings(); } catch {}
+            await refreshThumbsRect();
+            return;
+          }
+        } catch {}
+        await toggleMinimizeBtn();
+        await refreshThumbsRect();
+        return;
+      }
+      if (moved && Number.isFinite(ghostLeft) && Number.isFinite(ghostTop)) {
+        d.geo.left = ghostLeft, d.geo.top = ghostTop, d.geo = clampViewerGeo(d.geo, d.minimized);
+      }
+      await x();
+      await refreshThumbsRect();
+    }, en = async () => {`;
 
 /** Icon tap-expand must not fire after settings/modal already opened (same gesture pointerup). */
 const VENDOR_ICON_EXPAND_GUARD_NEEDLE =

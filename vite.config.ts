@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.28';
+const PLUGIN_VERSION = '2.2.29';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.29</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>인덱싱 토스트 유지: 워밍이 끝나면 즉시 숨김(멈춘 % 잔상 제거) · 12초 강제컷 삭제 · % 정체 2초면 숨김</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.28</strong>
@@ -7566,8 +7572,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.28",
-    body: "인덱싱 토스트 강제 종료(최대 12초). 업데이트 내역 탭 참고."
+    title: "2.2.29",
+    body: "인덱싱 토스트: 끝나면 바로 사라짐. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8091,53 +8097,28 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       const state = info?.state || "";
       const isError = state === "error";
       const isTerminal = state === "done" || state === "cancelled" || isError;
-      const liveBusy = jobBusy || indexBusy;
-      const hasPayload = liveBusy || isTerminal && !!B;
       await ensureProgressToastRoot();
-      // Debounce suppress clear — a one-tick !busy between warm waves used to revive the mint toast.
-      if (!indexBusy) {
-        if (!t._progressToastIndexIdleSince) t._progressToastIndexIdleSince = Date.now();
-        if (Date.now() - t._progressToastIndexIdleSince >= 2500) {
-          t._progressToastIndexStallSuppress = !1;
-          t._progressToastIndexStallPct = null;
-          t._progressToastIndexStallAt = 0;
-          t._progressToastIndexShownAt = 0;
-          t._progressToastIndexIdleSince = 0;
-        }
-      } else {
-        t._progressToastIndexIdleSince = 0;
-      }
-      // Selection toast is separate — idle peek no longer uses this slot.
-      if (!hasPayload) return;
-      const indexOnly = !jobBusy && indexBusy;
-      const INDEX_TOAST_MAX_MS = 12e3;
-      const INDEX_STALL_MS = 1500;
-      const forceHideIndexToast = async (why) => {
-        t._progressToastIndexStallSuppress = !0;
+      // Warm idle: mint toast must drop immediately (leaving last % painted was the hang).
+      if (!indexBusy && !jobBusy) {
         t._progressToastIndexStallPct = null;
         t._progressToastIndexStallAt = 0;
-        try {
-          const N = globalThis.__INLAY_NATIVE__;
-          typeof N?.clearWarmFocus == "function" && N.clearWarmFocus();
-        } catch {
+        t._progressToastIndexShownAt = 0;
+        t._progressToastIndexStallSuppress = !1;
+        if (!isTerminal || !B) {
+          if (t._progressToastShown) {
+            clearProgressToastEyeHide();
+            await setProgressToastEye(!1, !0);
+            t._progressToastFp = "";
+            t._progressToastLastHtml = "";
+          }
+          return;
         }
-        y("info", "inline.indexToast.hide", why || "stall");
-        if (t._progressToastShown) await setProgressToastEye(!1, !0);
-        clearProgressToastEyeHide();
-        t._progressToastFp = "";
-        t._progressToastLastHtml = "";
-      };
+        // else: job terminal finish frame below
+      }
+      const indexOnly = !jobBusy && indexBusy;
+      // % not advancing → hide mint (warm may continue quietly).
       if (indexOnly) {
         if (!t._progressToastIndexShownAt) t._progressToastIndexShownAt = Date.now();
-        if (t._progressToastIndexStallSuppress) {
-          await forceHideIndexToast("suppress");
-          return;
-        }
-        const age = Date.now() - Number(t._progressToastIndexShownAt || Date.now());
-        if (age >= INDEX_TOAST_MAX_MS) {
-          await forceHideIndexToast("max-age");
-          return;
-        }
         const rp = Math.round(Number(idx.pct) || 0);
         const prevPct = Number(t._progressToastIndexStallPct);
         const prevAt = Number(t._progressToastIndexStallAt) || 0;
@@ -8145,8 +8126,19 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         if (!prevAt || advanced) {
           t._progressToastIndexStallPct = rp;
           t._progressToastIndexStallAt = Date.now();
-        } else if (Date.now() - prevAt >= INDEX_STALL_MS) {
-          await forceHideIndexToast("stall");
+        } else if (Date.now() - prevAt >= 2e3) {
+          try {
+            const N = globalThis.__INLAY_NATIVE__;
+            typeof N?.clearWarmFocus == "function" && N.clearWarmFocus();
+          } catch {
+          }
+          clearProgressToastEyeHide();
+          await setProgressToastEye(!1, !0);
+          t._progressToastFp = "";
+          t._progressToastLastHtml = "";
+          t._progressToastIndexStallPct = null;
+          t._progressToastIndexStallAt = 0;
+          t._progressToastIndexShownAt = 0;
           return;
         }
       }
@@ -8157,20 +8149,21 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           : info?.stage || "작업 중";
       let pct = jobBusy ? info.pct : indexBusy ? idx.pct : info ? info.pct : 0;
       // Finish frame: show 100% once before auto-hide (do not drop at 99).
-      if (!liveBusy && isTerminal && !isError) pct = Math.max(Number(pct) || 0, 100), stage = info?.stage || "완료";
+      if (!jobBusy && !indexBusy && isTerminal && !isError) pct = Math.max(Number(pct) || 0, 100), stage = info?.stage || "완료";
+      const liveBusy = jobBusy || indexBusy;
       const jobKey = String(B?.jobId || B?.kind || (indexBusy ? "index" : "job"));
-      if (liveBusy && !indexOnly) {
+      if (jobBusy) {
         if (t._progressToastElapsedJob !== jobKey) {
           t._progressToastElapsedJob = jobKey;
           t._progressToastElapsedAt = Date.now();
         }
-      } else if (!liveBusy) {
+      } else if (!jobBusy) {
         t._progressToastElapsedJob = "";
         t._progressToastElapsedAt = 0;
       }
-      const elapsedMs = liveBusy && !indexOnly && t._progressToastElapsedAt ? Date.now() - t._progressToastElapsedAt : 0;
+      const elapsedMs = jobBusy && t._progressToastElapsedAt ? Date.now() - t._progressToastElapsedAt : 0;
       const elapsedSec = Math.floor(elapsedMs / 1000);
-      const elapsedLabel = liveBusy && !indexOnly
+      const elapsedLabel = jobBusy
         ? typeof VC?.formatProgressElapsedSec == "function"
           ? VC.formatProgressElapsedSec(elapsedMs)
           : elapsedSec < 60 ? \`\${elapsedSec}s\` : \`\${Math.floor(elapsedSec / 60)}m \${String(elapsedSec % 60).padStart(2, "0")}s\`
@@ -8185,7 +8178,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       else if (detail) meta = \`\${detail} · \${pct}%\`;
       else if (elapsedLabel) meta = \`\${pct}% · \${elapsedLabel}\`;
       else meta = \`\${pct}%\`;
-      const tone = indexOnly || !jobBusy && indexBusy ? "index" : "job";
+      const tone = indexOnly ? "index" : "job";
       const fp = \`\${tone}|\${stage}|\${Math.round(Number(pct) || 0)}|\${meta}|\${state}|\${isError ? 1 : 0}|\${liveBusy ? 1 : 0}|\${elapsedSec}\`;
       if (fp === t._progressToastFp) return;
       t._progressToastFp = fp;
@@ -8198,10 +8191,11 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         tone,
         escapeHtml: h
       }) : \`<div data-inlay-progress-toast="1" style="padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px;cursor:pointer">\${h(stage + " " + meta)}</div>\`;
-      // Stay up while busy; peek-hide only when idle/terminal/error.
+      // Stay up while busy; auto-hide on terminal job or when index-only ends via idle branch.
       await paintProgressToastHtml(html, { armHide: !liveBusy });
     } finally {
       t._progressToastSyncing = !1;
+      t._progressToastSyncingAt = 0;
     }
   }
   if (!t._progressToastWatchdog) {
@@ -8215,7 +8209,6 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           });
           return;
         }
-        // Unstick if a SafeDOM await hung inside syncProgressToast.
         if (t._progressToastSyncing && t._progressToastSyncingAt && Date.now() - t._progressToastSyncingAt > 4e3) {
           t._progressToastSyncing = !1;
           t._progressToastSyncingAt = 0;
@@ -8225,16 +8218,15 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         const idx = readIndexProgress(B);
         const jobBusy = !!(info && info.busy);
         const indexBusy = !!idx.busy;
-        const indexOnly = !jobBusy && indexBusy;
-        // Mint toast hard kill — does not wait on syncProgressToast (can hang).
-        if (t._progressToastShown && (t._progressToastIndexStallSuppress || indexOnly && t._progressToastIndexShownAt && Date.now() - t._progressToastIndexShownAt >= 12e3)) {
-          t._progressToastIndexStallSuppress = !0;
+        // Warm went idle but eye stuck — clear without waiting on hung sync.
+        if (t._progressToastShown && !jobBusy && !indexBusy && !(info && (info.state === "done" || info.state === "error" || info.state === "cancelled"))) {
           setProgressToastEye(!1, !0).catch(() => {
           });
           clearProgressToastEyeHide();
-          if (indexOnly) return;
+          t._progressToastFp = "";
+          return;
         }
-        if (jobBusy || indexBusy && !t._progressToastIndexStallSuppress) {
+        if (jobBusy || indexBusy) {
           syncProgressToast().catch(() => {
           });
           return;

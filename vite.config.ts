@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.38';
+const PLUGIN_VERSION = '2.2.39';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.39</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>뷰어 드래그 고스트 위치 갱신 16ms → 100ms (따라다니기 SafeDOM 호출 줄임)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.38</strong>
@@ -7631,8 +7637,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.38",
-    body: "접기/펼침 라벨. 업데이트 내역 참고."
+    title: "2.2.39",
+    body: "드래그 고스트 100ms. 업데이트 내역 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -9847,7 +9853,7 @@ const VENDOR_ACTIONS_DRAG_CLEAR_PATCH =
       }, d.minimized);
       d.drag.ghostLeft = probe.left, d.drag.ghostTop = probe.top;
       const G = Date.now();
-      if (G - (d.drag.lastApply || 0) < 16) return;
+      if (G - (d.drag.lastApply || 0) < 100) return;
       d.drag.lastApply = G;
       if (d.dragGhost) {
         try {

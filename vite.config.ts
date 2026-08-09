@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.30';
+const PLUGIN_VERSION = '2.2.31';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.31</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>이미지 뷰어: 좁히면 접기 버튼이 잘려 못 접히던 버그 — 헤더 버튼을 전폭 2줄로 고정</li>
+            <li>이미지 뷰어: 크기조절 후 min 크기·헤더 재적용 · 모바일 코너 히트 확대(28→48px)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.30</strong>
@@ -7578,8 +7585,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.30",
-    body: "인덱싱 토스트=선택 이미지 준비만. 업데이트 내역 탭 참고."
+    title: "2.2.31",
+    body: "뷰어 좁혀도 접기 유지. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8795,7 +8802,7 @@ const VENDOR_VIEWER_HDR_CHROME_TOUCH_NEEDLE =
     }), c = await H(e, "div", {
       style: "display:flex;gap:5px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;",`;
 const VENDOR_VIEWER_HDR_CHROME_TOUCH_PATCH =
-  `    const r = await H(e, "div", { style: Ft(startGeo, minimizedInit) }), i = await H(e, "div", { style: "min-height:52px;height:auto;display:flex;align-items:center;justify-content:flex-start;gap:8px;padding:8px 10px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06);cursor:move;user-select:none;flex-shrink:0;touch-action:none;flex-wrap:nowrap;" }), s = await H(e, "span", {
+  `    const r = await H(e, "div", { style: Ft(startGeo, minimizedInit) }), i = await H(e, "div", { style: "min-height:52px;height:auto;display:flex;align-items:center;justify-content:flex-start;gap:8px;padding:8px 10px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06);cursor:move;user-select:none;flex-shrink:0;touch-action:none;flex-wrap:wrap;" }), s = await H(e, "span", {
       style: "font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;",
       html: "Inlay Viewer"
     }), viewerPresetLabel = (() => {
@@ -8804,13 +8811,14 @@ const VENDOR_VIEWER_HDR_CHROME_TOUCH_PATCH =
       return \`\${name.length > 18 ? \`\${name.slice(0, 17)}…\` : name} ▾\`;
     })(), viewerPresetBtn = await H(e, "span", {
       // Risu SafeDOM blocks change/input events — use clickable control + pointer hit-test instead of <select>.
-      style: "max-width:200px;min-width:120px;flex:0 1 200px;height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:13px;font-weight:600;padding:0 12px;cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;",
+      style: "max-width:200px;min-width:88px;flex:1 1 140px;height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:13px;font-weight:600;padding:0 12px;cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;",
       text: viewerPresetLabel
     }), viewerPresetMenu = await H(e, "div", {
       style: "display:none;position:absolute;top:52px;left:10px;min-width:200px;max-width:min(92vw,320px);max-height:min(50vh,360px);overflow:auto;z-index:5;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;",
       html: ""
     }), c = await H(e, "div", {
-      style: "display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:nowrap;justify-content:flex-end;margin-left:auto;",`;
+      // Full-width second row so ◀▶상시·설정·접기 never clip when the panel is narrowed (mobile resize).
+      style: "display:flex;gap:8px;align-items:center;flex:1 1 100%;flex-wrap:wrap;justify-content:flex-end;margin-left:0;box-sizing:border-box;",`;
 
 const VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE =
   `      const label = \`\${String(active?.name || (presets.length ? "프리셋" : "없음")).slice(0, 12)}\${String(active?.name || "").length > 12 ? "…" : ""} ▾\`;
@@ -9018,13 +9026,13 @@ const VENDOR_ACTIONS_CHROME_PATCH =
           await s.setInnerHTML(folded ? pad : pad + btn("tag", "#0f766e", "태그") + btn("regen", "#7c6cff", "재생성") + btn("stop", "#b91c1c", "중단")), await i.setStyleAttribute(\`height:\${folded ? 88 : 328}px;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:8px;padding:10px;background:rgba(255,255,255,.04);border-bottom:0;cursor:move;user-select:none;flex-shrink:0;touch-action:none;box-sizing:border-box;\`), await s.setStyleAttribute("display:flex;flex-direction:column;gap:8px;align-items:stretch;width:100%;flex:0 0 auto;"), await viewerPresetBtn.setStyleAttribute(\`max-width:none;min-width:0;width:100%;height:auto;min-height:48px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:15px;font-weight:700;padding:14px 12px;cursor:pointer;pointer-events:auto;display:\${folded ? "none" : "inline-flex"};align-items:center;justify-content:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!folded && d.presetMenuOpen ? "block" : "none"};position:absolute;top:auto;bottom:56px;left:10px;right:10px;min-width:0;max-width:none;max-height:220px;overflow:auto;z-index:20;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML(btn(folded ? "expand" : "fold", "#1e293b", folded ? "펼치기" : "접기")), await c.setStyleAttribute("display:flex;flex-direction:column;gap:8px;align-items:stretch;flex-shrink:0;width:100%;");
         } else {
           d.actionsFolded = !1;
-          await s.setInnerHTML(iconMin ? "🖼️" : "Inlay Viewer"), await s.setStyleAttribute(iconMin ? "font-weight:600;font-size:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;" : "font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;"), await i.setStyleAttribute(\`min-height:\${iconMin ? 48 : toolbarMin ? 56 : 52}px;height:\${iconMin ? "48px" : "auto"};display:flex;align-items:center;justify-content:\${iconMin ? "center" : "flex-start"};gap:8px;padding:\${iconMin ? "0" : "8px 10px"};background:rgba(255,255,255,.04);border-bottom:\${d.minimized && !toolbarMin ? "0" : "1px solid rgba(255,255,255,.06)"};cursor:move;user-select:none;flex-shrink:0;touch-action:none;flex-wrap:nowrap;\`), await viewerPresetBtn.setStyleAttribute(\`max-width:200px;min-width:120px;flex:0 1 200px;height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:13px;font-weight:600;padding:0 12px;cursor:pointer;pointer-events:auto;display:\${iconMin ? "none" : "inline-flex"};align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!iconMin && d.presetMenuOpen ? "block" : "none"};position:absolute;top:52px;left:10px;min-width:200px;max-width:min(92vw,320px);max-height:min(50vh,360px);overflow:auto;z-index:5;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML([
+          await s.setInnerHTML(iconMin ? "🖼️" : "Inlay Viewer"), await s.setStyleAttribute(iconMin ? "font-weight:600;font-size:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;" : "font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;"), await i.setStyleAttribute(\`min-height:\${iconMin ? 48 : toolbarMin ? 56 : 52}px;height:\${iconMin ? "48px" : "auto"};display:flex;align-items:center;justify-content:\${iconMin ? "center" : "flex-start"};gap:8px;padding:\${iconMin ? "0" : "8px 10px"};background:rgba(255,255,255,.04);border-bottom:\${d.minimized && !toolbarMin ? "0" : "1px solid rgba(255,255,255,.06)"};cursor:move;user-select:none;flex-shrink:0;touch-action:none;flex-wrap:\${iconMin ? "nowrap" : "wrap"};\`), await viewerPresetBtn.setStyleAttribute(\`max-width:200px;min-width:88px;flex:1 1 140px;height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:13px;font-weight:600;padding:0 12px;cursor:pointer;pointer-events:auto;display:\${iconMin ? "none" : "inline-flex"};align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!iconMin && d.presetMenuOpen ? "block" : "none"};position:absolute;top:52px;left:10px;min-width:200px;max-width:min(92vw,320px);max-height:min(50vh,360px);overflow:auto;z-index:5;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML([
             '<span style="cursor:pointer;background:#475569;color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">◀</span>',
             '<span style="cursor:pointer;background:#475569;color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">▶</span>',
             \`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">상시</span>\`,
             \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};align-items:center;justify-content:center;background:#334155;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
             \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${d.minimized ? "펼치기" : "접기"}</span>\`
-          ].join("")), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:8px;align-items:center;flex-shrink:0;flex-wrap:nowrap;justify-content:flex-end;margin-left:auto;\`);
+          ].join("")), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:8px;align-items:center;flex:1 1 100%;flex-wrap:wrap;justify-content:flex-end;margin-left:0;box-sizing:border-box;\`);
         }
       } catch {
       }`;
@@ -9103,8 +9111,39 @@ const VENDOR_VIEWER_STAGE_RESERVE_NEEDLE =
 const VENDOR_VIEWER_STAGE_RESERVE_PATCH =
   `  function imageStageStyle(geo = {}) {
     const panelH = Math.max(280, Number(geo.h) || 560);
-    // header(~52) + gaps + status + thumbs + chip row(~56) + padding — match enlarged chrome.
-    const reserved = 56 + 14 + 28 + 96 + 64 + 16;`;
+    // header 2-row(~100) + gaps + status + thumbs + chip row(~56) + padding — keep chips after touch chrome.
+    const reserved = 100 + 14 + 28 + 96 + 64 + 16;`;
+
+/** Larger resize corner + always re-apply panel style after CSS resize (min-width can be ignored live). */
+const VENDOR_VIEWER_RESIZE_HIT_NEEDLE =
+  `        if (B && typeof _ == "number" && typeof O == "number") nearResize = _ >= B.right - 28 && O >= B.bottom - 28;
+      } catch {
+        return;
+      }
+      if (!nearResize) return;
+      const G = {
+        w: d.geo.w,
+        h: d.geo.h
+      };
+      await v({
+        syncSize: !0
+      }), (Math.abs(G.w - d.geo.w) > 1 || Math.abs(G.h - d.geo.h) > 1) && (await qt(d.geo), await f());`;
+const VENDOR_VIEWER_RESIZE_HIT_PATCH =
+  `        if (B && typeof _ == "number" && typeof O == "number") nearResize = _ >= B.right - 48 && O >= B.bottom - 48;
+      } catch {
+        return;
+      }
+      if (!nearResize) return;
+      const G = {
+        w: d.geo.w,
+        h: d.geo.h
+      };
+      // Always re-clamp + Ft after CSS resize: browsers may shrink below min-width and clip 접기.
+      await v({
+        syncSize: !0
+      });
+      if (Math.abs(G.w - d.geo.w) > 1 || Math.abs(G.h - d.geo.h) > 1) await qt(d.geo);
+      typeof d.applyChrome == "function" ? await d.applyChrome() : await f();`;
 
 const VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE =
   `      const chipStyle = (on, accent) => \`cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:11px;line-height:1.2;white-space:nowrap;border:1px solid \${accent || (on ? "rgba(255,255,255,.14)" : "rgba(248,113,113,.45)")};background:\${accent ? "rgba(124,108,255,.18)" : on ? "rgba(255,255,255,.06)" : "rgba(248,113,113,.12)"};color:\${on ? "#e8eef8" : "#fecaca"};opacity:\${on ? 1 : 0.72}\`, Yt = Array.isArray(Q.characters) ? Q.characters : [], cast = R(Q);`;
@@ -9953,6 +9992,7 @@ const loadVendorUi = (): string => {
     [VENDOR_PRESET_MENU_HIT_NEEDLE, 'preset menu hit outside panel'],
     [VENDOR_THUMBS_MOUNT_NEEDLE, 'thumbs transform mount'],
     [VENDOR_VIEWER_STAGE_RESERVE_NEEDLE, 'viewer stage reserved height'],
+    [VENDOR_VIEWER_RESIZE_HIT_NEEDLE, 'viewer resize hit zone'],
     [VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE, 'viewer meta chip touch'],
     [VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE, 'viewer meta y chip touch'],
     [VENDOR_THUMBS_STATE_NEEDLE, 'thumbs transform state'],
@@ -10239,6 +10279,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_PRESET_MENU_HIT_NEEDLE, VENDOR_PRESET_MENU_HIT_PATCH)
     .replace(VENDOR_THUMBS_MOUNT_NEEDLE, VENDOR_THUMBS_MOUNT_PATCH)
     .replace(VENDOR_VIEWER_STAGE_RESERVE_NEEDLE, VENDOR_VIEWER_STAGE_RESERVE_PATCH)
+    .replace(VENDOR_VIEWER_RESIZE_HIT_NEEDLE, VENDOR_VIEWER_RESIZE_HIT_PATCH)
     .replace(VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE, VENDOR_VIEWER_META_CHIP_TOUCH_PATCH)
     .replace(VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE, VENDOR_VIEWER_META_Y_CHIP_TOUCH_PATCH)
     .replace(VENDOR_THUMBS_STATE_NEEDLE, VENDOR_THUMBS_STATE_PATCH)

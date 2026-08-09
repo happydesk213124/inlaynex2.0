@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.37';
+const PLUGIN_VERSION = '2.2.38';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.38</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>뷰어 접힘 버튼 라벨: 펼치기 → 펼침 (접기/펼침)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.37</strong>
@@ -7625,8 +7631,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.37",
-    body: "뷰어 이동 낙관적 확정. 업데이트 내역 참고."
+    title: "2.2.38",
+    body: "접기/펼침 라벨. 업데이트 내역 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8778,7 +8784,7 @@ const VENDOR_VIEWER_STOP_LABEL_PATCH =
           null,
           "상시",
           (t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "설정" : "",
-          d.minimized ? "펼치기" : "접기"
+          d.minimized ? "펼침" : "접기"
         ], colors = [
           null,
           null,
@@ -8825,7 +8831,7 @@ const VENDOR_VIEWER_HDR_TAIL_TOUCH_NEEDLE =
         \`<span style="cursor:pointer;background:#1e293b;color:#dbe4f5;padding:4px 8px;border-radius:7px;font-size:11px;line-height:1;border:1px solid rgba(255,255,255,.12)">\${minimizedInit ? "펼치기" : "접기"}</span>\``;
 const VENDOR_VIEWER_HDR_TAIL_TOUCH_PATCH =
   `        \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};align-items:center;justify-content:center;background:#334155;color:#dbe4f5;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
-        \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${minimizedInit ? "펼치기" : "접기"}</span>\``;
+        \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${minimizedInit ? "펼침" : "접기"}</span>\``;
 
 const VENDOR_VIEWER_HDR_CHROME_TOUCH_NEEDLE =
   `    const r = await H(e, "div", { style: Ft(startGeo, minimizedInit) }), i = await H(e, "div", { style: "height:36px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 10px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06);cursor:move;user-select:none;flex-shrink:0;touch-action:none;" }), s = await H(e, "span", {
@@ -9163,7 +9169,7 @@ const VENDOR_ACTIONS_CHROME_PATCH =
           const folded = !!d.actionsFolded;
           const btn = (act, bg, label) => \`<span data-nx-act="\${act}" style="cursor:pointer;background:\${bg};color:#fff;padding:14px 12px;border-radius:10px;font-size:15px;line-height:1.15;font-weight:700;width:100%;text-align:center;box-sizing:border-box;user-select:none">\${label}</span>\`;
           const pad = '<span data-nx-drag-pad style="display:flex;align-items:center;justify-content:center;width:100%;height:28px;flex:0 0 28px;cursor:move;touch-action:none" title="끌어서 이동"><span style="width:44px;height:4px;border-radius:999px;background:rgba(255,255,255,.38)"></span></span>';
-          await s.setInnerHTML(folded ? pad : pad + btn("tag", "#0f766e", "태그") + btn("regen", "#7c6cff", "재생성") + btn("stop", "#b91c1c", "중단")), await i.setStyleAttribute(\`height:\${folded ? 88 : 328}px;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:8px;padding:10px;background:rgba(255,255,255,.04);border-bottom:0;cursor:move;user-select:none;flex-shrink:0;touch-action:none;box-sizing:border-box;\`), await s.setStyleAttribute("display:flex;flex-direction:column;gap:8px;align-items:stretch;width:100%;flex:0 0 auto;"), await viewerPresetBtn.setStyleAttribute(\`max-width:none;min-width:0;width:100%;height:auto;min-height:48px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:15px;font-weight:700;padding:14px 12px;cursor:pointer;pointer-events:auto;display:\${folded ? "none" : "inline-flex"};align-items:center;justify-content:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!folded && d.presetMenuOpen ? "block" : "none"};position:absolute;top:auto;bottom:56px;left:10px;right:10px;min-width:0;max-width:none;max-height:220px;overflow:auto;z-index:20;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML(btn(folded ? "expand" : "fold", "#1e293b", folded ? "펼치기" : "접기")), await c.setStyleAttribute("display:flex;flex-direction:column;gap:8px;align-items:stretch;flex-shrink:0;width:100%;");
+          await s.setInnerHTML(folded ? pad : pad + btn("tag", "#0f766e", "태그") + btn("regen", "#7c6cff", "재생성") + btn("stop", "#b91c1c", "중단")), await i.setStyleAttribute(\`height:\${folded ? 88 : 328}px;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:8px;padding:10px;background:rgba(255,255,255,.04);border-bottom:0;cursor:move;user-select:none;flex-shrink:0;touch-action:none;box-sizing:border-box;\`), await s.setStyleAttribute("display:flex;flex-direction:column;gap:8px;align-items:stretch;width:100%;flex:0 0 auto;"), await viewerPresetBtn.setStyleAttribute(\`max-width:none;min-width:0;width:100%;height:auto;min-height:48px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:15px;font-weight:700;padding:14px 12px;cursor:pointer;pointer-events:auto;display:\${folded ? "none" : "inline-flex"};align-items:center;justify-content:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!folded && d.presetMenuOpen ? "block" : "none"};position:absolute;top:auto;bottom:56px;left:10px;right:10px;min-width:0;max-width:none;max-height:220px;overflow:auto;z-index:20;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML(btn(folded ? "expand" : "fold", "#1e293b", folded ? "펼침" : "접기")), await c.setStyleAttribute("display:flex;flex-direction:column;gap:8px;align-items:stretch;flex-shrink:0;width:100%;");
         } else {
           d.actionsFolded = !1;
           await s.setInnerHTML(iconMin ? "🖼️" : "Inlay Viewer"), await s.setStyleAttribute(iconMin ? "font-weight:600;font-size:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;" : "font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;"), await i.setStyleAttribute(\`min-height:\${iconMin ? 48 : toolbarMin ? 56 : 52}px;height:\${iconMin ? "48px" : "auto"};display:flex;align-items:center;justify-content:\${iconMin ? "center" : "flex-start"};gap:8px;padding:\${iconMin ? "0" : "8px 10px"};background:rgba(255,255,255,.04);border-bottom:\${d.minimized && !toolbarMin ? "0" : "1px solid rgba(255,255,255,.06)"};cursor:move;user-select:none;flex-shrink:0;touch-action:none;flex-wrap:\${iconMin ? "nowrap" : "wrap"};\`), await viewerPresetBtn.setStyleAttribute(\`max-width:200px;min-width:72px;flex:0 1 160px;height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:13px;font-weight:600;padding:0 12px;cursor:pointer;pointer-events:auto;display:\${iconMin ? "none" : "inline-flex"};align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!iconMin && d.presetMenuOpen ? "block" : "none"};position:absolute;top:52px;left:10px;min-width:200px;max-width:min(92vw,320px);max-height:min(50vh,360px);overflow:auto;z-index:5;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML([
@@ -9171,7 +9177,7 @@ const VENDOR_ACTIONS_CHROME_PATCH =
             '<span style="cursor:pointer;background:#475569;color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">▶</span>',
             \`<span style="cursor:pointer;background:\${(typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt()) ? "#0f766e" : "#334155"};color:#fff;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">상시</span>\`,
             \`<span style="cursor:pointer;display:\${(t.backendSettings?.card || {}).show_risu_settings_button !== !1 ? "inline-flex" : "none"};align-items:center;justify-content:center;background:#334155;color:#dbe4f5;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">설정</span>\`,
-            \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${d.minimized ? "펼치기" : "접기"}</span>\`
+            \`<span style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:#1e293b;color:#dbe4f5;padding:10px 9px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;border:1px solid rgba(255,255,255,.12)">\${d.minimized ? "펼침" : "접기"}</span>\`
           ].join("")), await c.setStyleAttribute(\`display:\${iconMin ? "none" : "flex"};gap:8px;align-items:center;flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;max-width:100%;min-width:0;box-sizing:border-box;\`);
         }
       } catch {

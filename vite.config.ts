@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.22';
+const PLUGIN_VERSION = '2.2.23';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -642,6 +642,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.23</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>선택 토스트: 위줄 챗이름 · msg #N · 같은 메시지 재클릭 시 생략</li>
+            <li>인덱싱 토스트: %가 멈춘 채 busy면 100%로 0.5초 보여 준 뒤 숨김</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.22</strong>
@@ -5712,7 +5719,7 @@ const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
     "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 ±1(역할 무관). 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-chat-scale": { title: "말풍선 삽화 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
-    "nx-progress-toast": { title: "진행 토스트", body: "진행·메시지 선택 시 표시. 태깅/생성 중엔 유지(경과 시간 포함), 인덱싱·선택·실패 칩은 2초 후 숨김. 99% 이상·클릭 시 바로 숨김. 인덱싱=민트, 그 외=보라." },`;
+    "nx-progress-toast": { title: "진행 토스트", body: "진행·새 메시지 선택 시 표시. 같은 메시지 재클릭은 생략. 태깅/생성 중엔 유지, 인덱싱 % 정체 시 100% 후 숨김. 인덱싱=민트, 그 외=보라." },`;
 
 const VENDOR_INLINE_TOGGLE_NEEDLE =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>`;
@@ -6380,15 +6387,7 @@ const VENDOR_INLINE_SAME_PATCH =
         } catch {
         }
       }
-      if (source === "click" || source === "text") {
-        t._progressToastIdlePeek = !0;
-        t._progressToastFp = "";
-        try {
-          typeof syncProgressToast == "function" && syncProgressToast().catch(() => {
-          });
-        } catch {
-        }
-      }
+      // Same message re-click: keep current progress toast (no selection peek).
       if (linked.length) return !0;
       if (source === "scroll" || source === "provisional") return !0;
       if (source === "text") return !isSelectedCharRole(l) ? !0 : (y("info", "select.same", \`msg#\${i.chatIndex} noImage → retry\`), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
@@ -7527,8 +7526,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.22",
-    body: "설정·토스트·말풍선 삽화 체감 개선(2.2.17~22). 업데이트 내역 탭 참고."
+    title: "2.2.23",
+    body: "선택 토스트 msg # · 같은 클릭 생략 · 인덱싱 정체 시 자동 숨김. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -7780,9 +7779,10 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     } catch {
     }
   }
-  function armProgressToastEyeHide() {
+  function armProgressToastEyeHide(ms) {
+    const hideMs = Math.max(200, Number(ms) || PROGRESS_TOAST_HIDE_MS);
     t._progressToastArmed = !0;
-    t._progressToastUntil = Date.now() + PROGRESS_TOAST_HIDE_MS;
+    t._progressToastUntil = Date.now() + hideMs;
     if (t._progressToastHideTimer) clearTimeout(t._progressToastHideTimer);
     t._progressToastHideTimer = setTimeout(() => {
       t._progressToastHideTimer = null;
@@ -7791,7 +7791,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       t._progressToastIdlePeek = !1;
       setProgressToastEye(!1).catch(() => {
       });
-    }, PROGRESS_TOAST_HIDE_MS);
+    }, hideMs);
   }
   function clearProgressToastEyeHide() {
     if (t._progressToastHideTimer) {
@@ -7863,7 +7863,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }
     // Avoid display toggle flicker when already visible (mobile scroll / % ticks).
     if (!t._progressToastShown) await setProgressToastEye(!0);
-    if (opts.armHide) armProgressToastEyeHide();
+    if (opts.armHide) armProgressToastEyeHide(opts.armHideMs);
     else clearProgressToastEyeHide();
   }
   /** risutts-style one-shot host toast — independent of progress_toast setting. */
@@ -7925,6 +7925,11 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       const hasPayload = liveBusy || isTerminal && !!B;
       await ensureProgressToastRoot();
       if (liveBusy) t._progressToastIdlePeek = !1;
+      if (!indexBusy) {
+        t._progressToastIndexStallSuppress = !1;
+        t._progressToastIndexStallPct = null;
+        t._progressToastIndexStallAt = 0;
+      }
       if (!hasPayload) {
         if (!t._progressToastIdlePeek) return;
         const O = t.selectedMessage;
@@ -7939,8 +7944,9 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
           count = Number(O.cardCount) || 0;
         }
         const chatName = String(O.chatName || t.lastScope?.chatName || "").trim();
-        const charName = String(O.characterName || t.lastScope?.characterName || "").trim();
-        const stage = [chatName, charName].filter(Boolean).join(" · ") || "메시지";
+        const msgIdx = Number(O.chatIndex ?? O.messageIndex);
+        const msgPart = Number.isFinite(msgIdx) && msgIdx >= 0 ? \`msg #\${msgIdx + 1}\` : "msg #?";
+        const stage = chatName ? \`\${chatName} · \${msgPart}\` : msgPart;
         const preview = String(O.preview || O.text || "").replace(/\\s+/g, " ").trim().slice(0, 40);
         const metaParts = [count > 0 ? \`\${count}장\` : "이미지 없음"];
         if (preview) metaParts.push(preview);
@@ -7961,6 +7967,39 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         return;
       }
       const indexOnly = !jobBusy && indexBusy;
+      // Indexing % stuck: flash 100% for 0.5s then hide; suppress until warm ends.
+      if (indexOnly) {
+        if (t._progressToastIndexStallSuppress) {
+          if (t._progressToastShown) await setProgressToastEye(!1);
+          return;
+        }
+        const rp = Math.round(Number(idx.pct) || 0);
+        const prevPct = t._progressToastIndexStallPct;
+        const prevAt = Number(t._progressToastIndexStallAt) || 0;
+        if (prevPct === rp && prevAt && Date.now() - prevAt >= 2500) {
+          const stageDone = idx.label || "인덱싱";
+          const metaDone = "100%";
+          const fpDone = \`index|\${stageDone}|100|\${metaDone}|stall-done|0|0|0\`;
+          t._progressToastFp = fpDone;
+          t._progressToastIndexStallSuppress = !0;
+          t._progressToastIndexStallPct = null;
+          t._progressToastIndexStallAt = 0;
+          const htmlDone = typeof VC?.composeProgressToastHtml == "function" ? VC.composeProgressToastHtml({
+            stage: stageDone,
+            meta: metaDone,
+            pct: 100,
+            busy: !0,
+            tone: "index",
+            escapeHtml: h
+          }) : \`<div data-inlay-progress-toast="1" style="padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px">\${h(stageDone + " 100%")}</div>\`;
+          await paintProgressToastHtml(htmlDone, { armHide: !0, armHideMs: 500 });
+          return;
+        }
+        if (prevPct !== rp || !prevAt) {
+          t._progressToastIndexStallPct = rp;
+          t._progressToastIndexStallAt = Date.now();
+        }
+      }
       let stage = jobBusy
         ? info.stage || "작업 중"
         : indexBusy

@@ -2,7 +2,25 @@
 
 import { joinTags } from '../../core/util/text.ts';
 
+/** @deprecated Prefer focusOutOfFrameTag(weight); kept for older call sites/tests. */
 export const FOCUS_OUT_OF_FRAME_TAG = '2::out of frame::';
+
+/** Clamp focus weight to 0–5 (missing/NaN → 2). Mirrors schema.normalizeFocusWeight. */
+export function clampFocusWeight(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 2;
+  return Math.max(0, Math.min(5, Math.round(n)));
+}
+
+/**
+ * Tag for non-focus captions.
+ * weight ≤ 1 → bare `out of frame`; weight > 1 → `N::out of frame::` (N clamped 2–5).
+ */
+export function focusOutOfFrameTag(weight: unknown = 2): string {
+  const w = clampFocusWeight(weight);
+  if (w <= 1) return 'out of frame';
+  return `${w}::out of frame::`;
+}
 
 /**
  * Parse one focus token into a 0-based cast index, or null if invalid.
@@ -55,12 +73,14 @@ export function parseFocusIndexes(focus: unknown, castLen: number): number[] {
 export function applyFocusOutOfFrame<T extends { prompt: string }>(
   captions: T[],
   focusIndexes: number[],
+  weight: unknown = 2,
 ): T[] {
   if (!focusIndexes.length || !captions.length) return captions;
+  const tag = focusOutOfFrameTag(weight);
   const focus = new Set(focusIndexes);
   return captions.map((cap, i) => {
     if (focus.has(i)) return cap;
     if (/\bout of frame\b/i.test(cap.prompt)) return cap;
-    return { ...cap, prompt: joinTags(cap.prompt, FOCUS_OUT_OF_FRAME_TAG) || FOCUS_OUT_OF_FRAME_TAG };
+    return { ...cap, prompt: joinTags(cap.prompt, tag) || tag };
   });
 }

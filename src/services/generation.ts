@@ -12,7 +12,7 @@
  */
 
 import { QUALITY_TAGS, UC_PRESETS } from '../config/defaults';
-import { normalizeFocusCharacterMode, normalizeNaturalBaseMode } from '../config/schema';
+import { normalizeFocusCharacterMode, normalizeFocusWeight, normalizeNaturalBaseMode } from '../config/schema';
 import { API_URL, IMAGE_KEY } from '../core/constants';
 import { dbg } from '../core/debug';
 import type { JobRequest, NaiSettings, ShotCharacter, StylePreset, TaggedShot } from '../core/types';
@@ -286,7 +286,7 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   if (focusMode !== 'off') {
     const focusIdxs = parseFocusIndexes(shot.focus, chars.length);
     if (focusIdxs.length) {
-      const focused = applyFocusOutOfFrame(captions, focusIdxs);
+      const focused = applyFocusOutOfFrame(captions, focusIdxs, normalizeFocusWeight(card.focus_weight));
       for (let i = 0; i < captions.length; i++) {
         captions[i] = focused[i]!;
         charMeta[i] = { ...charMeta[i]!, prompt: focused[i]!.prompt };

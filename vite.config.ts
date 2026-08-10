@@ -533,12 +533,15 @@ const VENDOR_FOCUS_CHAR_CARD_PATCH =
               <option value="prepass" \${i.asset_nai_tags === "prepass" ? "selected" : ""}>LLM 따로 호출</option>
               <option value="prepass_vision" \${i.asset_nai_tags === !0 || i.asset_nai_tags === "prepass_vision" ? "selected" : ""}>LLM 따로 호출 + 이미지 파일 보내기</option>
             </select></label>
-            <label class="wide" data-nx-help-id="nx-focus-character"><span>중점 캐릭터</span><select id="nx-focus-character">
-              <option value="off" \${!i.focus_character || i.focus_character === "off" ? "selected" : ""}>사용안함</option>
-              <option value="female" \${i.focus_character === "female" ? "selected" : ""}>여성위주</option>
-              <option value="male" \${i.focus_character === "male" ? "selected" : ""}>남성위주</option>
-              <option value="auto" \${i.focus_character === "auto" ? "selected" : ""}>LLM이 알아서 고르기</option>
-            </select></label>
+            <div class="model-form-pair" style="margin-top:4px">
+              <label data-nx-help-id="nx-focus-character"><span>중점 캐릭터</span><select id="nx-focus-character">
+                <option value="off" \${!i.focus_character || i.focus_character === "off" ? "selected" : ""}>사용안함</option>
+                <option value="female" \${i.focus_character === "female" ? "selected" : ""}>여성위주</option>
+                <option value="male" \${i.focus_character === "male" ? "selected" : ""}>남성위주</option>
+                <option value="auto" \${i.focus_character === "auto" ? "selected" : ""}>LLM이 알아서 고르기</option>
+              </select></label>
+              <label data-nx-help-id="nx-focus-weight"><span>중점강도 (0–5)</span><input id="nx-focus-weight" type="number" min="0" max="5" step="1" value="\${h(i.focus_weight ?? 2)}"></label>
+            </div>
             <div class="model-form-pair" style="margin-top:4px">`;
 
 const VENDOR_FOCUS_CHAR_CT_NEEDLE =
@@ -548,6 +551,7 @@ const VENDOR_FOCUS_CHAR_CT_NEEDLE =
 const VENDOR_FOCUS_CHAR_CT_PATCH =
   `      asset_nai_tags: document.getElementById("nx-asset-nai-tags") ? N("nx-asset-nai-tags") || "off" : e.asset_nai_tags || "off",
       focus_character: document.getElementById("nx-focus-character") ? N("nx-focus-character") || "off" : e.focus_character || "off",
+      focus_weight: document.getElementById("nx-focus-weight") ? re(N("nx-focus-weight"), 0, 5, re(e.focus_weight, 0, 5, 2)) : re(e.focus_weight, 0, 5, 2),
       costume: document.getElementById("nx-costume") ? !!document.getElementById("nx-costume").checked : !!e.costume,`;
 
 const VENDOR_FOCUS_CHAR_HELP_NEEDLE =
@@ -556,7 +560,8 @@ const VENDOR_FOCUS_CHAR_HELP_NEEDLE =
 
 const VENDOR_FOCUS_CHAR_HELP_PATCH =
   `"nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "로어 트리거와 이름이 맞는 Risu 에셋 PNG/WebP의 NovelAI 메타 태그를 어떻게 태거에 넣을지 고릅니다. artist·year·품질·*background·straight-on은 제외.\\n\\n• 사용안함 — 에셋 태그를 쓰지 않습니다.\\n• 그냥 옛날버전 (통째로 보내기) — 로어북·에셋 태그를 메인 태거 한 번에 넣습니다. LLM 1회. 컨텍스트가 길어져 토큰을 많이 씁니다.\\n• LLM 따로 호출 — 에셋 태그로 캐릭터 룩만 먼저 채운 뒤 메인 태거를 돌립니다. LLM 2회.\\n• LLM 따로 호출 + 이미지 파일 보내기 — 룩 LLM에 캐릭터당 대표 이미지 1장(최대 5장)을 함께 보냅니다. 비전 입력만큼 토큰·비용이 큽니다." },
-    "nx-focus-character": { title: "중점 캐릭터", body: "켜면 태거가 샷 JSON에 focus(1·char1 또는 [1,2]처럼 여러 명)를 넣을 수 있습니다. 중점이 아닌 캐릭터 캡션에 2::out of frame::을 붙입니다. 매 샷 필수는 아니고, 애매하면 비워도 됩니다. 여성/남성위주는 선택 힌트만입니다." },
+    "nx-focus-character": { title: "중점 캐릭터", body: "켜면 태거가 샷 JSON에 focus(1·char1 또는 [1,2]처럼 여러 명)를 넣을 수 있습니다. 중점이 아닌 캐릭터 캡션에 out of frame을 붙입니다. 매 샷 필수는 아니고, 애매하면 비워도 됩니다. 여성/남성위주는 선택 힌트만입니다." },
+    "nx-focus-weight": { title: "중점강도", body: "중점 외 캐릭터에 붙는 out of frame 강조입니다. 2–5는 N::out of frame::, 0–1은 강조 없이 out of frame만 넣습니다. 기본 2." },
 `;
 
 /** Models → ComfyUI: document [[width]]/[[height]] (auto_aspect / NAI W·H). */

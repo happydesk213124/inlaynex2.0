@@ -51,6 +51,14 @@ test("focus_character migrates to off|female|male|auto", () => {
   assert.equal(migrateSettings({ card: { focus_character: "nope" } }).card.focus_character, "off");
 });
 
+test("focus_weight migrates to 0–5 (default 2)", () => {
+  assert.equal(migrateSettings({ card: {} }).card.focus_weight, 2);
+  assert.equal(migrateSettings({ card: { focus_weight: 0 } }).card.focus_weight, 0);
+  assert.equal(migrateSettings({ card: { focus_weight: 4.6 } }).card.focus_weight, 5);
+  assert.equal(migrateSettings({ card: { focus_weight: 99 } }).card.focus_weight, 5);
+  assert.equal(migrateSettings({ card: { focus_weight: "3" } }).card.focus_weight, 3);
+});
+
 test("natural_base migrates boolean and aliases to mode enum", () => {
   assert.equal(migrateSettings({ card: { natural_base: true } }).card.natural_base, "short");
   assert.equal(migrateSettings({ card: { natural_base: false } }).card.natural_base, "off");

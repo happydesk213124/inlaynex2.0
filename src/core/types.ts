@@ -90,6 +90,11 @@ export interface CardSettings {
    */
   focus_character: FocusCharacterMode;
   /**
+   * NAI emphasis on non-focus `out of frame` (0–5). Default 2.
+   * ≤1 → bare `out of frame`; >1 → `N::out of frame::`.
+   */
+  focus_weight: number;
+  /**
    * NAI emphasis on Inlay person-count tags (`1girl`, `1boy`, `solo`, …).
    * 0 = plain tags; 1–5 = `N::1girl, 1boy::`. Default 3.
    */

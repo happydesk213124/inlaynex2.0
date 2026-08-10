@@ -187,7 +187,7 @@ const normalize = (root) => {
         if (k === 'costumes' || k === 'active_costume') continue;
         // 2.0 card.costume toggle (main-tagger catalog inject) — no 1.x field.
         if (k === 'costume') continue;
-        // 2.0 asset NAI / auto aspect / person_tag_solo / llm_json_retry / focus_character —
+        // 2.0 asset NAI / auto aspect / person_tag_solo / llm_json_retry / focus_* —
         // no 1.x card fields; schema defaults + UI/unit tests assert behaviour.
         if (
           k === 'asset_nai_tags'
@@ -195,6 +195,7 @@ const normalize = (root) => {
           || k === 'person_tag_solo'
           || k === 'llm_json_retry'
           || k === 'focus_character'
+          || k === 'focus_weight'
         ) continue;
         // 2.0 wear locks default ON (`!== false`). 1.x/legacy seeds stored false;
         // compose + unit tests assert lock behaviour — wire presence is not comparable.

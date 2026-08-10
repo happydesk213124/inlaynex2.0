@@ -10,6 +10,13 @@ export type { FocusCharacterMode };
 
 const FOCUS_CHARACTER_MODES = new Set<FocusCharacterMode>(['off', 'female', 'male', 'auto']);
 
+/** Clamp card.focus_weight to 0–5 (missing/NaN → 2). */
+export function normalizeFocusWeight(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 2;
+  return Math.max(0, Math.min(5, Math.round(n)));
+}
+
 /** Normalize `card.focus_character`. Missing/unknown → `off`. */
 export function normalizeFocusCharacterMode(value: unknown): FocusCharacterMode {
   if (value === false || value === 'false' || value === 0 || value === '0' || value === 'none') return 'off';
@@ -205,6 +212,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     || card.costume === '1'
     || card.costume === 'on';
   card.focus_character = normalizeFocusCharacterMode(card.focus_character);
+  card.focus_weight = normalizeFocusWeight(card.focus_weight);
   // curation.mode: off | two_stage | embed_snap (legacy card.composition_curation → two_stage)
   const curationRaw =
     settings.curation && typeof settings.curation === 'object' && !Array.isArray(settings.curation)

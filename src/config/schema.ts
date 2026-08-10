@@ -1,9 +1,26 @@
 /** Settings migration + export/import. Pure: no storage, no I/O. */
 
+import type { FocusCharacterMode } from '../core/types.ts';
 import { normalizeLlmRolesSettings } from '../domain/llm/roles.ts';
 
 /** NovelAI base natural-language mode (replaces the old boolean toggle). */
 export type NaturalBaseMode = 'off' | 'short' | 'detailed' | 'supplement';
+
+export type { FocusCharacterMode };
+
+const FOCUS_CHARACTER_MODES = new Set<FocusCharacterMode>(['off', 'female', 'male', 'auto']);
+
+/** Normalize `card.focus_character`. Missing/unknown → `off`. */
+export function normalizeFocusCharacterMode(value: unknown): FocusCharacterMode {
+  if (value === false || value === 'false' || value === 0 || value === '0' || value === 'none') return 'off';
+  if (value === true || value === 'true' || value === 1 || value === '1' || value === 'on') return 'auto';
+  const s = String(value ?? '').toLowerCase().trim();
+  if (s === 'woman' || s === 'women' || s === 'girl' || s === 'girls') return 'female';
+  if (s === 'man' || s === 'men' || s === 'boy' || s === 'boys') return 'male';
+  if (s === 'llm' || s === 'any' || s === 'free') return 'auto';
+  if (FOCUS_CHARACTER_MODES.has(s as FocusCharacterMode)) return s as FocusCharacterMode;
+  return 'off';
+}
 
 /** Settings-tab curation pipeline mode. */
 export type CurationMode = 'off' | 'two_stage' | 'embed_snap';
@@ -187,6 +204,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     || card.costume === 1
     || card.costume === '1'
     || card.costume === 'on';
+  card.focus_character = normalizeFocusCharacterMode(card.focus_character);
   // curation.mode: off | two_stage | embed_snap (legacy card.composition_curation → two_stage)
   const curationRaw =
     settings.curation && typeof settings.curation === 'object' && !Array.isArray(settings.curation)

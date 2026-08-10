@@ -34,6 +34,7 @@ const MODULES = {
   'reroll-setup': 'src/domain/prompt/reroll-setup.ts',
   'command-rewrite': 'src/domain/prompt/command-rewrite.ts',
   'character-tags': 'src/domain/character/tags.ts',
+  'character-focus': 'src/domain/character/focus.ts',
   'character-costume': 'src/domain/character/costume.ts',
   'nai-meta-prompt-tags': 'src/domain/nai-meta/prompt-tags.ts',
   'nai-meta-match': 'src/domain/nai-meta/match.ts',

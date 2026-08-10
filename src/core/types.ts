@@ -12,6 +12,8 @@
 export type ExecuteMode = 'auto' | 'manual';
 export type CardMode = 'illustration' | 'asset';
 export type PersonTagMode = 'gender' | 'girls' | 'people' | 'off';
+/** Soft bias for optional per-shot focus cast (out of frame on others). */
+export type FocusCharacterMode = 'off' | 'female' | 'male' | 'auto';
 export type LoreExtraMode = 'tags' | 'full' | 'off';
 export type LlmSource = 'custom' | 'main' | 'aux';
 /** Secondary chat-LLM roles (main tagging stays on `settings.llm`). */
@@ -82,6 +84,11 @@ export interface CardSettings {
    * costumes per shot. Asset char_looks always builds costumes[] regardless.
    */
   costume: boolean;
+  /**
+   * Optional focus cast: off | female | male | auto.
+   * When not off, tagger may set shot `focus`; non-focus captions get out of frame.
+   */
+  focus_character: FocusCharacterMode;
   /**
    * NAI emphasis on Inlay person-count tags (`1girl`, `1boy`, `solo`, …).
    * 0 = plain tags; 1–5 = `N::1girl, 1boy::`. Default 3.
@@ -391,6 +398,11 @@ export interface TaggedShot {
   camera?: string;
   situation?: string;
   place?: string;
+  /**
+   * Optional focus cast indexes (1-based / charN / list). Empty or invalid → no focus.
+   * Generation puts `2::out of frame::` on non-focus character captions.
+   */
+  focus?: unknown;
   characters?: ShotCharacter[];
   [key: string]: unknown;
 }

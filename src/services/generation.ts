@@ -12,7 +12,7 @@
  */
 
 import { QUALITY_TAGS, UC_PRESETS } from '../config/defaults';
-import { normalizeNaturalBaseMode } from '../config/schema';
+import { normalizeFocusCharacterMode, normalizeNaturalBaseMode } from '../config/schema';
 import { API_URL, IMAGE_KEY } from '../core/constants';
 import { dbg } from '../core/debug';
 import type { JobRequest, NaiSettings, ShotCharacter, StylePreset, TaggedShot } from '../core/types';
@@ -25,6 +25,7 @@ import {
   toOptionalFloat,
 } from '../core/util/text';
 import type { CharacterInput } from '../domain/character/identity';
+import { applyFocusOutOfFrame, parseFocusIndexes } from '../domain/character/focus';
 import { dedupeShotCharacters, resolveCharacter } from '../domain/character/roster';
 import {
   characterMaxLimit,
@@ -280,6 +281,17 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
       center_y: cy,
       raw: char,
     });
+  }
+  const focusMode = normalizeFocusCharacterMode(card.focus_character);
+  if (focusMode !== 'off') {
+    const focusIdxs = parseFocusIndexes(shot.focus, chars.length);
+    if (focusIdxs.length) {
+      const focused = applyFocusOutOfFrame(captions, focusIdxs);
+      for (let i = 0; i < captions.length; i++) {
+        captions[i] = focused[i]!;
+        charMeta[i] = { ...charMeta[i]!, prompt: focused[i]!.prompt };
+      }
+    }
   }
   return { main, neg, captions, meta: { setup, person, characters: charMeta, paragraph: shot.paragraph } };
 }

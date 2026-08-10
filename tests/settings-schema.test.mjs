@@ -41,6 +41,16 @@ test("valid import migrates legacy scale", () => {
   assert.equal(imported.settings_schema_version, 2);
 });
 
+test("focus_character migrates to off|female|male|auto", () => {
+  assert.equal(migrateSettings({ card: {} }).card.focus_character, "off");
+  assert.equal(migrateSettings({ card: { focus_character: "female" } }).card.focus_character, "female");
+  assert.equal(migrateSettings({ card: { focus_character: "male" } }).card.focus_character, "male");
+  assert.equal(migrateSettings({ card: { focus_character: "auto" } }).card.focus_character, "auto");
+  assert.equal(migrateSettings({ card: { focus_character: true } }).card.focus_character, "auto");
+  assert.equal(migrateSettings({ card: { focus_character: "women" } }).card.focus_character, "female");
+  assert.equal(migrateSettings({ card: { focus_character: "nope" } }).card.focus_character, "off");
+});
+
 test("natural_base migrates boolean and aliases to mode enum", () => {
   assert.equal(migrateSettings({ card: { natural_base: true } }).card.natural_base, "short");
   assert.equal(migrateSettings({ card: { natural_base: false } }).card.natural_base, "off");

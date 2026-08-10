@@ -122,6 +122,13 @@ Card-settings checkbox sits in a `checks-grid` of `toggle-row`s with
 person_tag_solo (same UX as dashboard toggles). Character tab and chip edit
 popup use a costume name+arrow combobox (no field labels; placeholder only).
 
+`card.focus_character` is `off` | `female` | `male` | `auto` (default `off`).
+Card settings shows a `<select>` under 에셋 NAI 태그 (asserted vendor patch).
+When not `off`, the tagger may set optional shot `focus` (one or more of
+`1`…`character_max` / `charN`, e.g. `[1,2]`). Generation appends
+`2::out of frame::` to non-focus character captions. Empty/invalid focus → no
+effect. Female/male are soft prefer hints only; focus is not required every shot.
+
 `card.char_ref_mode` is `off` | `vibe` | `image` (default `off`); with
 `char_ref_strength` / `char_ref_fidelity` in `0.01`–`1` (defaults `0.6` / `1`).
 When mode is `image`, `char_ref_image_type` is `character` | `style` |

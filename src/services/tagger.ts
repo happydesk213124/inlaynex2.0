@@ -19,8 +19,8 @@ import { dbg } from '../core/debug';
 import type { CharacterRecord, JobRequest, TaggedShot, TaggerResult } from '../core/types';
 import { deepMerge } from '../core/util/object';
 import { cleanText, stripCbs } from '../core/util/text';
-import { normalizeAssetNaiTagsMode, normalizeFocusCharacterMode, normalizeNaturalBaseMode, type NaturalBaseMode } from '../config/schema';
-import type { FocusCharacterMode } from '../core/types';
+import { normalizeAssetNaiTagsMode, normalizeFocusCharacterMode, normalizeFocusPromptMode, normalizeNaturalBaseMode, type NaturalBaseMode } from '../config/schema';
+import type { FocusCharacterMode, FocusPromptMode } from '../core/types';
 import { characterTriggers, dedupeShotCharacters, matchCharactersInText } from '../domain/character/roster';
 import { characterHasAppearance, characterMaxLimit } from '../domain/character/tags';
 import { ensureCostumes, formatCostumeCatalog } from '../domain/character/costume';
@@ -461,7 +461,11 @@ export async function buildTaggerMessages(
         : `SHOT COUNT: produce between ${imageMin} and ${imageMax} shots in scenes[].shots (across all scenes). Prefer the count that fits the message; never fewer than ${imageMin} or more than ${imageMax}.`,
       naturalBaseSystemMessage(naturalMode),
       `CHARACTER CAP: at most ${charMax} characters per shot (char1..char${charMax}). If more are visible, keep the ${charMax} most important; fold extras into situation/place.`,
-      focusCharacterSystemMessage(normalizeFocusCharacterMode(card.focus_character), charMax),
+      focusCharacterSystemMessage(
+        normalizeFocusCharacterMode(card.focus_character),
+        charMax,
+        normalizeFocusPromptMode(card.focus_prompt),
+      ),
       card.auto_aspect
         ? 'ASPECT (required on every shot): set `aspect` to exactly one of `portrait` (832×1216 vertical), `square` (1024×1024), or `landscape` (1216×832 horizontal). Pick from the scene framing — tall full-body / standing → portrait; equal crop / face close-up square → square; wide group / side-by-side / scenic → landscape. Like Asset Maid size presets 1/5/2.'
         : '',
@@ -528,17 +532,38 @@ export function flattenShots(tagged: unknown, messageText?: unknown): TaggedShot
   return repairLazyShotLines(shots, messageText ?? '');
 }
 
-function focusCharacterSystemMessage(mode: FocusCharacterMode, charMax: number): string {
-  if (mode === 'off') return '';
+function focusCharacterSystemMessage(
+  mode: FocusCharacterMode,
+  charMax: number,
+  promptMode: FocusPromptMode = 'default',
+): string {
+  if (mode === 'off' || promptMode === 'manual') return '';
   const prefer =
     mode === 'female'
       ? ' When choosing focus, prefer female characters when it fits.'
       : mode === 'male'
         ? ' When choosing focus, prefer male characters when it fits.'
         : '';
+  const values = `Values: 1..${charMax} or charN, single or several — e.g. 1, [1,2], "char1,char3".`;
+  if (promptMode === 'always') {
+    return [
+      `FOCUS (required): every shot MUST set \`focus\` to at least one cast index so the image emphasizes them (others get out of frame).`,
+      values,
+      'Do not leave focus empty.',
+      prefer.trim(),
+    ].filter(Boolean).join(' ');
+  }
+  if (promptMode === 'strong') {
+    return [
+      `FOCUS: usually set shot \`focus\` to one or more cast indexes when a shot has a clear subject (others get out of frame).`,
+      values,
+      'Leave focus empty only when everyone should stay fully framed.',
+      prefer.trim(),
+    ].filter(Boolean).join(' ');
+  }
   return [
     `FOCUS (optional): you may set shot \`focus\` to one or more cast indexes so the image emphasizes them (others get out of frame).`,
-    `Values: 1..${charMax} or charN, single or several — e.g. 1, [1,2], "char1,char3".`,
+    values,
     `Use it when a shot benefits from focus; if it's unclear whether focus helps, leave focus empty.`,
     prefer.trim(),
   ].filter(Boolean).join(' ');

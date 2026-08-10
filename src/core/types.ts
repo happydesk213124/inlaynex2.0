@@ -14,6 +14,8 @@ export type CardMode = 'illustration' | 'asset';
 export type PersonTagMode = 'gender' | 'girls' | 'people' | 'off';
 /** Soft bias for optional per-shot focus cast (out of frame on others). */
 export type FocusCharacterMode = 'off' | 'female' | 'male' | 'auto';
+/** How strongly / whether the tagger is told to emit shot.focus (manual = code path). */
+export type FocusPromptMode = 'default' | 'strong' | 'always' | 'manual';
 export type LoreExtraMode = 'tags' | 'full' | 'off';
 export type LlmSource = 'custom' | 'main' | 'aux';
 /** Secondary chat-LLM roles (main tagging stays on `settings.llm`). */
@@ -94,6 +96,11 @@ export interface CardSettings {
    * ≤1 → bare `out of frame`; >1 → `N::out of frame::`.
    */
   focus_weight: number;
+  /**
+   * Tagger focus instruction: default | strong | always | manual.
+   * `manual` skips LLM focus and applies out of frame by gender (female/male mode).
+   */
+  focus_prompt: FocusPromptMode;
   /**
    * NAI emphasis on Inlay person-count tags (`1girl`, `1boy`, `solo`, …).
    * 0 = plain tags; 1–5 = `N::1girl, 1boy::`. Default 3.

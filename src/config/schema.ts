@@ -1,20 +1,31 @@
 /** Settings migration + export/import. Pure: no storage, no I/O. */
 
-import type { FocusCharacterMode } from '../core/types.ts';
+import type { FocusCharacterMode, FocusPromptMode } from '../core/types.ts';
 import { normalizeLlmRolesSettings } from '../domain/llm/roles.ts';
 
 /** NovelAI base natural-language mode (replaces the old boolean toggle). */
 export type NaturalBaseMode = 'off' | 'short' | 'detailed' | 'supplement';
 
-export type { FocusCharacterMode };
+export type { FocusCharacterMode, FocusPromptMode };
 
 const FOCUS_CHARACTER_MODES = new Set<FocusCharacterMode>(['off', 'female', 'male', 'auto']);
+const FOCUS_PROMPT_MODES = new Set<FocusPromptMode>(['default', 'strong', 'always', 'manual']);
 
 /** Clamp card.focus_weight to 0–5 (missing/NaN → 2). */
 export function normalizeFocusWeight(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return 2;
   return Math.max(0, Math.min(5, Math.round(n)));
+}
+
+/** Normalize `card.focus_prompt`. Missing/unknown → `default`. */
+export function normalizeFocusPromptMode(value: unknown): FocusPromptMode {
+  const s = String(value ?? '').toLowerCase().trim();
+  if (s === 'stronger' || s === 'hard' || s === 'push') return 'strong';
+  if (s === 'force' || s === 'forced' || s === 'must' || s === 'required') return 'always';
+  if (s === 'code' || s === 'gender' || s === 'auto_gender') return 'manual';
+  if (FOCUS_PROMPT_MODES.has(s as FocusPromptMode)) return s as FocusPromptMode;
+  return 'default';
 }
 
 /** Normalize `card.focus_character`. Missing/unknown → `off`. */
@@ -213,6 +224,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     || card.costume === 'on';
   card.focus_character = normalizeFocusCharacterMode(card.focus_character);
   card.focus_weight = normalizeFocusWeight(card.focus_weight);
+  card.focus_prompt = normalizeFocusPromptMode(card.focus_prompt);
   // curation.mode: off | two_stage | embed_snap (legacy card.composition_curation → two_stage)
   const curationRaw =
     settings.curation && typeof settings.curation === 'object' && !Array.isArray(settings.curation)

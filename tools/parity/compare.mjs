@@ -196,6 +196,7 @@ const normalize = (root) => {
           || k === 'llm_json_retry'
           || k === 'focus_character'
           || k === 'focus_weight'
+          || k === 'focus_prompt'
         ) continue;
         // 2.0 wear locks default ON (`!== false`). 1.x/legacy seeds stored false;
         // compose + unit tests assert lock behaviour — wire presence is not comparable.

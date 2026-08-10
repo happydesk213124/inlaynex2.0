@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   applyFocusOutOfFrame,
   focusOutOfFrameTag,
+  manualFocusIndexesByGender,
   parseFocusIndexes,
   parseFocusToken,
 } from "../.test-build/character-focus.mjs";
@@ -38,6 +39,25 @@ test("focusOutOfFrameTag: ≤1 bare, >1 weighted", () => {
   assert.equal(focusOutOfFrameTag(5), "5::out of frame::");
   assert.equal(focusOutOfFrameTag(99), "5::out of frame::");
   assert.equal(focusOutOfFrameTag(undefined), "2::out of frame::");
+});
+
+test("manualFocusIndexesByGender keeps preferred gender only", () => {
+  const chars = [
+    { name: "Alice", gender: "girl" },
+    { name: "Bob", gender: "boy" },
+    { name: "Carol", gender: "girl" },
+  ];
+  const roster = [
+    { id: "a", name: "Alice", gender: "girl" },
+    { id: "b", name: "Bob", gender: "boy" },
+    { id: "c", name: "Carol", gender: "girl" },
+  ];
+  assert.deepEqual(manualFocusIndexesByGender(chars, roster, "female"), [0, 2]);
+  assert.deepEqual(manualFocusIndexesByGender(chars, roster, "male"), [1]);
+  assert.deepEqual(
+    manualFocusIndexesByGender([{ name: "Alice", gender: "girl" }], roster, "female"),
+    [],
+  );
 });
 
 test("applyFocusOutOfFrame tags non-focus captions only", () => {

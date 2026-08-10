@@ -1,6 +1,10 @@
 /** Optional per-shot focus cast → out-of-frame on everyone else. Pure. */
 
+import type { ShotCharacter } from '../../core/types.ts';
 import { joinTags } from '../../core/util/text.ts';
+import type { CharacterInput } from './identity.ts';
+import { resolveCharacter } from './roster.ts';
+import { resolveCharacterGender } from './tags.ts';
 
 /** @deprecated Prefer focusOutOfFrameTag(weight); kept for older call sites/tests. */
 export const FOCUS_OUT_OF_FRAME_TAG = '2::out of frame::';
@@ -20,6 +24,28 @@ export function focusOutOfFrameTag(weight: unknown = 2): string {
   const w = clampFocusWeight(weight);
   if (w <= 1) return 'out of frame';
   return `${w}::out of frame::`;
+}
+
+/**
+ * Manual focus: keep cast indexes matching preferred gender (female→f, male→m).
+ * Non-matching / unknown gender are out of frame. Empty when nobody matches
+ * or everyone matches (avoid framing nobody / no-op).
+ */
+export function manualFocusIndexesByGender(
+  chars: ShotCharacter[],
+  roster: CharacterInput[],
+  prefer: 'female' | 'male',
+): number[] {
+  const want = prefer === 'female' ? 'f' : 'm';
+  const keep: number[] = [];
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i]!;
+    const name = String(char.name || '').trim();
+    const stored = name ? resolveCharacter(name, roster) : null;
+    if (resolveCharacterGender(char, stored) === want) keep.push(i);
+  }
+  if (!keep.length || keep.length >= chars.length) return [];
+  return keep;
 }
 
 /**
@@ -83,4 +109,9 @@ export function applyFocusOutOfFrame<T extends { prompt: string }>(
     if (/\bout of frame\b/i.test(cap.prompt)) return cap;
     return { ...cap, prompt: joinTags(cap.prompt, tag) || tag };
   });
+}
+
+/** 1-based indexes for card meta / LLM-shaped focus (from 0-based keep list). */
+export function focusIndexesToMeta(focusIndexes: number[]): number[] {
+  return focusIndexes.map((i) => i + 1);
 }

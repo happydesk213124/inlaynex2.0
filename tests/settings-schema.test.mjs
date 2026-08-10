@@ -59,6 +59,15 @@ test("focus_weight migrates to 0–5 (default 2)", () => {
   assert.equal(migrateSettings({ card: { focus_weight: "3" } }).card.focus_weight, 3);
 });
 
+test("focus_prompt migrates to default|strong|always|manual", () => {
+  assert.equal(migrateSettings({ card: {} }).card.focus_prompt, "default");
+  assert.equal(migrateSettings({ card: { focus_prompt: "strong" } }).card.focus_prompt, "strong");
+  assert.equal(migrateSettings({ card: { focus_prompt: "always" } }).card.focus_prompt, "always");
+  assert.equal(migrateSettings({ card: { focus_prompt: "manual" } }).card.focus_prompt, "manual");
+  assert.equal(migrateSettings({ card: { focus_prompt: "force" } }).card.focus_prompt, "always");
+  assert.equal(migrateSettings({ card: { focus_prompt: "nope" } }).card.focus_prompt, "default");
+});
+
 test("natural_base migrates boolean and aliases to mode enum", () => {
   assert.equal(migrateSettings({ card: { natural_base: true } }).card.natural_base, "short");
   assert.equal(migrateSettings({ card: { natural_base: false } }).card.natural_base, "off");

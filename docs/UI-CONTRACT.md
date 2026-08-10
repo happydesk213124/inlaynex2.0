@@ -123,15 +123,18 @@ person_tag_solo (same UX as dashboard toggles). Character tab and chip edit
 popup use a costume name+arrow combobox (no field labels; placeholder only).
 
 `card.focus_character` is `off` | `female` | `male` | `auto` (default `off`).
-Card settings shows a `<select>` under 에셋 NAI 태그 (asserted vendor patch),
-paired with `card.focus_weight` (`0`–`5`, default `2`) on the right — same
-`model-form-pair` layout as the fixed-prompt row. When not `off`, the tagger may
-set optional shot `focus` (one or more of `1`…`character_max` / `charN`, e.g.
-`[1,2]`). Generation appends out of frame to non-focus captions: weight `2`–`5`
-→ `N::out of frame::`, weight `0`–`1` → bare `out of frame`. Empty/invalid
-focus → no effect. Female/male are soft prefer hints only; focus is not
-required every shot. Shot `focus` is stored on card meta so nai reroll /
-regen re-applies out of frame the same way as other shot fields.
+Card settings shows a row under 에셋 NAI 태그 (asserted vendor patch):
+`focus_character` select, `card.focus_weight` (`0`–`5`, default `2`), and
+`card.focus_prompt` (`default` | `strong` | `always` | `manual`, default
+`default`). When not `off`, the tagger may set optional shot `focus` (one or
+more of `1`…`character_max` / `charN`, e.g. `[1,2]`) unless prompt mode is
+`manual`. Generation appends out of frame to non-focus captions: weight `2`–`5`
+→ `N::out of frame::`, weight `0`–`1` → bare `out of frame`. Prompt modes:
+`default` optional, `strong` prefer often, `always` required every shot,
+`manual` skips LLM focus and applies out of frame by gender when mode is
+female/male (non-matching cast). Empty/invalid focus → no effect (LLM modes).
+Shot `focus` is stored on card meta so nai reroll / regen re-applies out of
+frame the same way as other shot fields.
 
 `card.char_ref_mode` is `off` | `vibe` | `image` (default `off`); with
 `char_ref_strength` / `char_ref_fidelity` in `0.01`–`1` (defaults `0.6` / `1`).

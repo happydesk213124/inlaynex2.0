@@ -12,7 +12,7 @@
  */
 
 import { QUALITY_TAGS, UC_PRESETS } from '../config/defaults';
-import { normalizeFocusCharacterMode, normalizeFocusWeight, normalizeNaturalBaseMode } from '../config/schema';
+import { normalizeFocusCharacterMode, normalizeFocusPromptMode, normalizeFocusWeight, normalizeNaturalBaseMode } from '../config/schema';
 import { API_URL, IMAGE_KEY } from '../core/constants';
 import { dbg } from '../core/debug';
 import type { JobRequest, NaiSettings, ShotCharacter, StylePreset, TaggedShot } from '../core/types';
@@ -25,7 +25,12 @@ import {
   toOptionalFloat,
 } from '../core/util/text';
 import type { CharacterInput } from '../domain/character/identity';
-import { applyFocusOutOfFrame, parseFocusIndexes } from '../domain/character/focus';
+import {
+  applyFocusOutOfFrame,
+  focusIndexesToMeta,
+  manualFocusIndexesByGender,
+  parseFocusIndexes,
+} from '../domain/character/focus';
 import { dedupeShotCharacters, resolveCharacter } from '../domain/character/roster';
 import {
   characterMaxLimit,
@@ -285,8 +290,16 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
     });
   }
   const focusMode = normalizeFocusCharacterMode(card.focus_character);
+  const focusPrompt = normalizeFocusPromptMode(card.focus_prompt);
+  let appliedFocus: unknown = shot.focus;
   if (focusMode !== 'off') {
-    const focusIdxs = parseFocusIndexes(shot.focus, chars.length);
+    let focusIdxs: number[] = [];
+    if (focusPrompt === 'manual' && (focusMode === 'female' || focusMode === 'male')) {
+      focusIdxs = manualFocusIndexesByGender(chars, roster, focusMode);
+      appliedFocus = focusIdxs.length ? focusIndexesToMeta(focusIdxs) : '';
+    } else if (focusPrompt !== 'manual') {
+      focusIdxs = parseFocusIndexes(shot.focus, chars.length);
+    }
     if (focusIdxs.length) {
       const focused = applyFocusOutOfFrame(captions, focusIdxs, normalizeFocusWeight(card.focus_weight));
       for (let i = 0; i < captions.length; i++) {
@@ -304,7 +317,7 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
       person,
       characters: charMeta,
       paragraph: shot.paragraph,
-      focus: shot.focus,
+      focus: appliedFocus,
     },
   };
 }

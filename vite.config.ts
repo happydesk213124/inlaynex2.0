@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.41';
+const PLUGIN_VERSION = '2.2.42';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.42</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>뷰어 프리셋 전환: 메뉴·라벨 즉시 반영, 설정 저장은 백그라운드(체감 지연 완화)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.41</strong>
@@ -7709,8 +7715,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.41",
-    body: "프리셋 목록은 드래그 스크롤 · 탭해서 선택. 업데이트 내역 참고."
+    title: "2.2.42",
+    body: "프리셋은 바로 바뀌고 저장은 뒤에서. 업데이트 내역 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -9017,6 +9023,138 @@ const VENDOR_VIEWER_PRESET_MENU_TOUCH_PATCH =
         await d.presetMenu?.setStyleAttribute?.(\`display:\${d.presetMenuOpen && presetChromeLive && !folded ? "block" : "none"};position:absolute;top:\${actionsMin ? "auto" : menuTopPx + "px"};\${actionsMin ? "bottom:56px;" : ""}left:10px;right:\${actionsMin ? "10px" : "auto"};min-width:\${actionsMin ? "0" : "200px"};max-width:\${actionsMin ? "none" : "min(92vw,320px)"};max-height:min(50vh,360px);overflow:auto;z-index:30;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`);
       } catch {
       }`;
+
+/** Viewer preset apply: optimistic local pin; save flush/PUT in background when opts.optimistic. */
+const VENDOR_APPLY_PRESET_OPT_NEEDLE =
+  `    t._presetSwitching = !0;
+    try {
+      t.backendSettings = t.backendSettings || {}, t.backendSettings.card = card;
+      if (t.settingsSavePending?.card) {
+        t.settingsSavePending.card.active_preset_id = id, t.settingsSavePending.card.custom_pos = card.custom_pos, t.settingsSavePending.card.custom_neg = card.custom_neg;
+        Array.isArray(card.presets) && (t.settingsSavePending.card.presets = card.presets);
+      }
+      queueSettingsSave({ card: { ...card } }, { force: !0 }), await flushSettingsSave();
+      try {
+        await pe({
+          card: {
+            active_preset_id: id,
+            custom_pos: card.custom_pos,
+            custom_neg: card.custom_neg,
+            presets: card.presets
+          }
+        });
+      } catch (err) {
+        y("warn", "preset.save.fail", err?.message || err);
+      }
+      if (t.backendSettings?.card) {
+        pinActivePreset(t.backendSettings.card, id), t.backendSettings.card.custom_pos = card.custom_pos, t.backendSettings.card.custom_neg = card.custom_neg;
+        Array.isArray(card.presets) && (t.backendSettings.card.presets = card.presets);
+      }
+      // Always push into card-settings DOM when it exists; re-render if settings open.
+      syncCardPresetFormFromSettings();
+      if (t.uiOpen && opts?.rerender !== !1) {
+        if (opts?.showCardTab) t.uiTab = "card";
+        await P();
+        syncCardPresetFormFromSettings();
+      }
+    } finally {
+      t._presetSwitching = !1;
+    }
+    if (t.galleryUi?.syncViewerPresetSelect) try {
+      await t.galleryUi.syncViewerPresetSelect();
+    } catch {
+    }
+    return card;
+  }`;
+
+const VENDOR_APPLY_PRESET_OPT_PATCH =
+  `    t.backendSettings = t.backendSettings || {}, t.backendSettings.card = card;
+    if (t.settingsSavePending?.card) {
+      t.settingsSavePending.card.active_preset_id = id, t.settingsSavePending.card.custom_pos = card.custom_pos, t.settingsSavePending.card.custom_neg = card.custom_neg;
+      Array.isArray(card.presets) && (t.settingsSavePending.card.presets = card.presets);
+    }
+    if (t.backendSettings?.card) {
+      pinActivePreset(t.backendSettings.card, id), t.backendSettings.card.custom_pos = card.custom_pos, t.backendSettings.card.custom_neg = card.custom_neg;
+      Array.isArray(card.presets) && (t.backendSettings.card.presets = card.presets);
+    }
+    syncCardPresetFormFromSettings();
+    const persistPreset = async () => {
+      queueSettingsSave({ card: { ...card } }, { force: !0 });
+      await flushSettingsSave();
+      try {
+        await pe({
+          card: {
+            active_preset_id: id,
+            custom_pos: card.custom_pos,
+            custom_neg: card.custom_neg,
+            presets: card.presets
+          }
+        });
+      } catch (err) {
+        y("warn", "preset.save.fail", err?.message || err);
+      }
+      if (t.backendSettings?.card) {
+        pinActivePreset(t.backendSettings.card, id), t.backendSettings.card.custom_pos = card.custom_pos, t.backendSettings.card.custom_neg = card.custom_neg;
+        Array.isArray(card.presets) && (t.backendSettings.card.presets = card.presets);
+      }
+      syncCardPresetFormFromSettings();
+    };
+    if (opts?.optimistic) {
+      // Viewer: chrome already updated; do not hold _presetSwitching across network.
+      void persistPreset().then(async () => {
+        if (t.uiOpen && opts?.rerender !== !1) {
+          try {
+            if (opts?.showCardTab) t.uiTab = "card";
+            await P();
+            syncCardPresetFormFromSettings();
+          } catch {
+          }
+        }
+      }).catch((err) => y("warn", "preset.save.fail", err?.message || err));
+      if (t.galleryUi?.syncViewerPresetSelect) try {
+        await t.galleryUi.syncViewerPresetSelect();
+      } catch {
+      }
+      return card;
+    }
+    t._presetSwitching = !0;
+    try {
+      await persistPreset();
+      if (t.uiOpen && opts?.rerender !== !1) {
+        if (opts?.showCardTab) t.uiTab = "card";
+        await P();
+        syncCardPresetFormFromSettings();
+      }
+    } finally {
+      t._presetSwitching = !1;
+    }
+    if (t.galleryUi?.syncViewerPresetSelect) try {
+      await t.galleryUi.syncViewerPresetSelect();
+    } catch {
+    }
+    return card;
+  }`;
+
+/** Floating viewer preset pick: close + label immediately; persist optimistic. */
+const VENDOR_PICK_PRESET_OPT_NEEDLE =
+  `        const saved = await applyActivePreset(selected, { showCardTab: !!t.uiOpen });
+        const active = saved?.presets?.find((p) => presetIdEq(p.id, selected));
+        await syncViewerPresetSelect();
+        await C.setTextContent(\`프리셋 적용 · \${active?.name || selected}\`);
+        y("info", "viewer.preset", selected);`;
+
+const VENDOR_PICK_PRESET_OPT_PATCH =
+  `        const name = card.presets.find((p) => presetIdEq(p.id, selected))?.name || selected;
+        try { await syncViewerPresetSelect(); } catch {}
+        try { await C.setTextContent(\`프리셋 · \${name}\`); } catch {}
+        // Optimistic like overlay toggle: local chrome first, save behind.
+        applyActivePreset(selected, { showCardTab: !1, rerender: !1, optimistic: !0 }).then((saved) => {
+          const n = saved?.presets?.find((p) => presetIdEq(p.id, selected))?.name || name;
+          Promise.resolve(C.setTextContent(\`프리셋 적용 · \${n}\`)).catch(() => {});
+          y("info", "viewer.preset", selected);
+        }).catch((err) => {
+          y("warn", "viewer.preset.fail", err?.message || err);
+        });`;
 
 /** Live-rect + hitPad preset item picker (chip-style). */
 const VENDOR_PRESET_HIT_HELPER_NEEDLE =
@@ -10477,6 +10615,8 @@ const loadVendorUi = (): string => {
     [VENDOR_VIEWER_HDR_CHROME_TOUCH_NEEDLE, 'viewer header chrome touch'],
     [VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE, 'viewer preset menu touch'],
     [VENDOR_PRESET_HIT_HELPER_NEEDLE, 'preset hitPresetItemAt helper'],
+    [VENDOR_APPLY_PRESET_OPT_NEEDLE, 'applyActivePreset optimistic'],
+    [VENDOR_PICK_PRESET_OPT_NEEDLE, 'pickViewerPreset optimistic'],
     [VENDOR_PRESET_EXPANDED_HIT_NEEDLE, 'preset expanded hit cache'],
     [VENDOR_VIEWER_PTR_ORDER_NEEDLE, 'viewer ptr resize+preset order'],
     [VENDOR_VIEWER_PRESET_HITS_STATE_NEEDLE, 'viewer presetHits state'],
@@ -10775,6 +10915,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE, VENDOR_VIEWER_PRESET_MENU_TOUCH_PATCH)
     .replace(VENDOR_VIEWER_PTR_ORDER_NEEDLE, VENDOR_VIEWER_PTR_ORDER_PATCH)
     .replace(VENDOR_PRESET_HIT_HELPER_NEEDLE, VENDOR_PRESET_HIT_HELPER_PATCH)
+    .replace(VENDOR_APPLY_PRESET_OPT_NEEDLE, VENDOR_APPLY_PRESET_OPT_PATCH)
+    .replace(VENDOR_PICK_PRESET_OPT_NEEDLE, VENDOR_PICK_PRESET_OPT_PATCH)
     .replace(VENDOR_PRESET_EXPANDED_HIT_NEEDLE, VENDOR_PRESET_EXPANDED_HIT_PATCH)
     .replace(VENDOR_VIEWER_PRESET_HITS_STATE_NEEDLE, VENDOR_VIEWER_PRESET_HITS_STATE_PATCH)
     .replace(VENDOR_VIEWER_IMG_REROLL_TOUCH_NEEDLE, VENDOR_VIEWER_IMG_REROLL_TOUCH_PATCH)

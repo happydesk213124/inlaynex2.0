@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.40';
+const PLUGIN_VERSION = '2.2.41';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.41</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>뷰어 프리셋 목록: 누르자마자 선택하지 않음 · 드래그하면 스크롤, 같은 자리에서 떼면 선택(모바일)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.40</strong>
@@ -7703,8 +7709,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.2.40",
-    body: "빈 뷰어도 태그/재생성. 업데이트 내역 참고."
+    title: "2.2.41",
+    body: "프리셋 목록은 드래그 스크롤 · 탭해서 선택. 업데이트 내역 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -9057,6 +9063,37 @@ const VENDOR_PRESET_HIT_HELPER_PATCH =
       } catch {
       }
       return best ? { el: best.el, id: best.id, hitPad: 0 } : null;
+    }, onPresetMenuMove = async (A) => {
+      if (!d.presetMenuGesture || d.drag) return;
+      const cx = Number(A?.clientX), cy = Number(A?.clientY);
+      if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+      const g = d.presetMenuGesture, dx = cx - g.startX, dy = cy - g.startY;
+      if (!g.moved && Math.abs(dx) + Math.abs(dy) > 6) g.moved = !0;
+      if (!g.moved) return;
+      try { A.preventDefault?.(); } catch {}
+      try {
+        if (d.presetMenu && typeof setScrollTopSafe == "function") await setScrollTopSafe(d.presetMenu, Math.max(0, g.originScroll - dy));
+      } catch {}
+    }, endPresetMenuGesture = async () => {
+      if (!d.presetMenuGesture) return;
+      const { moveId, upId, cancelId, moved, pickX, pickY } = d.presetMenuGesture;
+      d.presetMenuGesture = null;
+      try { moveId != null && await e.removeEventListener(moveId); } catch {}
+      try { upId != null && await e.removeEventListener(upId); } catch {}
+      try { cancelId != null && await e.removeEventListener(cancelId); } catch {}
+      // Tap = press+release without drag; select at press point (scroll uses move).
+      if (!moved) {
+        const zone = await hitPresetItemAt(pickX, pickY);
+        if (zone?.id) await pickViewerPreset(zone.id);
+      }
+    }, startPresetMenuGesture = async (A, startX, startY) => {
+      if (d.presetMenuGesture) await endPresetMenuGesture();
+      let originScroll = 0;
+      try {
+        if (d.presetMenu && typeof getScrollTopSafe == "function") originScroll = Math.max(0, Number(await getScrollTopSafe(d.presetMenu)) || 0);
+      } catch {}
+      const moveId = await e.addEventListener("pointermove", onPresetMenuMove), upId = await e.addEventListener("pointerup", endPresetMenuGesture), cancelId = await e.addEventListener("pointercancel", endPresetMenuGesture);
+      d.presetMenuGesture = { startX, startY, pickX: startX, pickY: startY, originScroll, moved: !1, moveId, upId, cancelId };
     }, pickViewerPreset = async (selected) => {
       if (!selected || t._presetSwitching) return;`;
 
@@ -9079,14 +9116,12 @@ const VENDOR_PRESET_EXPANDED_HIT_NEEDLE =
           return;
         }`;
 const VENDOR_PRESET_EXPANDED_HIT_PATCH =
-  `        // Preset dropdown: live rect + hitPad cache (same idea as meta chips).
+  `        // Preset dropdown: tap-select on pointerup; drag scrolls the menu.
         if (d.presetMenuOpen && d.presetMenu) {
-          const zone = await hitPresetItemAt(_, O);
-          if (zone?.id) {
-            await pickViewerPreset(zone.id);
+          if (await hitPresetItemAt(_, O) || await X(d.presetMenu, _, O)) {
+            await startPresetMenuGesture(A, _, O);
             return;
           }
-          if (await X(d.presetMenu, _, O)) return;
         }`;
 
 /** Touch resize grip + preset-before-header (menu overlays wrapped chrome; button hits stole taps). */
@@ -9135,13 +9170,12 @@ const VENDOR_VIEWER_PTR_ORDER_PATCH =
         return;
       }
       // Preset menu FIRST — absolute menu sits over wrapped header; c-button hit was eating taps.
+      // Tap (up without drag) selects; drag scrolls (thumbs-strip pattern).
       if (d.presetMenuOpen && d.presetMenu) {
-        const zone = await hitPresetItemAt(_, O);
-        if (zone?.id) {
-          await pickViewerPreset(zone.id);
+        if (await hitPresetItemAt(_, O) || await X(d.presetMenu, _, O)) {
+          await startPresetMenuGesture(A, _, O);
           return;
         }
-        if (await X(d.presetMenu, _, O)) return;
       }
       {
         if (await X(c, _, O)) {
@@ -9817,12 +9851,10 @@ const VENDOR_ACTIONS_POINTER_PATCH =
       if (d.minimized && viewerMinimizeMode() === "actions") {
         if (d.actionsFolded == null) d.actionsFolded = !1;
         if (!d.actionsFolded && d.presetMenuOpen && d.presetMenu) {
-          const zone = await hitPresetItemAt(_, O);
-          if (zone?.id) {
-            await pickViewerPreset(zone.id);
+          if (await hitPresetItemAt(_, O) || await X(d.presetMenu, _, O)) {
+            await startPresetMenuGesture(A, _, O);
             return;
           }
-          if (await X(d.presetMenu, _, O)) return;
         }
         if (!d.actionsFolded && d.presetSelect && await X(d.presetSelect, _, O)) {
           d.presetMenuOpen = !d.presetMenuOpen;

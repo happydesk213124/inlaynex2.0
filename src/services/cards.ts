@@ -369,6 +369,7 @@ export async function rerollCard(
           : cleanText(meta.situation || meta.scene || ''),
       place: decision.rebuildMain && decision.lockedSetup ? '' : cleanText(meta.place || ''),
       action: decision.rebuildMain && decision.lockedSetup ? '' : cleanText(meta.action || ''),
+      focus: meta.focus,
     };
     // Never pass the full main_prompt as lockedSetup: joinTags would re-append
     // person/style/quality tags that are already baked into it.
@@ -382,14 +383,24 @@ export async function rerollCard(
       neg = plan.neg;
       captions = plan.captions;
       charList = plan.meta.characters;
-      genMetaExtra = { setup: plan.meta.setup, person: plan.meta.person, characters: charList };
+      genMetaExtra = {
+        setup: plan.meta.setup,
+        person: plan.meta.person,
+        characters: charList,
+        focus: plan.meta.focus ?? meta.focus,
+      };
     } else {
       // Hand-edited main (setup mirrored the full prompt): keep tags, refresh cast.
       main = cleanText(row.main_prompt);
       neg = cleanText(row.negative_prompt) || plan.neg;
       captions = plan.captions;
       charList = plan.meta.characters;
-      genMetaExtra = { setup: main, person: plan.meta.person, characters: charList };
+      genMetaExtra = {
+        setup: main,
+        person: plan.meta.person,
+        characters: charList,
+        focus: plan.meta.focus ?? meta.focus,
+      };
     }
   } else {
     const storedChars = parseJsonOr(row.characters_json || '[]', []);
@@ -409,13 +420,19 @@ export async function rerollCard(
       situation: lockedSetup ? '' : cleanText(meta.situation || meta.scene || ''),
       place: lockedSetup ? '' : cleanText(meta.place || ''),
       action: lockedSetup ? '' : cleanText(meta.action || ''),
+      focus: meta.focus,
     };
     const plan = await buildGenerationForShot({ shot, roster, lockedSetup });
     main = plan.main;
     neg = plan.neg;
     captions = plan.captions;
     charList = plan.meta.characters;
-    genMetaExtra = { setup: plan.meta.setup, person: plan.meta.person, characters: charList };
+    genMetaExtra = {
+      setup: plan.meta.setup,
+      person: plan.meta.person,
+      characters: charList,
+      focus: plan.meta.focus ?? meta.focus,
+    };
   }
 
   if (!captions.length && !(ov && 'characters' in ov)) {
@@ -424,13 +441,19 @@ export async function rerollCard(
         (c) => (c as Record<string, unknown>).raw || c,
       ) as ShotCharacter[],
       camera: meta.setup as string,
+      focus: meta.focus,
     };
     const plan = await buildGenerationForShot({ shot, roster });
     main = plan.main;
     neg = plan.neg;
     captions = plan.captions;
     charList = plan.meta.characters;
-    genMetaExtra = { setup: plan.meta.setup, person: plan.meta.person, characters: charList };
+    genMetaExtra = {
+      setup: plan.meta.setup,
+      person: plan.meta.person,
+      characters: charList,
+      focus: plan.meta.focus ?? meta.focus,
+    };
   }
 
   const ovSeed = ov && 'seed' in ov ? Number(ov.seed) : NaN;

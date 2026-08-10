@@ -82,6 +82,8 @@ export interface GenerationMeta {
   person: string;
   characters: GenerationCharacter[];
   paragraph: number | undefined;
+  /** Tagger shot `focus` (indexes / charN); kept so reroll re-applies out of frame. */
+  focus?: unknown;
 }
 
 export interface GenerationPlan {
@@ -293,7 +295,18 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
       }
     }
   }
-  return { main, neg, captions, meta: { setup, person, characters: charMeta, paragraph: shot.paragraph } };
+  return {
+    main,
+    neg,
+    captions,
+    meta: {
+      setup,
+      person,
+      characters: charMeta,
+      paragraph: shot.paragraph,
+      focus: shot.focus,
+    },
+  };
 }
 
 /** Runs one generation on the configured backend and returns the bytes and seed. */

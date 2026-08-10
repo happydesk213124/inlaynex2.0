@@ -12,7 +12,9 @@
  * cards it already published and marks itself cancelled. In-flight NovelAI
  * requests are deliberately allowed to finish rather than aborted — the image is
  * already paid for in Anlas, and discarding after the fact is simpler than
- * unwinding a partial HTTP read.
+ * unwinding a partial HTTP read. Shot saves (unzip is in the NAI client; DB +
+ * content_hash attach here) run on a background chain so the next NovelAI
+ * request can start as soon as the previous HTTP+unzip returns.
  *
  * **Progress without I/O.** Progress ticks every few seconds for potentially
  * minutes. Persisting a full jobs snapshot per tick is what made 1.x stall
@@ -577,6 +579,9 @@ async function runJob(jobId: string): Promise<void> {
     message_index: request.message_index,
     text_len: String(request.assistant_text || '').length,
   });
+  // Background shot saves (publish/hash/card row). Hoisted so catch can drain.
+  let pendingShotSave: Promise<void> = Promise.resolve();
+  let shotSaveFailed: unknown = null;
   try {
     if (await cancelJobIfStale(jobId, 'superseded before start')) return;
     // createJob already unlinked on force; repeated here because a job can also
@@ -825,16 +830,26 @@ async function runJob(jobId: string): Promise<void> {
 
     const cards: Array<Record<string, unknown>> = [];
     const wantAnchor = Boolean(card.llm_anchor_percent);
+    // Unzip/DB/hash stay behind the next NAI call: HTTP done → next request ASAP,
+    // while publish+card write for the finished shot drains on this chain.
+    pendingShotSave = Promise.resolve();
+    shotSaveFailed = null;
+    const drainSaves = async (): Promise<void> => {
+      await pendingShotSave;
+    };
+
     for (let idx = 0; idx < shots.length; idx += 1) {
-      if (await cancelJobIfStale(jobId, `superseded before shot ${idx + 1}`)) return;
+      if (shotSaveFailed) throw shotSaveFailed;
+      // Prior saves must finish before discard so publishedIds is complete.
+      if (!isJobCurrent(jobId)) {
+        await drainSaves();
+        if (await cancelJobIfStale(jobId, `superseded before shot ${idx + 1}`)) return;
+      }
       const shot = shots[idx];
       const { main, neg, captions, meta } = await buildGenerationForShot({ shot, roster });
       const cardId = uuid();
       const now = Date.now() / 1000;
-      const inherited = await resolveJobContentHash(jobId, cleanText(request.content_hash || ''));
-      const contentHash = inherited.contentHash;
-      const assistantPreview =
-        inherited.assistantPreview || cleanText(request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT);
+      // Resolve hash at save time (below) so mid-job retarget/sibling rebind is fresh.
       // The LLM's anchor is always stored when present; the setting only affects
       // how it is used at display time.
       let yPercent = shotAnchorPercent(shot);
@@ -914,100 +929,120 @@ async function runJob(jobId: string): Promise<void> {
       {
         const metaAfterNai = jobRunMeta.get(jobId);
         if (!isJobCurrent(jobId) && !metaAfterNai?.userStop) {
+          await drainSaves();
           if (await cancelJobIfStale(jobId, `superseded after shot ${idx + 1} nai`)) return;
         }
       }
 
-      await setJob(
-        jobId,
-        'generating',
-        progressPayload({
-          shot_count: shots.length,
-          shot_index: idx,
-          shot_done: idx,
-          progress: Math.round(((idx + 0.5) / Math.max(1, shots.length)) * 1000) / 10,
-          phase: 'generating',
-          message: `이미지 저장 중 ${idx + 1}/${shots.length}… [${getFocusStage()}]`,
-          pending_inline: pendingInline,
-        pending_message_index: pendingMessageIndex,
-        }),
-      );
-      const location = buildImageLocation({
-        imageId: cardId,
-        sessionId,
-        request,
-        shotIndex: idx,
-        paragraph: shot.paragraph,
-        yPercent,
-        line: (() => {
-          const n = Math.floor(Number((shot as { line?: unknown }).line));
-          return Number.isFinite(n) && n >= 1 ? n : null;
-        })(),
-        contentHash,
-        assistantPreview,
-      });
-      await publishImage(cardId, raw, location);
-      const cardMeta = {
-        ...cardMetaFromLocation(meta, location, raw?.byteLength || 0),
-        aspect: shot.aspect || undefined,
-      };
-      await idbPut('cards', {
-        id: cardId,
-        job_id: jobId,
-        session_id: sessionId,
-        shot_index: idx,
-        paragraph: Number(shot.paragraph || 0),
-        main_prompt: main,
-        negative_prompt: neg,
-        characters_json: JSON.stringify(meta.characters || []),
-        seed,
-        meta_json: JSON.stringify(cardMeta),
-        created_at: now,
-      });
-      const runMeta = jobRunMeta.get(jobId);
-      if (runMeta) runMeta.publishedIds.push(cardId);
-      if (await cancelJobIfStale(jobId, `superseded after shot ${idx + 1} save`)) return;
-      cards.push({
-        id: cardId,
-        shot_index: idx,
-        paragraph: location.paragraph,
-        y_percent: location.y_percent,
-        line: location.line,
-        message_index: location.message_index ?? -1,
-        message_role: location.message_role || '',
-        content_hash: location.content_hash || '',
-        character_id: location.character_id || '',
-        chat_id: location.chat_id || '',
-        character_name: location.character_name || '',
-        chat_name: location.chat_name || '',
-        char_index: location.char_index ?? -1,
-        chat_index: location.chat_index ?? -1,
-        assistant_preview: assistantPreview,
-        main_prompt: main,
-        negative_prompt: neg,
-        characters: meta.characters || [],
-        image_url: resolveImageUrl(cardId),
-        seed,
-        storage: 'indexeddb',
-        png_bytes: raw?.byteLength || 0,
-      });
-      dbg('job.shot.saved', { shot: idx, card_id: cardId, has_url: Boolean(resolveImageUrl(cardId)) });
-      await setJob(
-        jobId,
-        'generating',
-        progressPayload({
-          shot_count: shots.length,
-          shot_index: idx,
-          shot_done: idx + 1,
-          progress: Math.round(((idx + 1) / Math.max(1, shots.length)) * 1000) / 10,
-          phase: 'generating',
-          message: `이미지 ${idx + 1}/${shots.length} 완료`,
-          cards_so_far: cards.length,
-          pending_inline: pendingInline,
-        pending_message_index: pendingMessageIndex,
-        }),
-      );
+      // Queue DB/hash work; do not await — next loop iteration may already NAI.
+      pendingShotSave = pendingShotSave
+        .then(async () => {
+          await setJob(
+            jobId,
+            'generating',
+            progressPayload({
+              shot_count: shots.length,
+              shot_index: idx,
+              shot_done: idx,
+              progress: Math.round(((idx + 0.5) / Math.max(1, shots.length)) * 1000) / 10,
+              phase: 'generating',
+              message: `이미지 저장 중 ${idx + 1}/${shots.length}… [${getFocusStage()}]`,
+              pending_inline: pendingInline,
+              pending_message_index: pendingMessageIndex,
+            }),
+          );
+          const inherited = await resolveJobContentHash(jobId, cleanText(request.content_hash || ''));
+          const contentHash = inherited.contentHash;
+          const assistantPreview =
+            inherited.assistantPreview || cleanText(request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT);
+          const location = buildImageLocation({
+            imageId: cardId,
+            sessionId,
+            request,
+            shotIndex: idx,
+            paragraph: shot.paragraph,
+            yPercent,
+            line: (() => {
+              const n = Math.floor(Number((shot as { line?: unknown }).line));
+              return Number.isFinite(n) && n >= 1 ? n : null;
+            })(),
+            contentHash,
+            assistantPreview,
+          });
+          await publishImage(cardId, raw, location);
+          const cardMeta = {
+            ...cardMetaFromLocation(meta, location, raw?.byteLength || 0),
+            aspect: shot.aspect || undefined,
+          };
+          await idbPut('cards', {
+            id: cardId,
+            job_id: jobId,
+            session_id: sessionId,
+            shot_index: idx,
+            paragraph: Number(shot.paragraph || 0),
+            main_prompt: main,
+            negative_prompt: neg,
+            characters_json: JSON.stringify(meta.characters || []),
+            seed,
+            meta_json: JSON.stringify(cardMeta),
+            created_at: now,
+          });
+          const runMeta = jobRunMeta.get(jobId);
+          if (runMeta) runMeta.publishedIds.push(cardId);
+          cards.push({
+            id: cardId,
+            shot_index: idx,
+            paragraph: location.paragraph,
+            y_percent: location.y_percent,
+            line: location.line,
+            message_index: location.message_index ?? -1,
+            message_role: location.message_role || '',
+            content_hash: location.content_hash || '',
+            character_id: location.character_id || '',
+            chat_id: location.chat_id || '',
+            character_name: location.character_name || '',
+            chat_name: location.chat_name || '',
+            char_index: location.char_index ?? -1,
+            chat_index: location.chat_index ?? -1,
+            assistant_preview: assistantPreview,
+            main_prompt: main,
+            negative_prompt: neg,
+            characters: meta.characters || [],
+            image_url: resolveImageUrl(cardId),
+            seed,
+            storage: 'indexeddb',
+            png_bytes: raw?.byteLength || 0,
+          });
+          dbg('job.shot.saved', { shot: idx, card_id: cardId, has_url: Boolean(resolveImageUrl(cardId)) });
+          await setJob(
+            jobId,
+            'generating',
+            progressPayload({
+              shot_count: shots.length,
+              shot_index: idx,
+              shot_done: idx + 1,
+              progress: Math.round(((idx + 1) / Math.max(1, shots.length)) * 1000) / 10,
+              phase: 'generating',
+              message: `이미지 ${idx + 1}/${shots.length} 완료`,
+              cards_so_far: cards.length,
+              pending_inline: pendingInline,
+              pending_message_index: pendingMessageIndex,
+            }),
+          );
+        })
+        .catch((err) => {
+          shotSaveFailed = err;
+          throw err;
+        });
+
+      // Soft-stop / supersession after queueing this paid save: flush then exit.
+      if (!isJobCurrent(jobId)) {
+        await drainSaves();
+        if (await cancelJobIfStale(jobId, `superseded after shot ${idx + 1} save`)) return;
+      }
     }
+    await drainSaves();
+    if (shotSaveFailed) throw shotSaveFailed;
     if (await cancelJobIfStale(jobId, 'superseded before done')) return;
     const result = {
       cards,
@@ -1027,6 +1062,11 @@ async function runJob(jobId: string): Promise<void> {
     if (doneMeta) doneMeta.publishedIds = [];
     jobSpan.end({ message: 'done', cards: cards.length });
   } catch (exc) {
+    try {
+      await pendingShotSave;
+    } catch {
+      /* prefer the primary error below */
+    }
     jobSpan.fail(exc);
     const err = exc as Error;
     const errText = `${err?.message || exc}\n${err?.stack || ''}`.slice(-1500);

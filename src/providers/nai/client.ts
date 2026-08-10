@@ -45,7 +45,8 @@ interface SubscriptionPayload {
 /**
  * Runs one text-to-image generation and unzips the single image NAI returns.
  *
- * Serialised against every other call to this function; see `naiLane`.
+ * The lane only covers the HTTP round-trip — NovelAI rejects overlapping
+ * generations, but unzip is local CPU and must not delay the next request.
  */
 export async function generateT2i(
   token: string,
@@ -66,20 +67,18 @@ export async function generateT2i(
     has_char_refs: Boolean(req.character_refs?.length),
     has_vibes: Boolean(req.vibes?.length),
   });
-  return naiLane.run(async () => {
-    const zipBytes = await naiPost(token, payload, apiUrl, opts);
-    const spanUnzip = dbgSpan('nai.unzip');
-    try {
-      const rawBytes = await unzipFirstEntry(new Uint8Array(zipBytes));
-      const isPng = isPngBytes(new Uint8Array(rawBytes));
-      spanUnzip.end({ bytes: rawBytes?.byteLength || 0, is_png: isPng, zip_bytes: zipBytes?.byteLength || 0 });
-      if (!isPng) dbg('nai.unzip', { message: 'unzipped but not PNG magic', bytes: rawBytes?.byteLength || 0 }, 'warn');
-      return { raw_bytes: rawBytes, seed: req.seed || 0 };
-    } catch (err) {
-      spanUnzip.fail(err, { zip_bytes: zipBytes?.byteLength || 0 });
-      throw err;
-    }
-  });
+  const zipBytes = await naiLane.run(() => naiPost(token, payload, apiUrl, opts));
+  const spanUnzip = dbgSpan('nai.unzip');
+  try {
+    const rawBytes = await unzipFirstEntry(new Uint8Array(zipBytes));
+    const isPng = isPngBytes(new Uint8Array(rawBytes));
+    spanUnzip.end({ bytes: rawBytes?.byteLength || 0, is_png: isPng, zip_bytes: zipBytes?.byteLength || 0 });
+    if (!isPng) dbg('nai.unzip', { message: 'unzipped but not PNG magic', bytes: rawBytes?.byteLength || 0 }, 'warn');
+    return { raw_bytes: rawBytes, seed: req.seed || 0 };
+  } catch (err) {
+    spanUnzip.fail(err, { zip_bytes: zipBytes?.byteLength || 0 });
+    throw err;
+  }
 }
 
 /** Reads the account's remaining Anlas and Opus status. */

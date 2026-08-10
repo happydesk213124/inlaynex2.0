@@ -2457,14 +2457,19 @@ button[data-char-autotag].armed{background:rgba(255,196,72,.24);border-color:rgb
     }
     if (!card?.presets?.some((p) => presetIdEq(p.id, id))) return null;
     pinActivePreset(card, id);
-    t._presetSwitching = !0;
-    try {
-      t.backendSettings = t.backendSettings || {}, t.backendSettings.card = card;
-      if (t.settingsSavePending?.card) {
-        t.settingsSavePending.card.active_preset_id = id, t.settingsSavePending.card.custom_pos = card.custom_pos, t.settingsSavePending.card.custom_neg = card.custom_neg;
-        Array.isArray(card.presets) && (t.settingsSavePending.card.presets = card.presets);
-      }
-      queueSettingsSave({ card: { ...card } }, { force: !0 }), await flushSettingsSave();
+    t.backendSettings = t.backendSettings || {}, t.backendSettings.card = card;
+    if (t.settingsSavePending?.card) {
+      t.settingsSavePending.card.active_preset_id = id, t.settingsSavePending.card.custom_pos = card.custom_pos, t.settingsSavePending.card.custom_neg = card.custom_neg;
+      Array.isArray(card.presets) && (t.settingsSavePending.card.presets = card.presets);
+    }
+    if (t.backendSettings?.card) {
+      pinActivePreset(t.backendSettings.card, id), t.backendSettings.card.custom_pos = card.custom_pos, t.backendSettings.card.custom_neg = card.custom_neg;
+      Array.isArray(card.presets) && (t.backendSettings.card.presets = card.presets);
+    }
+    syncCardPresetFormFromSettings();
+    const persistPreset = async () => {
+      queueSettingsSave({ card: { ...card } }, { force: !0 });
+      await flushSettingsSave();
       try {
         await pe({
           card: {
@@ -2481,10 +2486,31 @@ button[data-char-autotag].armed{background:rgba(255,196,72,.24);border-color:rgb
         pinActivePreset(t.backendSettings.card, id), t.backendSettings.card.custom_pos = card.custom_pos, t.backendSettings.card.custom_neg = card.custom_neg;
         Array.isArray(card.presets) && (t.backendSettings.card.presets = card.presets);
       }
-      // Always push into card-settings DOM when it exists; re-render if settings open.
       syncCardPresetFormFromSettings();
+    };
+    if (opts?.optimistic) {
+      // Viewer: chrome already updated; do not hold _presetSwitching across network.
+      void persistPreset().then(async () => {
+        if (t.uiOpen && opts?.rerender !== !1) {
+          try {
+            if (opts?.showCardTab) t.uiTab = "style_presets";
+            await P();
+            syncCardPresetFormFromSettings();
+          } catch {
+          }
+        }
+      }).catch((err) => y("warn", "preset.save.fail", err?.message || err));
+      if (t.galleryUi?.syncViewerPresetSelect) try {
+        await t.galleryUi.syncViewerPresetSelect();
+      } catch {
+      }
+      return card;
+    }
+    t._presetSwitching = !0;
+    try {
+      await persistPreset();
       if (t.uiOpen && opts?.rerender !== !1) {
-        if (opts?.showCardTab) t.uiTab = "style_presets";
+        if (opts?.showCardTab) t.uiTab = "card";
         await P();
         syncCardPresetFormFromSettings();
       }

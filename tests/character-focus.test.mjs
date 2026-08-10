@@ -32,10 +32,11 @@ test("parseFocusIndexes accepts single, list, and comma strings", () => {
   assert.deepEqual(parseFocusIndexes([1, 1, 2], 4), [0, 1]);
 });
 
-test("focusOutOfFrameTag: ≤1 bare, >1 weighted", () => {
+test("focusOutOfFrameTag: ≤1 bare, >1 weighted (decimals ok)", () => {
   assert.equal(focusOutOfFrameTag(0), "out of frame");
   assert.equal(focusOutOfFrameTag(1), "out of frame");
   assert.equal(focusOutOfFrameTag(2), "2::out of frame::");
+  assert.equal(focusOutOfFrameTag(2.5), "2.5::out of frame::");
   assert.equal(focusOutOfFrameTag(5), "5::out of frame::");
   assert.equal(focusOutOfFrameTag(99), "5::out of frame::");
   assert.equal(focusOutOfFrameTag(undefined), "2::out of frame::");

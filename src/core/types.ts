@@ -92,7 +92,7 @@ export interface CardSettings {
    */
   focus_character: FocusCharacterMode;
   /**
-   * NAI emphasis on non-focus `out of frame` (0–5). Default 2.
+   * NAI emphasis on non-focus `out of frame` (0–5, one decimal). Default 2.
    * ≤1 → bare `out of frame`; >1 → `N::out of frame::`.
    */
   focus_weight: number;

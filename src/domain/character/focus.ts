@@ -9,11 +9,11 @@ import { resolveCharacterGender } from './tags.ts';
 /** @deprecated Prefer focusOutOfFrameTag(weight); kept for older call sites/tests. */
 export const FOCUS_OUT_OF_FRAME_TAG = '2::out of frame::';
 
-/** Clamp focus weight to 0–5 (missing/NaN → 2). Mirrors schema.normalizeFocusWeight. */
+/** Clamp focus weight to 0–5, one decimal (missing/NaN → 2). Mirrors schema.normalizeFocusWeight. */
 export function clampFocusWeight(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return 2;
-  return Math.max(0, Math.min(5, Math.round(n)));
+  return Math.max(0, Math.min(5, Math.round(n * 10) / 10));
 }
 
 /**

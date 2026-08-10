@@ -51,12 +51,13 @@ test("focus_character migrates to off|female|male|auto", () => {
   assert.equal(migrateSettings({ card: { focus_character: "nope" } }).card.focus_character, "off");
 });
 
-test("focus_weight migrates to 0–5 (default 2)", () => {
+test("focus_weight migrates to 0–5 one decimal (default 2)", () => {
   assert.equal(migrateSettings({ card: {} }).card.focus_weight, 2);
   assert.equal(migrateSettings({ card: { focus_weight: 0 } }).card.focus_weight, 0);
-  assert.equal(migrateSettings({ card: { focus_weight: 4.6 } }).card.focus_weight, 5);
+  assert.equal(migrateSettings({ card: { focus_weight: 2.5 } }).card.focus_weight, 2.5);
+  assert.equal(migrateSettings({ card: { focus_weight: 4.66 } }).card.focus_weight, 4.7);
   assert.equal(migrateSettings({ card: { focus_weight: 99 } }).card.focus_weight, 5);
-  assert.equal(migrateSettings({ card: { focus_weight: "3" } }).card.focus_weight, 3);
+  assert.equal(migrateSettings({ card: { focus_weight: "3.1" } }).card.focus_weight, 3.1);
 });
 
 test("focus_prompt migrates to default|strong|always|manual", () => {

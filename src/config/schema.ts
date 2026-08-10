@@ -11,11 +11,11 @@ export type { FocusCharacterMode, FocusPromptMode };
 const FOCUS_CHARACTER_MODES = new Set<FocusCharacterMode>(['off', 'female', 'male', 'auto']);
 const FOCUS_PROMPT_MODES = new Set<FocusPromptMode>(['default', 'strong', 'always', 'manual']);
 
-/** Clamp card.focus_weight to 0–5 (missing/NaN → 2). */
+/** Clamp card.focus_weight to 0–5, one decimal (missing/NaN → 2). */
 export function normalizeFocusWeight(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return 2;
-  return Math.max(0, Math.min(5, Math.round(n)));
+  return Math.max(0, Math.min(5, Math.round(n * 10) / 10));
 }
 
 /** Normalize `card.focus_prompt`. Missing/unknown → `default`. */

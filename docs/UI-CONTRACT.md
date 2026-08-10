@@ -124,7 +124,7 @@ popup use a costume name+arrow combobox (no field labels; placeholder only).
 
 `card.focus_character` is `off` | `female` | `male` | `auto` (default `off`).
 Card settings shows a row under 에셋 NAI 태그 (asserted vendor patch):
-`focus_character` select, `card.focus_weight` (`0`–`5`, default `2`), and
+`focus_character` select, `card.focus_weight` (`0`–`5`, one decimal, default `2`), and
 `card.focus_prompt` (`default` | `strong` | `always` | `manual`, default
 `default`). When not `off`, the tagger may set optional shot `focus` (one or
 more of `1`…`character_max` / `charN`, e.g. `[1,2]`) unless prompt mode is

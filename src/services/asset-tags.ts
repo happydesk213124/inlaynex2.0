@@ -41,6 +41,7 @@ import { asU8, bytesToBase64Async, u8ToArrayBuffer } from '../core/util/bytes.ts
 import { prepareAutotagImage } from '../core/util/image.ts';
 import { resolveCharacter } from '../domain/character/roster';
 import { getConfig } from './context';
+import { applyLorefilter, ensureLorefilter } from './lorefilter';
 import { setCharRefImage } from './nai-assets';
 
 function foldNameHas(name: unknown, trigger: string): boolean {
@@ -448,21 +449,56 @@ export async function collectAssetNaiTags(
 
 /**
  * Debug probe: same pipeline as collect, but always returns a readable report.
+ * Applies character lorefilter first (same as job head) when character_id is set.
  */
 export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Promise<ApiResult> {
   const message = cleanText(body.message ?? body.text ?? '', 20000);
-  const lorebook = (Array.isArray(body.lorebook) ? body.lorebook : []) as LoreEntry[];
-  const uiKeys = Array.isArray(body.lore_trigger_keys)
+  const loreIn = (Array.isArray(body.lorebook) ? body.lorebook : []) as LoreEntry[];
+  const uiKeysRaw = Array.isArray(body.lore_trigger_keys)
     ? body.lore_trigger_keys.map((k) => cleanText(k, 200)).filter(Boolean)
     : [];
+  const card = getConfig().card;
+  const cid = cleanText(body.character_id || body.characterId || '', 200);
+
+  let lorebook = loreIn;
+  let lorefilterInfo: Record<string, unknown> = { applied: false, reason: 'skipped' };
+  if (cid && card?.lorebook !== false && loreIn.length) {
+    try {
+      const selected = await ensureLorefilter(cid, loreIn);
+      lorebook = applyLorefilter(loreIn, selected);
+      lorefilterInfo = {
+        applied: true,
+        character_id: cid,
+        selected: selected.length,
+        in: loreIn.length,
+        out: lorebook.length,
+      };
+      dbg('debug.lorefilter', lorefilterInfo, 'info');
+    } catch (err) {
+      lorefilterInfo = {
+        applied: false,
+        character_id: cid,
+        reason: 'error',
+        error: String((err as Error)?.message || err),
+      };
+      dbg('debug.lorefilter.fail', lorefilterInfo, 'warn');
+    }
+  } else if (!cid) {
+    lorefilterInfo = { applied: false, reason: 'no_character_id' };
+  } else if (card?.lorebook === false) {
+    lorefilterInfo = { applied: false, reason: 'card.lorebook_off' };
+  } else if (!loreIn.length) {
+    lorefilterInfo = { applied: false, reason: 'empty_lorebook', character_id: cid || undefined };
+  }
+
+  // Match job path: triggers come from the (possibly filtered) lorebook only.
   const backendKeys = collectTriggeredLoreKeys(lorebook, message);
   const loreFired = explainTriggeredLoreEntries(lorebook, message);
   const relatedGroups = loreFired.map((e) => e.keys);
-  const triggerPool = [...uiKeys, ...backendKeys];
+  const triggerPool = [...backendKeys];
   const matchTriggersAll = assetMatchTriggers(triggerPool);
   const roster = Array.isArray(body.roster) ? (body.roster as CharacterInput[]) : null;
   const matchTriggers = filterAssetTriggersForUnfilledLooks(triggerPool, roster);
-  const card = getConfig().card;
   const mode = normalizeAssetNaiTagsMode(card.asset_nai_tags);
   const settingOn = mode !== 'off';
 
@@ -478,8 +514,10 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
   const report: Record<string, unknown> = {
     setting_asset_nai_tags: settingOn,
     asset_nai_tags_mode: mode,
+    lorefilter: lorefilterInfo,
     message_preview: message.slice(0, 240),
     message_len: message.length,
+    lorebook_entries_in: loreIn.length,
     lorebook_entries: lorebook.length,
     /** Fired entries: which keys hit the chat vs sibling keys that still feed asset matching. */
     lore_entries_fired: loreFired.map((e) => ({
@@ -490,13 +528,15 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
     })),
     /** Sibling keys that never appeared in the message (Fallen / Angel / MISC suspects). */
     sibling_keys_exported: siblingOnly,
-    lore_trigger_keys_ui: uiKeys,
+    /** Client keys before filter (may include entries lorefilter dropped). */
+    lore_trigger_keys_ui_raw: uiKeysRaw,
     lore_trigger_keys_backend: backendKeys,
     asset_match_triggers_all: matchTriggersAll,
     asset_match_triggers: matchTriggers,
     roster_incomplete_names: rosterIncomplete,
     note:
-      'compact contains (drop space/-/_/.); per trigger ≤2; exact > default|normal|profile|smile > shorter; '
+      'lorefilter whitelist applied first when character_id set (same as job); '
+      + 'compact contains (drop space/-/_/.); per trigger ≤2; exact > default|normal|profile|smile > shorter; '
       + 'common tags computed per trigger group; ALL keys of a lit lore entry become asset triggers (see lore_entries_fired.sibling_keys_not_in_message)',
   };
 

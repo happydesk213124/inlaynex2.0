@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.47';
+const PLUGIN_VERSION = '2.2.48';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -704,6 +704,12 @@ const VENDOR_CURATION_PANEL_PATCH =
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
         </div>
         <div class="card" style="margin-top:14px">
+          <strong>2.2.48</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>디버그 태깅 프로브도 캐릭터 로어북 필터 적용(생성 잡과 동일) · 리포트에 lorefilter in/out</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
           <strong>2.2.47</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
             <li>캐릭터 로어북 UI: 접기/펼치기 · 칩 클릭=보기(읽기전용) · ×만 삭제 · 삭제 시 스크롤 유지 · 추가 목록에 트리거 14자 미리보기 · 호버 시 제목↔버튼 사이 트리거 미리보기</li>
@@ -1267,6 +1273,8 @@ const VENDOR_DEBUG_EVENTS_PATCH = `document.querySelectorAll("[data-nx-debug-pan
         const lore = await la();
         const keys = collectTriggeredLoreKeys(lore, text);
         const roster = [...(t.charactersSession || []), ...(t.charactersGlobal || [])].filter(Boolean);
+        const scope = t.lastScope || await Z().catch(() => null);
+        const cid = String(scope?.characterId || "").trim();
         t.debugAssetTagReport = "실행 중…";
         await P();
         const res = await K("/v1/debug/asset-tags", {
@@ -1275,6 +1283,7 @@ const VENDOR_DEBUG_EVENTS_PATCH = `document.querySelectorAll("[data-nx-debug-pan
             message: text,
             lorebook: lore,
             lore_trigger_keys: keys,
+            character_id: cid,
             roster,
             selected: {
               hash: msg?.hash || "",
@@ -1287,7 +1296,7 @@ const VENDOR_DEBUG_EVENTS_PATCH = `document.querySelectorAll("[data-nx-debug-pan
         });
         const report = res?.report || res;
         t.debugAssetTagReport = JSON.stringify(report, null, 2);
-        y("info", "debug.asset-tags", \`triggers=\${(report?.asset_match_triggers || []).length} matches=\${(report?.name_matches || []).length} picked=\${report?.ok_picked || 0} siblings=\${(report?.sibling_keys_exported || []).length}\`);
+        y("info", "debug.asset-tags", \`lf=\${report?.lorefilter?.applied ? report?.lorefilter?.out + "/" + report?.lorefilter?.in : report?.lorefilter?.reason || "-"} triggers=\${(report?.asset_match_triggers || []).length} matches=\${(report?.name_matches || []).length} picked=\${report?.ok_picked || 0} siblings=\${(report?.sibling_keys_exported || []).length}\`);
         t.uiMessage = { type: "success", text: "에셋 NAI 태그 프로브 완료 — 리포트 복사해서 보내 주세요" };
       } catch (err) {
         t.debugAssetTagReport = String(err?.message || err);

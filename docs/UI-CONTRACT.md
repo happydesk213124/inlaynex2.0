@@ -261,7 +261,7 @@ character_name, chat_name, folder_key`.
 | `POST /v1/characters/global-toggles` | `{character_id, disabled_globals[]}` |
 | `POST /v1/characters/unify` | `{target_session_id, source_session_ids[], include_target}` |
 | `GET /v1/characters/ref?character_id=` | `{ configured, preview_url }` |
-| `GET /v1/characters/lorefilter?character_id=` | `{ selected[], catalog[{id,title,keys}] }` — character lore whitelist |
+| `GET /v1/characters/lorefilter?character_id=` | `{ selected[], catalog[{id,title,keys,content}] }` — character lore whitelist |
 | `POST /v1/characters/lorefilter` | `{character_id, selected[]}` save, or `{character_id, rescan:true, lorebook?}` seed via `asset_char` |
 | `POST /v1/characters/ref` | `{character_id, image_b64}` or `{character_id, copy_from}` or `{character_id, clear:true}` — bytes as-is |
 | `POST /v1/characters/ref/clear` | `{character_id}` |
@@ -300,6 +300,7 @@ then persisted.
 
 ### Debug
 `/v1/debug`, `POST /v1/debug/clear` → `{ events[], by_stage{}, env{} }`
+`POST /v1/debug/asset-tags` → probe report; applies lorefilter when `character_id` set (same as job head)
 
 ### Errors
 404 unknown path · 405 unsupported method · 500 handler failure. Errors carry

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.44';
+const PLUGIN_VERSION = '2.2.45';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.45</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>캐릭터 로어북 필터: 탭에서 항목 선택·삭제(모바일 컴팩트) · 없으면 asset_char 모델로 자동채우기 · 태거/에셋 전에 적용</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.44</strong>
@@ -5223,6 +5229,155 @@ const VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_NEEDLE =
 const VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_PATCH =
   `<button type="button" class="secondary" data-char-clear-looks title="외형·옷·악세 비우기 (다음 태깅 시 재수집)" style="min-height:30px;padding:4px 10px;flex-shrink:0">✕</button>
             <button type="button" class="secondary" data-char-delete style="min-height:30px;padding:4px 10px;flex-shrink:0">삭제</button>`;
+
+/** Job create: apply lorefilter whitelist before ca() / trigger keys. */
+const VENDOR_LOREFILTER_BE_NEEDLE =
+  `    const loreExtraMode = normalizeLoreExtraMode(a.lore_extra), r = re(a.include_max, 0, 20, 0), i = a.lorebook ? await la() : [], s = a.lorebook ? ca(i, n, 5, loreExtraMode) : [], loreTriggerKeys = a.lorebook ? collectTriggeredLoreKeys(i, n) : [], c = e.character || {};`;
+const VENDOR_LOREFILTER_BE_PATCH =
+  `    const loreExtraMode = normalizeLoreExtraMode(a.lore_extra), r = re(a.include_max, 0, 20, 0);
+    let i = a.lorebook ? await la() : [];
+    const c = e.character || {};
+    if (a.lorebook && i.length) {
+      try {
+        const LF = globalThis.__INLAY_LORE_FILTER__, cid = String(e.characterId || c.id || "").trim();
+        if (LF && typeof LF.filterLoreEntriesBySelected === "function" && cid) {
+          const lfRes = await K("/v1/characters/lorefilter?character_id=" + encodeURIComponent(cid), { method: "GET" }, 12e3).catch(() => null);
+          const sel = Array.isArray(lfRes?.selected) ? lfRes.selected : [];
+          if (sel.length) i = LF.filterLoreEntriesBySelected(i, sel);
+        }
+      } catch (lfErr) {
+        y("warn", "job.lorefilter", lfErr?.message || lfErr);
+      }
+    }
+    const s = a.lorebook ? ca(i, n, 5, loreExtraMode) : [], loreTriggerKeys = a.lorebook ? collectTriggeredLoreKeys(i, n) : [];`;
+
+/** Characters tab: compact lorefilter picker (mobile-safe). */
+const VENDOR_LOREFILTER_TAB_VARS_NEEDLE =
+  `I = Number(i.character_max ?? 6) || 6;
+      u = \`
+        \${sa(m)}
+        <div class="notice info">별칭으로 메시지 매칭합니다.`;
+const VENDOR_LOREFILTER_TAB_VARS_PATCH =
+  `I = Number(i.character_max ?? 6) || 6;
+      const _lf = t.lorefilterUi || { selected: [], catalog: [], open: !1 }, _lfSel = new Set(Array.isArray(_lf.selected) ? _lf.selected : []), _lfCat = Array.isArray(_lf.catalog) ? _lf.catalog : [];
+      const _lfPicked = _lfCat.filter((row) => _lfSel.has(row.id));
+      const _lfSelectedHtml = (_lfPicked.length ? _lfPicked : Array.from(_lfSel).map((id) => ({ id, title: id }))).map((row) => \`<button type="button" data-lorefilter-remove="\${h(row.id)}" style="display:inline-flex;align-items:center;gap:4px;max-width:100%;min-height:32px;padding:4px 8px;border-radius:999px;border:1px solid var(--border2);background:rgba(255,255,255,.04);color:inherit;font-size:12px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:12rem">\${h(row.title || row.id)}</span><span aria-hidden="true">×</span></button>\`).join("") || '<span class="muted" style="font-size:12px">아직 없음 · 자동채우기 또는 추가로 고르세요</span>';
+      const _lfAddHtml = _lfCat.filter((row) => !_lfSel.has(row.id)).map((row) => \`<button type="button" data-lorefilter-add="\${h(row.id)}" style="display:block;width:100%;text-align:left;min-height:36px;padding:8px 10px;margin:0 0 4px;border-radius:10px;border:1px solid var(--border2);background:transparent;color:inherit;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(row.title || row.id)}</button>\`).join("") || '<div class="muted" style="font-size:12px;padding:6px 0">추가할 로어 없음</div>';
+      const LfHtml = \`
+        <article class="model-card" id="nx-lorefilter" style="margin-top:10px;padding:10px">
+          <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px">
+            <div style="min-width:0;flex:1 1 140px"><div class="prompt-title" style="font-size:13px">캐릭터 로어북</div><div class="muted" style="font-size:11px;margin-top:2px;line-height:1.35">선택 항목만 태거·에셋에 사용</div></div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <button type="button" class="secondary" id="nx-lorefilter-toggle-add" style="min-height:32px;padding:4px 10px">\${_lf.open ? "닫기" : "추가"}</button>
+              <button type="button" class="secondary" id="nx-lorefilter-rescan" style="min-height:32px;padding:4px 10px">자동채우기</button>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;max-height:9.5rem;overflow:auto;-webkit-overflow-scrolling:touch">\${_lfSelectedHtml}</div>
+          <div id="nx-lorefilter-catalog" style="display:\${_lf.open ? "block" : "none"};margin-top:8px;max-height:11rem;overflow:auto;-webkit-overflow-scrolling:touch;padding-right:2px">\${_lfAddHtml}</div>
+        </article>\`;
+      u = \`
+        \${sa(m)}
+        <div class="notice info">별칭으로 메시지 매칭합니다.`;
+
+const VENDOR_LOREFILTER_TAB_INSERT_NEEDLE =
+  `오토태그는 버튼 더블클릭(파일) 또는 클릭 후 Ctrl+V.</div>
+        <div class="prompt-group-label">이번 샷 (최근 카드)</div>`;
+const VENDOR_LOREFILTER_TAB_INSERT_PATCH =
+  `오토태그는 버튼 더블클릭(파일) 또는 클릭 후 Ctrl+V.</div>
+        \${LfHtml}
+        <div class="prompt-group-label">이번 샷 (최근 카드)</div>`;
+
+const VENDOR_LOREFILTER_TAB_EVT_NEEDLE =
+  `    }), document.getElementById("nx-char-add-session")?.addEventListener("click", async () => {`;
+const VENDOR_LOREFILTER_TAB_EVT_PATCH =
+  `    }), document.getElementById("nx-lorefilter-toggle-add")?.addEventListener("click", async () => {
+      t.lorefilterUi = { ...(t.lorefilterUi || {}), open: !(t.lorefilterUi && t.lorefilterUi.open) };
+      await P();
+    }), document.getElementById("nx-lorefilter-rescan")?.addEventListener("click", async () => {
+      try {
+        const scope = t.lastScope || await Z().catch(() => null);
+        const cid = String(scope?.characterId || "").trim();
+        if (!cid) throw new Error("캐릭터를 먼저 선택하세요");
+        const lore = await la().catch(() => []);
+        const res = await K("/v1/characters/lorefilter", { method: "POST", body: { character_id: cid, rescan: !0, lorebook: lore } }, 12e4);
+        const LF = globalThis.__INLAY_LORE_FILTER__;
+        const catalog = Array.isArray(res?.catalog) && res.catalog.length ? res.catalog : (LF?.buildLoreCatalog ? LF.buildLoreCatalog(lore) : []);
+        t.lorefilterUi = { selected: Array.isArray(res?.selected) ? res.selected : [], catalog, open: !1, character_id: cid };
+        t.uiMessage = { type: "success", text: "캐릭터 로어 " + (t.lorefilterUi.selected || []).length + "개 채움" };
+        await P();
+      } catch (err) {
+        t.uiMessage = { type: "error", text: z(err?.message || err) };
+        await P();
+      }
+    }), document.querySelectorAll("[data-lorefilter-remove]").forEach((btn) => {
+      btn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        const id = btn.getAttribute("data-lorefilter-remove") || "";
+        const scope = t.lastScope || await Z().catch(() => null);
+        const cid = String(scope?.characterId || t.lorefilterUi?.character_id || "").trim();
+        if (!cid || !id) return;
+        const next = (Array.isArray(t.lorefilterUi?.selected) ? t.lorefilterUi.selected : []).filter((x) => x !== id);
+        try {
+          await K("/v1/characters/lorefilter", { method: "POST", body: { character_id: cid, selected: next } }, 15e3);
+          t.lorefilterUi = { ...(t.lorefilterUi || {}), selected: next, character_id: cid };
+          await P();
+        } catch (err) {
+          t.uiMessage = { type: "error", text: z(err?.message || err) };
+          await P();
+        }
+      });
+    }), document.querySelectorAll("[data-lorefilter-add]").forEach((btn) => {
+      btn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        const id = btn.getAttribute("data-lorefilter-add") || "";
+        const scope = t.lastScope || await Z().catch(() => null);
+        const cid = String(scope?.characterId || t.lorefilterUi?.character_id || "").trim();
+        if (!cid || !id) return;
+        const cur = Array.isArray(t.lorefilterUi?.selected) ? t.lorefilterUi.selected : [];
+        if (cur.includes(id)) return;
+        const next = cur.concat([id]);
+        try {
+          await K("/v1/characters/lorefilter", { method: "POST", body: { character_id: cid, selected: next } }, 15e3);
+          t.lorefilterUi = { ...(t.lorefilterUi || {}), selected: next, character_id: cid };
+          await P();
+        } catch (err) {
+          t.uiMessage = { type: "error", text: z(err?.message || err) };
+          await P();
+        }
+      });
+    }), document.getElementById("nx-char-add-session")?.addEventListener("click", async () => {`;
+
+const VENDOR_LOREFILTER_TAB_LOAD_NEEDLE =
+  `    })), t.uiTab === "characters" && !t._charsBgRefresh) {`;
+const VENDOR_LOREFILTER_TAB_LOAD_PATCH =
+  `    })), t.uiTab === "characters" && !t._lorefilterLoading) {
+      const lfCid = String((t.lastScope && t.lastScope.characterId) || "").trim();
+      if (lfCid && t.lorefilterUi?.character_id !== lfCid) {
+        t._lorefilterLoading = !0;
+        (async () => {
+          try {
+            const lore = await la().catch(() => []);
+            const LF = globalThis.__INLAY_LORE_FILTER__;
+            const localCat = LF?.buildLoreCatalog ? LF.buildLoreCatalog(lore) : [];
+            let res = await K("/v1/characters/lorefilter?character_id=" + encodeURIComponent(lfCid), { method: "GET" }, 15e3).catch(() => null);
+            if (!(Array.isArray(res?.selected) && res.selected.length) && localCat.length) {
+              res = await K("/v1/characters/lorefilter", { method: "POST", body: { character_id: lfCid, rescan: !0, lorebook: lore } }, 12e4).catch(() => res);
+            }
+            if (!t.uiOpen || t.uiTab !== "characters") return;
+            t.lorefilterUi = {
+              selected: Array.isArray(res?.selected) ? res.selected : [],
+              catalog: Array.isArray(res?.catalog) && res.catalog.length ? res.catalog : localCat,
+              open: !!(t.lorefilterUi && t.lorefilterUi.open),
+              character_id: lfCid
+            };
+            await P();
+          } catch {
+          } finally {
+            t._lorefilterLoading = !1;
+          }
+        })();
+      }
+    }, t.uiTab === "characters" && !t._charsBgRefresh) {`;
 
 const VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_NEEDLE =
   `    }), document.querySelectorAll("[data-char-delete]").forEach((a) => {`;
@@ -10301,7 +10456,7 @@ const PROMPT_KEYS = [
   'author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
   'char_inject', 'preprocess', 'prefill', 'preset_1', 'autotag',
   'curation_refine', 'curation_embed_hint', 'asset_tags_inject', 'char_looks',
-  'command_reroll',
+  'command_reroll', 'lorefilter_scan',
 ] as const;
 
 /**
@@ -10553,6 +10708,11 @@ const loadVendorUi = (): string => {
     [VENDOR_CHAR_EDIT_CLEAR_LOOKS_NEEDLE, 'char edit clear looks'],
     [VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_NEEDLE, 'char tab clear looks btn'],
     [VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_NEEDLE, 'char tab clear looks evt'],
+    [VENDOR_LOREFILTER_BE_NEEDLE, 'lorefilter job Be'],
+    [VENDOR_LOREFILTER_TAB_VARS_NEEDLE, 'lorefilter tab vars'],
+    [VENDOR_LOREFILTER_TAB_INSERT_NEEDLE, 'lorefilter tab insert'],
+    [VENDOR_LOREFILTER_TAB_EVT_NEEDLE, 'lorefilter tab evt'],
+    [VENDOR_LOREFILTER_TAB_LOAD_NEEDLE, 'lorefilter tab load'],
     [VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE, 'char edit lock preset'],
     [VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE, 'char create lock preset'],
     [VENDOR_CHAR_REF_DASH_HTML_NEEDLE, 'char ref dash html'],
@@ -10853,6 +11013,11 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHAR_EDIT_CLEAR_LOOKS_NEEDLE, VENDOR_CHAR_EDIT_CLEAR_LOOKS_PATCH)
     .replace(VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_NEEDLE, VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_PATCH)
     .replace(VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_NEEDLE, VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_PATCH)
+    .replace(VENDOR_LOREFILTER_BE_NEEDLE, VENDOR_LOREFILTER_BE_PATCH)
+    .replace(VENDOR_LOREFILTER_TAB_VARS_NEEDLE, VENDOR_LOREFILTER_TAB_VARS_PATCH)
+    .replace(VENDOR_LOREFILTER_TAB_INSERT_NEEDLE, VENDOR_LOREFILTER_TAB_INSERT_PATCH)
+    .replace(VENDOR_LOREFILTER_TAB_EVT_NEEDLE, VENDOR_LOREFILTER_TAB_EVT_PATCH)
+    .replace(VENDOR_LOREFILTER_TAB_LOAD_NEEDLE, VENDOR_LOREFILTER_TAB_LOAD_PATCH)
     .replace(VENDOR_CHAR_EDIT_LOCK_PRESET_NEEDLE, VENDOR_CHAR_EDIT_LOCK_PRESET_PATCH)
     .replace(VENDOR_CHAR_CREATE_LOCK_PRESET_NEEDLE, VENDOR_CHAR_CREATE_LOCK_PRESET_PATCH)
     .replace(VENDOR_CHAR_REF_DASH_HTML_NEEDLE, VENDOR_CHAR_REF_DASH_HTML_PATCH)

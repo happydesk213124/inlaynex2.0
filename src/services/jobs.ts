@@ -56,6 +56,12 @@ import { getConfig, jobEpochByKey, jobRunMeta, requestMessageRerollStop } from '
 import { mergeRosterFromTagged, rosterForSession } from './characters';
 import { buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage, readImageLocation } from './generation';
 import { buildCharacterLooksMessages, buildTaggerMessages, collectAssetTagsForTagger, extractTaggerChatContext, flattenShots } from './tagger';
+import {
+  applyLorefilter,
+  ensureLorefilter,
+  fetchHostLorebookEntries,
+} from './lorefilter';
+import { collectTriggeredLoreKeys } from '../domain/lore/assemble';
 import { applyCharRefsFromPreviewTargets } from './asset-tags';
 import {
   getCurationMode,
@@ -604,6 +610,40 @@ async function runJob(jobId: string): Promise<void> {
     const sourceSessionIds = Array.isArray(request.source_session_ids)
       ? request.source_session_ids.map((s) => cleanText(s, 200)).filter(Boolean)
       : [];
+
+    // Lorefilter: whitelist character lore before assets/tagger (fail-open).
+    if (characterId && getConfig().card?.lorebook !== false) {
+      try {
+        const hostLore = await fetchHostLorebookEntries();
+        const book = hostLore.length
+          ? hostLore
+          : Array.isArray(request.lorebook)
+            ? request.lorebook
+            : [];
+        if (book.length) {
+          const selected = await ensureLorefilter(characterId, book);
+          const filtered = applyLorefilter(book, selected);
+          request.lorebook = filtered;
+          request.lore_trigger_keys = collectTriggeredLoreKeys(
+            filtered,
+            cleanText(request.assistant_text || '', 20000),
+          );
+          dbg('job.lorefilter', {
+            character_id: characterId,
+            selected: selected.length,
+            in: book.length,
+            out: filtered.length,
+            focus: true,
+          });
+        }
+      } catch (err) {
+        dbg(
+          'job.lorefilter.fail',
+          { message: String((err as Error)?.message || err) },
+          'warn',
+        );
+      }
+    }
 
     // Asset NAI modes: off | inline (soup on main) | prepass | prepass_vision.
     // Prepass fills roster looks first; lore Character Image auto-drops when filled.

@@ -166,8 +166,14 @@ export async function runScenario(N, handles) {
   await rec('prompts.keys', () =>
     (promptList?.prompts ?? [])
       .map((p) => p.key)
-      .filter((k) => !String(k).startsWith('curation_') && k !== 'command_reroll'),
+      .filter((k) => !String(k).startsWith('curation_') && k !== 'command_reroll' && k !== 'lorefilter_scan'),
   );
+  await rec('lorefilter.get_empty', () => get('/v1/characters/lorefilter?character_id=char_parity'));
+  await rec('lorefilter.set', () => post('/v1/characters/lorefilter', {
+    character_id: 'char_parity',
+    selected: ['t:alice'],
+  }));
+  await rec('lorefilter.get_after_set', () => get('/v1/characters/lorefilter?character_id=char_parity'));
 
   // ── characters: shared surname must not merge ───────────────────────────
   await rec('chars.create_shared_surname', () => post('/v1/characters', {

@@ -28,6 +28,7 @@ const MODULES = {
   'character-identity': 'src/domain/character/identity.ts',
   'lore-extra': 'src/domain/lore/extra.ts',
   'lore-assemble': 'src/domain/lore/assemble.ts',
+  'lore-lorefilter': 'src/domain/lore/lorefilter.ts',
   'llm-providers': 'src/providers/llm/providers.ts',
   'llm-roles': 'src/domain/llm/roles.ts',
   'settings-schema': 'src/config/schema.ts',

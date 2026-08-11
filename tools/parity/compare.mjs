@@ -146,7 +146,7 @@ const normalize = (root) => {
           .filter((p) => {
             const k = String(p.key);
             if (k.startsWith('curation_')) return false;
-            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll') return false;
+            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll' || k === 'lorefilter_scan') return false;
             return true;
           })
           .map((v) => walk(v, key));
@@ -160,7 +160,7 @@ const normalize = (root) => {
         && node.includes('format')
       ) {
         return node
-          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll')
+          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll' && k !== 'lorefilter_scan')
           .map((v) => walk(v, key));
       }
       return node.map((v) => walk(v, key));
@@ -328,6 +328,24 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (v?.ok === true && Number(v?.stopped) === 0 && v?.reroll_stop === true
       ? null
       : `2.0 soft-stop with no active jobs must return stopped:0 + reroll_stop, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'lorefilter.get_empty',
+    (v) => (v?.ok === true && Array.isArray(v?.selected) && Array.isArray(v?.catalog)
+      ? null
+      : `2.0 lorefilter GET must return selected+catalog arrays, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'lorefilter.set',
+    (v) => (v?.ok === true && Array.isArray(v?.selected) && v.selected.includes('t:alice')
+      ? null
+      : `2.0 lorefilter POST must persist selected, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'lorefilter.get_after_set',
+    (v) => (v?.ok === true && Array.isArray(v?.selected) && v.selected.includes('t:alice')
+      ? null
+      : `2.0 lorefilter GET after set must keep selected, got ${JSON.stringify(v)}`),
   ],
 ]);
 

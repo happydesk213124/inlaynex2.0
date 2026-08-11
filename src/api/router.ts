@@ -31,6 +31,7 @@ import * as gallery from '../services/gallery';
 import * as generation from '../services/generation';
 import * as jobs from '../services/jobs';
 import * as naiAssets from '../services/nai-assets';
+import * as lorefilter from '../services/lorefilter';
 import * as settings from '../services/settings';
 import * as curation from '../services/curation';
 import { authorized, parseQuery, q, type Headers, type Query } from './http';
@@ -157,6 +158,13 @@ const GET_ROUTES: readonly Route[] = [
         vibe_transfer: getConfig().nai?.vibe_transfer || 'none',
         preview_url: configured ? '/v1/nai/vibe.png' : '',
       });
+    },
+  },
+  {
+    match: exact('/v1/characters/lorefilter'),
+    handler: async ({ query }) => {
+      const cid = cleanText(q(query, 'character_id') || q(query, 'id'), 200);
+      return ok(await lorefilter.getLorefilterPayload({ character_id: cid }));
     },
   },
   {
@@ -362,6 +370,25 @@ const WRITE_ROUTES: readonly Route[] = [
           message_index: Number(body.message_index ?? body.messageIndex ?? -1),
         }),
       ),
+  },
+  {
+    match: exact('/v1/characters/lorefilter'),
+    handler: async ({ body }) => {
+      if (body?.rescan === true || body?.action === 'rescan') {
+        return ok(
+          await lorefilter.rescanLorefilter({
+            character_id: cleanText(body?.character_id || '', 200),
+            lorebook: Array.isArray(body?.lorebook) ? body.lorebook : null,
+          }),
+        );
+      }
+      return ok(
+        await lorefilter.setLorefilterSelected({
+          character_id: cleanText(body?.character_id || '', 200),
+          selected: body?.selected,
+        }),
+      );
+    },
   },
   {
     match: exact('/v1/characters/global-toggles', '/v1/characters/global_toggles'),

@@ -17,6 +17,7 @@
 
 import * as explorerSelection from '../ui-contract/explorer-selection';
 import * as loreExtra from '../domain/lore/extra';
+import * as lorefilterDomain from '../domain/lore/lorefilter';
 import * as stylePresetIo from '../domain/style-presets/io';
 import * as llmProviders from '../providers/llm/providers';
 import * as llmRoles from '../domain/llm/roles';
@@ -43,6 +44,7 @@ export function installUiContractGlobals(): void {
     embeddingProviderNeedsApiKey: embeddingProviders.embeddingProviderNeedsApiKey,
   });
   Reflect.set(globalThis, '__INLAY_LORE_EXTRA__', { ...loreExtra });
+  Reflect.set(globalThis, '__INLAY_LORE_FILTER__', { ...lorefilterDomain });
   // Style preset card.json + Risu lorebook_export parse/export (2.0-only).
   Reflect.set(globalThis, '__INLAY_STYLE_PRESETS__', {
     parseStylePresetsFromJson: stylePresetIo.parseStylePresetsFromJson,

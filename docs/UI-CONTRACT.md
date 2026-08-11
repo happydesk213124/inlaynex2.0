@@ -51,6 +51,7 @@ missing, which historically hid bugs — so we publish the full surface.
 | `__INLAY_VIEWER_CORE__` | overlay/pin geometry, gallery ordering, DOM↔API message matching; sticky always-image size via `resolveStickyThumbPct` / `stickyThumbBoxFromPct` (hide = 0%, not display:none) + `fitBoxInside` against NAI w×h; overlay toggle OFF keeps sync alive and parks via 0% thumb + off-screen pin (avoids hideStickyMarker thrash); with 말풍선 삽화 ON, `stickySegmentForInlineChat` picks the shot nearest the pointer for sticky activation; sticky thumb HTML/shell use transparent backgrounds (no opaque letterbox bars); `claimStickyMarkerByCardId` reuses a still-mounted pin on partial card-set swaps so sticky pins do not duplicate |
 | `__INLAY_LLM__` | provider list, endpoint defaults, model placeholders |
 | `__INLAY_LORE_EXTRA__` | `lb-xnai.lb.extra` lorebook trimming |
+| `__INLAY_LORE_FILTER__` | character-lore whitelist helpers (`filterLoreEntriesBySelected`, catalog) |
 | `__INLAY_STYLE_PRESETS__` | style-preset parse/export: card.json `character_book` + Risu `lorebook_export` (`type: risu`) |
 | `__INLAY_EXPLORER__` | explorer multi-select state machine |
 
@@ -260,6 +261,8 @@ character_name, chat_name, folder_key`.
 | `POST /v1/characters/global-toggles` | `{character_id, disabled_globals[]}` |
 | `POST /v1/characters/unify` | `{target_session_id, source_session_ids[], include_target}` |
 | `GET /v1/characters/ref?character_id=` | `{ configured, preview_url }` |
+| `GET /v1/characters/lorefilter?character_id=` | `{ selected[], catalog[{id,title,keys}] }` — character lore whitelist |
+| `POST /v1/characters/lorefilter` | `{character_id, selected[]}` save, or `{character_id, rescan:true, lorebook?}` seed via `asset_char` |
 | `POST /v1/characters/ref` | `{character_id, image_b64}` or `{character_id, copy_from}` or `{character_id, clear:true}` — bytes as-is |
 | `POST /v1/characters/ref/clear` | `{character_id}` |
 | `/v1/appearance/:sessionId` · `POST` | legacy alias |

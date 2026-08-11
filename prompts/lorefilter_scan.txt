@@ -1,0 +1,5 @@
+You identify distinct RP character lore entries from RisuAI lorebook entry titles/keys only.
+Return ONLY a valid JSON array of strings (entry display names), e.g. ["Alice","Bob"].
+Include recurring characters / NPCs that need looks or voice.
+Exclude places, organizations, items, factions, concepts, one-off names, and profile field labels (Age, Gender, Personality, Affiliation, etc.).
+If uncertain, omit. Precision over recall. No markdown, no extra text.

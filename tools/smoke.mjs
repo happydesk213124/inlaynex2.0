@@ -15,6 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { installHost, PNG_1X1 } from './parity/host.mjs';
 
@@ -30,6 +31,15 @@ const check = (ok, label) => {
 if (!fs.existsSync(OUT_FILE)) {
   console.error('[smoke] FAIL: dist/inlaynexus2.0.js is missing — run npm run build');
   process.exit(1);
+}
+
+{
+  const syn = spawnSync(process.execPath, ['--check', OUT_FILE], { encoding: 'utf8' });
+  if (syn.status !== 0) {
+    console.error('[smoke] FAIL: dist/inlaynexus2.0.js failed node --check (plugin would not load)');
+    console.error(syn.stderr || syn.stdout || '');
+    process.exit(1);
+  }
 }
 
 /**

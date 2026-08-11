@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.45';
+const PLUGIN_VERSION = '2.2.46';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.46</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>플러그인 로드 불가 수정: 캐릭터 탭 lorefilter 패치 SyntaxError · smoke에 node --check 추가</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.45</strong>
@@ -5350,7 +5356,7 @@ const VENDOR_LOREFILTER_TAB_EVT_PATCH =
 const VENDOR_LOREFILTER_TAB_LOAD_NEEDLE =
   `    })), t.uiTab === "characters" && !t._charsBgRefresh) {`;
 const VENDOR_LOREFILTER_TAB_LOAD_PATCH =
-  `    })), t.uiTab === "characters" && !t._lorefilterLoading) {
+  `    })), t.uiTab === "characters" && !t._lorefilterLoading && (() => {
       const lfCid = String((t.lastScope && t.lastScope.characterId) || "").trim();
       if (lfCid && t.lorefilterUi?.character_id !== lfCid) {
         t._lorefilterLoading = !0;
@@ -5377,7 +5383,8 @@ const VENDOR_LOREFILTER_TAB_LOAD_PATCH =
           }
         })();
       }
-    }, t.uiTab === "characters" && !t._charsBgRefresh) {`;
+      return !0;
+    })(), t.uiTab === "characters" && !t._charsBgRefresh) {`;
 
 const VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_NEEDLE =
   `    }), document.querySelectorAll("[data-char-delete]").forEach((a) => {`;

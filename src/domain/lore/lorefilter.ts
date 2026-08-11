@@ -11,6 +11,8 @@ export interface LoreCatalogItem {
   id: string;
   title: string;
   keys: string[];
+  /** Entry body for peek UI (readonly). */
+  content: string;
 }
 
 /** Stable id for one lore entry (title preferred, else key set). */
@@ -46,7 +48,12 @@ export function buildLoreCatalog(entries: LoreEntry[] | null | undefined): LoreC
     const title = loreEntryTitle(entry);
     if (!id || !title || seen.has(id)) continue;
     seen.add(id);
-    out.push({ id, title, keys: loreEntryKeys(entry) });
+    out.push({
+      id,
+      title,
+      keys: loreEntryKeys(entry),
+      content: cleanText(entry.content || entry.data || '', 12000),
+    });
   }
   return out;
 }

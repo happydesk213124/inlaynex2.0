@@ -20,6 +20,7 @@ test('buildLoreCatalog skips folders and lb-xnai.lb.extra', () => {
   assert.equal(catalog.length, 2);
   assert.ok(catalog.some((c) => c.title === 'Alice'));
   assert.ok(catalog.some((c) => c.title === 'Town Square'));
+  assert.equal(catalog.find((c) => c.title === 'Alice')?.content, 'tags');
 });
 
 test('filterLoreEntriesBySelected keeps extras and fail-opens on zero matches', () => {

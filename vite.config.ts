@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.54';
+const PLUGIN_VERSION = '2.2.55';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.55</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>Risu 설정→플러그인에서 Inlay 설정을 닫을 때 플로팅 뷰어를 복구하지 않음</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.54</strong>
@@ -4734,11 +4740,22 @@ const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `    document.getElementById("nx-clos
       if (t.overlayUi) t.overlayUi._stickyEditorOpen = !1;
       typeof k.hideContainer == "function" && await k.hideContainer();
       invalidateOverlayLayoutCache();
-      try {
-        typeof nxHostToast == "function" && nxHostToast("뷰어 복구 중…", { ms: 8e3 });
-      } catch {
-      }
       Promise.resolve().then(async () => {
+        let stayInRisu = !!t._viewerHiddenForRisuSettings;
+        if (!stayInRisu) {
+          try { stayInRisu = await isRisuSettingsOpen(); } catch { stayInRisu = !1; }
+        }
+        if (stayInRisu) {
+          // Back to Risu settings/plugins — do not bring the floating viewer over that UI.
+          try { await hideFloatingViewerForRisuSettings(); } catch {}
+          try { await blockHostChrome(!1); } catch {}
+          try { await hideFloatingViewerForRisuSettings(); } catch {}
+          return;
+        }
+        try {
+          typeof nxHostToast == "function" && nxHostToast("뷰어 복구 중…", { ms: 8e3 });
+        } catch {
+        }
         try { await restoreFloatingViewerAfterModal(); } catch {}
         try { await blockHostChrome(!1); } catch {}
         try { await it(); } catch {}
@@ -4801,6 +4818,16 @@ const VENDOR_SETTINGS_WATCH_STICKY_PATCH = `        t.uiOpen = !1, t._hostReaper
         if (t.overlayUi) t.overlayUi._stickyEditorOpen = !1;
         xa({ silent: !0 }).catch(() => {});
         Promise.resolve().then(async () => {
+          let stayInRisu = !!t._viewerHiddenForRisuSettings;
+          if (!stayInRisu) {
+            try { stayInRisu = await isRisuSettingsOpen(); } catch { stayInRisu = !1; }
+          }
+          if (stayInRisu) {
+            try { await hideFloatingViewerForRisuSettings(); } catch {}
+            try { await blockHostChrome(!1); } catch {}
+            try { await hideFloatingViewerForRisuSettings(); } catch {}
+            return;
+          }
           try { await restoreFloatingViewerAfterModal(); } catch {}
           try { await blockHostChrome(!1); } catch {}
           try { await it(); } catch {}
@@ -4819,8 +4846,10 @@ const VENDOR_BLOCK_HOST_UNBLOCK_NEEDLE = `      if (t.galleryUi?.applyChrome) aw
     } catch {
     }
   }`;
-const VENDOR_BLOCK_HOST_UNBLOCK_PATCH = `      if (t.galleryUi?.applyChrome) await t.galleryUi.applyChrome();
-      else if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+const VENDOR_BLOCK_HOST_UNBLOCK_PATCH = `      if (!t._viewerHiddenForRisuSettings && !t._viewerHiddenForModal) {
+        if (t.galleryUi?.applyChrome) await t.galleryUi.applyChrome();
+        else if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+      }
       // Remount (it/he/Ce) is scheduled by settings close — keep unblock style-only for instant hide.
       invalidateOverlayLayoutCache();
     } catch {
@@ -9348,13 +9377,25 @@ const VENDOR_RISU_SETTINGS_HIDE_VIEWER_PATCH =
     } catch {
     }
   }
-  async function syncFloatingViewerForRisuSettings() {
-    if (t.unloading || t.uiOpen || t._hostChromeBlocked) return;
+  async function isRisuSettingsOpen() {
     try {
       const doc = await ue().catch(() => null);
-      const el = doc ? await D("rsSettingCont", () => doc.querySelector?.(".rs-setting-cont"), null) : null;
-      if (el) await hideFloatingViewerForRisuSettings();
-      else await restoreFloatingViewerAfterRisuSettings();
+      return !!(doc && await D("rsSettingCont", () => doc.querySelector?.(".rs-setting-cont"), null));
+    } catch {
+      return !1;
+    }
+  }
+  async function syncFloatingViewerForRisuSettings() {
+    if (t.unloading || t._hostChromeBlocked) return;
+    try {
+      const open = await isRisuSettingsOpen();
+      if (open) {
+        await hideFloatingViewerForRisuSettings();
+        return;
+      }
+      // Plugin fullscreen replaces .rs-setting-cont — keep the hide flag while Inlay settings stay open.
+      if (t.uiOpen) return;
+      await restoreFloatingViewerAfterRisuSettings();
     } catch {
     }
   }

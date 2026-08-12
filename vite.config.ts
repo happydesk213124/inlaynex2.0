@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.56';
+const PLUGIN_VERSION = '2.2.57';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.57</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>설정/Risu 설정 중 플로팅 뷰어·상시 이미지를 0×0(0%)로 접어 모바일 터치 가로채기 방지 · geo는 유지</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.56</strong>
@@ -3801,7 +3807,8 @@ const VENDOR_STICKY_LA_PATCH = `  function La() {
     const alwaysOn = typeof overlayVisualOn == "function" ? overlayVisualOn() : Nt();
     const userCollapsed = !!ov._stickyThumbCollapsed;
     // Settings panel (t.uiOpen) same as shot/char edit: collapse always-image to 0%.
-    const editorOpen = !!ov._stickyEditorOpen || !!t.uiOpen || !!t.cardTagUi || !!t.charEditUi;
+    // Risu host settings: same 0% so sticky cannot steal mobile taps over the settings UI.
+    const editorOpen = !!ov._stickyEditorOpen || !!t.uiOpen || !!t.cardTagUi || !!t.charEditUi || !!t._viewerHiddenForRisuSettings;
     const pct = typeof VC?.resolveStickyThumbPct == "function"
       ? VC.resolveStickyThumbPct({ settingsPct: n, alwaysOn, userCollapsed, editorOpen })
       : alwaysOn && !userCollapsed && !editorOpen ? Math.max(0, n) : 0;
@@ -9360,22 +9367,34 @@ const VENDOR_RISU_SETTINGS_HIDE_VIEWER_PATCH =
   async function hideFloatingViewerForRisuSettings() {
     if (t._viewerHiddenForRisuSettings) return;
     t._viewerHiddenForRisuSettings = !0;
+    if (t.overlayUi) t.overlayUi._lastThumbPct = null;
     const g = t.galleryUi;
     if (g?.drag) g.drag.expandOnTap = !1;
     if (g?._actionsLpTimer) clearTimeout(g._actionsLpTimer), g._actionsLpTimer = null;
-    if (!g?.panel) return;
+    if (!g?.panel) {
+      try { await Ht(); } catch {}
+      return;
+    }
     try {
       if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:0;visibility:hidden;");
-      await g.panel.setStyleAttribute("position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;visibility:hidden;z-index:1;");
+      await g.panel.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;min-width:0;min-height:0;max-width:0;max-height:0;padding:0;margin:0;border:0;opacity:0;pointer-events:none;visibility:hidden;overflow:hidden;z-index:1;resize:none;display:block;");
     } catch {
     }
+    try { await Ht(); } catch {}
   }
   async function restoreFloatingViewerAfterRisuSettings() {
     if (!t._viewerHiddenForRisuSettings) return;
     t._viewerHiddenForRisuSettings = !1;
-    if (t._viewerHiddenForModal || t.uiOpen || t._hostChromeBlocked) return;
+    if (t.overlayUi) t.overlayUi._lastThumbPct = null;
+    if (t._viewerHiddenForModal || t.uiOpen || t._hostChromeBlocked) {
+      try { await Ht(); } catch {}
+      return;
+    }
     const g = t.galleryUi;
-    if (!g) return;
+    if (!g) {
+      try { await Ht(); } catch {}
+      return;
+    }
     try {
       if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:1;visibility:visible;");
       if (g.geo) g.geo = clampViewerGeo(g.geo, !!g.minimized);
@@ -9383,6 +9402,7 @@ const VENDOR_RISU_SETTINGS_HIDE_VIEWER_PATCH =
       else if (g.panel) await g.panel.setStyleAttribute(Ft(g.geo || se, !!g.minimized));
     } catch {
     }
+    try { await Ht(); } catch {}
   }
   async function isRisuSettingsOpen() {
     try {
@@ -10058,9 +10078,32 @@ const VENDOR_ACTIONS_FT_PATCH =
   `      minimized && mode === "icon" ? "min-width:48px" : minimized && mode === "actions" ? "min-width:160px" : minimized ? "min-width:280px" : "min-width:260px",`;
 
 const VENDOR_ACTIONS_OVERFLOW_NEEDLE =
-  `      if (d.presetMenuOpen && (!d.minimized || viewerMinimizeMode() === "toolbar")) {`;
+  `    }, f = async () => {
+      d.geo = clampViewerGeo(d.geo, d.minimized);
+      let panelStyle = Ft(d.geo, d.minimized);
+      // Toolbar-minimized keeps the same header controls; dropdown must escape the 40px bar.
+      if (d.presetMenuOpen && (!d.minimized || viewerMinimizeMode() === "toolbar")) {
+        panelStyle = panelStyle.replace(/overflow:[^;]+/i, "overflow:visible");
+      }
+      await r.setStyleAttribute(panelStyle);`;
 const VENDOR_ACTIONS_OVERFLOW_PATCH =
-  `      if (d.presetMenuOpen && (!d.minimized || viewerMinimizeMode() === "toolbar" || viewerMinimizeMode() === "actions")) {`;
+  `    }, f = async () => {
+      // Settings/Risu bury: keep geo, force 0×0 so applyChrome/resize cannot revive a hitbox.
+      if (t._viewerHiddenForModal || t._viewerHiddenForRisuSettings || t.uiOpen || t._hostChromeBlocked) {
+        try {
+          if (d.root && typeof d.root.setStyleAttribute == "function") await d.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:0;visibility:hidden;");
+          await r.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;min-width:0;min-height:0;max-width:0;max-height:0;padding:0;margin:0;border:0;opacity:0;pointer-events:none;visibility:hidden;overflow:hidden;z-index:1;resize:none;display:block;");
+        } catch {
+        }
+        return;
+      }
+      d.geo = clampViewerGeo(d.geo, d.minimized);
+      let panelStyle = Ft(d.geo, d.minimized);
+      // Toolbar-minimized keeps the same header controls; dropdown must escape the 40px bar.
+      if (d.presetMenuOpen && (!d.minimized || viewerMinimizeMode() === "toolbar" || viewerMinimizeMode() === "actions")) {
+        panelStyle = panelStyle.replace(/overflow:[^;]+/i, "overflow:visible");
+      }
+      await r.setStyleAttribute(panelStyle);`;
 
 const VENDOR_ACTIONS_CHROME_NEEDLE =
   `    }, applyViewerChrome = async () => {
@@ -10071,6 +10114,10 @@ const VENDOR_ACTIONS_CHROME_NEEDLE =
       }`;
 const VENDOR_ACTIONS_CHROME_PATCH =
   `    }, applyViewerChrome = async () => {
+      if (t._viewerHiddenForModal || t._viewerHiddenForRisuSettings || t.uiOpen || t._hostChromeBlocked) {
+        try { await f(); } catch {}
+        return;
+      }
       const mode = viewerMinimizeMode(), toolbarMin = d.minimized && mode === "toolbar", iconMin = d.minimized && mode === "icon", actionsMin = d.minimized && mode === "actions";
       try {
         if (actionsMin) {
@@ -10913,8 +10960,9 @@ const VENDOR_HIDE_MODAL_CANCEL_EXPAND_PATCH =
     if (g?._actionsLpTimer) clearTimeout(g._actionsLpTimer), g._actionsLpTimer = null;
     if (!g?.panel) return;
     try {
+      // True 0×0 (not 1px): kills mobile hitboxes; geo stays so restore can applyChrome.
       if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:0;visibility:hidden;");
-      await g.panel.setStyleAttribute("position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;visibility:hidden;z-index:1;");
+      await g.panel.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;min-width:0;min-height:0;max-width:0;max-height:0;padding:0;margin:0;border:0;opacity:0;pointer-events:none;visibility:hidden;overflow:hidden;z-index:1;resize:none;display:block;");
     } catch {
     }
   }`;

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.49';
+const PLUGIN_VERSION = '2.2.50';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.50</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>설정 크롬: 도움말 제목 오버레이 · 모바일 sticky 복구 · 저장/EXPORT/IMPORT 한 줄 · 닫기 시 전체저장과 동일 flush</li>
+            <li>대시보드: 지금 생성·뷰어 앞으로 버튼 숨김 · 창위치 초기화 / 전체 초기화 문구</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.49</strong>
@@ -1799,7 +1806,7 @@ const VENDOR_EXPLORER_MOBILE_1COL_NEEDLE =
   `@media(max-width:900px){.explorer-layout{grid-template-columns:1fr}.head{flex-wrap:wrap;min-height:0;align-items:stretch}.head-help{order:3;flex:1 1 100%;max-width:none;min-width:0;height:72px;min-height:72px;max-height:72px}.head-help-title{flex-basis:96px;width:96px;max-width:96px}}`;
 
 const VENDOR_EXPLORER_MOBILE_1COL_PATCH =
-  `@media(max-width:900px){.head{flex-wrap:wrap;min-height:0;align-items:stretch}.head-help{order:3;flex:1 1 100%;max-width:none;min-width:0;height:72px;min-height:72px;max-height:72px}.head-help-title{flex-basis:96px;width:96px;max-width:96px}}`;
+  `@media(max-width:900px){.head{flex-wrap:wrap;min-height:0;align-items:stretch}.head-help{order:3;flex:1 1 100%;max-width:none;min-width:0;height:72px;min-height:72px;max-height:72px}}`;
 
 const VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE =
   `    const folderButtons = \`
@@ -4695,12 +4702,14 @@ const VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE = `    document.getElementById("nx-clo
       }
     }),`;
 const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `    document.getElementById("nx-close")?.addEventListener("click", async () => {
-      // Instant close: hide shell now; remount viewer/sticky in background with toast.
+      // Save while DOM is still mounted (same as 저장), then hide + restore viewer.
+      try { await xa({ silent: !0 }); } catch (err) {
+        y("warn", "settings.close.save", err?.message || err);
+      }
       t.uiOpen = !1, t._debugTabTimer && (clearInterval(t._debugTabTimer), t._debugTabTimer = null), t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), t._settingsWatch && (clearInterval(t._settingsWatch), t._settingsWatch = null);
       if (t.overlayUi) t.overlayUi._stickyEditorOpen = !1;
       typeof k.hideContainer == "function" && await k.hideContainer();
       invalidateOverlayLayoutCache();
-      flushSettingsSave().catch(() => {});
       try {
         typeof nxHostToast == "function" && nxHostToast("뷰어 복구 중…", { ms: 8e3 });
       } catch {
@@ -4766,7 +4775,7 @@ const VENDOR_SETTINGS_WATCH_STICKY_NEEDLE = `        t.uiOpen = !1, t._hostReape
         }), y("info", "settings.closed", "host ui restore");`;
 const VENDOR_SETTINGS_WATCH_STICKY_PATCH = `        t.uiOpen = !1, t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null), clearInterval(t._settingsWatch), t._settingsWatch = null;
         if (t.overlayUi) t.overlayUi._stickyEditorOpen = !1;
-        flushSettingsSave().catch(() => {});
+        xa({ silent: !0 }).catch(() => {});
         Promise.resolve().then(async () => {
           try { await restoreFloatingViewerAfterModal(); } catch {}
           try { await blockHostChrome(!1); } catch {}
@@ -6204,7 +6213,144 @@ const VENDOR_TABS_SCROLL_PATCH =
 const VENDOR_MOBILE_CHROME_NEEDLE =
   `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.head-actions{flex-wrap:wrap;justify-content:flex-end}}`;
 const VENDOR_MOBILE_CHROME_PATCH =
-  `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.wrap{padding:12px 10px 40px;overflow-x:hidden}.head{flex-direction:column;align-items:stretch;gap:8px;padding:10px}.head-actions{display:flex;flex-wrap:wrap;justify-content:stretch;align-items:stretch;width:100%;max-width:100%;flex-shrink:1;gap:6px}.head-actions button{flex:1 1 calc(50% - 6px);min-width:0;max-width:100%}.head-actions #nx-close{flex:1 1 100%;order:99}.tabs{width:100%!important;max-width:100%;box-sizing:border-box}.tab{padding:8px 12px;font-size:13px}}`;
+  `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.wrap{padding:12px 10px 40px;max-width:100%}.head{flex-direction:column;align-items:stretch;gap:8px;padding:10px}.head-actions{display:flex;flex-wrap:nowrap;justify-content:stretch;align-items:stretch;width:100%;max-width:100%;gap:4px}.head-actions button{flex:1 1 0;min-width:0;max-width:none;min-height:34px;padding:4px 6px;font-size:11px;letter-spacing:0}.tabs{width:100%!important;max-width:100%;box-sizing:border-box}.tab{padding:8px 12px;font-size:13px}}`;
+
+/** Help panel: title as small top-left overlay; body uses full width. */
+const VENDOR_HEAD_HELP_LAYOUT_NEEDLE =
+  `.head-help{flex:1 1 auto;min-width:320px;max-width:760px;height:72px;min-height:72px;max-height:72px;padding:8px 12px;border-radius:12px;border:1px solid var(--border);background:rgba(7,10,17,.55);display:flex;flex-direction:row;align-items:stretch;gap:10px;overflow:hidden;box-sizing:border-box}
+.head-help.is-active{border-color:rgba(124,108,255,.35);background:rgba(124,108,255,.08)}
+.head-help-title{flex:0 0 108px;width:108px;max-width:108px;display:flex;align-items:center;padding-right:10px;margin-right:2px;border-right:1px solid var(--border);font-size:10px;font-weight:740;color:var(--accent2);letter-spacing:.01em;line-height:1.25;word-break:keep-all;overflow:hidden}
+.head-help-body{flex:1 1 auto;min-width:0;min-height:0;font-size:11px;line-height:1.4;color:var(--muted);overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(163,184,216,.35) transparent}`;
+const VENDOR_HEAD_HELP_LAYOUT_PATCH =
+  `.head-help{flex:1 1 auto;min-width:320px;max-width:760px;height:72px;min-height:72px;max-height:72px;padding:8px 12px;border-radius:12px;border:1px solid var(--border);background:rgba(7,10,17,.55);display:block;position:relative;overflow:hidden;box-sizing:border-box}
+.head-help.is-active{border-color:rgba(124,108,255,.35);background:rgba(124,108,255,.08)}
+.head-help-title{position:absolute;top:6px;left:12px;right:12px;z-index:1;width:auto;max-width:none;height:auto;display:block;padding:0;margin:0;border:0;font-size:9px;font-weight:740;color:var(--accent2);letter-spacing:.01em;line-height:1.2;word-break:keep-all;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
+.head-help-body{display:block;width:100%;height:100%;min-width:0;min-height:0;padding-top:14px;box-sizing:border-box;font-size:11px;line-height:1.4;color:var(--muted);overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(163,184,216,.35) transparent}`;
+
+/** Chrome action labels + hide run-now / open-viewer (handlers kept). */
+const VENDOR_CHROME_ACTIONS_HTML_NEEDLE =
+  `                <button type="button" id="nx-save-all" class="secondary">전체 저장</button>
+                <button type="button" id="nx-export-all" class="secondary">전체 설정 내보내기</button>
+                <button type="button" id="nx-import-all" class="secondary">전체 설정 불러오기</button>`;
+const VENDOR_CHROME_ACTIONS_HTML_PATCH =
+  `                <button type="button" id="nx-save-all" class="secondary">저장</button>
+                <button type="button" id="nx-export-all" class="secondary">EXPORT</button>
+                <button type="button" id="nx-import-all" class="secondary">IMPORT</button>`;
+
+const VENDOR_DASH_ACTIONS_HTML_NEEDLE =
+  `          <div class="row" style="margin-top:12px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-run-now" class="secondary" data-nx-help-id="nx-run-now">지금 생성 (수동)</button><button id="nx-open-viewer" class="secondary" data-nx-help-id="nx-open-viewer">뷰어 앞으로</button></div>
+          <div class="row" style="margin-top:8px"><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">모든 창 위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">모든 설정 초기화</button></div>`;
+const VENDOR_DASH_ACTIONS_HTML_PATCH =
+  `          <div class="row" style="margin-top:12px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button></div>
+          <div class="row" style="margin-top:8px"><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">창위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">전체 초기화</button></div>`;
+
+const VENDOR_RESET_HELP_NEEDLE =
+  `    "nx-reset-windows": { title: "창 위치 초기화", body: "뷰어·접힘 아이콘·핀이 화면 밖으로 나가 안 보일 때 기본 위치로 되돌립니다." },
+    "nx-reset-settings": { title: "모든 설정 초기화", body: "카드·LLM·NAI 등 설정을 기본값으로 되돌립니다. API 키·창 위치·카드 프리셋은 유지됩니다." },`;
+const VENDOR_RESET_HELP_PATCH =
+  `    "nx-reset-windows": { title: "창위치 초기화", body: "뷰어·접힘 아이콘·핀이 화면 밖으로 나가 안 보일 때 기본 위치로 되돌립니다." },
+    "nx-reset-settings": { title: "전체 초기화", body: "카드·LLM·NAI 등 설정을 기본값으로 되돌립니다. API 키·창 위치·카드 프리셋은 유지됩니다." },`;
+
+const VENDOR_UNLOAD_SAVE_NEEDLE =
+  `t.timersBySession.forEach((e) => clearTimeout(e)), await flushSettingsSave().catch(() => {
+      }), await syncQuickSettingsButton(!1)`;
+const VENDOR_UNLOAD_SAVE_PATCH =
+  `t.timersBySession.forEach((e) => clearTimeout(e)), await xa({ silent: !0 }).catch(() => {
+      }), await syncQuickSettingsButton(!1)`;
+
+/** Full save: tab-agnostic chars/prompts + llm_roles; silent mode for close. */
+const VENDOR_XA_FULL_NEEDLE =
+  `  async function xa() {
+    try {
+      await flushSettingsSave();
+      const e = {}, n = Mt(), o = Ct();
+      if ((n || o) && (e.card = {
+        ...t.backendSettings?.card || {},
+        ...n || {},
+        ...o || {}
+      }), document.getElementById("nx-llm-model") || document.getElementById("nx-nai-model")) {
+        const a = ba();
+        a && (e.llm = a.llm, e.nai = a.nai);
+      }
+      if (Object.keys(e).length && await pe(e), t.uiTab === "characters" && await K("/v1/characters", {
+        method: "POST",
+        body: withRootSessions({
+          session_id: (await Z()).sessionId,
+          character_id: w(t.lastScope?.characterId || "", 200),
+          characters: oe("session"),
+          global: oe("global")
+        }, t.lastScope)
+      }).then((res) => {
+        if (Array.isArray(res?.characters)) t.charactersSession = res.characters;
+        if (Array.isArray(res?.global)) t.charactersGlobal = res.global;
+        if (res?.appearance) t.appearance = res.appearance;
+        t._charsDirty = !1;
+      }), t.uiTab === "prompts") for (const a of t.prompts || []) {
+        const r = document.getElementById(\`nx-prompt-\${a.key}\`);
+        if (!r) continue;
+        const i = r.value || "";
+        t.promptDrafts[a.key] = i, await K(\`/v1/prompts/\${encodeURIComponent(a.key)}\`, {
+          method: "PUT",
+          body: { text: i }
+        });
+      }
+      t.uiMessage = {
+        type: "success",
+        text: "전체 저장됨"
+      }, $e("저장됨");
+    } catch (e) {
+      $e("저장 실패", !1), t.uiMessage = {
+        type: "error",
+        text: z(e?.message || e)
+      };
+    }
+    await P();
+  }`;
+const VENDOR_XA_FULL_PATCH =
+  `  async function xa(opts) {
+    const silent = !!(opts && opts.silent);
+    try {
+      await flushSettingsSave();
+      const e = {}, n = Mt(), o = Ct();
+      if ((n || o) && (e.card = {
+        ...t.backendSettings?.card || {},
+        ...n || {},
+        ...o || {}
+      }), document.getElementById("nx-llm-model") || document.getElementById("nx-nai-model") || document.getElementById("nx-llm-provider")) {
+        const a = ba();
+        a && (e.llm = a.llm, e.llm_roles = a.llm_roles, e.nai = a.nai);
+      }
+      if (Object.keys(e).length && await pe(e), await flushDirtyCharacters().catch(() => null), t.prompts || t.promptDrafts) {
+        for (const a of t.prompts || []) {
+          const key = a.key;
+          if (!key) continue;
+          const r = document.getElementById(\`nx-prompt-\${key}\`);
+          const i = r ? r.value || "" : (t.promptDrafts[key] != null ? String(t.promptDrafts[key]) : String(a.text || ""));
+          if (r) t.promptDrafts[key] = i;
+          await K(\`/v1/prompts/\${encodeURIComponent(key)}\`, {
+            method: "PUT",
+            body: { text: i }
+          });
+        }
+      }
+      if (!silent) {
+        t.uiMessage = {
+          type: "success",
+          text: "저장됨"
+        }, $e("저장됨");
+      }
+    } catch (e) {
+      if (!silent) {
+        $e("저장 실패", !1), t.uiMessage = {
+          type: "error",
+          text: z(e?.message || e)
+        };
+      } else {
+        y("warn", "settings.save.silent", e?.message || e);
+      }
+    }
+    if (!silent) await P();
+  }`;
 
 /** Firefox: Segoe UI Variable Text + weight 560 → Hangul tofu; prefer fonts with CJK. */
 const VENDOR_FF_FONT_BODY_NEEDLE =
@@ -10883,6 +11029,12 @@ const loadVendorUi = (): string => {
     [VENDOR_TAB_NOWRAP_NEEDLE, 'settings tab nowrap'],
     [VENDOR_TABS_SCROLL_NEEDLE, 'settings tabs scroll'],
     [VENDOR_MOBILE_CHROME_NEEDLE, 'mobile settings chrome'],
+    [VENDOR_HEAD_HELP_LAYOUT_NEEDLE, 'head help layout overlay'],
+    [VENDOR_CHROME_ACTIONS_HTML_NEEDLE, 'chrome save export import labels'],
+    [VENDOR_DASH_ACTIONS_HTML_NEEDLE, 'dashboard action buttons'],
+    [VENDOR_RESET_HELP_NEEDLE, 'reset help titles'],
+    [VENDOR_XA_FULL_NEEDLE, 'xa full silent save'],
+    [VENDOR_UNLOAD_SAVE_NEEDLE, 'unload xa silent save'],
     [VENDOR_FF_FONT_BODY_NEEDLE, 'firefox font body'],
     [VENDOR_FF_FONT_TOGGLE_NEEDLE, 'firefox font toggle-row'],
     [VENDOR_INLINE_HELP_NEEDLE, 'inline chat help'],
@@ -11188,6 +11340,12 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_TAB_NOWRAP_NEEDLE, VENDOR_TAB_NOWRAP_PATCH)
     .replace(VENDOR_TABS_SCROLL_NEEDLE, VENDOR_TABS_SCROLL_PATCH)
     .replace(VENDOR_MOBILE_CHROME_NEEDLE, VENDOR_MOBILE_CHROME_PATCH)
+    .replace(VENDOR_HEAD_HELP_LAYOUT_NEEDLE, VENDOR_HEAD_HELP_LAYOUT_PATCH)
+    .replace(VENDOR_CHROME_ACTIONS_HTML_NEEDLE, VENDOR_CHROME_ACTIONS_HTML_PATCH)
+    .replace(VENDOR_DASH_ACTIONS_HTML_NEEDLE, VENDOR_DASH_ACTIONS_HTML_PATCH)
+    .replace(VENDOR_RESET_HELP_NEEDLE, VENDOR_RESET_HELP_PATCH)
+    .replace(VENDOR_XA_FULL_NEEDLE, VENDOR_XA_FULL_PATCH)
+    .replace(VENDOR_UNLOAD_SAVE_NEEDLE, VENDOR_UNLOAD_SAVE_PATCH)
     .replace(VENDOR_FF_FONT_BODY_NEEDLE, VENDOR_FF_FONT_BODY_PATCH)
     .replace(VENDOR_FF_FONT_TOGGLE_NEEDLE, VENDOR_FF_FONT_TOGGLE_PATCH)
     .replace(VENDOR_INLINE_HELP_NEEDLE, VENDOR_INLINE_HELP_PATCH)

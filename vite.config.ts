@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.3';
+const PLUGIN_VERSION = '2.3.4';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.4</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>응답 후 자동 생성: 주 채팅(model)만 · 0.1초 뒤 클릭과 같은 선택으로 생성(provisional Ka 스킵 제거)</li>
+            <li>보조 모델 afterRequest는 선택·생성 안 함</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.3</strong>
@@ -7125,7 +7132,7 @@ const VENDOR_AFTER_REPLY_FN_NEEDLE =
     return e;
   }`;
 const VENDOR_AFTER_REPLY_FN_PATCH =
-  `  // 생성 본문은 항상 DOM#0에 연결된 message 텍스트 (훅 원문 아님).
+  `  // afterRequest(model): select DOM#0 like a click so Da runs Ka (no provisional skip).
   async function runAutoGenFromDom(source) {
     if (t._afterGenRunning) {
       y("info", "afterReply.skip", \`\${source} already running\`);
@@ -7162,29 +7169,9 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       t._msgElsCache = null;
       const els = await getCachedMsgEls(doc);
       if (!els?.length) return y("warn", "afterReply.skip", "no message elements");
-      y("info", "afterReply.select", \`src=\${source} DOM#0 of \${els.length}\`);
-      await Da(0, els, { source: "provisional" });
-      const sel = t.selectedMessage;
-      if (!sel?.text) return y("warn", "afterReply.skip", "no selected text");
-      if (String(sel.text).length <= 30) return y("info", "afterReply.skip", "selected text too short");
-      if (!isSelectedCharRole(sel.role)) {
-        y("info", "afterReply.skip", \`src=\${source} user message\`);
-        return;
-      }
-      let linked = [];
-      try {
-        linked = linkedCards(sel) || [];
-      } catch {
-        linked = [];
-      }
-      if (linked.length) {
-        y("info", "afterReply.skip", \`src=\${source} hasImage cards=\${linked.length}\`);
-        return;
-      }
-      const scope = await Z({ useOverride: !1 }).catch(() => null);
-      if (!scope || scope.charIndex < 0) return y("warn", "afterReply.skip", "no scope");
-      y("info", "afterReply.gen", \`src=\${source} chars=\${String(sel.text).length} hash=\${String(sel.hash || "").slice(0, 8)}\`);
-      await Ka(sel.text, sel.hash);
+      y("info", "afterReply.select", \`src=\${source} click DOM#0 of \${els.length}\`);
+      // Same path as user click: Da source "click" generates when no image (provisional would skip Ka).
+      await Da(0, els, { source: "click" });
     } finally {
       t._afterGenRunning = !1;
     }
@@ -7195,8 +7182,8 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       y("info", "afterReply.skip", \`\${source} text too short\`);
       return;
     }
-    // afterRequest only — chat/script listeners only relink hashes.
-    const AFTER_GEN_DELAY_MS = 5e2;
+    // afterRequest(model) only — chat/script listeners only relink hashes.
+    const AFTER_GEN_DELAY_MS = 1e2;
     if (t._afterGenTimer) {
       clearTimeout(t._afterGenTimer);
       t._afterGenTimer = null;
@@ -7368,6 +7355,11 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
   }
   async function _t(e, n = "") {
     try {
+      // Primary chat only — ignore auxiliary modelType (settings/workspace/prompts/…).
+      const modelType = String(n ?? "").trim().toLowerCase();
+      if (modelType && modelType !== "model") {
+        return y("info", "afterRequest.skip", \`auxiliary modelType=\${modelType}\`), e;
+      }
       const o = await ve();
       if (!o.enabled)
         return y("info", "afterRequest.skip", "plugin disabled"), e;
@@ -7390,7 +7382,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 응답이 끝난 뒤(afterRequest) 약 0.5초 후 자동으로 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다. 30자 이하·Power OFF·발동 수동·토글 OFF·유저 메시지는 스킵." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "주 채팅 응답(model)이 끝나면 약 0.1초 뒤 최신 말풍선을 클릭처럼 선택해, 이미지 없으면 바로 생성합니다. 보조 모델 응답은 무시. 이미 이미지 있으면 스킵. Power OFF·발동 수동·토글 OFF는 동작 안 함." },`;
 
 const VENDOR_CHAT_OUTPUT_BOOT_NEEDLE =
   `      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
@@ -7886,8 +7878,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.3",
-    body: "탐색 삭제가 바로 반영되고, 응답 완료 후 자동 생성만 씁니다. 업데이트 내역 탭 참고."
+    title: "2.3.4",
+    body: "응답 후 자동 생성이 클릭 선택과 같은 경로로 돌아갑니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11296,8 +11288,8 @@ const loadVendorUi = (): string => {
     if (out.includes('scriptOutput.miss5') || out.includes('_scriptMissTimer')) {
       throw new Error('[build] legacy 1s×5 DOM miss path must be removed');
     }
-    if (!out.includes('afterRequest.skip') || !out.includes('afterReply.schedule')) {
-      throw new Error('[build] missing afterRequest auto-gen path');
+    if (!out.includes('auxiliary modelType=') || !out.includes('click DOM#0')) {
+      throw new Error('[build] missing modelType gate or click-select afterRequest path');
     }
     if (out.includes('scheduleAutoGenOnReply("chatOutput")') || out.includes('runAutoGenFromDom("scriptOutput')) {
       throw new Error('[build] chat/script must not schedule auto-gen');

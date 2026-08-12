@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.53';
+const PLUGIN_VERSION = '2.2.54';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.54</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>도움말·브랜드 클릭으로 도움말 접기/펼치기 (세션 기억)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.53</strong>
@@ -6240,10 +6246,68 @@ const VENDOR_HEAD_HELP_LAYOUT_NEEDLE =
 .head-help-title{flex:0 0 108px;width:108px;max-width:108px;display:flex;align-items:center;padding-right:10px;margin-right:2px;border-right:1px solid var(--border);font-size:10px;font-weight:740;color:var(--accent2);letter-spacing:.01em;line-height:1.25;word-break:keep-all;overflow:hidden}
 .head-help-body{flex:1 1 auto;min-width:0;min-height:0;font-size:11px;line-height:1.4;color:var(--muted);overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(163,184,216,.35) transparent}`;
 const VENDOR_HEAD_HELP_LAYOUT_PATCH =
-  `.head-help{flex:1 1 auto;min-width:320px;max-width:760px;height:72px;min-height:72px;max-height:72px;padding:8px 12px;border-radius:12px;border:1px solid var(--border);background:rgba(7,10,17,.55);display:block;position:relative;overflow:hidden;box-sizing:border-box}
+  `.head-help{flex:1 1 auto;min-width:320px;max-width:760px;height:72px;min-height:72px;max-height:72px;padding:8px 12px;border-radius:12px;border:1px solid var(--border);background:rgba(7,10,17,.55);display:block;position:relative;overflow:hidden;box-sizing:border-box;cursor:pointer}
 .head-help.is-active{border-color:rgba(124,108,255,.35);background:rgba(124,108,255,.08)}
+.head-help.is-collapsed{display:none!important}
+.head.is-help-collapsed{min-height:0}
+.head-brand{cursor:pointer}
 .head-help-title{position:absolute;top:6px;left:12px;right:12px;z-index:1;width:auto;max-width:none;height:auto;display:block;padding:0;margin:0;border:0;font-size:9px;font-weight:740;color:var(--accent2);letter-spacing:.01em;line-height:1.2;word-break:keep-all;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
 .head-help-body{display:block;width:100%;height:100%;min-width:0;min-height:0;padding-top:14px;box-sizing:border-box;font-size:11px;line-height:1.4;color:var(--muted);overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(163,184,216,.35) transparent}`;
+/** Click help panel or brand chrome to collapse/expand the help row. */
+const VENDOR_HEAD_HELP_TOGGLE_NEEDLE =
+  `    }), e.addEventListener("focusin", (a) => o(a.target)), e.addEventListener("focusout", (a) => {
+      const r = a.relatedTarget;
+      if (r && e.contains(r) && resolveHeadHelpTarget(r)) {
+        o(r);
+        return;
+      }
+      n = null, document.querySelectorAll(".is-help-active").forEach((i) => i.classList.remove("is-help-active")), setHeadHelp(null);
+    }), setHeadHelp(null);
+  }
+
+  function $t(e) {`;
+const VENDOR_HEAD_HELP_TOGGLE_PATCH =
+  `    }), e.addEventListener("focusin", (a) => o(a.target)), e.addEventListener("focusout", (a) => {
+      const r = a.relatedTarget;
+      if (r && e.contains(r) && resolveHeadHelpTarget(r)) {
+        o(r);
+        return;
+      }
+      n = null, document.querySelectorAll(".is-help-active").forEach((i) => i.classList.remove("is-help-active")), setHeadHelp(null);
+    }), setHeadHelp(null);
+    const headEl = e.querySelector?.(".head") || document.querySelector("#nx-chrome .head");
+    const helpEl = document.getElementById("nx-head-help");
+    const brandEl = headEl?.querySelector?.(".head-brand");
+    if (t.headHelpCollapsed == null) {
+      try {
+        t.headHelpCollapsed = sessionStorage.getItem("nx-head-help-collapsed") === "1";
+      } catch {
+        t.headHelpCollapsed = !1;
+      }
+    }
+    const applyHelpCollapsed = (collapsed) => {
+      t.headHelpCollapsed = !!collapsed;
+      try {
+        sessionStorage.setItem("nx-head-help-collapsed", collapsed ? "1" : "0");
+      } catch {
+      }
+      helpEl && helpEl.classList.toggle("is-collapsed", !!collapsed);
+      headEl && headEl.classList.toggle("is-help-collapsed", !!collapsed);
+      helpEl && helpEl.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      brandEl && (brandEl.title = collapsed ? "도움말 펼치기" : "도움말 접기");
+    };
+    applyHelpCollapsed(!!t.headHelpCollapsed);
+    const toggleHelpCollapsed = (ev) => {
+      if (ev?.target?.closest?.(".head-actions")) return;
+      applyHelpCollapsed(!t.headHelpCollapsed);
+    };
+    helpEl && !helpEl.dataset.nxCollapseBound && (helpEl.dataset.nxCollapseBound = "1", helpEl.setAttribute("role", "button"), helpEl.setAttribute("tabindex", "0"), helpEl.setAttribute("title", "클릭하여 도움말 접기/펼치기"), helpEl.addEventListener("click", toggleHelpCollapsed), helpEl.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") ev.preventDefault(), toggleHelpCollapsed(ev);
+    }));
+    brandEl && !brandEl.dataset.nxCollapseBound && (brandEl.dataset.nxCollapseBound = "1", brandEl.addEventListener("click", toggleHelpCollapsed));
+  }
+
+  function $t(e) {`;
 
 /** Chrome action labels + hide run-now / open-viewer (handlers kept). */
 const VENDOR_CHROME_ACTIONS_HTML_NEEDLE =
@@ -11108,6 +11172,7 @@ const loadVendorUi = (): string => {
     [VENDOR_TABS_SCROLL_NEEDLE, 'settings tabs scroll'],
     [VENDOR_MOBILE_CHROME_NEEDLE, 'mobile settings chrome'],
     [VENDOR_HEAD_HELP_LAYOUT_NEEDLE, 'head help layout overlay'],
+    [VENDOR_HEAD_HELP_TOGGLE_NEEDLE, 'head help collapse toggle'],
     [VENDOR_CHROME_ACTIONS_HTML_NEEDLE, 'chrome save export import labels'],
     [VENDOR_STATUS_GRID_HTML_NEEDLE, 'status grid hide html'],
     [VENDOR_STATUS_GRID_SHOW_NEEDLE, 'status grid keep hidden'],
@@ -11422,6 +11487,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_TABS_SCROLL_NEEDLE, VENDOR_TABS_SCROLL_PATCH)
     .replace(VENDOR_MOBILE_CHROME_NEEDLE, VENDOR_MOBILE_CHROME_PATCH)
     .replace(VENDOR_HEAD_HELP_LAYOUT_NEEDLE, VENDOR_HEAD_HELP_LAYOUT_PATCH)
+    .replace(VENDOR_HEAD_HELP_TOGGLE_NEEDLE, VENDOR_HEAD_HELP_TOGGLE_PATCH)
     .replace(VENDOR_CHROME_ACTIONS_HTML_NEEDLE, VENDOR_CHROME_ACTIONS_HTML_PATCH)
     .replace(VENDOR_STATUS_GRID_HTML_NEEDLE, VENDOR_STATUS_GRID_HTML_PATCH)
     .replace(VENDOR_STATUS_GRID_SHOW_NEEDLE, VENDOR_STATUS_GRID_SHOW_PATCH)

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.0';
+const PLUGIN_VERSION = '2.3.1';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.1</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스타일 프리셋 삭제: UI 먼저 반영 후 vibe clear·저장은 백그라운드(모바일 체감 지연 완화)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.0</strong>
@@ -2327,11 +2333,15 @@ const VENDOR_PRESET_DEL_PATCH = `    }), document.getElementById("nx-preset-del"
       pinActivePreset(a, nextId);
       const r = a.presets[0];
       a.custom_pos = r?.positive || "", a.custom_neg = r?.negative || "";
-      try {
-        delId && await K("/v1/nai/vibe/clear", { method: "POST", body: { preset_id: delId } });
-      } catch {
-      }
-      queueSettingsSave({ card: { ...a } }), await P();
+      // Optimistic: paint delete first; vibe IDB clear + settings flush run behind.
+      queueSettingsSave({ card: { ...a } });
+      try { await P(); } catch {}
+      Promise.resolve().then(async () => {
+        try {
+          delId && await K("/v1/nai/vibe/clear", { method: "POST", body: { preset_id: delId } });
+        } catch {
+        }
+      }).catch(() => {});
     }), document.getElementById("nx-preset-export")?.addEventListener("click", async () => {`;
 
 const VENDOR_PRESET_VIBE_EVT_NEEDLE = `    }), document.getElementById("nx-preset-file")?.addEventListener("click", () => {
@@ -7836,8 +7846,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.0",
-    body: "설정 중 뷰어는 0%로 접힙니다. 업데이트 내역 탭 참고."
+    title: "2.3.1",
+    body: "프리셋 삭제는 화면 먼저, 저장은 뒤에서. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

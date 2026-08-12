@@ -37,8 +37,8 @@ export const VENDOR_MODELS_LLM_PATCH = `    else if (t.uiTab === "models") {
       const curCard = renderCard ? renderCard({ prefix: "nx-llm-curator", title: "큐레이터", subtitle: "큐레이션 two_stage refine", allowFollowMain: !0, settings: roles.curator, hidden: tab !== "curator", testResultHtml: $t("llm-curator") }) : "";
       u = \`
         <div class="prompt-toolbar">
-          <div><strong>모델 설정</strong><div class="muted">LLM은 역할별(메인·오토태그·에셋캐릭·큐레이터)로 두고, 이미지는 NovelAI 또는 ComfyUI로 생성합니다. 시크릿 원문은 다시 표시하지 않습니다.</div></div>
-          <div class="toolbar-actions"><button id="nx-save-models">전체 설정 저장</button></div>
+          <div><strong>모델 설정</strong></div>
+          <div class="toolbar-actions"><button id="nx-save-models">저장</button></div>
         </div>
         <div class="prompt-group-label">LLM</div>
         \${tabsHtml}

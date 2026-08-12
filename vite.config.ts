@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.51';
+const PLUGIN_VERSION = '2.2.52';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -486,9 +486,9 @@ const VENDOR_ASSET_NAI_CARD_PATCH =
               <label data-nx-help-id="nx-fixed-prompt-suffix"><span>후행 고정 프롬프트</span><textarea id="nx-fixed-prompt-suffix" rows="4" maxlength="8000" placeholder="품질 태그 앞에 항상 붙음">\${h(i.fixed_prompt_suffix || "")}</textarea></label>
             </div>
             <div class="row" style="grid-column:1/-1;margin-top:4px;gap:8px;flex-wrap:wrap">
-              <button type="button" id="nx-fixed-prompt-save">고정 프롬프트 저장</button>
-              <button type="button" id="nx-fixed-prompt-export" class="secondary">고정 프롬프트 JSON 내보내기</button>
-              <button type="button" id="nx-fixed-prompt-import" class="secondary">JSON 파일 열기</button>
+              <button type="button" id="nx-fixed-prompt-save">프롬프트 저장</button>
+              <button type="button" id="nx-fixed-prompt-export" class="secondary">EXPORT</button>
+              <button type="button" id="nx-fixed-prompt-import" class="secondary">IMPORT</button>
               <input id="nx-fixed-prompt-file" type="file" accept=".json,application/json,text/plain" style="display:none">
             </div>`;
 
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.52</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>대시보드·생성옵션·캐릭터·모델 탭 버튼 문구 정리(추가/저장/EXPORT/IMPORT) · 대시보드 하단 버튼 한 줄</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.51</strong>
@@ -6267,8 +6273,48 @@ const VENDOR_DASH_ACTIONS_HTML_NEEDLE =
   `          <div class="row" style="margin-top:12px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-run-now" class="secondary" data-nx-help-id="nx-run-now">지금 생성 (수동)</button><button id="nx-open-viewer" class="secondary" data-nx-help-id="nx-open-viewer">뷰어 앞으로</button></div>
           <div class="row" style="margin-top:8px"><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">모든 창 위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">모든 설정 초기화</button></div>`;
 const VENDOR_DASH_ACTIONS_HTML_PATCH =
-  `          <div class="row" style="margin-top:12px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button></div>
-          <div class="row" style="margin-top:8px"><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">창위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">전체 초기화</button></div>`;
+  `          <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">창위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">전체 초기화</button></div>`;
+
+const VENDOR_CHAR_TAB_BTNS_NEEDLE =
+  `        <div class="row" style="margin-top:10px">
+          <button id="nx-char-add-session" class="secondary">\${Nn ? "통합 캐릭터 추가" : "채팅 캐릭터 추가"}</button>
+          <button id="nx-save-chars">\${Nn ? "통합 캐릭터 저장" : "채팅 캐릭터 저장"}</button>
+          <button id="nx-export-session-chars" class="secondary">JSON 내보내기</button>
+          <button id="nx-import-session-chars" class="secondary">JSON 불러오기</button>
+          <input id="nx-import-session-chars-file" type="file" accept=".json,application/json,text/plain" style="display:none">
+          \${Nn ? '<button id="nx-unify-rebuild" class="secondary">채팅에서 다시 모으기</button>' : ""}
+        </div>
+        <div class="prompt-group-label" style="margin-top:18px">글로벌 캐릭터</div>
+        <div class="notice info" style="margin-bottom:10px">글로벌 캐릭터는 모든 채팅에서 공유됩니다. 특정 챗에서만 끄려면 카드를 펼쳐 「이 캐릭터 챗에서 사용」을 해제하세요. JSON 내보내기/불러오기는 이름·성·별칭·외형 태그를 파일로 옮깁니다.</div>
+        <div id="nx-char-global-list">\${x}</div>
+        <div class="row" style="margin-top:10px">
+          <button id="nx-char-add-global" class="secondary">글로벌 캐릭터 추가</button>
+          <button id="nx-save-global-chars">글로벌 저장</button>
+          <button id="nx-export-global-chars" class="secondary">JSON 내보내기</button>
+          <button id="nx-import-global-chars" class="secondary">JSON 불러오기</button>
+          <input id="nx-import-global-chars-file" type="file" accept=".json,application/json,text/plain" style="display:none">
+          <button id="nx-refresh-chars" class="secondary">새로고침</button>
+        </div>\`;`;
+const VENDOR_CHAR_TAB_BTNS_PATCH =
+  `        <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
+          <button id="nx-char-add-session" class="secondary">추가</button>
+          <button id="nx-save-chars">저장</button>
+          <button id="nx-export-session-chars" class="secondary">EXPORT</button>
+          <button id="nx-import-session-chars" class="secondary">IMPORT</button>
+          <input id="nx-import-session-chars-file" type="file" accept=".json,application/json,text/plain" style="display:none">
+          \${Nn ? '<button id="nx-unify-rebuild" class="secondary">다시 모으기</button>' : ""}
+        </div>
+        <div class="prompt-group-label" style="margin-top:18px">글로벌 캐릭터</div>
+        <div class="notice info" style="margin-bottom:10px">글로벌 캐릭터는 모든 채팅에서 공유됩니다. 특정 챗에서만 끄려면 카드를 펼쳐 「이 캐릭터 챗에서 사용」을 해제하세요.</div>
+        <div id="nx-char-global-list">\${x}</div>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
+          <button id="nx-char-add-global" class="secondary">추가</button>
+          <button id="nx-save-global-chars">저장</button>
+          <button id="nx-export-global-chars" class="secondary">EXPORT</button>
+          <button id="nx-import-global-chars" class="secondary">IMPORT</button>
+          <input id="nx-import-global-chars-file" type="file" accept=".json,application/json,text/plain" style="display:none">
+          <button id="nx-refresh-chars" class="secondary">새로고침</button>
+        </div>\`;`;
 
 const VENDOR_RESET_HELP_NEEDLE =
   `    "nx-reset-windows": { title: "창 위치 초기화", body: "뷰어·접힘 아이콘·핀이 화면 밖으로 나가 안 보일 때 기본 위치로 되돌립니다." },
@@ -11060,6 +11106,7 @@ const loadVendorUi = (): string => {
     [VENDOR_STATUS_GRID_HTML_NEEDLE, 'status grid hide html'],
     [VENDOR_STATUS_GRID_SHOW_NEEDLE, 'status grid keep hidden'],
     [VENDOR_DASH_ACTIONS_HTML_NEEDLE, 'dashboard action buttons'],
+    [VENDOR_CHAR_TAB_BTNS_NEEDLE, 'character tab button labels'],
     [VENDOR_RESET_HELP_NEEDLE, 'reset help titles'],
     [VENDOR_XA_FULL_NEEDLE, 'xa full silent save'],
     [VENDOR_UNLOAD_SAVE_NEEDLE, 'unload xa silent save'],
@@ -11373,6 +11420,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_STATUS_GRID_HTML_NEEDLE, VENDOR_STATUS_GRID_HTML_PATCH)
     .replace(VENDOR_STATUS_GRID_SHOW_NEEDLE, VENDOR_STATUS_GRID_SHOW_PATCH)
     .replace(VENDOR_DASH_ACTIONS_HTML_NEEDLE, VENDOR_DASH_ACTIONS_HTML_PATCH)
+    .replace(VENDOR_CHAR_TAB_BTNS_NEEDLE, VENDOR_CHAR_TAB_BTNS_PATCH)
     .replace(VENDOR_RESET_HELP_NEEDLE, VENDOR_RESET_HELP_PATCH)
     .replace(VENDOR_XA_FULL_NEEDLE, VENDOR_XA_FULL_PATCH)
     .replace(VENDOR_UNLOAD_SAVE_NEEDLE, VENDOR_UNLOAD_SAVE_PATCH)

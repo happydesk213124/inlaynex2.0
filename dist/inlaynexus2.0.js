@@ -4845,7 +4845,7 @@ button[data-char-autotag].armed{background:rgba(255,196,72,.24);border-color:rgb
         <div class="card" style="margin-top:14px">
           <strong>2.2.49</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>누드일 때 기타·무기의 penis/nipples/pussy 포함 태그는 weapon OFF여도 캡션에 포함(칼·가방 등은 기존처럼 게이트)</li>
+            <li>누드일 때: 기타·무기에 있는 penis / nipples / pussy 포함 태그(대소문자 무관)는 무기 OFF여도 캡션에 포함 · 칼·가방 등 일반 기타는 기존처럼 무기 ON일 때만</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">

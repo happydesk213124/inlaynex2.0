@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.1';
+const PLUGIN_VERSION = '2.3.2';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.2</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스타일 프리셋 전환: 폼·칩 즉시 반영, 저장은 백그라운드(전체 리렌더 생략)</li>
+            <li>프리셋 삭제 후 선택: 맨 앞 대신 이웃(같은 자리→다음, 끝이면 이전)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.1</strong>
@@ -2328,11 +2335,13 @@ const VENDOR_PRESET_DEL_PATCH = `    }), document.getElementById("nx-preset-del"
       const a = _e();
       if (!a.presets.length) return;
       const delId = a.active_preset_id;
-      a.presets = a.presets.filter((i) => !presetIdEq(i.id, a.active_preset_id));
-      const nextId = a.presets[0]?.id || "";
+      const delIdx = a.presets.findIndex((i) => presetIdEq(i.id, delId));
+      a.presets = a.presets.filter((i) => !presetIdEq(i.id, delId));
+      // Prefer neighbor at same index (next), or previous when deleting the last.
+      const next = a.presets.length ? a.presets[Math.min(Math.max(0, delIdx), a.presets.length - 1)] : null;
+      const nextId = next?.id || "";
       pinActivePreset(a, nextId);
-      const r = a.presets[0];
-      a.custom_pos = r?.positive || "", a.custom_neg = r?.negative || "";
+      a.custom_pos = next?.positive || "", a.custom_neg = next?.negative || "";
       // Optimistic: paint delete first; vibe IDB clear + settings flush run behind.
       queueSettingsSave({ card: { ...a } });
       try { await P(); } catch {}
@@ -7846,8 +7855,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.1",
-    body: "프리셋 삭제는 화면 먼저, 저장은 뒤에서. 업데이트 내역 탭 참고."
+    title: "2.3.2",
+    body: "프리셋 전환·삭제가 더 빨라졌습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -9291,7 +9300,24 @@ const VENDOR_APPLY_PRESET_OPT_PATCH =
     return card;
   }`;
 
-/** Floating viewer preset pick: close + label immediately; persist optimistic. */
+/** Settings tab chips/select: optimistic switch (form sync now; save behind; no full P). */
+const VENDOR_PRESET_SWITCH_OPT_NEEDLE =
+  `    const e = async (a) => {
+      if (!a) return;
+      await applyActivePreset(a);
+    };
+    document.getElementById("nx-preset-select")?.addEventListener("change", async (a) => {
+      await e(a.target?.value || "");
+    }),`;
+const VENDOR_PRESET_SWITCH_OPT_PATCH =
+  `    const e = async (a) => {
+      if (!a) return;
+      await applyActivePreset(a, { optimistic: !0, rerender: !1 });
+    };
+    document.getElementById("nx-preset-select")?.addEventListener("change", async (a) => {
+      await e(a.target?.value || "");
+    }),`;
+
 const VENDOR_PICK_PRESET_OPT_NEEDLE =
   `        const saved = await applyActivePreset(selected, { showCardTab: !!t.uiOpen });
         const active = saved?.presets?.find((p) => presetIdEq(p.id, selected));
@@ -10815,6 +10841,7 @@ const loadVendorUi = (): string => {
     [VENDOR_VIEWER_PRESET_MENU_TOUCH_NEEDLE, 'viewer preset menu touch'],
     [VENDOR_PRESET_HIT_HELPER_NEEDLE, 'preset hitPresetItemAt helper'],
     [VENDOR_APPLY_PRESET_OPT_NEEDLE, 'applyActivePreset optimistic'],
+    [VENDOR_PRESET_SWITCH_OPT_NEEDLE, 'settings preset switch optimistic'],
     [VENDOR_PICK_PRESET_OPT_NEEDLE, 'pickViewerPreset optimistic'],
     [VENDOR_PRESET_EXPANDED_HIT_NEEDLE, 'preset expanded hit cache'],
     [VENDOR_VIEWER_PTR_ORDER_NEEDLE, 'viewer ptr resize+preset order'],
@@ -10959,6 +10986,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CARD_TAB_SPLIT_CLOSE_NEEDLE, VENDOR_CARD_TAB_SPLIT_CLOSE_PATCH)
     .replace(VENDOR_CT_GATE_NEEDLE, VENDOR_CT_GATE_PATCH)
     .replace(VENDOR_APPLY_PRESET_OPT_NEEDLE, VENDOR_APPLY_PRESET_OPT_PATCH)
+    .replace(VENDOR_PRESET_SWITCH_OPT_NEEDLE, VENDOR_PRESET_SWITCH_OPT_PATCH)
     .replace(VENDOR_SHOW_CARD_TAB_NEEDLE, VENDOR_SHOW_CARD_TAB_PATCH)
     .replace(VENDOR_MODELS_LLM_NEEDLE, VENDOR_MODELS_LLM_PATCH)
     .replace(VENDOR_OE_LLM_NEEDLE, VENDOR_OE_LLM_PATCH)

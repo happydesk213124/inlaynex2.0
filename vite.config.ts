@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.55';
+const PLUGIN_VERSION = '2.2.56';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.56</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>도움말: 펼침 높이 120px · 접으면 높이 1px (숨김 대신)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.55</strong>
@@ -1836,7 +1842,7 @@ const VENDOR_EXPLORER_MOBILE_1COL_NEEDLE =
   `@media(max-width:900px){.explorer-layout{grid-template-columns:1fr}.head{flex-wrap:wrap;min-height:0;align-items:stretch}.head-help{order:3;flex:1 1 100%;max-width:none;min-width:0;height:72px;min-height:72px;max-height:72px}.head-help-title{flex-basis:96px;width:96px;max-width:96px}}`;
 
 const VENDOR_EXPLORER_MOBILE_1COL_PATCH =
-  `@media(max-width:900px){.head{flex-wrap:wrap;min-height:0;align-items:center;justify-content:space-between}.head-brand{flex:0 1 auto;min-width:0}.head-actions{flex:0 1 auto;margin-left:auto}.head-help{order:3;flex:1 1 100%;max-width:none;min-width:0;height:72px;min-height:72px;max-height:72px}}`;
+  `@media(max-width:900px){.head{flex-wrap:wrap;min-height:0;align-items:center;justify-content:space-between}.head-brand{flex:0 1 auto;min-width:0}.head-actions{flex:0 1 auto;margin-left:auto}.head-help{order:3;flex:1 1 100%;max-width:none;min-width:0;height:120px;min-height:120px;max-height:120px}}`;
 
 const VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE =
   `    const folderButtons = \`
@@ -6275,9 +6281,10 @@ const VENDOR_HEAD_HELP_LAYOUT_NEEDLE =
 .head-help-title{flex:0 0 108px;width:108px;max-width:108px;display:flex;align-items:center;padding-right:10px;margin-right:2px;border-right:1px solid var(--border);font-size:10px;font-weight:740;color:var(--accent2);letter-spacing:.01em;line-height:1.25;word-break:keep-all;overflow:hidden}
 .head-help-body{flex:1 1 auto;min-width:0;min-height:0;font-size:11px;line-height:1.4;color:var(--muted);overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(163,184,216,.35) transparent}`;
 const VENDOR_HEAD_HELP_LAYOUT_PATCH =
-  `.head-help{flex:1 1 auto;min-width:320px;max-width:760px;height:72px;min-height:72px;max-height:72px;padding:8px 12px;border-radius:12px;border:1px solid var(--border);background:rgba(7,10,17,.55);display:block;position:relative;overflow:hidden;box-sizing:border-box;cursor:pointer}
+  `.head-help{flex:1 1 auto;min-width:320px;max-width:760px;height:120px;min-height:120px;max-height:120px;padding:8px 12px;border-radius:12px;border:1px solid var(--border);background:rgba(7,10,17,.55);display:block;position:relative;overflow:hidden;box-sizing:border-box;cursor:pointer}
 .head-help.is-active{border-color:rgba(124,108,255,.35);background:rgba(124,108,255,.08)}
-.head-help.is-collapsed{display:none!important}
+.head-help.is-collapsed{height:1px!important;min-height:1px!important;max-height:1px!important;padding:0!important;border-width:0!important;opacity:.55}
+.head-help.is-collapsed .head-help-title,.head-help.is-collapsed .head-help-body{visibility:hidden}
 .head.is-help-collapsed{min-height:0}
 .head-brand{cursor:pointer}
 .head-help-title{position:absolute;top:6px;left:12px;right:12px;z-index:1;width:auto;max-width:none;height:auto;display:block;padding:0;margin:0;border:0;font-size:9px;font-weight:740;color:var(--accent2);letter-spacing:.01em;line-height:1.2;word-break:keep-all;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}

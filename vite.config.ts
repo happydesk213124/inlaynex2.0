@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.5';
+const PLUGIN_VERSION = '2.3.6';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.6</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>응답 후 자동 생성: afterRequest + chat 출력 + 스트리밍 잠잠(800ms) 폴백 — 최신 캐릭 말풍선 클릭 선택으로 생성</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.5</strong>
@@ -7142,7 +7148,7 @@ const VENDOR_AFTER_REPLY_FN_NEEDLE =
     return e;
   }`;
 const VENDOR_AFTER_REPLY_FN_PATCH =
-  `  // afterRequest(model): select DOM#0 like a click so Da runs Ka (no provisional skip).
+  `  // Reply auto-gen: click-select newest char bubble so Da runs Ka (not provisional).
   async function runAutoGenFromDom(source) {
     if (t._afterGenRunning) {
       y("info", "afterReply.skip", \`\${source} already running\`);
@@ -7179,9 +7185,19 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       t._msgElsCache = null;
       const els = await getCachedMsgEls(doc);
       if (!els?.length) return y("warn", "afterReply.skip", "no message elements");
-      y("info", "afterReply.select", \`src=\${source} click DOM#0 of \${els.length}\`);
-      // Same path as user click: Da source "click" generates when no image (provisional would skip Ka).
-      await Da(0, els, { source: "click" });
+      // Newest-first DOM: pick first char bubble (skip user). Da(click) runs Ka when no image.
+      const max = Math.min(els.length, 8);
+      let picked = -1;
+      for (let i = 0; i < max; i++) {
+        y("info", "afterReply.select", \`src=\${source} try DOM#\${i}/\${els.length}\`);
+        await Da(i, els, { source: "click" });
+        if (isSelectedCharRole(t.selectedMessage?.role)) {
+          picked = i;
+          y("info", "afterReply.select", \`src=\${source} click DOM#\${i} role=\${t.selectedMessage?.role || "-"} hash=\${String(t.selectedMessage?.hash || "").slice(0, 8)}\`);
+          break;
+        }
+      }
+      if (picked < 0) y("info", "afterReply.skip", \`\${source} no char bubble near DOM head\`);
     } finally {
       t._afterGenRunning = !1;
     }
@@ -7192,8 +7208,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       y("info", "afterReply.skip", \`\${source} text too short\`);
       return;
     }
-    // afterRequest(model) only — chat/script listeners only relink hashes.
-    const AFTER_GEN_DELAY_MS = 1e2;
+    const AFTER_GEN_DELAY_MS = 15e1;
     if (t._afterGenTimer) {
       clearTimeout(t._afterGenTimer);
       t._afterGenTimer = null;
@@ -7226,9 +7241,10 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       t._msgElsCache = null;
       const els = await getCachedMsgEls(doc);
       if (!els?.length) return;
-      let idx = Number(t.selectedMessage.domIndex);
+      // Reply hooks: always newest DOM#0 (do not keep a stale user selection).
+      const replySrc = source === "scriptOutput" || source === "chatOutput" || source === "afterRequest";
+      let idx = replySrc ? 0 : Number(t.selectedMessage.domIndex);
       if (!Number.isFinite(idx) || idx < 0 || idx >= els.length) idx = 0;
-      // provisional: refresh DOM text/hash without click auto-gen side effects.
       await Da(idx, els, { source: "provisional" });
       const msg = t.selectedMessage;
       if (!msg?.hash) return;
@@ -7345,19 +7361,41 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       const idx = Number(arg?.messageIndex);
       const msgs = arg?.chat?.message;
       const msg = Number.isFinite(idx) && idx >= 0 && Array.isArray(msgs) ? msgs[idx] : null;
+      const role = w(msg?.role ?? "", 40);
       const text = w(msg?.data ?? msg?.content ?? "", 5e4);
       if (text && text.length > 8) scheduleHashRelinkAfterReply("chatOutput");
+      const card = t.backendSettings?.card || {};
+      if (card.power === !1 || !card.auto_gen_on_reply) return;
+      if (card.execute === "manual") return;
+      if (role && !isSelectedCharRole(role)) {
+        y("info", "chatOutput.skip", "user message");
+        return;
+      }
+      if (!text || text.length <= 30) {
+        y("info", "chatOutput.skip", "text too short");
+        return;
+      }
+      await scheduleAutoGenOnReply("chatOutput", text);
     } catch (err) {
       y("error", "chatOutput.fail", err?.message || err);
     }
   }
-  // Streaming chunks: hash relink only. Auto-gen waits for afterRequest when the reply finishes.
+  // Streaming chunks: hash relink; quiet end is fallback auto-gen when chatOutput missing.
   async function onScriptOutput(content) {
     try {
       const o = await ve();
       if (!o.enabled) return content;
       const text = w(content, 5e4);
       if (text && text.length > 8) scheduleHashRelinkAfterReply("scriptOutput");
+      const card = t.backendSettings?.card || {};
+      if (card.power === !1 || !card.auto_gen_on_reply || card.execute === "manual") return content;
+      if (!text || text.length <= 30) return content;
+      if (t._scriptQuietTimer) clearTimeout(t._scriptQuietTimer);
+      t._scriptQuietTimer = setTimeout(() => {
+        t._scriptQuietTimer = null;
+        if (t._afterGenRunning || t._afterGenTimer) return;
+        scheduleAutoGenOnReply("scriptOutput.quiet", text);
+      }, 8e2);
     } catch (err) {
       y("error", "scriptOutput.fail", err?.message || err);
     }
@@ -7392,7 +7430,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "주 채팅 응답(model)이 끝나면 약 0.1초 뒤 최신 말풍선을 클릭처럼 선택해, 이미지 없으면 바로 생성합니다. 보조 모델 응답은 무시. 이미 이미지 있으면 스킵. Power OFF·발동 수동·토글 OFF는 동작 안 함." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "응답이 끝나면(afterRequest/chat 출력) 최신 캐릭 말풍선을 클릭처럼 선택해 이미지 없으면 바로 생성합니다. 스트리밍은 출력이 잠잠해지면 폴백 생성. 유저 말·보조 모델·이미 이미지 있음·Power/수동/토글 OFF는 스킵." },`;
 
 const VENDOR_CHAT_OUTPUT_BOOT_NEEDLE =
   `      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
@@ -7415,7 +7453,7 @@ const VENDOR_CHAT_OUTPUT_BOOT_PATCH =
         try {
           await k.addRisuScriptHandler("output", onScriptOutput);
           t._scriptOutputReady = !0;
-          y("info", "scriptOutput.ready", "output listener (hash relink)");
+          y("info", "scriptOutput.ready", "output listener (hash relink + quiet gen)");
         } catch (err) {
           y("warn", "scriptOutput.init", z(err?.message || err));
         }
@@ -7888,8 +7926,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.5",
-    body: "Risu→Inlay 설정 닫은 뒤 뷰어 복구를 고쳤습니다. 업데이트 내역 탭 참고."
+    title: "2.3.6",
+    body: "응답 후 자동 생성: afterRequest·chat·스트리밍 잠잠 폴백으로 다시 생성합니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11296,16 +11334,19 @@ const loadVendorUi = (): string => {
       throw new Error('[build] missing nxActivateStickyNearestToCursor (live bubble nearest)');
     }
     if (out.includes('ensureScriptDomQuietWatcher') || out.includes('scriptOutput.domQuiet5')) {
-      throw new Error('[build] streaming DOM/chunk quiet auto-gen must be removed (afterRequest only)');
+      throw new Error('[build] streaming DOM quiet5 watcher must stay removed');
     }
     if (out.includes('scriptOutput.miss5') || out.includes('_scriptMissTimer')) {
       throw new Error('[build] legacy 1s×5 DOM miss path must be removed');
     }
-    if (!out.includes('auxiliary modelType=') || !out.includes('click DOM#0')) {
-      throw new Error('[build] missing modelType gate or click-select afterRequest path');
+    if (!out.includes('auxiliary modelType=') || !out.includes('click DOM#')) {
+      throw new Error('[build] missing modelType gate or click-select auto-gen path');
     }
-    if (out.includes('scheduleAutoGenOnReply("chatOutput")') || out.includes('runAutoGenFromDom("scriptOutput')) {
-      throw new Error('[build] chat/script must not schedule auto-gen');
+    if (!out.includes('scheduleAutoGenOnReply("chatOutput"') || !out.includes('scriptOutput.quiet')) {
+      throw new Error('[build] missing chatOutput / scriptOutput.quiet auto-gen schedule');
+    }
+    if (!out.includes('scheduleAutoGenOnReply("afterRequest"')) {
+      throw new Error('[build] missing afterRequest auto-gen schedule');
     }
     if (!out.includes('nxActivateStickyNearestToCursor().catch')) {
       throw new Error('[build] pointer path must call nxActivateStickyNearestToCursor');

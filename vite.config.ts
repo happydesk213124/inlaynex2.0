@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.4';
+const PLUGIN_VERSION = '2.3.5';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.5</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>Risu 설정 → Inlay 설정 → 닫기 → Risu 닫기 후 플로팅 뷰어 복구 (modal hide 플래그 잔류 수정)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.4</strong>
@@ -4396,6 +4402,8 @@ const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `    document.getElementById("nx-clos
         }
         if (stayInRisu) {
           // Back to Risu settings/plugins — do not bring the floating viewer over that UI.
+          // Inlay settings are closed: drop modal hide flag or Risu-close restore stays blocked.
+          t._viewerHiddenForModal = !1;
           try { await hideFloatingViewerForRisuSettings(); } catch {}
           try { await blockHostChrome(!1); } catch {}
           try { await hideFloatingViewerForRisuSettings(); } catch {}
@@ -4472,6 +4480,8 @@ const VENDOR_SETTINGS_WATCH_STICKY_PATCH = `        t.uiOpen = !1, t._hostReaper
             try { stayInRisu = await isRisuSettingsOpen(); } catch { stayInRisu = !1; }
           }
           if (stayInRisu) {
+            // Inlay settings closed while Risu stays open — clear modal flag so Risu-close can restore.
+            t._viewerHiddenForModal = !1;
             try { await hideFloatingViewerForRisuSettings(); } catch {}
             try { await blockHostChrome(!1); } catch {}
             try { await hideFloatingViewerForRisuSettings(); } catch {}
@@ -7878,8 +7888,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.4",
-    body: "응답 후 자동 생성이 클릭 선택과 같은 경로로 돌아갑니다. 업데이트 내역 탭 참고."
+    title: "2.3.5",
+    body: "Risu→Inlay 설정 닫은 뒤 뷰어 복구를 고쳤습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8899,10 +8909,12 @@ const VENDOR_RISU_SETTINGS_HIDE_VIEWER_PATCH =
     if (!t._viewerHiddenForRisuSettings) return;
     t._viewerHiddenForRisuSettings = !1;
     if (t.overlayUi) t.overlayUi._lastThumbPct = null;
-    if (t._viewerHiddenForModal || t.uiOpen || t._hostChromeBlocked) {
+    if (t.uiOpen || t._hostChromeBlocked) {
       try { await Ht(); } catch {}
       return;
     }
+    // Stale modal hide (Inlay settings closed while Risu was still open) must not block restore.
+    t._viewerHiddenForModal = !1;
     const g = t.galleryUi;
     if (!g) {
       try { await Ht(); } catch {}
@@ -8916,6 +8928,7 @@ const VENDOR_RISU_SETTINGS_HIDE_VIEWER_PATCH =
     } catch {
     }
     try { await Ht(); } catch {}
+    try { await it(); } catch {}
   }
   async function isRisuSettingsOpen() {
     try {

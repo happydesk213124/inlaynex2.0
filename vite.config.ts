@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.50';
+const PLUGIN_VERSION = '2.2.51';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -108,9 +108,9 @@ const VENDOR_PROMPT_TAB_HTML_PATCH = `    } else if (t.uiTab === "prompts") {
             <textarea id="nx-prompt-\${h(d.key)}" placeholder="\${d.key === "author_note" ? "예: 항상 실내 조명, 캐릭터는 교복 유지…" : ""}">\${h(t.promptDrafts[d.key] ?? d.text ?? "")}</textarea>
             <div class="row" style="flex-wrap:wrap;gap:8px">
               <button data-save-prompt="\${h(d.key)}">저장</button>
-              <button class="secondary" data-reset-prompt="\${h(d.key)}">기본값 복원</button>
-              <button class="secondary" data-export-prompt="\${h(d.key)}">JSON 내보내기</button>
-              <button class="secondary" data-import-prompt="\${h(d.key)}">JSON 불러오기</button>
+              <button class="secondary" data-reset-prompt="\${h(d.key)}">기본값</button>
+              <button class="secondary" data-export-prompt="\${h(d.key)}">EXPORT</button>
+              <button class="secondary" data-import-prompt="\${h(d.key)}">IMPORT</button>
               <input data-import-prompt-file="\${h(d.key)}" type="file" accept=".json,application/json,text/plain" style="display:none">
             </div>
           </div>\`;
@@ -119,9 +119,9 @@ const VENDOR_PROMPT_TAB_HTML_PATCH = `    } else if (t.uiTab === "prompts") {
         <div class="prompt-toolbar">
           <div><strong>프롬프트</strong><div class="muted">작가의 노트만 남기고 나머지를 기본값으로 돌리거나, 전체/개별 JSON으로 백업할 수 있습니다.</div></div>
           <div class="toolbar-actions" style="flex-wrap:wrap;gap:8px">
-            <button id="nx-prompts-reset-defaults" class="secondary">기본값 복원 (작가 노트 제외)</button>
-            <button id="nx-prompts-export" class="secondary">전체 JSON 내보내기</button>
-            <button id="nx-prompts-import" class="secondary">전체 JSON 불러오기</button>
+            <button id="nx-prompts-reset-defaults" class="secondary">기본값</button>
+            <button id="nx-prompts-export" class="secondary">EXPORT</button>
+            <button id="nx-prompts-import" class="secondary">IMPORT</button>
             <input id="nx-prompts-import-file" type="file" accept=".json,application/json,text/plain" style="display:none">
           </div>
         </div>
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.51</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>대시보드 백엔드·훅·job 카드 UI 숨김 · 프롬프트 탭 기본값/EXPORT/IMPORT 문구 · 모바일 상단 저장 버튼 가운데 정렬</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.50</strong>
@@ -6213,7 +6219,7 @@ const VENDOR_TABS_SCROLL_PATCH =
 const VENDOR_MOBILE_CHROME_NEEDLE =
   `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.head-actions{flex-wrap:wrap;justify-content:flex-end}}`;
 const VENDOR_MOBILE_CHROME_PATCH =
-  `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.wrap{padding:12px 10px 40px;max-width:100%}.head{flex-direction:column;align-items:stretch;gap:8px;padding:10px}.head-actions{display:flex;flex-wrap:nowrap;justify-content:stretch;align-items:stretch;width:100%;max-width:100%;gap:4px}.head-actions button{flex:1 1 0;min-width:0;max-width:none;min-height:34px;padding:4px 6px;font-size:11px;letter-spacing:0}.tabs{width:100%!important;max-width:100%;box-sizing:border-box}.tab{padding:8px 12px;font-size:13px}}`;
+  `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.wrap{padding:12px 10px 40px;max-width:100%}.head{flex-direction:column;align-items:stretch;gap:8px;padding:10px}.head-actions{display:flex;flex-wrap:nowrap;justify-content:center;align-items:center;width:100%;max-width:100%;gap:4px}.head-actions button{flex:0 1 auto;min-width:0;max-width:none;min-height:34px;padding:4px 10px;font-size:11px;letter-spacing:0}.tabs{width:100%!important;max-width:100%;box-sizing:border-box}.tab{padding:8px 12px;font-size:13px}}`;
 
 /** Help panel: title as small top-left overlay; body uses full width. */
 const VENDOR_HEAD_HELP_LAYOUT_NEEDLE =
@@ -6236,6 +6242,26 @@ const VENDOR_CHROME_ACTIONS_HTML_PATCH =
   `                <button type="button" id="nx-save-all" class="secondary">저장</button>
                 <button type="button" id="nx-export-all" class="secondary">EXPORT</button>
                 <button type="button" id="nx-import-all" class="secondary">IMPORT</button>`;
+
+const VENDOR_STATUS_GRID_HTML_NEEDLE =
+  `          <div class="grid" id="nx-status-grid">
+            <div class="card"><strong>백엔드</strong><div class="value" id="nx-health-value">\${l}</div></div>
+            <div class="card"><strong>훅</strong><div class="value" id="nx-hook-value" style="font-size:16px">\${t.replacerReady ? "afterRequest 활성" : h(t.replacerError || "비활성")}</div></div>
+            <div id="nx-job-card">\${C}</div>
+          </div>`;
+const VENDOR_STATUS_GRID_HTML_PATCH =
+  `          <div class="grid" id="nx-status-grid" style="display:none" aria-hidden="true">
+            <div class="card"><strong>백엔드</strong><div class="value" id="nx-health-value">\${l}</div></div>
+            <div class="card"><strong>훅</strong><div class="value" id="nx-hook-value" style="font-size:16px">\${t.replacerReady ? "afterRequest 활성" : h(t.replacerError || "비활성")}</div></div>
+            <div id="nx-job-card">\${C}</div>
+          </div>`;
+
+const VENDOR_STATUS_GRID_SHOW_NEEDLE =
+  `        const _sg = document.getElementById("nx-status-grid");
+        _sg && (_sg.style.display = t.uiTab === "dashboard" ? "" : "none");`;
+const VENDOR_STATUS_GRID_SHOW_PATCH =
+  `        const _sg = document.getElementById("nx-status-grid");
+        _sg && (_sg.style.display = "none");`;
 
 const VENDOR_DASH_ACTIONS_HTML_NEEDLE =
   `          <div class="row" style="margin-top:12px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-run-now" class="secondary" data-nx-help-id="nx-run-now">지금 생성 (수동)</button><button id="nx-open-viewer" class="secondary" data-nx-help-id="nx-open-viewer">뷰어 앞으로</button></div>
@@ -11031,6 +11057,8 @@ const loadVendorUi = (): string => {
     [VENDOR_MOBILE_CHROME_NEEDLE, 'mobile settings chrome'],
     [VENDOR_HEAD_HELP_LAYOUT_NEEDLE, 'head help layout overlay'],
     [VENDOR_CHROME_ACTIONS_HTML_NEEDLE, 'chrome save export import labels'],
+    [VENDOR_STATUS_GRID_HTML_NEEDLE, 'status grid hide html'],
+    [VENDOR_STATUS_GRID_SHOW_NEEDLE, 'status grid keep hidden'],
     [VENDOR_DASH_ACTIONS_HTML_NEEDLE, 'dashboard action buttons'],
     [VENDOR_RESET_HELP_NEEDLE, 'reset help titles'],
     [VENDOR_XA_FULL_NEEDLE, 'xa full silent save'],
@@ -11342,6 +11370,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_MOBILE_CHROME_NEEDLE, VENDOR_MOBILE_CHROME_PATCH)
     .replace(VENDOR_HEAD_HELP_LAYOUT_NEEDLE, VENDOR_HEAD_HELP_LAYOUT_PATCH)
     .replace(VENDOR_CHROME_ACTIONS_HTML_NEEDLE, VENDOR_CHROME_ACTIONS_HTML_PATCH)
+    .replace(VENDOR_STATUS_GRID_HTML_NEEDLE, VENDOR_STATUS_GRID_HTML_PATCH)
+    .replace(VENDOR_STATUS_GRID_SHOW_NEEDLE, VENDOR_STATUS_GRID_SHOW_PATCH)
     .replace(VENDOR_DASH_ACTIONS_HTML_NEEDLE, VENDOR_DASH_ACTIONS_HTML_PATCH)
     .replace(VENDOR_RESET_HELP_NEEDLE, VENDOR_RESET_HELP_PATCH)
     .replace(VENDOR_XA_FULL_NEEDLE, VENDOR_XA_FULL_PATCH)

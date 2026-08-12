@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.2';
+const PLUGIN_VERSION = '2.3.3';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.3</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>이미지 탐색: 선택/폴더 삭제 UI 즉시 반영, 저장소 삭제는 백그라운드</li>
+            <li>응답 후 자동 생성: 응답 완료(afterRequest) 시점에만 생성(스트리밍 중 추정 생성 제거)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.2</strong>
@@ -1774,6 +1781,138 @@ const VENDOR_EXPLORER_FILTER_ET_PATCH =
       tt();
       $e(ex.favOnly ? "즐겨찾기만 보기" : "전체 보기");
     });`;
+
+/** Explorer: delete selected / folder — UI first, IDB delete in background. */
+const VENDOR_EXPLORER_DELETE_SEL_NEEDLE =
+  `  async function explorerDeleteSelected() {
+    const ids = [...ensureExplorerState().selection?.selected || []];
+    if (!ids.length || !confirm(\`\${ids.length}장을 삭제할까요?\`)) return;
+    try {
+      await K("/v1/gallery/delete", { method: "POST", body: { card_ids: ids } }), await Et(!0), await P();
+    } catch (err) {
+      t.uiMessage = { type: "error", text: z(err?.message || err) }, await P();
+    }
+  }`;
+const VENDOR_EXPLORER_DELETE_SEL_PATCH =
+  `  async function explorerDeleteSelected() {
+    const ids = [...ensureExplorerState().selection?.selected || []];
+    if (!ids.length || !confirm(\`\${ids.length}장을 삭제할까요?\`)) return;
+    const ex = ensureExplorerState();
+    const drop = new Set(ids.map((id) => String(id || "")).filter(Boolean));
+    const removedByFolder = new Map();
+    ex.items = (ex.items || []).filter((it) => {
+      const id = String(it?.id || "");
+      if (!drop.has(id)) return !0;
+      const fk = String(it?.folder_key || "");
+      removedByFolder.set(fk, (removedByFolder.get(fk) || 0) + 1);
+      return !1;
+    });
+    if (Array.isArray(ex.folders)) {
+      for (const f of ex.folders) {
+        const n = removedByFolder.get(String(f?.key || "")) || 0;
+        if (n) f.count = Math.max(0, Number(f.count || 0) - n);
+      }
+    }
+    const EX = exHelpers();
+    ex.selection = EX.clearSelection ? EX.clearSelection(ex.selection) : { selected: new Set(), anchorId: "", focusId: "" };
+    try {
+      if (typeof paintExplorerWindow == "function") paintExplorerWindow(!0);
+      else {
+        const { items: r } = Ze(), grid = document.getElementById("nx-explorer-grid") || document.querySelector(".explorer-grid");
+        grid && (grid.innerHTML = \`<div class="explorer-marquee" id="nx-explorer-marquee"></div>\${typeof etWindowed == "function" ? etWindowed(r, grid.scrollTop || 0) : et(r)}\`);
+        paintExplorerSelectionUi(), tt();
+      }
+    } catch {
+    }
+    $e(\`\${ids.length}장 삭제 중…\`);
+    Promise.resolve().then(async () => {
+      try {
+        await K("/v1/gallery/delete", { method: "POST", body: { card_ids: ids } });
+        ex.loadedAt = 0;
+        $e(\`\${ids.length}장 삭제됨\`);
+      } catch (err) {
+        try {
+          await Et(!0);
+          if (typeof paintExplorerWindow == "function") paintExplorerWindow(!1);
+          else await P();
+        } catch {
+        }
+        t.uiMessage = { type: "error", text: z(err?.message || err) };
+        try {
+          await P();
+        } catch {
+        }
+      }
+    }).catch(() => {});
+  }`;
+
+const VENDOR_EXPLORER_DELETE_FOLDER_NEEDLE =
+  `    }),     document.getElementById("nx-explorer-delete-folder")?.addEventListener("click", async () => {
+      const a = t.explorer?.folderKey || "", r = (t.explorer?.folders || []).find((i) => i.key === a);
+      if (!a || a === "__all__") {
+        t.uiMessage = {
+          type: "error",
+          text: a === "__all__" ? "통합 보기에서는 폴더 삭제를 쓸 수 없습니다. 개별 폴더를 고르세요." : "삭제할 폴더가 없습니다"
+        }, await P();
+        return;
+      }
+      const i = \`\${r?.character_name || "Unknown"} / \${r?.chat_name || a}\`;
+      if (!confirm(\`폴더 "\${i}"의 이미지를 모두 삭제할까요?\`)) return;
+      try {
+        await K("/v1/gallery/delete", {
+          method: "POST",
+          body: { folder_key: a }
+        }), await Et(!0), await P();
+      } catch (s) {
+        t.uiMessage = {
+          type: "error",
+          text: z(s?.message || s)
+        }, await P();
+      }
+    }), document.getElementById("nx-explorer-q")?.addEventListener("input", (a) => {`;
+const VENDOR_EXPLORER_DELETE_FOLDER_PATCH =
+  `    }),     document.getElementById("nx-explorer-delete-folder")?.addEventListener("click", async () => {
+      const a = t.explorer?.folderKey || "", r = (t.explorer?.folders || []).find((i) => i.key === a);
+      if (!a || a === "__all__") {
+        t.uiMessage = {
+          type: "error",
+          text: a === "__all__" ? "통합 보기에서는 폴더 삭제를 쓸 수 없습니다. 개별 폴더를 고르세요." : "삭제할 폴더가 없습니다"
+        }, await P();
+        return;
+      }
+      const i = \`\${r?.character_name || "Unknown"} / \${r?.chat_name || a}\`;
+      if (!confirm(\`폴더 "\${i}"의 이미지를 모두 삭제할까요?\`)) return;
+      const ex = ensureExplorerState();
+      const removed = (ex.items || []).filter((it) => String(it?.folder_key || "") === a);
+      const n = removed.length;
+      ex.items = (ex.items || []).filter((it) => String(it?.folder_key || "") !== a);
+      ex.folders = (ex.folders || []).filter((f) => String(f?.key || "") !== a);
+      ex.folderKey = "__pick__";
+      const EX = exHelpers();
+      ex.selection = EX.clearSelection ? EX.clearSelection(ex.selection) : { selected: new Set(), anchorId: "", focusId: "" };
+      try {
+        await P();
+      } catch {
+      }
+      $e(n ? \`폴더 삭제 중… (\${n}장)\` : "폴더 삭제 중…");
+      Promise.resolve().then(async () => {
+        try {
+          await K("/v1/gallery/delete", { method: "POST", body: { folder_key: a } });
+          ex.loadedAt = 0;
+          $e(n ? \`폴더 삭제됨 (\${n}장)\` : "폴더 삭제됨");
+        } catch (s) {
+          try {
+            await Et(!0);
+          } catch {
+          }
+          t.uiMessage = { type: "error", text: z(s?.message || s) };
+          try {
+            await P();
+          } catch {
+          }
+        }
+      }).catch(() => {});
+    }), document.getElementById("nx-explorer-q")?.addEventListener("input", (a) => {`;
 
 const VENDOR_EXPLORER_FOLDER_BIND_NEEDLE =
   `    const o = document.getElementById("nx-explorer-folders");
@@ -6950,10 +7089,8 @@ const VENDOR_STREAM_SETTLE_KA_PATCH =
   }`;
 
 /**
- * "응답 후 자동 생성":
- * Primary = addRisuChatListener('output') (streaming + non-streaming).
- * Fallback = afterRequest when chat listener unavailable.
- * Shared path: 0.5s → DOM#0 select → Be(..., true) like 태그 재생성.
+ * "응답 후 자동 생성": afterRequest when the reply finishes.
+ * chat/script output listeners only relink message hashes (no auto-gen).
  */
 const VENDOR_AFTER_REPLY_FN_NEEDLE =
   `  async function _t(e, n = "") {
@@ -6988,92 +7125,13 @@ const VENDOR_AFTER_REPLY_FN_NEEDLE =
     return e;
   }`;
 const VENDOR_AFTER_REPLY_FN_PATCH =
-  `  function normAfterReplyText(s) {
-    return String(s || "").replace(/\\s+/g, " ").trim().toLowerCase();
-  }
-  function stopScriptDomQuietWatcher() {
-    if (t._scriptDomQuietTimer) {
-      clearInterval(t._scriptDomQuietTimer);
-      t._scriptDomQuietTimer = null;
-    }
-    t._scriptDomSnap = null;
-    t._scriptDomSnapReady = !1;
-  }
-  function clearScriptOutputTimers() {
-    if (t._scriptQuietTimer) {
-      clearTimeout(t._scriptQuietTimer);
-      t._scriptQuietTimer = null;
-    }
-    t._scriptStreaming = !1;
-    stopScriptDomQuietWatcher();
-  }
-  /** Light DOM#0 text peek — reuse msg-el cache; no Da. Only while streaming. */
-  async function peekDom0NormText() {
-    try {
-      const doc = await ue().catch(() => t.hostDoc);
-      if (!doc) return "";
-      const els = await getCachedMsgEls(doc);
-      if (!els?.length) return "";
-      const el = els[0];
-      let raw = "";
-      try {
-        if (typeof el.getInnerHTML == "function") raw = String(await el.getInnerHTML() || "");
-      } catch {
-      }
-      const VC = globalThis.__INLAY_VIEWER_CORE__;
-      if (typeof VC?.stripInlayInlineHtml == "function") raw = VC.stripInlayInlineHtml(raw);
-      const text = typeof ln == "function" ? ln(raw) : String(raw || "").replace(/<[^>]+>/g, " ");
-      return normAfterReplyText(text);
-    } catch {
-      return "";
-    }
-  }
-  /** DOM 5s stable while chunks are still arriving — never runs when idle. */
-  function ensureScriptDomQuietWatcher() {
-    if (t._scriptDomQuietTimer) return;
-    t._scriptDomSnap = null;
-    t._scriptDomSnapReady = !1;
-    t._scriptDomQuietTimer = setInterval(() => {
-      if (!t._scriptStreaming || t._afterGenRunning) {
-        stopScriptDomQuietWatcher();
-        return;
-      }
-      (async () => {
-        if (!t._scriptStreaming || t._afterGenRunning) return;
-        const now = await peekDom0NormText();
-        if (!t._scriptStreaming || t._afterGenRunning) return;
-        if (!t._scriptDomSnapReady) {
-          t._scriptDomSnap = now;
-          t._scriptDomSnapReady = !0;
-          return;
-        }
-        if (now !== String(t._scriptDomSnap || "")) {
-          t._scriptDomSnap = now;
-          y("info", "scriptOutput.domQuiet", "DOM changed while streaming — keep watching");
-          return;
-        }
-        if (!now || now.length <= 30) return;
-        y("info", "scriptOutput.domQuiet5", "DOM stable 5s while streaming → gen");
-        t._scriptStreaming = !1;
-        stopScriptDomQuietWatcher();
-        if (t._scriptQuietTimer) {
-          clearTimeout(t._scriptQuietTimer);
-          t._scriptQuietTimer = null;
-        }
-        await runAutoGenFromDom("scriptOutput.domQuiet5");
-      })().catch((err) => {
-        y("error", "scriptOutput.domQuiet.fail", err?.message || err);
-      });
-    }, 5e3);
-  }
-  // 생성 본문은 항상 DOM#0에 연결된 message 텍스트 (훅 원문 아님).
+  `  // 생성 본문은 항상 DOM#0에 연결된 message 텍스트 (훅 원문 아님).
   async function runAutoGenFromDom(source) {
     if (t._afterGenRunning) {
       y("info", "afterReply.skip", \`\${source} already running\`);
       return;
     }
     t._afterGenRunning = !0;
-    clearScriptOutputTimers();
     if (t._afterGenTimer) {
       clearTimeout(t._afterGenTimer);
       t._afterGenTimer = null;
@@ -7083,6 +7141,10 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       const card = t.backendSettings?.card || {};
       if (card.power === !1 || !card.auto_gen_on_reply) {
         y("info", "afterReply.skip", "toggled-off");
+        return;
+      }
+      if (card.execute === "manual") {
+        y("info", "afterReply.skip", "execute=manual");
         return;
       }
       const o = await ve();
@@ -7133,7 +7195,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       y("info", "afterReply.skip", \`\${source} text too short\`);
       return;
     }
-    // chatOutput/afterRequest only (scriptOutput has its own quiet/dom path).
+    // afterRequest only — chat/script listeners only relink hashes.
     const AFTER_GEN_DELAY_MS = 5e2;
     if (t._afterGenTimer) {
       clearTimeout(t._afterGenTimer);
@@ -7150,7 +7212,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       });
     }, AFTER_GEN_DELAY_MS);
   }
-  // Streaming finish (last chunk + 0.5s) / chat output / afterRequest → rebind selected msg hash.
+  // Streaming finish / chat output / afterRequest → rebind selected msg hash.
   // Independent of auto_gen_on_reply — fixes "must click away and back to see images".
   async function relinkSelectedMessageHash(source) {
     if (t._hashRelinkRunning) {
@@ -7286,49 +7348,19 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       const idx = Number(arg?.messageIndex);
       const msgs = arg?.chat?.message;
       const msg = Number.isFinite(idx) && idx >= 0 && Array.isArray(msgs) ? msgs[idx] : null;
-      const role = w(msg?.role ?? "", 40);
       const text = w(msg?.data ?? msg?.content ?? "", 5e4);
       if (text && text.length > 8) scheduleHashRelinkAfterReply("chatOutput");
-      const card = t.backendSettings?.card || {};
-      if (card.power === !1 || !card.auto_gen_on_reply) return;
-      if (role && !isSelectedCharRole(role)) {
-        y("info", "chatOutput.skip", "user message");
-        return;
-      }
-      if (!text || text.length <= 30) {
-        y("info", "chatOutput.skip", "text too short");
-        return;
-      }
-      await scheduleAutoGenOnReply("chatOutput", text);
     } catch (err) {
       y("error", "chatOutput.fail", err?.message || err);
     }
   }
-  // Streaming: (A) 5s chunk quiet → end gen  (B) while chunks arrive, DOM text stable 5s → early gen
-  // 생성 텍스트는 항상 DOM 연결 message. Hash relink: last chunk + 0.5s.
+  // Streaming chunks: hash relink only. Auto-gen waits for afterRequest when the reply finishes.
   async function onScriptOutput(content) {
     try {
       const o = await ve();
       if (!o.enabled) return content;
       const text = w(content, 5e4);
       if (text && text.length > 8) scheduleHashRelinkAfterReply("scriptOutput");
-      const card = t.backendSettings?.card || {};
-      if (card.power === !1 || !card.auto_gen_on_reply) return content;
-      if (!text || text.length <= 30) return content;
-      t._scriptHint = text;
-      t._scriptStreaming = !0;
-      ensureScriptDomQuietWatcher();
-      // (A) 청크 5초 무음 = 스트림 끝 → DOM 기준 생성 (DOM 워처도 끔)
-      if (t._scriptQuietTimer) clearTimeout(t._scriptQuietTimer);
-      t._scriptQuietTimer = setTimeout(() => {
-        t._scriptQuietTimer = null;
-        t._scriptStreaming = !1;
-        stopScriptDomQuietWatcher();
-        y("info", "scriptOutput.quiet", "5s no chunk → gen from DOM message");
-        runAutoGenFromDom("scriptOutput.quiet").catch((err) => {
-          y("error", "afterReply.fail", err?.message || err);
-        });
-      }, 5e3);
     } catch (err) {
       y("error", "scriptOutput.fail", err?.message || err);
     }
@@ -7336,8 +7368,6 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
   }
   async function _t(e, n = "") {
     try {
-      // Prefer chat output listener when present (non-stream). Avoid double-fire.
-      if (t._chatOutputReady) return e;
       const o = await ve();
       if (!o.enabled)
         return y("info", "afterRequest.skip", "plugin disabled"), e;
@@ -7347,6 +7377,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
         return y("info", "afterRequest.skip", "text too short"), e;
       const i = t.backendSettings?.card || {};
       if (i.power === !1) return y("info", "afterRequest.skip", "power off"), e;
+      if (i.execute === "manual") return y("info", "afterRequest.skip", "execute=manual"), e;
       if (!i.auto_gen_on_reply) return y("info", "afterRequest.skip", "reply-auto-gen-off"), e;
       await scheduleAutoGenOnReply("afterRequest", a);
       return e;
@@ -7359,7 +7390,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "스트리밍: script 청크 5초 무음(종료) 또는 스트리밍 중 말풍선 DOM이 5초간 안 변하면 DOM#0 연결 메시지 기준으로 생성. 비스트리밍: chat/afterRequest 후 0.5초. 캐릭·이미지 없을 때만. 30자 이하·Power/토글 OFF·유저면 스킵." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 응답이 끝난 뒤(afterRequest) 약 0.5초 후 자동으로 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다. 30자 이하·Power OFF·발동 수동·토글 OFF·유저 메시지는 스킵." },`;
 
 const VENDOR_CHAT_OUTPUT_BOOT_NEEDLE =
   `      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
@@ -7382,7 +7413,7 @@ const VENDOR_CHAT_OUTPUT_BOOT_PATCH =
         try {
           await k.addRisuScriptHandler("output", onScriptOutput);
           t._scriptOutputReady = !0;
-          y("info", "scriptOutput.ready", "editoutput debounce (streaming end)");
+          y("info", "scriptOutput.ready", "output listener (hash relink)");
         } catch (err) {
           y("warn", "scriptOutput.init", z(err?.message || err));
         }
@@ -7855,8 +7886,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.2",
-    body: "프리셋 전환·삭제가 더 빨라졌습니다. 업데이트 내역 탭 참고."
+    title: "2.3.3",
+    body: "탐색 삭제가 바로 반영되고, 응답 완료 후 자동 생성만 씁니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -10627,6 +10658,8 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_EXPLORER_ET_FN_NEEDLE, 'explorer et windowed');
   assertOnce(raw, VENDOR_EXPLORER_HA_NEEDLE, 'explorer ha window paint');
   assertOnce(raw, VENDOR_EXPLORER_TAB_LOAD_NEEDLE, 'explorer tab load optimistic');
+  assertOnce(raw, VENDOR_EXPLORER_DELETE_SEL_NEEDLE, 'explorer delete selected optimistic');
+  assertOnce(raw, VENDOR_EXPLORER_DELETE_FOLDER_NEEDLE, 'explorer delete folder optimistic');
   assertOnce(raw, VENDOR_EXPLORER_FOLDER_BIND_NEEDLE, 'explorer folder bind');
   assertOnce(raw, VENDOR_EXPLORER_FILTER_ET_NEEDLE, 'explorer filter rewindow');
   assertOnce(raw, VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, 'explorer thumb paint');
@@ -10960,6 +10993,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE, VENDOR_EXPLORER_FAVONLY_PAINT_PATCH)
     .replace(VENDOR_EXPLORER_ET_FN_NEEDLE, VENDOR_EXPLORER_ET_FN_PATCH)
     .replace(VENDOR_EXPLORER_TAB_LOAD_NEEDLE, VENDOR_EXPLORER_TAB_LOAD_PATCH)
+    .replace(VENDOR_EXPLORER_DELETE_SEL_NEEDLE, VENDOR_EXPLORER_DELETE_SEL_PATCH)
+    .replace(VENDOR_EXPLORER_DELETE_FOLDER_NEEDLE, VENDOR_EXPLORER_DELETE_FOLDER_PATCH)
     .replace(VENDOR_EXPLORER_FOLDER_BIND_NEEDLE, VENDOR_EXPLORER_FOLDER_BIND_PATCH)
     .replace(VENDOR_EXPLORER_FILTER_ET_NEEDLE, VENDOR_EXPLORER_FILTER_ET_PATCH)
     .replace(VENDOR_PRESET_QT_NEEDLE, VENDOR_PRESET_QT_PATCH)
@@ -11255,14 +11290,17 @@ const loadVendorUi = (): string => {
     if (!out.includes('nxActivateStickyNearestToCursor')) {
       throw new Error('[build] missing nxActivateStickyNearestToCursor (live bubble nearest)');
     }
-    if (!out.includes('ensureScriptDomQuietWatcher')) {
-      throw new Error('[build] missing ensureScriptDomQuietWatcher (DOM 5s while streaming)');
-    }
-    if (!out.includes('scriptOutput.domQuiet5')) {
-      throw new Error('[build] missing scriptOutput.domQuiet5 early-gen path');
+    if (out.includes('ensureScriptDomQuietWatcher') || out.includes('scriptOutput.domQuiet5')) {
+      throw new Error('[build] streaming DOM/chunk quiet auto-gen must be removed (afterRequest only)');
     }
     if (out.includes('scriptOutput.miss5') || out.includes('_scriptMissTimer')) {
       throw new Error('[build] legacy 1s×5 DOM miss path must be removed');
+    }
+    if (!out.includes('afterRequest.skip') || !out.includes('afterReply.schedule')) {
+      throw new Error('[build] missing afterRequest auto-gen path');
+    }
+    if (out.includes('scheduleAutoGenOnReply("chatOutput")') || out.includes('runAutoGenFromDom("scriptOutput')) {
+      throw new Error('[build] chat/script must not schedule auto-gen');
     }
     if (!out.includes('nxActivateStickyNearestToCursor().catch')) {
       throw new Error('[build] pointer path must call nxActivateStickyNearestToCursor');

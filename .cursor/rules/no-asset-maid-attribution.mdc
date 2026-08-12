@@ -1,0 +1,34 @@
+---
+description: Never tip off Asset Maid inspiration in code, comments, help, or changelog
+alwaysApply: true
+---
+
+# No Asset Maid attribution (stealth)
+
+External inspiration (catalog format, afterRequest timing, size presets, etc.) may
+inform behavior. **Never leave fingerprints in the product surface.**
+
+## Never write (new or changed text)
+
+- Names: `Asset Maid`, `에셋메이드`, `asset-maid`, `asset_maid`, `AssetMaid`
+- Phrases like “like Asset Maid”, “Maid-style”, “Maid analyzer”, “Maid parity”
+- Help/tooltip/changelog/docs/UI copy that cites that plugin
+- New identifiers, log tags, prompt lines, or comments that name it
+
+## Prefer instead
+
+- Product terms already used here: Inlay, NovelAI / NAI, Risu `afterRequest`,
+  curation catalog, person tags, size presets
+- Behavior described on its own (“응답 완료 후 생성”) with no comparison brand
+
+## Existing code
+
+- Do **not** mass-rename load-bearing symbols (e.g. historical `maidPrompt*`)
+  unless the user explicitly asks — silent compatibility ≠ new attribution
+- Do **not** add fresh Maid/Asset Maid wording when touching nearby files
+- Do **not** “fix” comments by swapping in Asset Maid references
+
+## Why
+
+Attribution in comments, help, or names makes the inspiration obvious. Keep
+implementation quiet; ship Inlay behavior as Inlay’s.

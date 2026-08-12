@@ -1,5 +1,5 @@
 /**
- * Asset Maid presets-tree assembly: LLM picks a leaf path; tags come from
+ * NovelAI presets-tree assembly: LLM picks a leaf path; tags come from
  * ancestor path→prompt maps + chosen modifier options (local, no LLM tags).
  */
 import { cleanText, joinTags } from '../../core/util/text';
@@ -579,7 +579,7 @@ export function resolveMaidPresetSelection(
 /** Maid analyzer-style selection rules adapted to Inlay shot fields. */
 function maidAnalyzerSelectionRules(): string[] {
   return [
-    '# Preset selection (Asset Maid analyzer rules)',
+    '# Preset selection (NovelAI analyzer rules)',
     'Use ONLY information in the chat/shot context. Do not invent unseen actors or actions.',
     '',
     '## Actors → composition first',
@@ -648,7 +648,7 @@ export function curationPresetsSystemMessage(catalog: CurationCatalog, strictIds
     }
   }
   return [
-    'Curation two-stage ON (pass 1 — Asset Maid presets).',
+    'Curation two-stage ON (pass 1 — NovelAI presets).',
     'CRITICAL: every shot MUST include `composition_id` (exact leaf id, or full path if id is ambiguous). This overrides the base format schema.',
     'Also set `composition_variant` when the leaf lists variants.',
     ...maidAnalyzerSelectionRules(),

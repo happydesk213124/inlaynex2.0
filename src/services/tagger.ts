@@ -467,7 +467,7 @@ export async function buildTaggerMessages(
         normalizeFocusPromptMode(card.focus_prompt),
       ),
       card.auto_aspect
-        ? 'ASPECT (required on every shot): set `aspect` to exactly one of `portrait` (832×1216 vertical), `square` (1024×1024), or `landscape` (1216×832 horizontal). Pick from the scene framing — tall full-body / standing → portrait; equal crop / face close-up square → square; wide group / side-by-side / scenic → landscape. Like Asset Maid size presets 1/5/2.'
+        ? 'ASPECT (required on every shot): set `aspect` to exactly one of `portrait` (832×1216 vertical), `square` (1024×1024), or `landscape` (1216×832 horizontal). Pick from the scene framing — tall full-body / standing → portrait; equal crop / face close-up square → square; wide group / side-by-side / scenic → landscape. Like NovelAI size presets 1/5/2.'
         : '',
     ].filter(Boolean).join('\n'),
   });

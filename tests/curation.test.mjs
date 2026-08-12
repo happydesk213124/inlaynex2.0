@@ -98,7 +98,7 @@ test('maidPromptToBySlot skips global.composition person-count', () => {
   assert.match(slots.female || '', /facing another/);
 });
 
-test('Asset Maid modifier_library imports as groups', () => {
+test('NovelAI modifier_library imports as groups', () => {
   const cat = normalizeCurationCatalog({
     version: 6,
     modifier_library: [
@@ -120,7 +120,7 @@ test('Asset Maid modifier_library imports as groups', () => {
       },
     ],
   });
-  assert.equal(cat.name, 'Asset Maid catalog');
+  assert.equal(cat.name, 'NovelAI catalog');
   assert.equal(cat.groups.length, 2);
   assert.equal(cat.groups[0].id, 'camera.view');
   // empty prompt option skipped
@@ -131,7 +131,7 @@ test('Asset Maid modifier_library imports as groups', () => {
   assert.equal(catalogHasPresets(cat), false);
 });
 
-test('Asset Maid presets tree is preserved on import', () => {
+test('NovelAI presets tree is preserved on import', () => {
   const cat = normalizeCurationCatalog({
     version: 6,
     modifier_library: [

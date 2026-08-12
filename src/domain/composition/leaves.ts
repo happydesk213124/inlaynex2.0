@@ -1,5 +1,5 @@
 /**
- * Curated composition leaves (Asset Maid-style): LLM picks an id; tags are copied
+ * Curated composition leaves (NovelAI-style): LLM picks an id; tags are copied
  * from this catalog into NAI base / char captions. Pure — no I/O.
  */
 import catalog from '../../config/composition-leaves.json';

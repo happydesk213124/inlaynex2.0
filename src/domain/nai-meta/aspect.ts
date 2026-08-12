@@ -1,5 +1,5 @@
 /**
- * Map tagger `aspect` to NovelAI canvas sizes (Asset Maid size_id 1/2/5 trio).
+ * Map tagger `aspect` to NovelAI canvas sizes (NovelAI size_id 1/2/5 trio).
  */
 import type { NaiSettings } from '../../core/types.ts';
 

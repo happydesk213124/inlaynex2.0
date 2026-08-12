@@ -325,7 +325,7 @@ const VENDOR_NATURAL_BASE_HELP_PATCH =
   "nx-person-tag-solo": { title: "캐릭 1명일 때 solo", body: "샷 캐릭터가 1명이면 1girl/1boy 대신 solo를 맨 앞에 넣습니다. 사람 태그 강조 수치가 그대로 적용됩니다. 사람 태그 자동넣기가 「안 넣기」여도 이 토글이 켜져 있으면 solo만은 넣습니다." },
   "nx-curation-mode": { title: "큐레이팅 모드", body: "사용안함: 지금과 동일. 2단: 그룹 선택 후 하위 옵션으로 씬 태그. 임베딩식: 자유 씬 태그를 카탈로그와 유사도 매칭해 교체(캐릭터 태그는 유지)." },
   "nx-curation-strict-ids": { title: "엄격 ID 모드", body: "2단 모드 전용. 켜면 카메라·상황·자연어·동작/표정을 자유 문장으로 쓰지 않고 카탈로그 ID로만 조립합니다. 캐릭터별 ID(characters[].option_ids)도 추가로 받아 배우 index별로 적용하며, 외형/의상은 절대 덮어쓰지 않습니다." },
-  "nx-curation-catalog": { title: "큐레이션 카탈로그", body: "Inlay groups JSON 또는 Asset Maid DEFAULT_PRESET_CATALOG(modifier_library)를 불러올 수 있습니다. 기본은 소형 SFW. 거대 카탈로그는 저장소·임베딩 비용이 큽니다." },
+  "nx-curation-catalog": { title: "큐레이션 카탈로그", body: "Inlay groups JSON 또는 NovelAI DEFAULT_PRESET_CATALOG(modifier_library)를 불러올 수 있습니다. 기본은 소형 SFW. 거대 카탈로그는 저장소·임베딩 비용이 큽니다." },
   "nx-curation-embed": { title: "임베딩 생성", body: "카탈로그 옵션을 벡터로 만들어 기기에 저장합니다. 임베딩식 모드에서 씬 태그 스냅에 사용. 미생성·실패 시 사용안함과 동일하게 생성됩니다." },
   "nx-curation-embedding-provider": { title: "임베딩 모델", body: "모델 설정 탭과 같은 UX입니다. Provider를 바꾸면 Endpoint·Model 기본값이 따라갑니다. OpenAI / Voyage / OpenRouter / LM Studio / Ollama / Custom. networkFetch로 호출합니다." }`;
 
@@ -510,7 +510,7 @@ const VENDOR_ASSET_NAI_HELP_PATCH =
   `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
     "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "로어 트리거와 이름이 맞는 Risu 에셋 PNG/WebP의 NovelAI 메타 태그를 어떻게 태거에 넣을지 고릅니다. artist·year·품질·*background·straight-on은 제외.\\n\\n• 사용안함 — 에셋 태그를 쓰지 않습니다.\\n• 그냥 옛날버전 (통째로 보내기) — 로어북·에셋 태그를 메인 태거 한 번에 넣습니다. LLM 1회. 컨텍스트가 길어져 토큰을 많이 씁니다.\\n• LLM 따로 호출 — 에셋 태그로 캐릭터 룩만 먼저 채운 뒤 메인 태거를 돌립니다. LLM 2회.\\n• LLM 따로 호출 + 이미지 파일 보내기 — 룩 LLM에 캐릭터당 대표 이미지 1장(최대 5장)을 함께 보냅니다. 비전 입력만큼 토큰·비용이 큽니다." },
     "nx-costume": { title: "코스튬", body: "켜면 메인 태거가 캐릭터별 코스튬 목록을 보고 샷마다 복장을 고릅니다(이름·번호). 꺼도 에셋으로 캐릭을 만들 때는 복장이 코스튬으로 나뉘어 저장됩니다. 샷에 고른 값이 없으면 항상 index 0(기본)을 씁니다." },
-    "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(Asset Maid 기본 사이즈). ComfyUI는 워크플로 Empty Latent 등에 [[width]]/[[height]]를 넣어야 반영됩니다. 끄면 NAI Width/Height 설정을 씁니다." },
+    "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(NovelAI 기본 사이즈). ComfyUI는 워크플로 Empty Latent 등에 [[width]]/[[height]]를 넣어야 반영됩니다. 끄면 NAI Width/Height 설정을 씁니다." },
     "nx-llm-json-retry": { title: "JSON 오류 시 재시도", body: "메인 태거 응답이 JSON으로 파싱되지 않으면, 오류 내용을 붙여 LLM에 한 번 더 요청합니다. 재시도도 실패하면 작업이 오류로 끝납니다." },
     "nx-fixed-prompt-prefix": { title: "선행 고정 프롬프트", body: "값이 있으면 사람 태그 다음·스타일 프리셋/장면 앞에 항상 붙습니다. 프리셋이 바뀌어도 유지됩니다." },
     "nx-fixed-prompt-suffix": { title: "후행 고정 프롬프트", body: "값이 있으면 장면·큐레이션 뒤·NAI 품질 태그 앞에 항상 붙습니다. JSON으로 내보내/가져오기 할 수 있습니다." },

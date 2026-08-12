@@ -76,7 +76,7 @@ export interface CurationStatus {
   catalog_sha: string;
   option_count: number;
   group_count: number;
-  /** True when imported catalog still has Asset Maid `presets` tree. */
+  /** True when imported catalog still has NovelAI `presets` tree. */
   has_presets: boolean;
   embed_status: 'missing' | 'ready' | 'stale';
   embed_count: number;

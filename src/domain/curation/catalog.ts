@@ -7,7 +7,7 @@ import { cleanText, joinTags } from '../../core/util/text';
 import { resolveCharacterGender } from '../character/tags';
 
 export const MAX_OPTIONS_PER_GROUP = 10;
-/** Soft cap for user-uploaded catalogs (Asset Maid groups can exceed 10). */
+/** Soft cap for user-uploaded catalogs (NovelAI groups can exceed 10). */
 export const MAX_OPTIONS_PER_GROUP_IMPORT = 80;
 
 /** Where assembled option tags go in the NAI prompt / tag-edit popup. */
@@ -28,7 +28,7 @@ export interface CurationGroup {
   label: string;
   options: CurationOption[];
   /**
-   * Asset Maid "continuity" group (e.g. a wear/injury state that persists once
+   * NovelAI "continuity" group (e.g. a wear/injury state that persists once
    * set). Never offered to the pass-2 LLM — see `nonContinuityGroups`. The last
    * value picked for it is instead carried forward job-scope (services/curation.ts).
    */
@@ -42,14 +42,14 @@ export interface CurationCatalog {
   /** Stable fingerprint for stale-embedding checks. */
   sha?: string;
   /**
-   * Asset Maid `presets` tree (composition → category → position → variant).
+   * NovelAI `presets` tree (composition → category → position → variant).
    * When present, two_stage uses leaf-path assembly instead of flat group pick.
    */
   presets?: unknown;
   /** True when `presets` is a non-null object (saved explicitly for status/UI). */
   has_presets?: boolean;
   /**
-   * Asset Maid `modifier_lanes` — e.g. manual lane max_active_groups:1 so
+   * NovelAI `modifier_lanes` — e.g. manual lane max_active_groups:1 so
    * arm_pose and partner_contact are not both kept.
    */
   modifier_lanes?: CurationModifierLanes;
@@ -253,7 +253,7 @@ export function slotFromMaidPath(path: unknown): CurationSlot | null {
 }
 
 /**
- * Asset Maid option.prompt may be weight pairs OR a path→prompt map
+ * NovelAI option.prompt may be weight pairs OR a path→prompt map
  * (`{"female.orientation.body":[[2,"facing another"]], "global.camera.view":...}`).
  */
 /**
@@ -285,7 +285,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 /**
- * Asset Maid option.prompt is usually `[[weight, "tag"], ...]` (or plain strings).
+ * NovelAI option.prompt is usually `[[weight, "tag"], ...]` (or plain strings).
  * Convert to NovelAI-style `2::tag::` comma list. Empty prompt → "".
  */
 export function maidPromptToTags(prompt: unknown): string {
@@ -371,7 +371,7 @@ function normalizeGroup(raw: unknown, index: number, maxOptions: number): Curati
 }
 
 /**
- * Asset Maid DEFAULT_PRESET_CATALOG: `{ modifier_library: Group[] | Record }`.
+ * NovelAI DEFAULT_PRESET_CATALOG: `{ modifier_library: Group[] | Record }`.
  * Flatten into our groups list. The `presets` tree is preserved separately on the catalog.
  */
 function groupsFromMaidLibrary(library: unknown, maxOptions: number): CurationGroup[] {
@@ -398,7 +398,7 @@ function extractGroupList(root: Record<string, unknown>, input: unknown): {
     return {
       list: groupsFromMaidLibrary(root.modifier_library, MAX_OPTIONS_PER_GROUP_IMPORT),
       maxOptions: MAX_OPTIONS_PER_GROUP_IMPORT,
-      nameHint: 'Asset Maid catalog',
+      nameHint: 'NovelAI catalog',
       preNormalized: true,
     };
   }
@@ -436,7 +436,7 @@ export function normalizeCurationCatalog(input: unknown, fallbackName = 'catalog
   }
   if (!groups.length) {
     throw new Error(
-      '큐레이션 카탈로그에 그룹이 없습니다. Inlay `{groups:[…]}` 또는 Asset Maid `modifier_library` JSON인지 확인하세요.',
+      '큐레이션 카탈로그에 그룹이 없습니다. Inlay `{groups:[…]}` 또는 NovelAI `modifier_library` JSON인지 확인하세요.',
     );
   }
   const version = Number(root.version) || 1;

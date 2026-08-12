@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.2.52';
+const PLUGIN_VERSION = '2.2.53';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.2.53</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>모바일 설정 헤더: Inlay Nexus와 저장/EXPORT/IMPORT/닫기를 한 줄(우측 배치) · 버튼 글자만 가운데</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.2.52</strong>
@@ -1818,7 +1824,7 @@ const VENDOR_EXPLORER_MOBILE_1COL_NEEDLE =
   `@media(max-width:900px){.explorer-layout{grid-template-columns:1fr}.head{flex-wrap:wrap;min-height:0;align-items:stretch}.head-help{order:3;flex:1 1 100%;max-width:none;min-width:0;height:72px;min-height:72px;max-height:72px}.head-help-title{flex-basis:96px;width:96px;max-width:96px}}`;
 
 const VENDOR_EXPLORER_MOBILE_1COL_PATCH =
-  `@media(max-width:900px){.head{flex-wrap:wrap;min-height:0;align-items:stretch}.head-help{order:3;flex:1 1 100%;max-width:none;min-width:0;height:72px;min-height:72px;max-height:72px}}`;
+  `@media(max-width:900px){.head{flex-wrap:wrap;min-height:0;align-items:center;justify-content:space-between}.head-brand{flex:0 1 auto;min-width:0}.head-actions{flex:0 1 auto;margin-left:auto}.head-help{order:3;flex:1 1 100%;max-width:none;min-width:0;height:72px;min-height:72px;max-height:72px}}`;
 
 const VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE =
   `    const folderButtons = \`
@@ -6225,7 +6231,7 @@ const VENDOR_TABS_SCROLL_PATCH =
 const VENDOR_MOBILE_CHROME_NEEDLE =
   `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.head-actions{flex-wrap:wrap;justify-content:flex-end}}`;
 const VENDOR_MOBILE_CHROME_PATCH =
-  `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.wrap{padding:12px 10px 40px;max-width:100%}.head{flex-direction:column;align-items:stretch;gap:8px;padding:10px}.head-actions{display:flex;flex-wrap:nowrap;justify-content:center;align-items:center;width:100%;max-width:100%;gap:4px}.head-actions button{flex:0 1 auto;min-width:0;max-width:none;min-height:34px;padding:4px 10px;font-size:11px;letter-spacing:0}.tabs{width:100%!important;max-width:100%;box-sizing:border-box}.tab{padding:8px 12px;font-size:13px}}`;
+  `@media(max-width:700px){.model-form{grid-template-columns:1fr}.model-head{align-items:flex-start;flex-direction:column}.wrap{padding:12px 10px 40px;max-width:100%}.head{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px;min-height:0}.head-brand{flex:0 1 auto;min-width:0}.head-actions{display:flex;flex-wrap:nowrap;justify-content:flex-end;align-items:center;flex:0 1 auto;margin-left:auto;gap:4px;width:auto;max-width:none}.head-actions button{display:inline-flex;align-items:center;justify-content:center;text-align:center;flex:0 0 auto;min-width:0;min-height:32px;padding:4px 8px;font-size:11px;letter-spacing:0;line-height:1.2}.head-help{order:3;flex:1 1 100%;width:100%;max-width:none;min-width:0}.tabs{width:100%!important;max-width:100%;box-sizing:border-box}.tab{padding:8px 12px;font-size:13px}}`;
 
 /** Help panel: title as small top-left overlay; body uses full width. */
 const VENDOR_HEAD_HELP_LAYOUT_NEEDLE =

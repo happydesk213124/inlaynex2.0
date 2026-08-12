@@ -181,6 +181,29 @@ export function wearTagsForNudeLevel(
   return joinTags(base, state);
 }
 
+/** Substrings that mark accessories anatomy tags pulled in during nude (case-insensitive). */
+const NUDE_ANATOMY_ACCESSORY_NEEDLES = ['penis', 'nipples', 'pussy'] as const;
+
+/** True when an accessories token mentions nude anatomy (any case / weighted). */
+export function isNudeAnatomyAccessoryTag(tag: unknown): boolean {
+  const low = cleanText(tag).toLowerCase();
+  if (!low) return false;
+  return NUDE_ANATOMY_ACCESSORY_NEEDLES.some((n) => low.includes(n));
+}
+
+/**
+ * Accessories tokens that contain penis/nipples/pussy — used when nude so they
+ * still enter the caption even if weapon=off (swords/bags stay gated).
+ */
+export function nudeAnatomyTagsFromAccessories(accessories: unknown): string {
+  const out: string[] = [];
+  for (const token of cleanText(accessories, 4000).split(',')) {
+    const t = token.trim();
+    if (t && isNudeAnatomyAccessoryTag(t)) out.push(t);
+  }
+  return joinTags(...out);
+}
+
 /** `splitLookTags` without the accessories bucket. */
 export function splitIdentityAndAttire(tags: unknown): [string, string] {
   const [identity, attire] = splitLookTags(tags);
@@ -524,6 +547,8 @@ export function wearLocked(value: unknown): boolean {
  * Base: appearance + attire (clothes+jewelry). Weapons only when weapon=on.
  * nude level: 0 off · 1 torn · 2 nude · 3 completely — always keeps attire
  * tags and appends weighted state + gendered anatomy (never strips clothes).
+ * Accessories tokens containing penis/nipples/pussy also join while nude,
+ * even when weapon=off (other props stay gated by weapon).
  *
  * Wear source: `shot.costume` → roster costumes[i]; unreadable/missing →
  * costumes[0] (not the UI active mirror). Freeform shot attire/accessories
@@ -573,6 +598,7 @@ export function composeCharacterCaptionTags(
   const gender = resolveCharacterGender(shot, stored);
   const wear = wearTagsForNudeLevel(attire, nudeLevel, gender);
   const weapons = weapon ? accessories : '';
+  const nudeAcc = nudeLevel > 0 ? nudeAnatomyTagsFromAccessories(accessories) : '';
   const explicitGender = normalizeGender(shot?.gender ?? stored?.gender ?? stored?.sex);
   const storedAppearance = syncGenderIntoAppearance(stored?.appearance, explicitGender);
   const shotAppearance = syncGenderIntoAppearance(shot?.appearance, explicitGender);
@@ -584,6 +610,7 @@ export function composeCharacterCaptionTags(
         storedAppearance,
         wear,
         weapons,
+        nudeAcc,
         shot?.expression,
         shot?.action,
         shot?.sex,
@@ -599,6 +626,7 @@ export function composeCharacterCaptionTags(
       shot?.body,
       wear,
       weapons,
+      nudeAcc,
       shot?.expression,
       shot?.action,
       shot?.sex,

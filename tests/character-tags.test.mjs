@@ -345,6 +345,36 @@ test("nude+weapon keeps clothes and weapons", () => {
   assert.match(prompt, /rifle/);
 });
 
+test("nude pulls penis/nipples/pussy accessory tags even when weapon off", () => {
+  const male = {
+    name: "Han",
+    appearance: "black hair, boy",
+    attire: "coat",
+    accessories: "katana, Huge PENIS, sheath",
+  };
+  const off = composeCharacterCaptionTags(male, { nude: "on", weapon: "off" });
+  assert.match(off, /Huge PENIS/);
+  assert.match(off, /penis/);
+  assert.equal(off.includes("katana"), false);
+  assert.equal(off.includes("sheath"), false);
+
+  const clothed = composeCharacterCaptionTags(male, { nude: "off", weapon: "off" });
+  assert.equal(clothed.includes("Huge PENIS"), false);
+  assert.equal(clothed.includes("katana"), false);
+
+  const female = {
+    name: "Aya",
+    appearance: "blonde hair, girl",
+    attire: "dress",
+    accessories: "bag, puffy Nipples, wet pussy, 1.2::dark pussy::",
+  };
+  const fOff = composeCharacterCaptionTags(female, { nude: 2, weapon: 0 });
+  assert.match(fOff, /puffy Nipples/);
+  assert.match(fOff, /wet pussy/);
+  assert.match(fOff, /1\.2::dark pussy::/);
+  assert.equal(fOff.includes("bag"), false);
+});
+
 test("shot attire overrides base for caption only when unlocked", () => {
   const stored = {
     name: "Han",

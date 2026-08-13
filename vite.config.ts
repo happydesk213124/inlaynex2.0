@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.10';
+const PLUGIN_VERSION = '2.3.11';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.11</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>응답 후 자동 생성 2트랙: afterRequest 0.3초 폴링 + 스트리밍 중 말풍선 5초 안정 시 같은 생성</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.10</strong>
@@ -7262,6 +7268,62 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       return !1;
     }
   }
+  function stopScriptDomQuietWatcher() {
+    if (t._scriptDomQuietTimer) {
+      clearInterval(t._scriptDomQuietTimer);
+      t._scriptDomQuietTimer = null;
+    }
+    t._scriptDomSnap = null;
+    t._scriptDomSnapReady = !1;
+  }
+  async function peekNewestBubbleText() {
+    try {
+      const doc = await ue().catch(() => t.hostDoc);
+      if (!doc) return "";
+      const els = await getCachedMsgEls(doc);
+      if (!els?.length) return "";
+      return w(await De(els[0]), 5e4);
+    } catch {
+      return "";
+    }
+  }
+  function ensureScriptDomQuietWatcher() {
+    if (t._scriptDomQuietTimer) return;
+    t._scriptDomSnap = null;
+    t._scriptDomSnapReady = !1;
+    t._scriptDomQuietTimer = setInterval(() => {
+      if (!t._scriptStreaming || t._afterGenRunning) {
+        stopScriptDomQuietWatcher();
+        return;
+      }
+      (async () => {
+        if (!t._scriptStreaming || t._afterGenRunning) return;
+        const now = await peekNewestBubbleText();
+        if (!t._scriptStreaming || t._afterGenRunning) return;
+        if (!t._scriptDomSnapReady) {
+          t._scriptDomSnap = now;
+          t._scriptDomSnapReady = !0;
+          return;
+        }
+        if (now !== String(t._scriptDomSnap || "")) {
+          t._scriptDomSnap = now;
+          y("info", "scriptOutput.domQuiet", "DOM changed while streaming — keep watching");
+          return;
+        }
+        if (!now || now.length < 30) return;
+        y("info", "scriptOutput.domQuiet5", "DOM stable 5s while streaming → gen");
+        t._scriptStreaming = !1;
+        stopScriptDomQuietWatcher();
+        if (t._scriptQuietTimer) {
+          clearTimeout(t._scriptQuietTimer);
+          t._scriptQuietTimer = null;
+        }
+        await runAutoGenFromDom("scriptOutput.domQuiet5");
+      })().catch((err) => {
+        y("error", "scriptOutput.domQuiet.fail", err?.message || err);
+      });
+    }, 5e3);
+  }
   // Reply auto-gen: click-select newest char bubble so Da runs Ka (not provisional).
   async function runAutoGenFromDom(source) {
     if (t._afterGenRunning) {
@@ -7269,6 +7331,8 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       return;
     }
     t._afterGenRunning = !0;
+    stopScriptDomQuietWatcher();
+    t._scriptStreaming = !1;
     if (t._afterGenTimer) {
       clearTimeout(t._afterGenTimer);
       t._afterGenTimer = null;
@@ -7286,15 +7350,18 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       }
       const o = await ve();
       if (!o.enabled) return y("info", "afterReply.skip", "plugin disabled");
-      let waited = 0;
-      while (await chatIsStreaming()) {
-        if (waited >= 2e4) {
-          y("info", "afterReply.skip", \`\${source} still streaming\`);
-          return;
+      const waitStream = source !== "scriptOutput.domQuiet5";
+      if (waitStream) {
+        let waited = 0;
+        while (await chatIsStreaming()) {
+          if (waited >= 2e4) {
+            y("info", "afterReply.skip", \`\${source} still streaming\`);
+            return;
+          }
+          y("info", "afterReply.wait", \`\${source} isStreaming\`);
+          await new Promise((res) => setTimeout(res, 4e2));
+          waited += 4e2;
         }
-        y("info", "afterReply.wait", \`\${source} isStreaming\`);
-        await new Promise((res) => setTimeout(res, 4e2));
-        waited += 4e2;
       }
       try {
         await le();
@@ -7354,6 +7421,8 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
     }
     t._afterGenGen = (t._afterGenGen || 0) + 1;
     const gen = t._afterGenGen;
+    stopScriptDomQuietWatcher();
+    t._scriptStreaming = !1;
     let attempt = 0;
     y("info", "afterReply.schedule", \`src=\${source} poll=\${POLL_MS}ms x\${POLL_MAX} hint=\${hint ? hint.length : "?"}\`);
     const tick = () => {
@@ -7532,6 +7601,8 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       const card = t.backendSettings?.card || {};
       if (card.power === !1 || !card.auto_gen_on_reply || card.execute === "manual") return content;
       if (!text || text.length <= 30) return content;
+      t._scriptStreaming = !0;
+      ensureScriptDomQuietWatcher();
       if (t._scriptQuietTimer) clearTimeout(t._scriptQuietTimer);
       t._scriptQuietTimer = setTimeout(() => {
         t._scriptQuietTimer = null;
@@ -7572,7 +7643,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "주 채팅 응답(model)이 끝나면(afterRequest) 스트리밍이 꺼진 뒤 0.3초마다 말풍선 글자를 봅니다(0.3/0.6/0.9초, 최대 3번). 한 번이라도 30자 이상이면 최신 캐릭 말풍선을 클릭처럼 선택해 생성합니다. 보조 모델은 무시. afterRequest가 안 오면 스트리밍 출력이 잠잠해진 뒤 폴백. 유저 말·이미 이미지 있음·Power/수동/토글 OFF는 스킵." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "트랙1: 주 채팅(model) afterRequest 후 0.3/0.6/0.9초에 말풍선 30자 이상이면 생성. 트랙2: 스트리밍 중 말풍선 글자가 5초 동안 안 바뀌고 30자 이상이면 같은 생성. 보조 모델·유저 말·이미 이미지·Power/수동/토글 OFF는 스킵." },`;
 
 const VENDOR_CHAT_OUTPUT_BOOT_NEEDLE =
   `      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
@@ -7595,7 +7666,7 @@ const VENDOR_CHAT_OUTPUT_BOOT_PATCH =
         try {
           await k.addRisuScriptHandler("output", onScriptOutput);
           t._scriptOutputReady = !0;
-          y("info", "scriptOutput.ready", "output listener (hash relink + stream-end fallback)");
+          y("info", "scriptOutput.ready", "output listener (hash relink + stream-end + DOM 5s)");
         } catch (err) {
           y("warn", "scriptOutput.init", z(err?.message || err));
         }
@@ -8068,8 +8139,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.10",
-    body: "응답 후 자동 생성은 0.3초마다 글자를 보고 30자 이상이면 생성합니다. 업데이트 내역 탭 참고."
+    title: "2.3.11",
+    body: "응답 후 자동 생성은 afterRequest와 스트리밍 말풍선 5초 안정, 두 트랙입니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11481,8 +11552,8 @@ const loadVendorUi = (): string => {
     if (!out.includes('nxActivateStickyNearestToCursor')) {
       throw new Error('[build] missing nxActivateStickyNearestToCursor (live bubble nearest)');
     }
-    if (out.includes('ensureScriptDomQuietWatcher') || out.includes('scriptOutput.domQuiet5')) {
-      throw new Error('[build] streaming DOM quiet5 watcher must stay removed');
+    if (!out.includes('ensureScriptDomQuietWatcher') || !out.includes('scriptOutput.domQuiet5')) {
+      throw new Error('[build] missing streaming DOM 5s watcher track');
     }
     if (out.includes('scriptOutput.miss5') || out.includes('_scriptMissTimer')) {
       throw new Error('[build] legacy 1s×5 DOM miss path must be removed');

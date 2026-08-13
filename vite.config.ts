@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.9';
+const PLUGIN_VERSION = '2.3.10';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.10</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>응답 후 자동 생성: 0.3초마다 말풍선 글자 확인(최대 3번), 30자 이상이면 생성</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.9</strong>
@@ -7320,27 +7326,58 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       t._afterGenRunning = !1;
     }
   }
+  async function peekReplyTextLen() {
+    try {
+      const doc = await ue().catch(() => t.hostDoc);
+      if (!doc) return 0;
+      t._msgElsCache = null;
+      const els = await getCachedMsgEls(doc);
+      if (!els?.length) return 0;
+      const max = Math.min(els.length, 8);
+      let best = 0;
+      for (let i = 0; i < max; i++) {
+        const txt = w(await De(els[i]), 5e4);
+        if (txt.length > best) best = txt.length;
+      }
+      return best;
+    } catch {
+      return 0;
+    }
+  }
   async function scheduleAutoGenOnReply(source, textHint) {
     const hint = w(textHint, 5e4);
-    if (hint && hint.length <= 30) {
-      y("info", "afterReply.skip", \`\${source} text too short\`);
-      return;
-    }
-    const AFTER_GEN_DELAY_MS = 1e3;
+    const POLL_MS = 3e2;
+    const POLL_MAX = 3;
     if (t._afterGenTimer) {
       clearTimeout(t._afterGenTimer);
       t._afterGenTimer = null;
     }
     t._afterGenGen = (t._afterGenGen || 0) + 1;
     const gen = t._afterGenGen;
-    y("info", "afterReply.schedule", \`src=\${source} delay=\${AFTER_GEN_DELAY_MS}ms chars=\${hint ? hint.length : "?"}\`);
-    t._afterGenTimer = setTimeout(() => {
-      t._afterGenTimer = null;
-      if (gen !== t._afterGenGen) return;
-      runAutoGenFromDom(source).catch((err) => {
-        y("error", "afterReply.fail", err?.message || err);
-      });
-    }, AFTER_GEN_DELAY_MS);
+    let attempt = 0;
+    y("info", "afterReply.schedule", \`src=\${source} poll=\${POLL_MS}ms x\${POLL_MAX} hint=\${hint ? hint.length : "?"}\`);
+    const tick = () => {
+      t._afterGenTimer = setTimeout(() => {
+        t._afterGenTimer = null;
+        if (gen !== t._afterGenGen) return;
+        attempt += 1;
+        peekReplyTextLen().then((chars) => {
+          if (gen !== t._afterGenGen) return;
+          y("info", "afterReply.poll", \`src=\${source} try=\${attempt}/\${POLL_MAX} chars=\${chars}\`);
+          if (chars >= 30) {
+            runAutoGenFromDom(source).catch((err) => {
+              y("error", "afterReply.fail", err?.message || err);
+            });
+            return;
+          }
+          if (attempt < POLL_MAX) tick();
+          else y("info", "afterReply.skip", \`\${source} text too short after \${POLL_MAX} polls\`);
+        }).catch((err) => {
+          y("error", "afterReply.fail", err?.message || err);
+        });
+      }, POLL_MS);
+    };
+    tick();
   }
   // Streaming finish / chat output / afterRequest → rebind selected msg hash.
   // Independent of auto_gen_on_reply — fixes "must click away and back to see images".
@@ -7535,7 +7572,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "주 채팅 응답(model)이 끝나면(afterRequest) 스트리밍이 꺼진 뒤 1초 기다렸다가 최신 캐릭 말풍선을 클릭처럼 선택해, 이미지 없으면 생성합니다. 보조 모델은 무시. afterRequest가 안 오면 스트리밍 출력이 잠잠해진 뒤 폴백. 유저 말·이미 이미지 있음·Power/수동/토글 OFF는 스킵." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "주 채팅 응답(model)이 끝나면(afterRequest) 스트리밍이 꺼진 뒤 0.3초마다 말풍선 글자를 봅니다(0.3/0.6/0.9초, 최대 3번). 한 번이라도 30자 이상이면 최신 캐릭 말풍선을 클릭처럼 선택해 생성합니다. 보조 모델은 무시. afterRequest가 안 오면 스트리밍 출력이 잠잠해진 뒤 폴백. 유저 말·이미 이미지 있음·Power/수동/토글 OFF는 스킵." },`;
 
 const VENDOR_CHAT_OUTPUT_BOOT_NEEDLE =
   `      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
@@ -8031,8 +8068,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.9",
-    body: "응답 후 자동 생성은 주 채팅이 끝난 뒤에만 돕니다. 업데이트 내역 탭 참고."
+    title: "2.3.10",
+    body: "응답 후 자동 생성은 0.3초마다 글자를 보고 30자 이상이면 생성합니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11458,6 +11495,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('scriptOutput.quiet') || !out.includes('still streaming')) {
       throw new Error('[build] missing stream-end script fallback or isStreaming wait');
+    }
+    if (!out.includes('afterReply.poll') || !out.includes('poll=${POLL_MS}ms')) {
+      throw new Error('[build] missing 0.3s×3 reply text poll');
     }
     if (!out.includes('scheduleAutoGenOnReply("afterRequest"')) {
       throw new Error('[build] missing afterRequest auto-gen schedule');

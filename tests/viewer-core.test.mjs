@@ -936,6 +936,12 @@ test("gallerySelectedCount counts unique selected cards", () => {
   assert.equal(gallerySelectedCount(cards, { hash: "h", chatIndex: 1 }), 2);
 });
 
+test("normalizeMatchText is stable across repeated calls (cache)", () => {
+  const s = "Hello, 월드!! [LBDATA START]x[LBDATA END] 123";
+  assert.equal(normalizeMatchText(s), normalizeMatchText(s));
+  assert.equal(normalizeMatchText(s), "hello월드123");
+});
+
 test("prefixMatchRatio links streaming 70% preview to 100% final text", () => {
   const base = "나는천재입니다진짜천재라고요이문장은충분히길어야합니다추가텍스트";
   const partial = base.slice(0, Math.floor(base.length * 0.7));

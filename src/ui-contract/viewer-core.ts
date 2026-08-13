@@ -133,9 +133,21 @@ export function messageBodyCharCount(value: unknown): number {
   return stripLbdataBlocks(value).replace(/\s+/g, '').length;
 }
 
+const MATCH_TEXT_CACHE_MAX = 256;
+const matchTextCache = new Map<string, string>();
+
 /** Strip to letters/digits for soft text matching (streaming-safe). */
 export function normalizeMatchText(value: unknown): string {
-  return stripLbdataBlocks(value).replace(/[^a-zA-Z0-9\uac00-\ud7a3\u3040-\u30ff\u3400-\u9fff\uff00-\uffef]/g, '').toLowerCase();
+  const raw = String(value ?? '');
+  const hit = matchTextCache.get(raw);
+  if (hit !== undefined) return hit;
+  const out = stripLbdataBlocks(raw).replace(/[^a-zA-Z0-9\uac00-\ud7a3\u3040-\u30ff\u3400-\u9fff\uff00-\uffef]/g, '').toLowerCase();
+  if (matchTextCache.size >= MATCH_TEXT_CACHE_MAX) {
+    const first = matchTextCache.keys().next().value;
+    if (first !== undefined) matchTextCache.delete(first);
+  }
+  matchTextCache.set(raw, out);
+  return out;
 }
 
 /** @deprecated use HASH_REBIND_THRESHOLD — kept for older call sites */

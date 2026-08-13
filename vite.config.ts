@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.20';
+const PLUGIN_VERSION = '2.3.21';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.21</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>체감은 그대로, 스크롤·상태창·말풍선 읽기·생성 완료 재마운트만 덜 돌림</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.20</strong>
@@ -6325,13 +6331,17 @@ const VENDOR_DE_STRIP_NEEDLE =
 const VENDOR_DE_STRIP_PATCH =
   `  async function De(e) {
     try {
+      const hit = t._deTextCache;
+      if (hit && hit.el === e && Date.now() - hit.at < 120) return hit.text;
       const body = typeof e?.querySelector == "function" ? await e.querySelector(".leading-relaxed") : null;
       const src = body && typeof body.getInnerHTML == "function" ? body : e;
       if (typeof src.getInnerHTML == "function") {
         let html = String(await src.getInnerHTML() || "");
         const VC = globalThis.__INLAY_VIEWER_CORE__;
         if (typeof VC?.stripInlayInlineHtml == "function") html = VC.stripInlayInlineHtml(html);
-        return w(ln(html), 1e5);
+        const text = w(ln(html), 1e5);
+        t._deTextCache = { el: e, at: Date.now(), text };
+        return text;
       }
     } catch {
     }`;
@@ -7018,7 +7028,7 @@ const VENDOR_INLINE_CALL_NEEDLE =
 const VENDOR_INLINE_CALL_PATCH =
   `    if (source === "click" || source === "text" || source === "scroll") {
       try {
-        await refreshSelectedInlineImages(source === "scroll");
+        await refreshSelectedInlineImages();
       } catch {
       }
     }
@@ -7041,7 +7051,7 @@ const VENDOR_INLINE_SAME_NEEDLE =
 const VENDOR_INLINE_SAME_PATCH =
   `      if (source === "click" || source === "text" || source === "scroll") {
         try {
-          await refreshSelectedInlineImages(source === "scroll");
+          await refreshSelectedInlineImages();
         } catch {
         }
       }
@@ -7142,6 +7152,16 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
             }
           }
         }`;
+
+/** Job complete: remount viewer only if gallery/overlay roots were torn down. */
+const VENDOR_JOB_DONE_IT_NEEDLE =
+  `          }, a.state === "cancelled" ? 600 : 1800), y("info", "gallery.refresh", \`\${(t.gallery || []).length} cards\`), await it();`;
+const VENDOR_JOB_DONE_IT_PATCH =
+  `          }, a.state === "cancelled" ? 600 : 1800), y("info", "gallery.refresh", \`\${(t.gallery || []).length} cards\`);
+          try {
+            if (!t.galleryUi?.root || !t.overlayUi?.root) await it();
+          } catch {
+          }`;
 
 /**
  * Auto-gen (Ka): while selected bubble text is still streaming/changing, wait
@@ -7505,7 +7525,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       if (!t.selectedMessage && !replySrc) return;
       const doc = await ue().catch(() => t.hostDoc);
       if (!doc) return;
-      t._msgElsCache = null;
+      // Same doc + same bubble count: keep 450ms attendance list (text may grow).
       const els = await getCachedMsgEls(doc);
       if (!els?.length) return;
       // Reply hooks: always newest DOM#0 (do not keep a stale user selection).
@@ -7938,7 +7958,7 @@ const VENDOR_SCROLL_GALLERY_NEW_PATCH = `    {
         scheduleOverlayPlace(40), await onSelectionChanged("content");
       } else scheduleStickySync(), await onSelectionChanged("content");
       try {
-        await refreshSelectedInlineImages(!0);
+        await refreshSelectedInlineImages();
       } catch {
       }
       return !0;
@@ -8185,8 +8205,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.20",
-    body: "스크롤 선택에도 말풍선 삽화 유무를 맞춥니다. 업데이트 내역 탭 참고."
+    title: "2.3.21",
+    body: "같은 화면은 그대로, 속만 덜 바쁩니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -8870,6 +8890,11 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
   }
   async function Se() {
     try {
+      const B = t.jobProgress;
+      const O = t.selectedMessage;
+      const fp = [B?.state, B?.progress, B?.message, B?.jobId, O?.hash, O?.domIndex, (t.gallery || []).length, t.jobsInFlight?.size || 0, t._progressToastShown ? 1 : 0].join("|");
+      if (fp === t._seFp && t.galleryUi?.root) return;
+      t._seFp = fp;
       if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
       await syncProgressToast();
     } catch {
@@ -9131,6 +9156,12 @@ const VENDOR_PROGRESS_TOAST_PAINT_NEEDLE = `    }, paintStatus = async () => {
       }`;
 const VENDOR_PROGRESS_TOAST_PAINT_PATCH = `    }, paintStatus = async () => {
       const _ = Array.isArray(d.items) ? d.items : U(), O = t.selectedMessage, B = t.jobProgress, idx = readIndexProgress(B), busy = !!(B || O?.hash && t.jobsInFlight.has(O.hash) || idx.busy), extra = O ? \`\${_.length}장 · DOM#\${O.domIndex}\` : "";
+      const statusKey = busy && (B || idx.busy)
+        ? \`b|\${String(B?.state || "")}|\${Number(B?.progress) || idx.pct}|\${String(B?.message || idx.label || "")}|\${extra}\`
+        : O ? \`o|\${_.length}|\${O.domIndex}|\${O.preview || ""}\` : "none";
+      if (t._paintStatusRoot === C && t._paintStatusKey === statusKey) return;
+      t._paintStatusRoot = C;
+      t._paintStatusKey = statusKey;
       try {
         if (busy && (B || idx.busy)) await C.setInnerHTML(viewerStatusHtml(B || { state: "running", progress: idx.pct, message: idx.label }, extra));
         else if (O) await C.setInnerHTML(\`<span style="color:#a6b1c2">\${h(\`\${_.length}장 · DOM#\${O.domIndex} · \${O.preview || ""}\`)}</span>\`);
@@ -11143,6 +11174,7 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_SAME_NEEDLE, 'inline inject same-select'],
     [VENDOR_INLINE_POLL_NEEDLE, 'inline poll pending'],
     [VENDOR_INLINE_POLL_REFRESH_NEEDLE, 'inline poll refresh'],
+    [VENDOR_JOB_DONE_IT_NEEDLE, 'job done skip remount if roots'],
     [VENDOR_STREAM_SETTLE_KA_NEEDLE, 'stream settle Ka 0.5s'],
     [VENDOR_SELECT_GESTURE_HELP_NEEDLE, 'select gesture help'],
     [VENDOR_SELECT_GESTURE_HTML_NEEDLE, 'select gesture html'],
@@ -11465,6 +11497,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_SAME_NEEDLE, VENDOR_INLINE_SAME_PATCH)
     .replace(VENDOR_INLINE_POLL_NEEDLE, VENDOR_INLINE_POLL_PATCH)
     .replace(VENDOR_INLINE_POLL_REFRESH_NEEDLE, VENDOR_INLINE_POLL_REFRESH_PATCH)
+    .replace(VENDOR_JOB_DONE_IT_NEEDLE, VENDOR_JOB_DONE_IT_PATCH)
     .replace(VENDOR_STREAM_SETTLE_KA_NEEDLE, VENDOR_STREAM_SETTLE_KA_PATCH)
     .replace(VENDOR_SELECT_GESTURE_HELP_NEEDLE, VENDOR_SELECT_GESTURE_HELP_PATCH)
     .replace(VENDOR_SELECT_GESTURE_HTML_NEEDLE, VENDOR_SELECT_GESTURE_HTML_PATCH)
@@ -11604,8 +11637,17 @@ const loadVendorUi = (): string => {
     if (!out.includes('_scriptDomSnapBy') || !out.includes('key=${key}')) {
       throw new Error('[build] 500c and 4s snaps must be stored separately');
     }
-    if (!out.includes('shots=0 stripped') || !out.includes('refreshSelectedInlineImages(source === "scroll")')) {
-      throw new Error('[build] scroll select must strip empty inline and force keep refresh');
+    if (!out.includes('shots=0 stripped')) {
+      throw new Error('[build] scroll select must strip empty inline');
+    }
+    if (out.includes('refreshSelectedInlineImages(source === "scroll")')) {
+      throw new Error('[build] scroll inline must not force-refresh (cheap keep skip)');
+    }
+    if (!out.includes('_paintStatusKey') || !out.includes('_seFp') || !out.includes('_deTextCache')) {
+      throw new Error('[build] missing same-feel skip caches (status/Se/De)');
+    }
+    if (!out.includes('gallery.refresh') || !out.includes('if (!t.galleryUi?.root || !t.overlayUi?.root) await it();')) {
+      throw new Error('[build] job done must skip it() when viewer roots exist');
     }
     if (!out.includes('await injectInline(!!replyDone)') || !out.includes('!force')) {
       throw new Error('[build] missing forced inline inject on chat reply done');

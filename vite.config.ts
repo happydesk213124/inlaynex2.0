@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.7';
+const PLUGIN_VERSION = '2.3.8';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.8</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 선택: [data-chat-id] / data-chat-index 기준, 화면 아래(최신)가 DOM#0</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.7</strong>
@@ -6247,14 +6253,95 @@ const VENDOR_DE_STRIP_NEEDLE =
 const VENDOR_DE_STRIP_PATCH =
   `  async function De(e) {
     try {
-      if (typeof e.getInnerHTML == "function") {
-        let html = String(await e.getInnerHTML() || "");
+      const body = typeof e?.querySelector == "function" ? await e.querySelector(".leading-relaxed") : null;
+      const src = body && typeof body.getInnerHTML == "function" ? body : e;
+      if (typeof src.getInnerHTML == "function") {
+        let html = String(await src.getInnerHTML() || "");
         const VC = globalThis.__INLAY_VIEWER_CORE__;
         if (typeof VC?.stripInlayInlineHtml == "function") html = VC.stripInlayInlineHtml(html);
         return w(ln(html), 1e5);
       }
     } catch {
     }`;
+
+const VENDOR_DT_FN_NEEDLE =
+  `  async function dt(e) {
+    if (!e) return [];
+    for (const n of $a) try {
+      const o = await e.querySelectorAll(n), a = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(o) : [];
+      if (a?.length) return a;
+    } catch {
+    }
+    return [];
+  }`;
+const VENDOR_DT_FN_PATCH =
+  `  async function nxChatAttrIndex(el) {
+    try {
+      if (el && typeof el.getAttribute == "function") {
+        const v = Number(await el.getAttribute("data-chat-index"));
+        if (Number.isFinite(v) && v >= 0) return v;
+      }
+    } catch {
+    }
+    return NaN;
+  }
+  async function dt(e) {
+    if (!e) return [];
+    const unwrap = async (sel) => {
+      try {
+        const o = await e.querySelectorAll(sel);
+        const a = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(o) : [];
+        return Array.isArray(a) ? a : [];
+      } catch {
+        return [];
+      }
+    };
+    let a = await unwrap("[data-chat-id]");
+    if (!a.length) a = await unwrap(".risu-chat");
+    if (a.length) {
+      const paired = [];
+      let known = 0;
+      for (let i = 0; i < a.length; i++) {
+        const idx = await nxChatAttrIndex(a[i]);
+        if (Number.isFinite(idx)) known += 1;
+        paired.push({ el: a[i], i, idx });
+      }
+      if (known === paired.length) {
+        // Newest / visually lower first: higher data-chat-index → DOM#0.
+        paired.sort((x, y) => y.idx - x.idx || x.i - y.i);
+        return paired.map((p) => p.el);
+      }
+      const rects = [];
+      for (let i = 0; i < a.length; i++) {
+        let top = i;
+        try {
+          const r = await a[i].getBoundingClientRect();
+          if (r && Number.isFinite(Number(r.top))) top = Number(r.top);
+        } catch {
+        }
+        rects.push({ el: a[i], top, i });
+      }
+      rects.sort((x, y) => y.top - x.top || x.i - y.i);
+      return rects.map((p) => p.el);
+    }
+    for (const n of $a) {
+      const b = await unwrap(n);
+      if (b.length) return b;
+    }
+    return [];
+  }`;
+
+const VENDOR_DA_QA_NEEDLE =
+  `    const i = qa(a, r.messages, e, Array.isArray(n) ? n.length : 0, { prevText, nextText }), l = w(i.role || "");`;
+const VENDOR_DA_QA_PATCH =
+  `    const nxApi = await nxChatAttrIndex(o);
+    const i = qa(a, r.messages, e, Array.isArray(n) ? n.length : 0, { prevText, nextText, chatIndex: nxApi }), l = w(i.role || "");`;
+
+const VENDOR_BIND_QA_NEEDLE =
+  `      const c = qa(s, a?.messages || [], i, o.length);`;
+const VENDOR_BIND_QA_PATCH =
+  `      const nxApi = await nxChatAttrIndex(o[i]);
+      const c = qa(s, a?.messages || [], i, o.length, { chatIndex: nxApi });`;
 
 const VENDOR_INLINE_INJECT_FN_NEEDLE =
   `  async function ensureMessageInView(el) {`;
@@ -7932,8 +8019,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.7",
-    body: "응답 후 자동 생성은 말풍선이 확정된 뒤 1초 기다립니다. 업데이트 내역 탭 참고."
+    title: "2.3.8",
+    body: "말풍선은 data-chat-id 기준으로, 화면 아래 최신이 DOM#0입니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -10882,6 +10969,9 @@ const loadVendorUi = (): string => {
     [VENDOR_REROLL_ALL_INLINE_NEEDLE, 'reroll all inline refresh'],
     [VENDOR_FORCE_REGEN_INLINE_NEEDLE, 'force regen inline clear'],
     [VENDOR_DE_STRIP_NEEDLE, 'De strip inline markers'],
+    [VENDOR_DT_FN_NEEDLE, 'risu-chat data-chat-id list'],
+    [VENDOR_DA_QA_NEEDLE, 'Da qa data-chat-index'],
+    [VENDOR_BIND_QA_NEEDLE, 'bindCard qa data-chat-index'],
     [VENDOR_INLINE_INJECT_FN_NEEDLE, 'inline inject fn'],
     [VENDOR_INLINE_CALL_NEEDLE, 'inline inject call'],
     [VENDOR_INLINE_SAME_NEEDLE, 'inline inject same-select'],
@@ -11201,6 +11291,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_REROLL_ALL_INLINE_NEEDLE, VENDOR_REROLL_ALL_INLINE_PATCH)
     .replace(VENDOR_FORCE_REGEN_INLINE_NEEDLE, VENDOR_FORCE_REGEN_INLINE_PATCH)
     .replace(VENDOR_DE_STRIP_NEEDLE, VENDOR_DE_STRIP_PATCH)
+    .replace(VENDOR_DT_FN_NEEDLE, VENDOR_DT_FN_PATCH)
+    .replace(VENDOR_DA_QA_NEEDLE, VENDOR_DA_QA_PATCH)
+    .replace(VENDOR_BIND_QA_NEEDLE, VENDOR_BIND_QA_PATCH)
     .replace(VENDOR_INLINE_INJECT_FN_NEEDLE, VENDOR_INLINE_INJECT_FN_PATCH)
     .replace(VENDOR_INLINE_CALL_NEEDLE, VENDOR_INLINE_CALL_PATCH)
     .replace(VENDOR_INLINE_SAME_NEEDLE, VENDOR_INLINE_SAME_PATCH)
@@ -11353,6 +11446,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('scheduleAutoGenOnReply("afterRequest"')) {
       throw new Error('[build] missing afterRequest auto-gen schedule');
+    }
+    if (!out.includes('nxChatAttrIndex') || !out.includes('[data-chat-id]')) {
+      throw new Error('[build] missing risu-chat data-chat-id message list');
     }
     if (!out.includes('nxActivateStickyNearestToCursor().catch')) {
       throw new Error('[build] pointer path must call nxActivateStickyNearestToCursor');

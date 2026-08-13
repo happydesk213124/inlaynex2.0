@@ -569,6 +569,18 @@ test("stickyPinOverImage centers pin on image top edge", () => {
   assert.deepEqual(stickyPinOverImage({ left: 100, top: 50, w: 200, h: 160 }, 28, 6), { left: 186, top: 44 });
 });
 
+test("resolveChatMessageMatch: data-chat-index maps API row even if DOM count differs", () => {
+  const messages = [
+    { index: 0, role: "user", text: "유저첫말입니다아아아아" },
+    { index: 1, role: "char", text: "캐릭터중간응답본문입니다" },
+    { index: 2, role: "char", text: "사원증의 이름을 확인하는 순간, 손끝에 와닿는 감촉이" },
+  ];
+  const hit = resolveChatMessageMatch("아무글자", messages, 0, 1, { chatIndex: 2 });
+  assert.equal(hit.chatIndex, 2);
+  assert.equal(hit.role, "char");
+  assert.equal(hit.matchMethod, "attr");
+});
+
 test("resolveChatMessageMatch: DOM#0 newest maps to last API message (reverse only)", () => {
   const messages = [
     { index: 0, role: "user", text: "유저첫말입니다아아아아" },

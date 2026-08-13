@@ -598,7 +598,7 @@ export function pickInlineKeepDomIndices(opts: {
 
 // ── DOM ↔ API message matching ────────────────────────────────────────────
 
-export type ChatMatchMethod = 'reverse' | 'fallback';
+export type ChatMatchMethod = 'reverse' | 'fallback' | 'attr';
 
 export interface ChatMessageMatch {
   chatIndex: number;
@@ -789,6 +789,13 @@ export function resolveChatMessageMatch(
     matchMethod: method,
     score,
   });
+
+  const attrIdx = Math.floor(finiteNumber((_opts as { chatIndex?: unknown } | undefined)?.chatIndex, Number.NaN));
+  if (Number.isFinite(attrIdx) && attrIdx >= 0) {
+    const byIndex = list.find((row) => Number(row?.index) === attrIdx);
+    if (byIndex) return pick(byIndex, 'attr', 100, attrIdx);
+    if (attrIdx < list.length) return pick(list[attrIdx], 'attr', 100, attrIdx);
+  }
 
   if (!list.length) {
     return {

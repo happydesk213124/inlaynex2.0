@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.14';
+const PLUGIN_VERSION = '2.3.15';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.15</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>생성 글자 수: [LBDATA START]~[LBDATA END] 블록(태그 포함)은 빼고 센다. 나머지가 30자 이하면 선택해도 생성 안 함</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.14</strong>
@@ -7136,7 +7142,9 @@ const VENDOR_STREAM_SETTLE_KA_NEEDLE =
   }`;
 const VENDOR_STREAM_SETTLE_KA_PATCH =
   `  async function Ka(e, n) {
-    if (!e || e.length <= 30 || t.jobsInFlight.has(n) || !(await ve()).enabled) return;
+    const VC0 = globalThis.__INLAY_VIEWER_CORE__;
+    const bodyN = typeof VC0?.messageBodyCharCount == "function" ? VC0.messageBodyCharCount(e) : String(e || "").length;
+    if (!e || bodyN <= 30 || t.jobsInFlight.has(n) || !(await ve()).enabled) return;
     if (ge(n).length) return;
     try {
       await le();
@@ -7237,7 +7245,7 @@ const VENDOR_STREAM_SETTLE_KA_PATCH =
       ? VC.findCardsForMessageIdentity(Array.isArray(t.gallery) ? t.gallery : [], turn)
       : [];
     if (sameTurn.length) return y("info", "overlay.generate.skip", \`same_turn_cards=\${sameTurn.length} hash=\${n.slice(0, 8)}\`);
-    y("info", "overlay.generate", \`hash=\${n.slice(0, 8)} chars=\${e.length} session=\${(a.sessionId || "").slice(-8)}\`), await Be(a, e, !1);
+    y("info", "overlay.generate", \`hash=\${n.slice(0, 8)} chars=\${bodyN} session=\${(a.sessionId || "").slice(-8)}\`), await Be(a, e, !1);
   }`;
 
 /**
@@ -7286,6 +7294,10 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       return !1;
     }
   }
+  function messageBodyChars(s) {
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    return typeof VC?.messageBodyCharCount == "function" ? VC.messageBodyCharCount(s) : String(s || "").length;
+  }
   function stopScriptDomQuietWatcher() {
     if (t._scriptDomQuietTimer) {
       clearInterval(t._scriptDomQuietTimer);
@@ -7324,6 +7336,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
         t._scriptDomSnap = now;
         t._scriptDomSnapReady = !0;
         if (!prev || now.length < 150 || grew >= 3) return;
+        if (messageBodyChars(now) <= 30) return y("info", "scriptOutput.skip", "body too short after lbdata strip");
         y("info", "scriptOutput.domQuiet5", "DOM grew <3 after 0.5s → gen");
         t._scriptStreaming = !1;
         stopScriptDomQuietWatcher();
@@ -7414,6 +7427,10 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
   }
   async function scheduleAutoGenOnReply(source, textHint) {
     const hint = w(textHint, 5e4);
+    if (hint && messageBodyChars(hint) <= 30) {
+      y("info", "afterReply.skip", \`\${source} text too short\`);
+      return;
+    }
     const AFTER_GEN_DELAY_MS = 5e2;
     if (t._afterGenTimer) {
       clearTimeout(t._afterGenTimer);
@@ -7609,7 +7626,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
         return y("info", "afterRequest.skip", "plugin disabled"), e;
       const a = w(e, 5e4);
       if (a && a.length > 8) scheduleHashRelinkAfterReply("afterRequest");
-      if (!a || a.length <= 30)
+      if (!a || messageBodyChars(a) <= 30)
         return y("info", "afterRequest.skip", "text too short"), e;
       const i = t.backendSettings?.card || {};
       if (i.power === !1) return y("info", "afterRequest.skip", "power off"), e;
@@ -7626,7 +7643,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "트랙1: 주 채팅(model) afterRequest 후 0.5초 뒤 한 번 생성. 트랙2: 스트리밍 중 150자 쌓이거나 4초마다 0.5초 뒤 DOM#0을 찍어, 이전이랑 3글자 미만이면 같은 생성. 이미 생성 중이면 뒤는 스킵. 보조 모델·유저 말·이미 이미지·Power/수동/토글 OFF는 스킵." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "트랙1: 주 채팅(model) afterRequest 후 0.5초 뒤 한 번 생성. 트랙2: 스트리밍 중 150자 쌓이거나 4초마다 0.5초 뒤 DOM#0을 찍어, 이전이랑 3글자 미만이면 같은 생성. [LBDATA START]~END 는 글자 수에서 제외하고, 나머지가 30자 이하면 클릭해도 생성하지 않습니다. 이미 생성 중이면 뒤는 스킵. 보조 모델·유저 말·이미 이미지·Power/수동/토글 OFF는 스킵." },`;
 
 const VENDOR_CHAT_OUTPUT_BOOT_NEEDLE =
   `      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
@@ -8122,8 +8139,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.14",
-    body: "스트리밍은 150자/4초마다 DOM#0을 찍어 3글자 안 늘면 생성합니다. 업데이트 내역 탭 참고."
+    title: "2.3.15",
+    body: "LBDATA 블록은 글자 수에서 빼며, 나머지가 30자 이하면 생성하지 않습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11555,6 +11572,9 @@ const loadVendorUi = (): string => {
     }
     if (out.includes('afterReply.poll') || out.includes('POLL_MAX')) {
       throw new Error('[build] 0.3s×3 poll must stay removed');
+    }
+    if (!out.includes('messageBodyCharCount') || !out.includes('body too short after lbdata strip')) {
+      throw new Error('[build] missing LBDATA-stripped body char gate');
     }
     if (!out.includes('scheduleAutoGenOnReply("afterRequest"')) {
       throw new Error('[build] missing afterRequest auto-gen schedule');

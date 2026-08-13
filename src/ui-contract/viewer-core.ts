@@ -116,9 +116,26 @@ export function scaleInlineThumbnail(percent: unknown): { width: number; height:
 
 // ── text similarity ───────────────────────────────────────────────────────
 
+/**
+ * Drop Lightboard dumps so length/similarity see only the surrounding prose.
+ * Tags themselves are included in the removed span.
+ */
+export function stripLbdataBlocks(value: unknown): string {
+  let s = String(value ?? '');
+  s = s.replace(/\[LBDATA\s+START\][\s\S]*?\[LBDATA\s+END\]/gi, '');
+  s = s.replace(/\[LBDATA\s+END\][\s\S]*?\[LBDATA\s+START\]/gi, '');
+  s = s.replace(/\[LBDATA\s+(?:START|END)\]/gi, '');
+  return s;
+}
+
+/** Non-whitespace length after stripping LBDATA (generation gate). */
+export function messageBodyCharCount(value: unknown): number {
+  return stripLbdataBlocks(value).replace(/\s+/g, '').length;
+}
+
 /** Strip to letters/digits for soft text matching (streaming-safe). */
 export function normalizeMatchText(value: unknown): string {
-  return String(value || '').replace(/[^a-zA-Z0-9\uac00-\ud7a3\u3040-\u30ff\u3400-\u9fff\uff00-\uffef]/g, '').toLowerCase();
+  return stripLbdataBlocks(value).replace(/[^a-zA-Z0-9\uac00-\ud7a3\u3040-\u30ff\u3400-\u9fff\uff00-\uffef]/g, '').toLowerCase();
 }
 
 /** @deprecated use HASH_REBIND_THRESHOLD — kept for older call sites */

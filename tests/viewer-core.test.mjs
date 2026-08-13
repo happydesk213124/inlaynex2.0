@@ -96,7 +96,20 @@ import {
   galleryStripContentWidth,
   clampThumbScrollOffset,
   parseAutotagLookJson,
+  stripLbdataBlocks,
+  messageBodyCharCount,
+  normalizeMatchText,
 } from "../.test-build/viewer-core.mjs";
+
+test("LBDATA dump is excluded from body char count and match text", () => {
+  const dump = `----\n---\n[LBDATA START]\n<lightboard-kakaochat>lots of wiki</lightboard-kakaochat>\n[LBDATA END]\n`;
+  assert.equal(stripLbdataBlocks(dump).replace(/\s+/g, ""), "-------");
+  assert.equal(messageBodyCharCount(dump), 7);
+  assert.ok(messageBodyCharCount(dump) <= 30);
+  const withProse = `정찰 결과를 상부로 보고한다. 하층부에서 이상 개체를 확인했고 추가 대비가 필요하다.\n[LBDATA START]\nx\n[LBDATA END]`;
+  assert.ok(messageBodyCharCount(withProse) > 30);
+  assert.equal(normalizeMatchText(`[LBDATA START]wikiwiki[LBDATA END]안녕`), "안녕");
+});
 
 test("new 100 percent thumbnail equals the legacy 600 percent dimensions", () => {
   assert.deepEqual(scaleInlineThumbnail(100), { width: 528, height: 720, percent: 100 });

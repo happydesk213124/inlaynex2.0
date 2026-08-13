@@ -694,6 +694,17 @@ test("pickInlineKeepDomIndices skips users and keeps 1 char each side", () => {
   );
 });
 
+test("pickInlineKeepDomIndices skips lightboard-only bodies like users", () => {
+  const roles = ["char", "char", "char", "user", "char", "user", "char", "char", "char"];
+  const skip = new Set([2, 6]);
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  const isSkipBodyAt = (i) => skip.has(i);
+  assert.deepEqual(
+    pickInlineKeepDomIndices({ selIdx: 4, length: 9, allRoles: false, isCharAt, isSkipBodyAt }).sort((a, b) => a - b),
+    [1, 4, 7],
+  );
+});
+
 test("pickInlineKeepDomIndices keeps selected char plus 1 each side (max 3)", () => {
   // C U C U [C] U C U C — selected char at 4 → sel + 1 above + 1 below
   const roles = ["char", "user", "char", "user", "char", "user", "char", "user", "char"];

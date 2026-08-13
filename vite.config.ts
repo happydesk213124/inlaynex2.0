@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.18';
+const PLUGIN_VERSION = '2.3.19';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.19</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 삽화 ±1: 라이트보드(본문 30자 이하)도 유저처럼 건너뛰고 다음 칸을 씀</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.18</strong>
@@ -6282,7 +6288,7 @@ const VENDOR_INLINE_HELP_NEEDLE =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },`;
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
-    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 ±1(역할 무관). 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
+    "nx-inline-chat": { title: "말풍선 삽화 (beta)", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저·라이트보드(본문 30자 이하)는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-chat-scale": { title: "말풍선 삽화 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
     "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트." },`;
 
@@ -6823,22 +6829,28 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             ? isSelectedCharRole(role)
             : /^(char|assistant|bot)$/i.test(String(role || ""));
       };
-      // Prefetch roles along walk so pickInlineKeepDomIndices can stay sync.
-      if (allRoles) {
-        if (selIdx + 1 < els.length) await resolveAt(selIdx + 1);
-        if (selIdx - 1 >= 0) await resolveAt(selIdx - 1);
-      } else {
-        await resolveAt(selIdx);
-        let found = 0;
-        for (let i = selIdx + 1; i < els.length && found < maxPerSide; i += 1) {
-          await resolveAt(i);
-          if (isCharAtSync(i)) found += 1;
-        }
-        found = 0;
-        for (let i = selIdx - 1; i >= 0 && found < maxPerSide; i -= 1) {
-          await resolveAt(i);
-          if (isCharAtSync(i)) found += 1;
-        }
+      const isSkipBodyAt = (idx) => {
+        const row = msgCache.get(idx);
+        const text = row?.msg?.text || "";
+        if (typeof VC?.isInlineSkipBody == "function") return VC.isInlineSkipBody(text);
+        if (typeof VC?.messageBodyCharCount == "function") return VC.messageBodyCharCount(text) <= 30;
+        return String(text).replace(/\s+/g, "").length <= 30;
+      };
+      const canKeepAt = (idx) => {
+        if (isSkipBodyAt(idx)) return !1;
+        return allRoles ? !0 : isCharAtSync(idx);
+      };
+      // Prefetch roles/text along walk so pickInlineKeepDomIndices can stay sync.
+      await resolveAt(selIdx);
+      let found = 0;
+      for (let i = selIdx + 1; i < els.length && found < maxPerSide; i += 1) {
+        await resolveAt(i);
+        if (canKeepAt(i)) found += 1;
+      }
+      found = 0;
+      for (let i = selIdx - 1; i >= 0 && found < maxPerSide; i -= 1) {
+        await resolveAt(i);
+        if (canKeepAt(i)) found += 1;
       }
       const keepIdxs = typeof VC?.pickInlineKeepDomIndices == "function"
         ? VC.pickInlineKeepDomIndices({
@@ -6846,6 +6858,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           length: els.length,
           allRoles,
           isCharAt: isCharAtSync,
+          isSkipBodyAt,
           maxPerSide
         })
         : (() => {
@@ -6853,23 +6866,17 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           const add = (i) => {
             if (i >= 0 && i < els.length && !out.includes(i)) out.push(i);
           };
-          if (allRoles) {
-            add(selIdx);
-            if (selIdx + 1 < els.length) add(selIdx + 1);
-            if (selIdx - 1 >= 0) add(selIdx - 1);
-            return out;
-          }
-          if (isCharAtSync(selIdx)) add(selIdx);
+          if (canKeepAt(selIdx)) add(selIdx);
           let n = 0;
           for (let i = selIdx + 1; i < els.length && n < maxPerSide; i += 1) {
-            if (isCharAtSync(i)) {
+            if (canKeepAt(i)) {
               add(i);
               n += 1;
             }
           }
           n = 0;
           for (let i = selIdx - 1; i >= 0 && n < maxPerSide; i -= 1) {
-            if (isCharAtSync(i)) {
+            if (canKeepAt(i)) {
               add(i);
               n += 1;
             }
@@ -8173,8 +8180,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.18",
-    body: "챗 완료 때 인라인이 켜져 있으면 말풍선 삽화를 다시 넣습니다. 업데이트 내역 탭 참고."
+    title: "2.3.19",
+    body: "말풍선 삽화는 라이트보드 말풍선도 건너뜁니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11594,6 +11601,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('await injectInline(!!replyDone)') || !out.includes('!force')) {
       throw new Error('[build] missing forced inline inject on chat reply done');
+    }
+    if (!out.includes('isSkipBodyAt') || !out.includes('isInlineSkipBody')) {
+      throw new Error('[build] inline keep must skip LBDATA-short bodies');
     }
     if (out.includes('scriptOutput.miss5') || out.includes('_scriptMissTimer')) {
       throw new Error('[build] legacy 1s×5 DOM miss path must be removed');

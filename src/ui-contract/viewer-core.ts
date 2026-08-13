@@ -562,12 +562,17 @@ export function isCharMessageRole(roleOrMessage: string | ChatMessage | null | u
 /** Max char bubbles kept above/below selection when inline skips user roles. */
 export const INLINE_KEEP_MAX_PER_SIDE = 1;
 
+/** Same gate as auto-gen: LBDATA-stripped body too short → not an inline neighbor. */
+export function isInlineSkipBody(value: unknown): boolean {
+  return messageBodyCharCount(value) <= 30;
+}
+
 /**
  * DOM indices that keep inline shots. Chat DOM is newest-first:
  * higher index = older (above), lower = newer (below).
  *
- * - allRoles: selected ±1 (role-blind), same as the old ±1 window.
- * - else: keep selected only if char; walk past users and keep up to
+ * - allRoles: walk past skip-body bubbles, keep up to maxPerSide each side (role-blind).
+ * - else: keep selected only if char+body; walk past users and skip-body, keep up to
  *   `maxPerSide` chars above and below (default 1+1; +selected char → max 3).
  */
 export function pickInlineKeepDomIndices(opts: {
@@ -576,36 +581,37 @@ export function pickInlineKeepDomIndices(opts: {
   allRoles: boolean;
   isCharAt: (idx: number) => boolean;
   maxPerSide?: number;
+  isSkipBodyAt?: (idx: number) => boolean;
 }): number[] {
   const selIdx = opts.selIdx;
   const length = opts.length;
   const maxPerSide = opts.maxPerSide ?? INLINE_KEEP_MAX_PER_SIDE;
   if (!Number.isFinite(selIdx) || selIdx < 0 || selIdx >= length || length <= 0) return [];
 
+  const skipBody = opts.isSkipBodyAt || (() => false);
+  const canKeep = (i: number) => {
+    if (skipBody(i)) return false;
+    if (opts.allRoles) return true;
+    return opts.isCharAt(i);
+  };
+
   const out: number[] = [];
   const add = (i: number) => {
     if (i >= 0 && i < length && !out.includes(i)) out.push(i);
   };
 
-  if (opts.allRoles) {
-    add(selIdx);
-    if (selIdx + 1 < length) add(selIdx + 1);
-    if (selIdx - 1 >= 0) add(selIdx - 1);
-    return out;
-  }
-
-  if (opts.isCharAt(selIdx)) add(selIdx);
+  if (canKeep(selIdx)) add(selIdx);
 
   let found = 0;
   for (let i = selIdx + 1; i < length && found < maxPerSide; i += 1) {
-    if (opts.isCharAt(i)) {
+    if (canKeep(i)) {
       add(i);
       found += 1;
     }
   }
   found = 0;
   for (let i = selIdx - 1; i >= 0 && found < maxPerSide; i -= 1) {
-    if (opts.isCharAt(i)) {
+    if (canKeep(i)) {
       add(i);
       found += 1;
     }

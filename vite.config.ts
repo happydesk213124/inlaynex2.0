@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.8';
+const PLUGIN_VERSION = '2.3.9';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.9</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>응답 후 자동 생성: afterRequest(주 채팅 model)만 · 스트리밍 중 스킵 · script 출력은 종료 폴백만</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.8</strong>
@@ -7241,7 +7247,16 @@ const VENDOR_AFTER_REPLY_FN_NEEDLE =
     return e;
   }`;
 const VENDOR_AFTER_REPLY_FN_PATCH =
-  `  // Reply auto-gen: click-select newest char bubble so Da runs Ka (not provisional).
+  `  async function chatIsStreaming() {
+    try {
+      const r = await Za();
+      const ch = r?.chat;
+      return !!(ch && (ch.isStreaming === !0 || ch.is_streaming === !0));
+    } catch {
+      return !1;
+    }
+  }
+  // Reply auto-gen: click-select newest char bubble so Da runs Ka (not provisional).
   async function runAutoGenFromDom(source) {
     if (t._afterGenRunning) {
       y("info", "afterReply.skip", \`\${source} already running\`);
@@ -7265,6 +7280,16 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       }
       const o = await ve();
       if (!o.enabled) return y("info", "afterReply.skip", "plugin disabled");
+      let waited = 0;
+      while (await chatIsStreaming()) {
+        if (waited >= 2e4) {
+          y("info", "afterReply.skip", \`\${source} still streaming\`);
+          return;
+        }
+        y("info", "afterReply.wait", \`\${source} isStreaming\`);
+        await new Promise((res) => setTimeout(res, 4e2));
+        waited += 4e2;
+      }
       try {
         await le();
       } catch {
@@ -7454,26 +7479,13 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       const idx = Number(arg?.messageIndex);
       const msgs = arg?.chat?.message;
       const msg = Number.isFinite(idx) && idx >= 0 && Array.isArray(msgs) ? msgs[idx] : null;
-      const role = w(msg?.role ?? "", 40);
       const text = w(msg?.data ?? msg?.content ?? "", 5e4);
       if (text && text.length > 8) scheduleHashRelinkAfterReply("chatOutput");
-      const card = t.backendSettings?.card || {};
-      if (card.power === !1 || !card.auto_gen_on_reply) return;
-      if (card.execute === "manual") return;
-      if (role && !isSelectedCharRole(role)) {
-        y("info", "chatOutput.skip", "user message");
-        return;
-      }
-      if (!text || text.length <= 30) {
-        y("info", "chatOutput.skip", "text too short");
-        return;
-      }
-      await scheduleAutoGenOnReply("chatOutput", text);
     } catch (err) {
       y("error", "chatOutput.fail", err?.message || err);
     }
   }
-  // Streaming chunks: hash relink; quiet end is fallback auto-gen when chatOutput missing.
+  // Streaming chunks: hash relink only. Quiet end is fallback auto-gen if afterRequest never fires.
   async function onScriptOutput(content) {
     try {
       const o = await ve();
@@ -7523,7 +7535,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "응답이 끝나면(afterRequest/chat 출력) 말풍선이 확정된 뒤 1초 기다렸다가 최신 캐릭 말풍선을 클릭처럼 선택해, 이미지 없으면 생성합니다. 스트리밍은 출력이 잠잠해지면 폴백. 유저 말·보조 모델·이미 이미지 있음·Power/수동/토글 OFF는 스킵." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "주 채팅 응답(model)이 끝나면(afterRequest) 스트리밍이 꺼진 뒤 1초 기다렸다가 최신 캐릭 말풍선을 클릭처럼 선택해, 이미지 없으면 생성합니다. 보조 모델은 무시. afterRequest가 안 오면 스트리밍 출력이 잠잠해진 뒤 폴백. 유저 말·이미 이미지 있음·Power/수동/토글 OFF는 스킵." },`;
 
 const VENDOR_CHAT_OUTPUT_BOOT_NEEDLE =
   `      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
@@ -7546,7 +7558,7 @@ const VENDOR_CHAT_OUTPUT_BOOT_PATCH =
         try {
           await k.addRisuScriptHandler("output", onScriptOutput);
           t._scriptOutputReady = !0;
-          y("info", "scriptOutput.ready", "output listener (hash relink + quiet gen)");
+          y("info", "scriptOutput.ready", "output listener (hash relink + stream-end fallback)");
         } catch (err) {
           y("warn", "scriptOutput.init", z(err?.message || err));
         }
@@ -8019,8 +8031,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.8",
-    body: "말풍선은 data-chat-id 기준으로, 화면 아래 최신이 DOM#0입니다. 업데이트 내역 탭 참고."
+    title: "2.3.9",
+    body: "응답 후 자동 생성은 주 채팅이 끝난 뒤에만 돕니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11441,8 +11453,11 @@ const loadVendorUi = (): string => {
     if (!out.includes('auxiliary modelType=') || !out.includes('click DOM#')) {
       throw new Error('[build] missing modelType gate or click-select auto-gen path');
     }
-    if (!out.includes('scheduleAutoGenOnReply("chatOutput"') || !out.includes('scriptOutput.quiet')) {
-      throw new Error('[build] missing chatOutput / scriptOutput.quiet auto-gen schedule');
+    if (out.includes('scheduleAutoGenOnReply("chatOutput"')) {
+      throw new Error('[build] chatOutput must not schedule auto-gen');
+    }
+    if (!out.includes('scriptOutput.quiet') || !out.includes('still streaming')) {
+      throw new Error('[build] missing stream-end script fallback or isStreaming wait');
     }
     if (!out.includes('scheduleAutoGenOnReply("afterRequest"')) {
       throw new Error('[build] missing afterRequest auto-gen schedule');

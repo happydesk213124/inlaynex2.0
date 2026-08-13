@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.17';
+const PLUGIN_VERSION = '2.3.18';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.18</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>챗 완료 시 인라인 on이면 말풍선 삽화를 강제 재주입 (같은 카드 cheap skip 무시)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.17</strong>
@@ -6713,7 +6719,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
     }
   }
-  async function refreshSelectedInlineImages() {
+  async function refreshSelectedInlineImages(force) {
     if (t.backendSettings?.card?.inline_chat_images !== !0) return;
     const sel = t.selectedMessage;
     if (!sel) return;
@@ -6743,8 +6749,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         linkedKey = "";
       }
       // Cheap skip before any SafeDOM De/resolve — same bubble + same linked shots + same pending.
+      // force: reply finished and Risu rewrote the bubble; keep-keys would skip a real wipe.
       if (
-        fromCache
+        !force
+        && fromCache
         && t._inlineKeepDoc === doc
         && Number(t._inlineKeepElsLen) === els.length
         && Number(t._inlineKeepSelIdx) === selIdx
@@ -7480,14 +7488,15 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
     try {
       const o = await ve();
       if (!o.enabled) return;
-      if (!t.selectedMessage) return;
+      const replySrc = source === "scriptOutput" || source === "chatOutput" || source === "afterRequest";
+      const replyDone = source === "afterRequest" || source === "chatOutput";
+      if (!t.selectedMessage && !replySrc) return;
       const doc = await ue().catch(() => t.hostDoc);
       if (!doc) return;
       t._msgElsCache = null;
       const els = await getCachedMsgEls(doc);
       if (!els?.length) return;
       // Reply hooks: always newest DOM#0 (do not keep a stale user selection).
-      const replySrc = source === "scriptOutput" || source === "chatOutput" || source === "afterRequest";
       let idx = replySrc ? 0 : Number(t.selectedMessage.domIndex);
       if (!Number.isFinite(idx) || idx < 0 || idx >= els.length) idx = 0;
       await Da(idx, els, { source: "provisional" });
@@ -7511,8 +7520,16 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       msg.cardCount = linked.length;
       msg.paragraphsWithImages = [...new Set(linked.map((C) => C.paragraph))].sort((C, S) => Number(C) - Number(S));
       msg.matchMode = linked.length ? "hash" : "none";
+      const injectInline = async (force) => {
+        if (t.backendSettings?.card?.inline_chat_images !== !0) return;
+        try {
+          await refreshSelectedInlineImages(force);
+        } catch {
+        }
+      };
       if (!linked.length) {
         y("info", "hashRelink.none", \`src=\${source} hash=\${String(msg.hash || "").slice(0, 8)}\`);
+        if (replyDone) await injectInline(!0);
         return;
       }
       t.lastImagedMessage = {
@@ -7528,10 +7545,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       }
       scheduleOverlayPlace(80);
       await onSelectionChanged("content");
-      try {
-        await refreshSelectedInlineImages();
-      } catch {
-      }
+      await injectInline(!!replyDone);
       y("info", "hashRelink.ok", \`src=\${source} cards=\${linked.length} hash=\${String(msg.hash || "").slice(0, 8)}\`);
     } finally {
       t._hashRelinkRunning = !1;
@@ -8159,8 +8173,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.17",
-    body: "스트리밍 500자와 4초 스냅샷은 따로 비교합니다. 업데이트 내역 탭 참고."
+    title: "2.3.18",
+    body: "챗 완료 때 인라인이 켜져 있으면 말풍선 삽화를 다시 넣습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11577,6 +11591,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('_scriptDomSnapBy') || !out.includes('key=${key}')) {
       throw new Error('[build] 500c and 4s snaps must be stored separately');
+    }
+    if (!out.includes('await injectInline(!!replyDone)') || !out.includes('!force')) {
+      throw new Error('[build] missing forced inline inject on chat reply done');
     }
     if (out.includes('scriptOutput.miss5') || out.includes('_scriptMissTimer')) {
       throw new Error('[build] legacy 1s×5 DOM miss path must be removed');

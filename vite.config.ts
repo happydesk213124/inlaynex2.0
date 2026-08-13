@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.19';
+const PLUGIN_VERSION = '2.3.20';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.20</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스크롤로 말풍선을 고를 때도 삽화 유무를 갱신. 이미지 없는 칸은 기존 삽화를 지움</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.19</strong>
@@ -6543,19 +6549,18 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         }
       };
-      // Nothing to paint and nothing to encode: strip leftover pending only.
+      // Nothing to paint: strip leftover shots (scroll onto a no-image bubble).
       if (!placements.length && !encodeLater.length) {
+        await removeAllMarkers();
         try {
-          const pendOnly = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-pending]"));
-          for (const node of pendOnly) {
-            try {
-              if (node && typeof node.remove == "function") await node.remove();
-            } catch {
-            }
+          const left = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+          if (left.length && typeof msgEl.setInnerHTML == "function" && typeof VC.stripInlayInlineHtml == "function") {
+            let html = String(await msgEl.getInnerHTML() || "");
+            await msgEl.setInnerHTML(VC.stripInlayInlineHtml(html));
           }
         } catch {
         }
-        y("info", "inline.inject", "shots=0 keep existing");
+        y("info", "inline.inject", "shots=0 stripped");
         return;
       }
       const wipeFirst = placements.length > 0;
@@ -7013,7 +7018,7 @@ const VENDOR_INLINE_CALL_NEEDLE =
 const VENDOR_INLINE_CALL_PATCH =
   `    if (source === "click" || source === "text" || source === "scroll") {
       try {
-        await refreshSelectedInlineImages();
+        await refreshSelectedInlineImages(source === "scroll");
       } catch {
       }
     }
@@ -7036,7 +7041,7 @@ const VENDOR_INLINE_SAME_NEEDLE =
 const VENDOR_INLINE_SAME_PATCH =
   `      if (source === "click" || source === "text" || source === "scroll") {
         try {
-          await refreshSelectedInlineImages();
+          await refreshSelectedInlineImages(source === "scroll");
         } catch {
         }
       }
@@ -7933,7 +7938,7 @@ const VENDOR_SCROLL_GALLERY_NEW_PATCH = `    {
         scheduleOverlayPlace(40), await onSelectionChanged("content");
       } else scheduleStickySync(), await onSelectionChanged("content");
       try {
-        await refreshSelectedInlineImages();
+        await refreshSelectedInlineImages(!0);
       } catch {
       }
       return !0;
@@ -8180,8 +8185,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.19",
-    body: "말풍선 삽화는 라이트보드 말풍선도 건너뜁니다. 업데이트 내역 탭 참고."
+    title: "2.3.20",
+    body: "스크롤 선택에도 말풍선 삽화 유무를 맞춥니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11598,6 +11603,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('_scriptDomSnapBy') || !out.includes('key=${key}')) {
       throw new Error('[build] 500c and 4s snaps must be stored separately');
+    }
+    if (!out.includes('shots=0 stripped') || !out.includes('refreshSelectedInlineImages(source === "scroll")')) {
+      throw new Error('[build] scroll select must strip empty inline and force keep refresh');
     }
     if (!out.includes('await injectInline(!!replyDone)') || !out.includes('!force')) {
       throw new Error('[build] missing forced inline inject on chat reply done');

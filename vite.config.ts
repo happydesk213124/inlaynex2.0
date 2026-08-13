@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.6';
+const PLUGIN_VERSION = '2.3.7';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.7</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>응답 후 자동 생성: 말풍선 DOM 확정 뒤 1초 대기 후 생성</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.6</strong>
@@ -7208,7 +7214,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       y("info", "afterReply.skip", \`\${source} text too short\`);
       return;
     }
-    const AFTER_GEN_DELAY_MS = 15e1;
+    const AFTER_GEN_DELAY_MS = 1e3;
     if (t._afterGenTimer) {
       clearTimeout(t._afterGenTimer);
       t._afterGenTimer = null;
@@ -7430,7 +7436,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "응답이 끝나면(afterRequest/chat 출력) 최신 캐릭 말풍선을 클릭처럼 선택해 이미지 없으면 바로 생성합니다. 스트리밍은 출력이 잠잠해지면 폴백 생성. 유저 말·보조 모델·이미 이미지 있음·Power/수동/토글 OFF는 스킵." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "응답이 끝나면(afterRequest/chat 출력) 말풍선이 확정된 뒤 1초 기다렸다가 최신 캐릭 말풍선을 클릭처럼 선택해, 이미지 없으면 생성합니다. 스트리밍은 출력이 잠잠해지면 폴백. 유저 말·보조 모델·이미 이미지 있음·Power/수동/토글 OFF는 스킵." },`;
 
 const VENDOR_CHAT_OUTPUT_BOOT_NEEDLE =
   `      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
@@ -7926,8 +7932,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.6",
-    body: "응답 후 자동 생성: afterRequest·chat·스트리밍 잠잠 폴백으로 다시 생성합니다. 업데이트 내역 탭 참고."
+    title: "2.3.7",
+    body: "응답 후 자동 생성은 말풍선이 확정된 뒤 1초 기다립니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

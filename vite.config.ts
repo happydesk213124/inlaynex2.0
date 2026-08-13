@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.16';
+const PLUGIN_VERSION = '2.3.17';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.17</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스트리밍 글자 스냅샷: 150자 → 500자 (4초 트랙은 그대로)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.16</strong>
@@ -7335,7 +7341,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
     }
   }
   function armStreamStableCheck(why) {
-    const key = why === "tick4s" ? "tick4s" : "chars150";
+    const key = why === "tick4s" ? "tick4s" : "chars500";
     t._streamCheckTimerBy = t._streamCheckTimerBy || {};
     if (t._streamCheckTimerBy[key] || t._afterGenRunning || t._afterGenTimer) return;
     y("info", "scriptOutput.arm", \`why=\${why} key=\${key} delay=500ms\`);
@@ -7349,7 +7355,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
         const grew = now.length - prev.length;
         y("info", "scriptOutput.snap", \`why=\${why} key=\${key} prev=\${prev.length} now=\${now.length} grew=\${grew}\`);
         snaps[key] = now;
-        if (!prev || now.length < 150 || grew >= 3) return;
+        if (!prev || now.length < 500 || grew >= 3) return;
         if (messageBodyChars(now) <= 30) return y("info", "scriptOutput.skip", "body too short after lbdata strip");
         y("info", "scriptOutput.domQuiet5", \`\${key} DOM grew <3 after 0.5s → gen\`);
         t._scriptStreaming = !1;
@@ -7606,7 +7612,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       y("error", "chatOutput.fail", err?.message || err);
     }
   }
-  // Streaming chunks: hash relink; 150 chars or every 4s → 0.5s later compare DOM#0 growth.
+  // Streaming chunks: hash relink; 500 chars or every 4s → 0.5s later compare DOM#0 growth.
   async function onScriptOutput(content) {
     try {
       const o = await ve();
@@ -7619,9 +7625,9 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       t._scriptStreaming = !0;
       ensureScriptDomQuietWatcher();
       const lastArm = Number(t._streamLastArmLen) || 0;
-      if (text.length - lastArm >= 150) {
+      if (text.length - lastArm >= 500) {
         t._streamLastArmLen = text.length;
-        armStreamStableCheck("chars150");
+        armStreamStableCheck("chars500");
       }
     } catch (err) {
       y("error", "scriptOutput.fail", err?.message || err);
@@ -7657,7 +7663,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
 const VENDOR_AFTER_REQUEST_HELP_NEEDLE =
   `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "AI 답변이 끝나면 메시지를 클릭하지 않아도 이미지를 만듭니다. 이미 이미지가 있으면 건너뜁니다(덮어쓰지 않음). Power OFF이거나 발동이 수동일 때는 동작하지 않습니다." },`;
 const VENDOR_AFTER_REQUEST_HELP_PATCH =
-  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "트랙1: 주 채팅(model) afterRequest 후 0.5초 뒤 한 번 생성. 트랙2: 150자마다 / 4초마다 각각 따로 DOM#0을 찍어, 같은 쪽 이전이랑 3글자 미만이면 생성. 150자와 4초는 서로 비교하지 않습니다. [LBDATA START]~END 는 글자 수에서 제외하고, 나머지가 30자 이하면 클릭해도 생성하지 않습니다. 이미 생성 중이면 뒤는 스킵. 보조 모델·유저 말·이미 이미지·Power/수동/토글 OFF는 스킵." },`;
+  `"nx-auto-gen-reply": { title: "응답 후 자동 생성", body: "트랙1: 주 채팅(model) afterRequest 후 0.5초 뒤 한 번 생성. 트랙2: 500자마다 / 4초마다 각각 따로 DOM#0을 찍어, 같은 쪽 이전이랑 3글자 미만이면 생성. 500자와 4초는 서로 비교하지 않습니다. [LBDATA START]~END 는 글자 수에서 제외하고, 나머지가 30자 이하면 클릭해도 생성하지 않습니다. 이미 생성 중이면 뒤는 스킵. 보조 모델·유저 말·이미 이미지·Power/수동/토글 OFF는 스킵." },`;
 
 const VENDOR_CHAT_OUTPUT_BOOT_NEEDLE =
   `      if (typeof k.addRisuReplacer != "function") throw new Error("addRisuReplacer unavailable");
@@ -7680,7 +7686,7 @@ const VENDOR_CHAT_OUTPUT_BOOT_PATCH =
         try {
           await k.addRisuScriptHandler("output", onScriptOutput);
           t._scriptOutputReady = !0;
-          y("info", "scriptOutput.ready", "output listener (hash relink + 150c/4s snap)");
+          y("info", "scriptOutput.ready", "output listener (hash relink + 500c/4s snap)");
         } catch (err) {
           y("warn", "scriptOutput.init", z(err?.message || err));
         }
@@ -8153,8 +8159,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.16",
-    body: "스트리밍 150자와 4초 스냅샷은 따로 비교합니다. 업데이트 내역 탭 참고."
+    title: "2.3.17",
+    body: "스트리밍 500자와 4초 스냅샷은 따로 비교합니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11567,10 +11573,10 @@ const loadVendorUi = (): string => {
       throw new Error('[build] missing nxActivateStickyNearestToCursor (live bubble nearest)');
     }
     if (!out.includes('ensureScriptDomQuietWatcher') || !out.includes('scriptOutput.domQuiet5') || !out.includes('scriptOutput.snap')) {
-      throw new Error('[build] missing streaming 150c/4s DOM snap track');
+      throw new Error('[build] missing streaming 500c/4s DOM snap track');
     }
     if (!out.includes('_scriptDomSnapBy') || !out.includes('key=${key}')) {
-      throw new Error('[build] 150c and 4s snaps must be stored separately');
+      throw new Error('[build] 500c and 4s snaps must be stored separately');
     }
     if (out.includes('scriptOutput.miss5') || out.includes('_scriptMissTimer')) {
       throw new Error('[build] legacy 1s×5 DOM miss path must be removed');

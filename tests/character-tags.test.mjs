@@ -14,6 +14,7 @@ import {
   splitLookTags,
   stripPersonCountTags,
   syncGenderIntoAppearance,
+  applyWearContinuityToShots,
 } from "../.test-build/character-tags.mjs";
 
 test("syncGenderIntoAppearance inserts girl unless girl/1girl exact token exists", () => {
@@ -285,7 +286,7 @@ test("nude levels keep attire and append gendered anatomy tags", () => {
   const tornM = composeCharacterCaptionTags(male, { nude: "torn" });
   assert.match(tornM, /white shirt/);
   assert.match(tornM, /2::torn clothes::/);
-  assert.match(tornM, /penis/);
+  assert.equal(tornM.includes("penis"), false);
   assert.equal(tornM.includes("nipples"), false);
 
   const nudeM = composeCharacterCaptionTags(male, { nude: 2 });
@@ -308,8 +309,8 @@ test("nude levels keep attire and append gendered anatomy tags", () => {
   const tornF = composeCharacterCaptionTags(female, { nude: "torn" });
   assert.match(tornF, /dress/);
   assert.match(tornF, /2::torn clothes::/);
-  assert.match(tornF, /nipples/);
-  assert.match(tornF, /pussy/);
+  assert.equal(tornF.includes("nipples"), false);
+  assert.equal(tornF.includes("pussy"), false);
   assert.equal(tornF.includes("penis"), false);
 
   const fullF = composeCharacterCaptionTags(female, { nude: "completely" });
@@ -397,4 +398,52 @@ test("shot attire overrides base for caption only when unlocked", () => {
   // Roster base must stay unchanged — unlock is caption-only.
   assert.equal(stored.attire, "white shirt, black trousers, watch");
   assert.equal(stored.accessories, "bag");
+});
+
+test("wear_state inherits roster when shot omits it", () => {
+  const stored = {
+    name: "Han",
+    appearance: "black hair, boy",
+    attire: "white shirt, trousers",
+    wear_state: "topless",
+  };
+  const prompt = composeCharacterCaptionTags(stored, { action: "standing" });
+  assert.match(prompt, /white shirt/);
+  assert.match(prompt, /topless/);
+  assert.match(prompt, /nipples/);
+  assert.equal(prompt.includes("penis"), false);
+});
+
+test("topless vs bottomless anatomy", () => {
+  const male = { name: "Han", appearance: "boy", attire: "shirt, pants" };
+  const female = { name: "Aya", appearance: "girl", attire: "dress" };
+  const topM = composeCharacterCaptionTags(male, { wear_state: "topless" });
+  assert.match(topM, /topless/);
+  assert.match(topM, /nipples/);
+  assert.equal(topM.includes("penis"), false);
+  const botM = composeCharacterCaptionTags(male, { wear_state: "bottomless" });
+  assert.match(botM, /bottomless/);
+  assert.match(botM, /penis/);
+  assert.equal(botM.includes("nipples"), false);
+  const botF = composeCharacterCaptionTags(female, { wear_state: "bottomless" });
+  assert.match(botF, /pussy/);
+  assert.equal(botF.includes("nipples"), false);
+});
+
+test("wear continuity fills omitted shots from previous", () => {
+  const shots = [
+    { characters: [{ name: "Han", wear_state: "torn" }] },
+    { characters: [{ name: "Han" }] },
+    { characters: [{ name: "Han", wear_state: "topless" }] },
+  ];
+  applyWearContinuityToShots(shots, () => "clothed");
+  assert.equal(shots[0].characters[0].wear_state, "torn");
+  assert.equal(shots[1].characters[0].wear_state, "torn");
+  assert.equal(shots[2].characters[0].wear_state, "topless");
+  const later = [{ characters: [{ name: "Han" }] }];
+  applyWearContinuityToShots(later, () => "topless");
+  assert.equal(later[0].characters[0].wear_state, "topless");
+  const reset = [{ characters: [{ name: "Han", wear_state: "clothed" }] }];
+  applyWearContinuityToShots(reset, () => "topless");
+  assert.equal(reset[0].characters[0].wear_state, undefined);
 });

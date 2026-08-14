@@ -56,6 +56,16 @@ test("empty session does not replace a filled global with blank row", () => {
   assert.notEqual(merged[0].appearance, "");
 });
 
+test("session wear_state overlays onto filled global look", () => {
+  const global = [{ name: "Char", appearance: "silver hair", attire: "coat", accessories: "" }];
+  const session = [{ name: "Char", appearance: "", attire: "hoodie", wear_state: "topless" }];
+  const merged = mergeSessionAndGlobalRoster(session, global, helpers());
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].appearance, "silver hair");
+  assert.equal(merged[0].attire, "coat");
+  assert.equal(merged[0].wear_state, "topless");
+});
+
 test("normalizeCharacterRecord keeps user attire buckets (no save-time split)", () => {
   const rec = normalizeCharacterRecord({
     name: "보민",

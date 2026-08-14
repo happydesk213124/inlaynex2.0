@@ -22,7 +22,7 @@ import { cleanText, stripCbs } from '../core/util/text';
 import { normalizeAssetNaiTagsMode, normalizeFocusCharacterMode, normalizeFocusPromptMode, normalizeNaturalBaseMode, type NaturalBaseMode } from '../config/schema';
 import type { FocusCharacterMode, FocusPromptMode } from '../core/types';
 import { characterTriggers, dedupeShotCharacters, matchCharactersInText } from '../domain/character/roster';
-import { characterHasAppearance, characterMaxLimit } from '../domain/character/tags';
+import { characterHasAppearance, characterMaxLimit, formatWearStateForPrompt } from '../domain/character/tags';
 import { ensureCostumes, formatCostumeCatalog } from '../domain/character/costume';
 import {
   assembleLorebookForTagger,
@@ -127,6 +127,8 @@ function formatAppearanceInjectLine(
     if (attire) parts.push(`attire=${attire}`);
     if (accessories) parts.push(`accessories=${accessories}`);
   }
+  const wear = formatWearStateForPrompt(c.wear_state);
+  parts.push(`wear_state=${wear}`);
   return parts.length ? `${name} ← ${parts.join(' | ')}` : name;
 }
 

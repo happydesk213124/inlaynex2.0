@@ -343,6 +343,7 @@ export async function rerollCard(
           costume: c.costume,
           attire: c.attire,
           accessories: c.accessories,
+          wear_state: c.wear_state,
           nude: c.nude,
           weapon: c.weapon,
         };

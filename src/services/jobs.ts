@@ -48,12 +48,12 @@ import {
 } from '../providers/nai/http';
 import { callLlm } from '../providers/llm/client';
 import { resolveLlmRole } from '../domain/llm/roles';
-import { characterHasAppearance, characterMaxLimit } from '../domain/character/tags';
-import { dedupeShotCharacters } from '../domain/character/roster';
+import { characterHasAppearance, characterMaxLimit, applyWearContinuityToShots } from '../domain/character/tags';
+import { dedupeShotCharacters, resolveCharacter } from '../domain/character/roster';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
 import { flushPersist, idbGet, idbPut } from '../storage/stores';
 import { getConfig, jobEpochByKey, jobRunMeta, requestMessageRerollStop } from './context';
-import { mergeRosterFromTagged, rosterForSession } from './characters';
+import { mergeRosterFromTagged, persistChatWearStates, rosterForSession } from './characters';
 import { buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage, readImageLocation } from './generation';
 import { buildCharacterLooksMessages, buildTaggerMessages, collectAssetTagsForTagger, extractTaggerChatContext, flattenShots } from './tagger';
 import {
@@ -842,6 +842,9 @@ async function runJob(jobId: string): Promise<void> {
     for (const shot of shots) {
       shot.characters = dedupeShotCharacters(shot.characters || [], roster, charMax);
     }
+    const wearByName = applyWearContinuityToShots(shots, (name) => resolveCharacter(name, roster)?.wear_state);
+    await persistChatWearStates(sessionId, roster, wearByName);
+
 
     if (await cancelJobIfStale(jobId, 'superseded before generate')) return;
     const pendingMessageIndex =

@@ -11,7 +11,7 @@
  * already hold the character and never creates rows in them.
  *
  * **Session rows with no appearance are legacy wardrobe overlays.** They no
- * longer rewrite a global's attire/accessories at merge time; shot `nude` /
+ * longer rewrite a global's attire/accessories at merge time; shot `wear_state` /
  * `weapon` flags control wear at generation instead. `clearSessionWearOverlaysFor`
  * still clears stale overlays when the user edits global wear.
  *
@@ -39,8 +39,10 @@ import {
 import {
   characterHasAppearance,
   fullTags,
+  parseWearState,
   syncGenderIntoAppearance,
   wearLocked,
+  type WearState,
 } from '../domain/character/tags';
 import {
   ensureCostumes,
@@ -175,6 +177,7 @@ export async function listCharacters(scope: string): Promise<CharacterRecord[]> 
       costumes: ensured.costumes,
       active_costume: ensured.active_costume,
       gender,
+      wear_state: parseWearState(row.wear_state) || undefined,
       updated_at: row.updated_at,
       scope: row.scope,
     };
@@ -336,6 +339,7 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
   const givenVariantsProvided = hasOwn(raw, 'given_name_variants');
   const costumesProvided = hasOwn(raw, 'costumes');
   const activeCostumeProvided = hasOwn(raw, 'active_costume');
+  const wearStateProvided = hasOwn(raw, 'wear_state');
   const promoteDefault = Boolean(
     raw && typeof raw === 'object' && (raw as Record<string, unknown>).promote_costume_default,
   );
@@ -386,6 +390,7 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
       priority: Math.max(Number(dup.priority || 0), Number(rec.priority || 0)),
       costumes: costumesProvided ? rec.costumes : dup.costumes,
       active_costume: activeCostumeProvided ? rec.active_costume : dup.active_costume,
+      wear_state: wearStateProvided ? rec.wear_state : (dup.wear_state || rec.wear_state),
     });
     if (!rec) return null;
   }
@@ -438,6 +443,7 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
     active_costume: Number(rec.active_costume || 0),
     original: rec.original || '',
     gender,
+    wear_state: parseWearState(rec.wear_state) || '',
     updated_at: now,
   });
   rec.appearance = appearance;
@@ -979,6 +985,31 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     sourceSessionIds,
   });
   return readRoster();
+}
+
+/**
+ * Persist per-chat clothing state on the live session row (never the global).
+ * Overlay rows with empty appearance still carry wear_state into the next tagger inject.
+ */
+export async function persistChatWearStates(
+  sessionId: string,
+  roster: CharacterRecord[],
+  wearByName: Map<string, WearState>,
+): Promise<void> {
+  const writeSessionId = cleanText(sessionId || '', 200);
+  if (!writeSessionId || !wearByName.size) return;
+  for (const [key, state] of wearByName) {
+    const rec = resolveCharacter(key, roster);
+    if (!rec) continue;
+    const prev = parseWearState(rec.wear_state) || 'clothed';
+    if (prev === state) continue;
+    await upsertCharacter(writeSessionId, {
+      id: rec.id,
+      name: rec.name,
+      aliases: rec.aliases,
+      wear_state: state,
+    });
+  }
 }
 
 // ── one-time migrations ────────────────────────────────────────────────────

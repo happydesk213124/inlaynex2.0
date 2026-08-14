@@ -253,6 +253,11 @@ export interface CharacterRecord {
    * `"girl"` | `"boy"` | `"other"` | `""`. Prefer this over guessing from tags.
    */
   gender?: string;
+  /**
+   * Last clothing state in this chat: clothed | torn | topless | bottomless | nude | completely.
+   * Tagger omits when unchanged; generation uses this until the next change.
+   */
+  wear_state?: string;
   scope?: Scope;
   schema_version?: number;
   /** True when a per-character reference image is stored (UI). */
@@ -280,7 +285,12 @@ export interface ShotCharacter {
    * roster `costumes[0]`.
    */
   costume?: string | number;
-  /** Nude level: 0/off · 1/torn · 2/nude · 3/completely (keeps attire tags). */
+  /**
+   * Clothing state for this shot. Omit when unchanged from the previous shot /
+   * roster `wear_state`. clothed | torn | topless | bottomless | nude | completely.
+   */
+  wear_state?: string;
+  /** @deprecated prefer wear_state; still read when wear_state is omitted. */
   nude?: boolean | string | number;
   /** When on: include accessories (weapons/props) in the caption. */
   weapon?: boolean | string | number;

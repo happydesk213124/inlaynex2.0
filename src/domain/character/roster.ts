@@ -66,6 +66,7 @@ export function dedupeShotCharacters(
       if (!cur) dst[field] = add;
       else if (!cur.toLowerCase().includes(add.toLowerCase())) dst[field] = joinTags(cur, add);
     }
+    if (!dst.wear_state && src.wear_state) dst.wear_state = src.wear_state;
     return dst;
   };
   for (const raw of chars || []) {
@@ -227,10 +228,17 @@ export function mergeSessionAndGlobalRoster(
 
   for (const schar of list) {
     const hit = resolve(schar.name, merged);
-    if (hit && hasAppearance(schar)) continue;
+    if (hit && hasAppearance(schar)) {
+      if (schar.wear_state) hit.wear_state = schar.wear_state;
+      continue;
+    }
     if (hit && !hasAppearance(schar)) {
       // Keep a filled global (or merged attire overlay) — do not replace with empty session row.
-      if (hasAppearance(hit)) continue;
+      // Chat-local clothing state still overlays onto the filled look.
+      if (hasAppearance(hit)) {
+        if (schar.wear_state) hit.wear_state = schar.wear_state;
+        continue;
+      }
       const idx = merged.findIndex((c) => resolve(schar.name, [c]));
       if (idx >= 0) merged[idx] = schar;
       else merged.push(schar);

@@ -15,6 +15,12 @@ import type { CharacterInput } from './identity.ts';
 import { normalizeGender } from './identity.ts';
 import { resolveCharacter } from './roster.ts';
 import { ensureCostumes, resolveCostumeWear } from './costume.ts';
+import {
+  resolveWearState,
+  wearStateFromNudeLevel,
+  wearStateNeedsAnatomyAccessories,
+  wearTagsForWearState,
+} from './wear-state.ts';
 
 export { normalizeGender } from './identity.ts';
 export {
@@ -27,6 +33,14 @@ export {
   resolveCostumeWear,
   syncActiveCostumeFromWear,
 } from './costume.ts';
+export {
+  applyWearContinuityToShots,
+  formatWearStateForPrompt,
+  parseWearState,
+  resolveWearState,
+  wearTagsForWearState,
+} from './wear-state.ts';
+export type { WearState } from './wear-state.ts';
 
 const CLOTHING_HINTS: readonly string[] = clothingHints;
 /** Permanent worn jewelry / glasses / earbuds — stored in attire with clothes. */
@@ -169,16 +183,7 @@ export function wearTagsForNudeLevel(
   level: NudeLevel,
   gender: 'f' | 'm' | null = null,
 ): string {
-  const base = cleanText(attire, 4000);
-  if (level <= 0) return base;
-  let state = '';
-  if (level === 1) state = '2::torn clothes::';
-  else if (level === 2) state = '2.5::nude::';
-  else if (gender === 'm') state = '2.5::completely nude::';
-  else state = '2::completely nude::';
-  if (gender === 'f') return joinTags(base, state, 'nipples', 'pussy');
-  if (gender === 'm') return joinTags(base, state, 'penis');
-  return joinTags(base, state);
+  return wearTagsForWearState(attire, wearStateFromNudeLevel(level), gender);
 }
 
 /** Substrings that mark accessories anatomy tags pulled in during nude (case-insensitive). */
@@ -545,9 +550,9 @@ export function wearLocked(value: unknown): boolean {
  * Character caption for one shot.
  *
  * Base: appearance + attire (clothes+jewelry). Weapons only when weapon=on.
- * nude level: 0 off · 1 torn · 2 nude · 3 completely — always keeps attire
- * tags and appends weighted state + gendered anatomy (never strips clothes).
- * Accessories tokens containing penis/nipples/pussy also join while nude,
+ * wear_state (or legacy nude 0–3): keep attire tags and append English clothing
+ * state + anatomy for that state. Omit on the shot to inherit roster / prior shot.
+ * Accessories tokens containing penis/nipples/pussy also join while not clothed/torn,
  * even when weapon=off (other props stay gated by weapon).
  *
  * Wear source: `shot.costume` → roster costumes[i]; unreadable/missing →
@@ -571,6 +576,7 @@ export function composeCharacterCaptionTags(
     sex?: unknown;
     gender?: unknown;
     nude?: unknown;
+    wear_state?: unknown;
     weapon?: unknown;
     negative?: unknown;
   } | null | undefined,
@@ -593,12 +599,14 @@ export function composeCharacterCaptionTags(
   const accessories = wearLocked(stored?.accessories_locked)
     ? catalogAcc
     : (shotAcc || catalogAcc);
-  const nudeLevel = parseNudeLevel(shot?.nude);
+  const wearState = resolveWearState(shot, stored?.wear_state);
   const weapon = flagOn(shot?.weapon);
   const gender = resolveCharacterGender(shot, stored);
-  const wear = wearTagsForNudeLevel(attire, nudeLevel, gender);
+  const wear = wearTagsForWearState(attire, wearState, gender);
   const weapons = weapon ? accessories : '';
-  const nudeAcc = nudeLevel > 0 ? nudeAnatomyTagsFromAccessories(accessories) : '';
+  const nudeAcc = wearStateNeedsAnatomyAccessories(wearState)
+    ? nudeAnatomyTagsFromAccessories(accessories)
+    : '';
   const explicitGender = normalizeGender(shot?.gender ?? stored?.gender ?? stored?.sex);
   const storedAppearance = syncGenderIntoAppearance(stored?.appearance, explicitGender);
   const shotAppearance = syncGenderIntoAppearance(shot?.appearance, explicitGender);

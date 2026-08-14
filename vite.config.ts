@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.21';
+const PLUGIN_VERSION = '2.3.22';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.22</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 연결은 그대로인데 삽화만 빠진 경우(설정 나갔다 오기 등) 마커를 보고 다시 붙임</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.21</strong>
@@ -4512,6 +4518,7 @@ const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `    document.getElementById("nx-clos
         try { await restoreFloatingViewerAfterModal(); } catch {}
         try { await blockHostChrome(!1); } catch {}
         try { await it(); } catch {}
+        try { await refreshSelectedInlineImages(!0); } catch {}
         try {
           typeof nxHostToast == "function" && await nxHostToast("뷰어 복구됨", { ms: 1500 });
         } catch {
@@ -6769,6 +6776,19 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       } catch {
         linkedKey = "";
       }
+      // Gallery still linked, but Risu wiped bubble HTML (settings, new user msg).
+      const inlineGoneFromSel = async () => {
+        if (!linkedKey && !pendingKey) return !1;
+        const el = els[selIdx];
+        if (!el || typeof el.querySelectorAll != "function") return !1;
+        try {
+          const raw = await el.querySelectorAll("[data-inlay-inline-shot],[data-inlay-inline-pending]");
+          const arr = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(raw) : [];
+          return !(Array.isArray(arr) && arr.length);
+        } catch {
+          return !1;
+        }
+      };
       // Cheap skip before any SafeDOM De/resolve — same bubble + same linked shots + same pending.
       // force: reply finished and Risu rewrote the bubble; keep-keys would skip a real wipe.
       if (
@@ -6781,6 +6801,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         && String(t._inlineKeepLinkedKey || "") === linkedKey
         && Array.isArray(t._inlineKeepIdxs)
         && t._inlineKeepIdxs.length
+        && !(await inlineGoneFromSel())
       ) {
         y("info", "inline.keep.skip", \`DOM#\${selIdx} cheap keep=\${t._inlineKeepIdxs.join(",")}\`);
         return;
@@ -6962,7 +6983,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         && prevKeep.every((v, i) => Number(v) === Number(nextKeepArr[i]))
         && String(t._inlineKeepPendingKey || "") === pendingKey
         && String(t._inlineKeepLinkedKey || "") === linkedKey;
-      if (sameKeep) {
+      if (sameKeep && !(await inlineGoneFromSel())) {
         y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeepArr.join(",")}\`);
         return;
       }
@@ -8205,8 +8226,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.21",
-    body: "같은 화면은 그대로, 속만 덜 바쁩니다. 업데이트 내역 탭 참고."
+    title: "2.3.22",
+    body: "말풍선은 있는데 삽화만 빠지면 다시 붙입니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11639,6 +11660,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('shots=0 stripped')) {
       throw new Error('[build] scroll select must strip empty inline');
+    }
+    if (!out.includes('inlineGoneFromSel') || !out.includes('refreshSelectedInlineImages(!0)')) {
+      throw new Error('[build] missing re-inject when inline markers vanished from live DOM');
     }
     if (out.includes('refreshSelectedInlineImages(source === "scroll")')) {
       throw new Error('[build] scroll inline must not force-refresh (cheap keep skip)');

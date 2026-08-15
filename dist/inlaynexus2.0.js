@@ -14846,7 +14846,7 @@ ${Ye(250)}`;
       if (act === "char") {
         await hideInspect();
         try {
-          await ensureViewerRosterLoaded().catch(() => null);
+          void ensureViewerRosterLoaded().catch(() => null);
           const raw = Array.isArray(card.characters) ? card.characters[charI] : null, name = w(raw?.name || "", 200);
           if (name) await Ua({
             name,

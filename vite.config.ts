@@ -9072,6 +9072,20 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }
   }`;
 
+/** Sticky inspect char chip: same as viewer runMetaChip — open Ua immediately, roster behind. */
+const VENDOR_INSPECT_CHAR_OPEN_NEEDLE =
+  `      if (act === "char") {
+        await hideInspect();
+        try {
+          await ensureViewerRosterLoaded().catch(() => null);
+          const raw = Array.isArray(card.characters) ? card.characters[charI] : null, name = w(raw?.name || "", 200);`;
+const VENDOR_INSPECT_CHAR_OPEN_PATCH =
+  `      if (act === "char") {
+        await hideInspect();
+        try {
+          void ensureViewerRosterLoaded().catch(() => null);
+          const raw = Array.isArray(card.characters) ? card.characters[charI] : null, name = w(raw?.name || "", 200);`;
+
 /** Sticky/inline long-press inspect sheet: own reroll/regen paths (not gallery rerollImage). */
 const VENDOR_INSPECT_REROLL_INLINE_NEEDLE =
   `      if (act === "reroll") {
@@ -11435,6 +11449,7 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_SAVE_NEEDLE, 'inline chat save'],
     [VENDOR_PROGRESS_TOAST_FN_NEEDLE, 'progress toast sync fn'],
     [VENDOR_PROGRESS_TOAST_PAINT_NEEDLE, 'progress toast paintStatus'],
+    [VENDOR_INSPECT_CHAR_OPEN_NEEDLE, 'inspect sheet char open like viewer'],
     [VENDOR_INSPECT_REROLL_INLINE_NEEDLE, 'inspect sheet reroll inline'],
     [VENDOR_INSPECT_REGEN_INLINE_NEEDLE, 'inspect sheet regen inline'],
     [VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE, 'reroll toast heartbeat'],
@@ -11782,6 +11797,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_SAVE_NEEDLE, VENDOR_INLINE_SAVE_PATCH)
     .replace(VENDOR_PROGRESS_TOAST_FN_NEEDLE, VENDOR_PROGRESS_TOAST_FN_PATCH)
     .replace(VENDOR_PROGRESS_TOAST_PAINT_NEEDLE, VENDOR_PROGRESS_TOAST_PAINT_PATCH)
+    .replace(VENDOR_INSPECT_CHAR_OPEN_NEEDLE, VENDOR_INSPECT_CHAR_OPEN_PATCH)
     .replace(VENDOR_INSPECT_REROLL_INLINE_NEEDLE, VENDOR_INSPECT_REROLL_INLINE_PATCH)
     .replace(VENDOR_INSPECT_REGEN_INLINE_NEEDLE, VENDOR_INSPECT_REGEN_INLINE_PATCH)
     .replace(VENDOR_REROLL_TOAST_HEARTBEAT_NEEDLE, VENDOR_REROLL_TOAST_HEARTBEAT_PATCH)

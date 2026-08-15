@@ -10263,7 +10263,7 @@ const VENDOR_THUMB_HIT_PATCH =
       const items = Array.isArray(d.items) && d.items.length ? d.items : U();
       if (!items.length) return -1;
       try {
-        await refreshThumbsRect();
+        if (!(d._thumbsRect && Date.now() - (d._thumbsRectAt || 0) < 280)) await refreshThumbsRect();
         const strip = d._thumbsRect;
         if (!strip || x < strip.left || x > strip.right || y < strip.top || y > strip.bottom) return -1;
         const VC = globalThis.__INLAY_VIEWER_CORE__;
@@ -10289,6 +10289,9 @@ const VENDOR_THUMB_SCROLL_INIT_PATCH =
     d._thumbsRectAt = 0;
     d._thumbsScrollLeft = 0;
     d._thumbSelIdx = -1;
+    d._selectBusy = !1;
+    d._pendingGalIdx = 0;
+    d._metaPendingHtml = !1;
     d._thumbSrcById = Object.create(null);
     d.thumbsDrag = null;
     d._thumbWheelTargets = [];`;
@@ -10524,37 +10527,76 @@ const VENDOR_THUMBS_QUICK_PATCH =
     }, softAfterSelect = async (gen) => {`;
 
 const VENDOR_SELECT_META_PENDING_NEEDLE =
-  `      await paintMainNow(card);
-      d._metaGen = (d._metaGen || 0) + 1;
-      const gen = d._metaGen;
-      warmVisibleImages(items, d.index);
-      d._softTimer && clearTimeout(d._softTimer);
-      d._softTimer = setTimeout(() => {
-        if (gen !== d._metaGen || t.uiOpen) return;
-        softAfterSelect(gen).catch(() => {
-        });
-      }, 90);`;
-const VENDOR_SELECT_META_PENDING_PATCH =
-  `      await paintMainNow(card);
-      d._metaGen = (d._metaGen || 0) + 1;
-      const gen = d._metaGen;
-      // New card: drop old chips now (so they cannot hitch on the same turn as the image).
-      // In-flight buildMetaUi / fill sees gen mismatch and stops.
-      if (String(card?.id || "") !== String(d._metaCardId || "")) {
-        d.metaHits = [];
-        d._metaCardId = "";
-        try {
-          await j.setInnerHTML('<span style="color:#8b97ab;font-size:12px;padding:8px 0;pointer-events:none">로딩중…</span>');
-        } catch {
-        }
+  `    }, selectGalIndex = async (idx) => {
+      const items = Array.isArray(d.items) && d.items.length ? d.items : U();
+      if (!items.length) {
+        await T();
+        return;
       }
+      d.index = Math.max(0, Math.min(Number.isFinite(Number(idx)) ? Number(idx) : 0, items.length - 1));
+      d.selectedCount = selectedCountOf(items);
+      const card = items[d.index];
+      // Trick: move outline/opacity on existing thumbs first (no strip rebuild), then swap main.
+      paintThumbsQuick(d.index).catch(() => {
+      });
+      await paintMainNow(card);
+      d._metaGen = (d._metaGen || 0) + 1;
+      const gen = d._metaGen;
       warmVisibleImages(items, d.index);
       d._softTimer && clearTimeout(d._softTimer);
       d._softTimer = setTimeout(() => {
         if (gen !== d._metaGen || t.uiOpen) return;
         softAfterSelect(gen).catch(() => {
         });
-      }, 90);`;
+      }, 90);
+    }, syncToCardId = async (cardId) => {`;
+const VENDOR_SELECT_META_PENDING_PATCH =
+  `    }, selectGalIndex = async (idx) => {
+      d._pendingGalIdx = Math.max(0, Number.isFinite(Number(idx)) ? Number(idx) : 0);
+      d._metaGen = (d._metaGen || 0) + 1;
+      if (d._selectBusy) return;
+      d._selectBusy = !0;
+      try {
+        for (;;) {
+          const want = d._pendingGalIdx;
+          const items = Array.isArray(d.items) && d.items.length ? d.items : U();
+          if (!items.length) {
+            await T();
+            return;
+          }
+          d.index = Math.max(0, Math.min(want, items.length - 1));
+          d.selectedCount = selectedCountOf(items);
+          if (want !== d._pendingGalIdx) continue;
+          const card = items[d.index];
+          paintThumbsQuick(d.index).catch(() => {
+          });
+          await paintMainNow(card);
+          if (want !== d._pendingGalIdx) continue;
+          const gen = d._metaGen = (d._metaGen || 0) + 1;
+          if (String(card?.id || "") !== String(d._metaCardId || "")) {
+            d.metaHits = [];
+            d._metaCardId = "";
+            if (!d._metaPendingHtml) {
+              d._metaPendingHtml = !0;
+              void Promise.resolve(j.setInnerHTML('<span style="color:#8b97ab;font-size:12px;padding:8px 0;pointer-events:none">로딩중…</span>')).catch(() => {
+              });
+            }
+          }
+          warmVisibleImages(items, d.index);
+          d._softTimer && clearTimeout(d._softTimer);
+          d._softTimer = setTimeout(() => {
+            if (gen !== d._metaGen || t.uiOpen) return;
+            d._metaPendingHtml = !1;
+            softAfterSelect(gen).catch(() => {
+            });
+          }, 90);
+          if (want === d._pendingGalIdx) break;
+        }
+      } finally {
+        d._selectBusy = !1;
+        if (d._pendingGalIdx !== d.index) void selectGalIndex(d._pendingGalIdx);
+      }
+    }, syncToCardId = async (cardId) => {`;
 
 const VENDOR_SOFT_NO_QUICK_NEEDLE =
   `      // Background: warm srcs in place. Do NOT rewrite strip HTML (flickers \`|\` and feels laggy).
@@ -10660,7 +10702,7 @@ const VENDOR_THUMBS_DRAG_PATCH =
       }
       if (!moved && !scrollOnly) {
         const galIdx = await hitThumbAt(pickX, pickY);
-        if (galIdx >= 0) await selectGalIndex(galIdx);
+        if (galIdx >= 0) void selectGalIndex(galIdx);
       }
     }, startThumbsDrag = async (A, startX, startY, opts = {}) => {
       if (d.thumbsDrag) await endThumbsDrag();

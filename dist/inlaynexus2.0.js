@@ -10816,10 +10816,6 @@ ${Ye(250)}`;
         }
         return;
       }
-      try {
-        if (!(t._viewerRoster?.rosterSessionId) || t.backendSettings?.card?.unified_chat_priority) await ensureViewerRosterLoaded();
-      } catch {
-      }
       const chipStyle = (on, accent) => `cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;padding:10px 14px;border-radius:999px;font-size:13px;line-height:1.2;min-height:44px;box-sizing:border-box;white-space:nowrap;border:1px solid ${accent || (on ? "rgba(255,255,255,.14)" : "rgba(248,113,113,.45)")};background:${accent ? "rgba(124,108,255,.18)" : on ? "rgba(255,255,255,.06)" : "rgba(248,113,113,.12)"};color:${on ? "#e8eef8" : "#fecaca"};opacity:${on ? 1 : 0.72}`, Yt = Array.isArray(Q.characters) ? Q.characters : [], cast = R(Q);
       d.castEntries = cast.map((entry) => ({
         ...entry,

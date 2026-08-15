@@ -10294,6 +10294,14 @@ const VENDOR_VIEWER_RESIZE_HIT_PATCH =
       if (Math.abs(G.w - d.geo.w) > 1 || Math.abs(G.h - d.geo.h) > 1) await qt(d.geo);
       typeof d.applyChrome == "function" ? await d.applyChrome() : await f();`;
 
+const VENDOR_META_SKIP_ROSTER_NEEDLE =
+  `      try {
+        if (!(t._viewerRoster?.rosterSessionId) || t.backendSettings?.card?.unified_chat_priority) await ensureViewerRosterLoaded();
+      } catch {
+      }
+`;
+const VENDOR_META_SKIP_ROSTER_PATCH = ``;
+
 const VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE =
   `      const chipStyle = (on, accent) => \`cursor:pointer;pointer-events:auto;display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:11px;line-height:1.2;white-space:nowrap;border:1px solid \${accent || (on ? "rgba(255,255,255,.14)" : "rgba(248,113,113,.45)")};background:\${accent ? "rgba(124,108,255,.18)" : on ? "rgba(255,255,255,.06)" : "rgba(248,113,113,.12)"};color:\${on ? "#e8eef8" : "#fecaca"};opacity:\${on ? 1 : 0.72}\`, Yt = Array.isArray(Q.characters) ? Q.characters : [], cast = R(Q);`;
 const VENDOR_VIEWER_META_CHIP_TOUCH_PATCH =
@@ -11510,6 +11518,7 @@ const loadVendorUi = (): string => {
     [VENDOR_THUMBS_MOUNT_NEEDLE, 'thumbs transform mount'],
     [VENDOR_VIEWER_STAGE_RESERVE_NEEDLE, 'viewer stage reserved height'],
     [VENDOR_VIEWER_RESIZE_HIT_NEEDLE, 'viewer resize hit zone'],
+    [VENDOR_META_SKIP_ROSTER_NEEDLE, 'viewer chips skip roster await'],
     [VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE, 'viewer meta chip touch'],
     [VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE, 'viewer meta y chip touch'],
     [VENDOR_THUMBS_STATE_NEEDLE, 'thumbs transform state'],
@@ -11854,6 +11863,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_THUMBS_MOUNT_NEEDLE, VENDOR_THUMBS_MOUNT_PATCH)
     .replace(VENDOR_VIEWER_STAGE_RESERVE_NEEDLE, VENDOR_VIEWER_STAGE_RESERVE_PATCH)
     .replace(VENDOR_VIEWER_RESIZE_HIT_NEEDLE, VENDOR_VIEWER_RESIZE_HIT_PATCH)
+    .replace(VENDOR_META_SKIP_ROSTER_NEEDLE, VENDOR_META_SKIP_ROSTER_PATCH)
     .replace(VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE, VENDOR_VIEWER_META_CHIP_TOUCH_PATCH)
     .replace(VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE, VENDOR_VIEWER_META_Y_CHIP_TOUCH_PATCH)
     .replace(VENDOR_THUMBS_STATE_NEEDLE, VENDOR_THUMBS_STATE_PATCH)

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.61';
+const PLUGIN_VERSION = '2.3.62';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -720,6 +720,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.62</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>쌍둥이 해시 붙으면 말풍선 삽화도 강제 삽입 (스트리밍 중엔 안 넣음)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.61</strong>
@@ -7016,7 +7022,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         : "";
       let linkedKey = "";
       try {
-        linkedKey = linkedCards(sel).map((card) => String(card?.id || "")).filter(Boolean).sort().join("|");
+        let selLinked = linkedCards(sel);
+        if (!selLinked.length) selLinked = await maybeRebindAndLink(sel) || [];
+        linkedKey = selLinked.map((card) => String(card?.id || "")).filter(Boolean).sort().join("|");
       } catch {
         linkedKey = "";
       }
@@ -7247,15 +7255,28 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
       y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=\${elsRemounted ? "full" : "diff"}\`);
       const N = globalThis.__INLAY_NATIVE__;
-      const selCards = linkedCards(sel);
+      let selCards = [];
+      try {
+        selCards = linkedCards(sel);
+        if (!selCards.length) selCards = await maybeRebindAndLink(sel) || [];
+      } catch {
+        selCards = [];
+      }
       const selIds = selCards.map((card) => String(card?.id || "")).filter(Boolean);
       const neighborCardLists = [];
       for (const row of neighborMsgs) {
         if (row?.idx == null || !els[row.idx] || !row.msg) continue;
         if (!keep.has(row.idx)) continue;
+        let nbCards = [];
+        try {
+          nbCards = linkedCards(row.msg);
+          if (!nbCards.length) nbCards = await maybeRebindAndLink(row.msg) || [];
+        } catch {
+          nbCards = [];
+        }
         neighborCardLists.push({
           idx: row.idx,
-          cards: linkedCards(row.msg)
+          cards: nbCards
         });
       }
       const neighborIds = neighborCardLists.flatMap((row) =>
@@ -7846,7 +7867,8 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       }
       scheduleOverlayPlace(80);
       await onSelectionChanged("content");
-      await injectInline(!!replyDone);
+      // Mid-stream Risu rewrites bubble HTML — wait for reply end / job / click.
+      if (source !== "scriptOutput") await injectInline(!0);
       y("info", "hashRelink.ok", \`src=\${source} cards=\${linked.length} hash=\${String(msg.hash || "").slice(0, 8)}\`);
     } finally {
       t._hashRelinkRunning = !1;
@@ -8519,8 +8541,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.61",
-    body: "캐릭 없는 샷에 no humans. 업데이트 내역 탭 참고."
+    title: "2.3.62",
+    body: "해시 재부착 후 말풍선 삽화. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -12128,8 +12150,8 @@ const loadVendorUi = (): string => {
     if (!out.includes('gallery.refresh') || !out.includes('if (!t.galleryUi?.root || !t.overlayUi?.root) await it();')) {
       throw new Error('[build] job done must skip it() when viewer roots exist');
     }
-    if (!out.includes('await injectInline(!!replyDone)') || !out.includes('!force')) {
-      throw new Error('[build] missing forced inline inject on chat reply done');
+    if (!out.includes('if (source !== "scriptOutput") await injectInline(!0)') || !out.includes('!force')) {
+      throw new Error('[build] missing forced inline inject after hash relink (not mid-stream)');
     }
     if (!out.includes('isSkipBodyAt') || !out.includes('isInlineSkipBody')) {
       throw new Error('[build] inline keep must skip LBDATA-short bodies');

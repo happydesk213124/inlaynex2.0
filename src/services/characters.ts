@@ -660,6 +660,13 @@ export async function unifyCharacterSessions(
 ): Promise<ApiResult> {
   const target = cleanText(targetSessionId, 200);
   if (!target) return { ok: false, error: { code: 'bad_request', message: 'target_session_id required' } };
+  // UI unified view always sends include_target:false and target=__unified__ id.
+  // Drop leftover display-cache rows so GET of that id cannot resurrect them.
+  if (!includeTarget) {
+    for (const old of await listCharacters(target)) {
+      await deleteCharacter(target, old.id);
+    }
+  }
   const sources = [...(sourceSessionIds || [])];
   if (includeTarget) sources.push(target);
   const listed = await listUnifiedViewCharacters(sources);

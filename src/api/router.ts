@@ -557,6 +557,10 @@ const WRITE_ROUTES: readonly Route[] = [
 async function updateCharacters(body: Record<string, unknown>): Promise<RouteResult> {
   const sessionId = cleanText(body.session_id || '', 200);
   const characterId = cleanText(body.character_id || '', 200);
+  if ('characters' in body && !sessionId) {
+    const message = 'session_id required for character list save';
+    throw makeFetchError(400, { ok: false, ...errorBody(message, 'bad_request') }, message);
+  }
   // The unified view edits root sessions only: patch what exists, delete what
   // matches, never create. Creating here would resurrect characters the user
   // deleted in another session.

@@ -115,6 +115,58 @@ if (N) {
   check(health?.health?.version === JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version,
     `health reported version ${health?.health?.version}`);
 
+  const savedChars = await post('/v1/characters', {
+    session_id: 'smoke-character-save',
+    characters: [{
+      id: 'smoke-char',
+      name: 'Smoke Character',
+      appearance: 'silver hair, amber eyes',
+      attire: 'white shirt',
+      accessories: 'holding staff',
+      costumes: [{ name: 'default', attire: 'white shirt', accessories: 'holding staff' }],
+      active_costume: 0,
+      gender: 'girl',
+    }],
+  });
+  const savedChar = savedChars?.characters?.find((row) => row.id === 'smoke-char');
+  check(savedChar?.appearance === 'silver hair, amber eyes',
+    `character save rewrote appearance: ${savedChar?.appearance}`);
+  check(savedChar?.attire === 'white shirt', `character save lost attire: ${savedChar?.attire}`);
+  check(savedChar?.accessories === 'holding staff',
+    `character save lost accessories: ${savedChar?.accessories}`);
+  const savedAt = savedChar?.updated_at;
+  const readBack = await get('/v1/characters?session_id=smoke-character-save');
+  const readChar = readBack?.characters?.find((row) => row.id === 'smoke-char');
+  check(readChar?.updated_at === savedAt, 'character GET rewrote the stored row');
+
+  const popupSave = await post('/v1/characters', {
+    session_id: 'smoke-character-save',
+    scope: 'smoke-character-save',
+    character: {
+      id: 'smoke-char',
+      name: 'Smoke Character',
+      appearance: 'violet hair, green eyes',
+      attire: 'black coat',
+      accessories: 'sword',
+      gender: 'boy',
+    },
+  });
+  const popupChar = popupSave?.characters?.find((row) => row.id === 'smoke-char');
+  check(popupChar?.appearance === 'violet hair, green eyes',
+    `popup save rewrote appearance: ${popupChar?.appearance}`);
+  check(popupChar?.attire === 'black coat', `popup save lost attire: ${popupChar?.attire}`);
+  check(popupChar?.accessories === 'sword', `popup save lost accessories: ${popupChar?.accessories}`);
+  check(popupChar?.costumes?.[0]?.attire === 'black coat',
+    `popup save did not preserve/update default costume: ${popupChar?.costumes?.[0]?.attire}`);
+
+  let missingSessionRejected = false;
+  try {
+    await post('/v1/characters', { characters: [] });
+  } catch (error) {
+    missingSessionRejected = error?.status === 400;
+  }
+  check(missingSessionRejected, 'character list save silently accepted a missing session_id');
+
   // The route that reads the prompt pack. Compared against the compiled-in
   // fallback rather than the file on disk, because `cleanText` normalises
   // whitespace on the way out — so the served text is close to, but not equal to,

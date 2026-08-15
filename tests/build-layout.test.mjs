@@ -51,3 +51,43 @@ test('package version matches the version the backend reports', () => {
   assert.match(constants, /__PLUGIN_VERSION__/);
   assert.match(constants, new RegExp(String(pkg.version).replace(/\./g, '\\.')));
 });
+
+test('character reads never write stale roster rows back', () => {
+  const source = read('src', 'services', 'characters.ts');
+  const start = source.indexOf('export async function listCharacters');
+  const end = source.indexOf('// ── per-character global toggles', start);
+  assert.ok(start >= 0 && end > start, 'listCharacters section not found');
+  assert.doesNotMatch(source.slice(start, end), /\bidbPut\s*\(/);
+});
+
+test('manual character save and read never rewrite the appearance bucket', () => {
+  const source = read('src', 'services', 'characters.ts');
+  const readStart = source.indexOf('export async function listCharacters');
+  const readEnd = source.indexOf('// ── per-character global toggles', readStart);
+  const writeStart = source.indexOf('export async function upsertCharacter');
+  const writeEnd = source.indexOf('async function clearSessionWearOverlaysFor', writeStart);
+  assert.ok(readStart >= 0 && readEnd > readStart, 'listCharacters section not found');
+  assert.ok(writeStart >= 0 && writeEnd > writeStart, 'upsertCharacter section not found');
+  assert.doesNotMatch(source.slice(readStart, readEnd), /syncGenderIntoAppearance/);
+  assert.doesNotMatch(source.slice(writeStart, writeEnd), /syncGenderIntoAppearance/);
+});
+
+test('wear-state persistence does not resend roster look fields', () => {
+  const source = read('src', 'services', 'characters.ts');
+  const start = source.indexOf('export async function persistChatWearStates');
+  const end = source.indexOf('// ── one-time migrations', start);
+  assert.ok(start >= 0 && end > start, 'persistChatWearStates section not found');
+  const body = source.slice(start, end);
+  assert.doesNotMatch(body, /appearance:\s*rec\.appearance/);
+  assert.doesNotMatch(body, /attire:\s*rec\.attire/);
+  assert.doesNotMatch(body, /accessories:\s*rec\.accessories/);
+});
+
+test('character-list save cannot silently succeed without a session id', () => {
+  const source = read('src', 'api', 'router.ts');
+  const start = source.indexOf('async function updateCharacters');
+  const end = source.indexOf('// ── dispatch', start);
+  assert.ok(start >= 0 && end > start, 'updateCharacters section not found');
+  assert.match(source.slice(start, end), /'characters'\s+in\s+body\s*&&\s*!sessionId/);
+  assert.match(source.slice(start, end), /makeFetchError\(400/);
+});

@@ -40,8 +40,8 @@ import {
 import {
   characterHasAppearance,
   fullTags,
+  normalizeTaggedLookBuckets,
   parseWearState,
-  syncGenderIntoAppearance,
   wearLocked,
   type WearState,
 } from '../domain/character/tags';
@@ -122,36 +122,15 @@ export async function listCharacters(scope: string): Promise<CharacterRecord[]> 
         aliases = parseAliasList(aliases);
       }
     }
-    let appearance = cleanText(row.appearance || '', 4000);
+    const appearance = cleanText(row.appearance || '', 4000);
     const attire = row.attire || '';
     const accessories = row.accessories || '';
     let gender = normalizeGender(row.gender ?? row.sex);
-    // Upgrade path: old rows have no gender — fill once from exact look tokens, then persist.
+    // Reads stay pure: infer legacy gender for this view, then persist it only
+    // when the row is next explicitly written.
     if (!gender) {
       const inferred = inferGenderFromExactTags(appearance, attire, accessories);
-      if (inferred) {
-        gender = inferred;
-        appearance = syncGenderIntoAppearance(appearance, inferred);
-        await idbPut('characters', {
-          ...row,
-          gender: inferred,
-          appearance,
-          schema_version: Math.max(2, Number(row.schema_version || 1)),
-          updated_at: Date.now() / 1000,
-        });
-      }
-    } else {
-      const syncedAppearance = syncGenderIntoAppearance(appearance, gender);
-      if (syncedAppearance !== appearance) {
-        appearance = syncedAppearance;
-        await idbPut('characters', {
-          ...row,
-          gender,
-          appearance,
-          schema_version: Math.max(2, Number(row.schema_version || 1)),
-          updated_at: Date.now() / 1000,
-        });
-      }
+      if (inferred) gender = inferred;
     }
     const ensured = ensureCostumes({
       attire,
@@ -407,9 +386,7 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
 
   const now = Date.now() / 1000;
   const gender = normalizeGender(rec.gender ?? rec.sex);
-  const appearance = gender
-    ? syncGenderIntoAppearance(rec.appearance, gender)
-    : cleanText(rec.appearance || '', 4000);
+  const appearance = cleanText(rec.appearance || '', 4000);
   await idbPut('characters', {
     scope: scopeKey,
     id: rec.id,
@@ -793,6 +770,7 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
   let roster = await readRoster();
   const newList = [...(tagged.new_characters || [])];
   const covered = new Set(newList.map((raw) => normalizeAlias(raw?.name)));
+  const shotLookFallbacks = new Map<string, { appearance: string; attire: string; accessories: string }>();
   const namePartsFrom = (rec: NamePartSource, existing: NamePartSource = null): NameParts => ({
     surname: cleanText(rec?.surname || existing?.surname || '', 200),
     given_name: cleanText(rec?.given_name || existing?.given_name || '', 200),
@@ -811,12 +789,24 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
   });
   for (const char of shotChars || []) {
     const name = cleanText(char.name, 200);
-    if (!name || covered.has(normalizeAlias(name))) continue;
-    const existing = resolveCharacter(name, roster);
-    if (existing && characterHasAppearance(existing)) continue;
+    if (!name) continue;
+    const key = normalizeAlias(name);
     const shotApp = joinTags(char.label, char.age, char.appearance, char.body);
     const shotAttire = cleanText(char.attire || '');
     const shotAcc = cleanText(char.accessories || '');
+    if (covered.has(key)) {
+      if (shotApp || shotAttire || shotAcc) {
+        const previous = shotLookFallbacks.get(key);
+        shotLookFallbacks.set(key, {
+          appearance: joinTags(previous?.appearance, shotApp),
+          attire: joinTags(previous?.attire, shotAttire),
+          accessories: joinTags(previous?.accessories, shotAcc),
+        });
+      }
+      continue;
+    }
+    const existing = resolveCharacter(name, roster);
+    if (existing && characterHasAppearance(existing)) continue;
     // Empty shot wear is caption-only. Do not queue a roster write that would
     // clear looks (upsert treats present "" as an intentional wipe).
     if (!shotApp && !shotAttire && !shotAcc) continue;
@@ -830,7 +820,7 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
       accessories: shotAcc || existing?.accessories || '',
       ...namePartsFrom(char, existing),
     });
-    covered.add(normalizeAlias(name));
+    covered.add(key);
   }
   if (typeof tagged === 'object') tagged.new_characters = newList;
 
@@ -843,6 +833,10 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
       rec.attire = restoreAssetTagWeights(rec.attire, weightMap);
       rec.accessories = restoreAssetTagWeights(rec.accessories, weightMap);
     }
+    const buckets = normalizeTaggedLookBuckets(rec, shotLookFallbacks.get(normalizeAlias(rec.name)));
+    rec.appearance = buckets.appearance;
+    rec.attire = buckets.attire;
+    rec.accessories = buckets.accessories;
     const existing = resolveCharacter(rec.name, roster);
     const newApp = cleanText(rec.appearance || '');
     const newAttire = cleanText(rec.attire || '');
@@ -874,13 +868,14 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
       const aliases = parseAliasList([...(existing.aliases || []), ...(rec.aliases || [])]);
       const appearance = newApp || existing.appearance || '';
       const original = existing.original || rec.original || '';
-      const costumes = mergeCostumeLists(
-        existing.costumes,
-        Array.isArray(raw.costumes) && raw.costumes.length
-          ? raw.costumes
-          : [{ name: 'default', attire: newAttire, accessories: newAccessories }],
-        { protectDefault: false },
-      );
+      const incomingCostumes = Array.isArray(raw.costumes) && raw.costumes.length
+        ? raw.costumes
+        : newAttire || newAccessories
+          ? [{ name: 'default', attire: newAttire, accessories: newAccessories }]
+          : [];
+      const costumes = incomingCostumes.length
+        ? mergeCostumeLists(existing.costumes, incomingCostumes, { protectDefault: false })
+        : ensureCostumes(existing).costumes;
       const attire = newAttire || existing.attire || costumes[0]?.attire || '';
       const accessories = newAccessories || existing.accessories || costumes[0]?.accessories || '';
       await upsertCharacter(writeScope, {
@@ -959,10 +954,7 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     if (!name) continue;
     const existing = resolveCharacter(name, roster);
     // Filled looks: shot wear is caption-only. Incomplete looks: wait for new_characters.
-    if (existing) {
-      roster = await readRoster();
-      continue;
-    }
+    if (existing) continue;
     {
       const appearance = joinTags(char.label, char.age, char.appearance || '', char.body || '');
       const attire = cleanText(char.attire || '');
@@ -1012,9 +1004,6 @@ export async function persistChatWearStates(
       name: rec.name,
       aliases: rec.aliases,
       wear_state: state,
-      ...(cleanText(rec.appearance || '') ? { appearance: rec.appearance } : {}),
-      ...(cleanText(rec.attire || '') ? { attire: rec.attire } : {}),
-      ...(cleanText(rec.accessories || '') ? { accessories: rec.accessories } : {}),
     });
   }
 }

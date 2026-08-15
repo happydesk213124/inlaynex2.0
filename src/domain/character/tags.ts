@@ -122,6 +122,36 @@ export function splitLookTags(tags: unknown): [string, string, string] {
   return [joinTags(...identity), joinTags(...attire), joinTags(...accessories)];
 }
 
+export interface TaggedLookBuckets {
+  appearance?: unknown;
+  attire?: unknown;
+  accessories?: unknown;
+}
+
+/**
+ * Enforce look buckets at the LLM boundary. User-edited roster fields bypass
+ * this helper; only tagger/new-character payloads need defensive sorting.
+ */
+export function normalizeTaggedLookBuckets(input: TaggedLookBuckets, fallback?: TaggedLookBuckets): {
+  appearance: string;
+  attire: string;
+  accessories: string;
+} {
+  const [identity, misplacedAttire, misplacedAccessories] = splitLookTags(input.appearance);
+  const primary = {
+    appearance: identity,
+    attire: joinTags(misplacedAttire, input.attire),
+    accessories: joinTags(misplacedAccessories, input.accessories),
+  };
+  if (!fallback || characterHasAppearance(primary)) return primary;
+  const secondary = normalizeTaggedLookBuckets(fallback);
+  return {
+    appearance: joinTags(primary.appearance, secondary.appearance),
+    attire: joinTags(primary.attire, secondary.attire),
+    accessories: joinTags(primary.accessories, secondary.accessories),
+  };
+}
+
 /** Jewelry tokens only (for nude captions that keep earrings etc.). */
 export function jewelryFromAttire(attire: unknown): string {
   const jewelry: string[] = [];

@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as characterTags from "../.test-build/character-tags.mjs";
 
 import {
+  characterHasAppearance,
   classifyGenderFromTags,
   composeCharacterCaptionTags,
   emphasizePersonTags,
@@ -171,6 +173,52 @@ test("splitLookTags keeps singular bare shoulder in attire", () => {
   assert.match(attire, /bare shoulder/);
   assert.match(attire, /white shirt/);
   assert.equal(id.includes("bare shoulder"), false);
+});
+
+test("normalizeTaggedLookBuckets sorts tagger mistakes without losing weapons", () => {
+  assert.equal(typeof characterTags.normalizeTaggedLookBuckets, "function");
+  if (typeof characterTags.normalizeTaggedLookBuckets !== "function") return;
+  const look = characterTags.normalizeTaggedLookBuckets({
+    appearance: "girl, black hair, amber eyes, white shirt, mitre, holding staff",
+    attire: "white shirt, earrings",
+    accessories: "holding staff",
+  });
+  assert.equal(look.appearance, "girl, black hair, amber eyes");
+  assert.equal(look.attire, "white shirt, mitre, earrings");
+  assert.equal(look.accessories, "holding staff");
+});
+
+test("normalizeTaggedLookBuckets leaves ambiguous wings in the supplied bucket", () => {
+  assert.equal(typeof characterTags.normalizeTaggedLookBuckets, "function");
+  if (typeof characterTags.normalizeTaggedLookBuckets !== "function") return;
+  const look = characterTags.normalizeTaggedLookBuckets({
+    appearance: "girl, black hair, angel wings",
+    attire: "",
+    accessories: "",
+  });
+  assert.equal(look.appearance, "girl, black hair, angel wings");
+  assert.equal(look.attire, "");
+});
+
+test("normalizeTaggedLookBuckets fills identity from shot only when primary look is incomplete", () => {
+  const incomplete = characterTags.normalizeTaggedLookBuckets(
+    { appearance: "white shirt", attire: "", accessories: "" },
+    { appearance: "girl, black hair, amber eyes", attire: "school skirt", accessories: "" },
+  );
+  assert.equal(incomplete.appearance, "girl, black hair, amber eyes");
+  assert.equal(incomplete.attire, "white shirt, school skirt");
+
+  const filled = characterTags.normalizeTaggedLookBuckets(
+    { appearance: "girl, silver hair", attire: "white dress", accessories: "" },
+    { appearance: "girl, black hair", attire: "school uniform", accessories: "" },
+  );
+  assert.equal(filled.appearance, "girl, silver hair");
+  assert.equal(filled.attire, "white dress");
+});
+
+test("characterHasAppearance rejects clothing-only rows", () => {
+  assert.equal(characterHasAppearance({ appearance: "white shirt, mitre" }), false);
+  assert.equal(characterHasAppearance({ appearance: "black hair, white shirt" }), true);
 });
 
 test("flagOn accepts true/on/1", () => {

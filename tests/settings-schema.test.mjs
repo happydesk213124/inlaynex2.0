@@ -93,6 +93,11 @@ test("curation.strict_ids normalizes to boolean, default false", () => {
   assert.equal(migrateSettings({ curation: { strict_ids: 1 } }).curation.strict_ids, true);
 });
 
+test("stream_keywords defaults to empty string", () => {
+  assert.equal(migrateSettings({ card: {} }).card.stream_keywords, "");
+  assert.equal(migrateSettings({ card: { stream_keywords: "future plan" } }).card.stream_keywords, "future plan");
+});
+
 test("overlay_markers is canonical for left-line overlay + inline previews", () => {
   const on = migrateSettings({ card: { overlay_markers: true, inline_previews: false } });
   assert.equal(on.card.overlay_markers, true);

@@ -129,6 +129,7 @@
     "debug_panel": false,
     "generate_all_roles": false,
     "auto_gen_on_reply": false,
+    "stream_keywords": "",
     "scroll_delay_ms": 250,
     "capture_delay_ms": 10,
     "overlay_x_pct": 38,

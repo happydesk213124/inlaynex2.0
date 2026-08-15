@@ -291,6 +291,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     || card.unified_winners_only === 1
     || card.unified_winners_only === '1'
     || card.unified_winners_only === 'on';
+  card.stream_keywords = String(card.stream_keywords ?? '').slice(0, 4000);
   // Always-on fixed prompt wrappers (empty = unused). Cap keeps settings JSON lean.
   card.fixed_prompt_prefix = String(card.fixed_prompt_prefix ?? '').trim().slice(0, 8000);
   card.fixed_prompt_suffix = String(card.fixed_prompt_suffix ?? '').trim().slice(0, 8000);

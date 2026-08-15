@@ -140,6 +140,8 @@ export interface CardSettings {
   unified_winners_only: boolean;
   generate_all_roles: boolean;
   auto_gen_on_reply: boolean;
+  /** Comma-separated stream needles (≥3 chars). Empty = off. Independent of auto_gen_on_reply. */
+  stream_keywords: string;
   [key: string]: unknown;
 }
 

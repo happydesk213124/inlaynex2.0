@@ -34,6 +34,7 @@ const MODULES = {
   'settings-schema': 'src/config/schema.ts',
   'reroll-setup': 'src/domain/prompt/reroll-setup.ts',
   'command-rewrite': 'src/domain/prompt/command-rewrite.ts',
+  'stream-keywords': 'src/domain/prompt/stream-keywords.ts',
   'character-tags': 'src/domain/character/tags.ts',
   'character-focus': 'src/domain/character/focus.ts',
   'character-costume': 'src/domain/character/costume.ts',

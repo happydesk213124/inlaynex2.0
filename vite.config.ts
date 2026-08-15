@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.59';
+const PLUGIN_VERSION = '2.3.60';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -450,12 +450,20 @@ const VENDOR_CARD_TAG_PERSON_MODE_PATCH =
 /** Dashboard: auto_aspect toggle only; asset NAI moved to card options select. */
 const VENDOR_ASSET_NAI_HTML_NEEDLE =
   `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
+          </div>
+          <div class="model-form" style="margin-top:14px">
 `;
 
 const VENDOR_ASSET_NAI_HTML_PATCH =
   `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
             <label class="toggle-row" data-nx-help-id="nx-auto-aspect"><input type="checkbox" id="nx-auto-aspect" \${i.auto_aspect ? "checked" : ""}><span>자동 비율 조절</span></label>
             <label class="toggle-row" data-nx-help-id="nx-llm-json-retry"><input type="checkbox" id="nx-llm-json-retry" \${i.llm_json_retry ? "checked" : ""}><span>JSON 오류 시 재시도</span></label>
+          </div>
+          <label data-nx-help-id="nx-stream-keywords" style="display:block;margin-top:12px;grid-column:1/-1">
+            <span style="display:block;margin-bottom:6px">스트리밍 키워드 (쉼표, 3글자+, 비면 꺼짐)</span>
+            <textarea id="nx-stream-keywords" rows="2" style="width:100%;min-height:52px" placeholder="future plan, RP-Guide">\${h(i.stream_keywords || "")}</textarea>
+          </label>
+          <div class="model-form" style="margin-top:14px">
 `;
 
 const VENDOR_ASSET_NAI_SAVE_NEEDLE =
@@ -466,6 +474,7 @@ const VENDOR_ASSET_NAI_SAVE_PATCH =
   `      char_appearance: ee("nx-appearance"),
       auto_aspect: ee("nx-auto-aspect"),
       llm_json_retry: ee("nx-llm-json-retry"),
+      stream_keywords: w(N("nx-stream-keywords") || "", 4000),
 `;
 
 /** Card options: asset NAI select after solo+costume checks-grid. */
@@ -517,6 +526,7 @@ const VENDOR_ASSET_NAI_HELP_PATCH =
     "nx-costume": { title: "코스튬", body: "켜면 메인 태거가 캐릭터별 코스튬 목록을 보고 샷마다 복장을 고릅니다(이름·번호). 꺼도 에셋으로 캐릭을 만들 때는 복장이 코스튬으로 나뉘어 저장됩니다. 샷에 고른 값이 없으면 항상 index 0(기본)을 씁니다." },
     "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(NovelAI 기본 사이즈). ComfyUI는 워크플로 Empty Latent 등에 [[width]]/[[height]]를 넣어야 반영됩니다. 끄면 NAI Width/Height 설정을 씁니다." },
     "nx-llm-json-retry": { title: "JSON 오류 시 재시도", body: "메인 태거 응답이 JSON으로 파싱되지 않으면, 오류 내용을 붙여 LLM에 한 번 더 요청합니다. 재시도도 실패하면 작업이 오류로 끝납니다." },
+    "nx-stream-keywords": { title: "스트리밍 키워드", body: "AI 답이 나오는 동안 누적 글자에 이 단어가 들어가면(대소문자 무시, 부분 일치) 최신 말풍선으로 한 번 생성합니다. 쉼표로 여러 개. 3글자 미만은 무시. 비우면 꺼짐. 「응답 후 자동 생성」과 별개입니다. Power OFF·발동 수동·이미 생성 중이면 안 돕니다." },
     "nx-fixed-prompt-prefix": { title: "선행 고정 프롬프트", body: "값이 있으면 사람 태그 다음·스타일 프리셋/장면 앞에 항상 붙습니다. 프리셋이 바뀌어도 유지됩니다." },
     "nx-fixed-prompt-suffix": { title: "후행 고정 프롬프트", body: "값이 있으면 장면·큐레이션 뒤·NAI 품질 태그 앞에 항상 붙습니다. JSON으로 내보내/가져오기 할 수 있습니다." },
 `;
@@ -707,6 +717,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.60</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>대시보드 스트리밍 키워드: 답 나오는 중 글자가 맞으면 한 번 생성</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.59</strong>
@@ -7672,7 +7688,11 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
     t._afterGenGen = (t._afterGenGen || 0) + 1;
     try {
       const card = t.backendSettings?.card || {};
-      if (card.power === !1 || !card.auto_gen_on_reply) {
+      if (card.power === !1) {
+        y("info", "afterReply.skip", "toggled-off");
+        return;
+      }
+      if (source !== "streamKeywords" && !card.auto_gen_on_reply) {
         y("info", "afterReply.skip", "toggled-off");
         return;
       }
@@ -7682,7 +7702,7 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       }
       const o = await ve();
       if (!o.enabled) return y("info", "afterReply.skip", "plugin disabled");
-      const waitStream = source !== "scriptOutput.domQuiet5";
+      const waitStream = source !== "scriptOutput.domQuiet5" && source !== "streamKeywords";
       if (waitStream) {
         let waited = 0;
         while (await chatIsStreaming()) {
@@ -7898,6 +7918,37 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       y("error", "chatOutput.fail", err?.message || err);
     }
   }
+  function stopStreamKeywordTick() {
+    if (t._streamKwTimer) {
+      clearInterval(t._streamKwTimer);
+      t._streamKwTimer = null;
+    }
+  }
+  function parsedStreamKeywords(card) {
+    const SK = globalThis.__INLAY_STREAM_KW__;
+    return typeof SK?.parseStreamKeywords == "function" ? SK.parseStreamKeywords(card?.stream_keywords) : [];
+  }
+  function tickStreamKeywords() {
+    const card = t.backendSettings?.card || {};
+    const keys = parsedStreamKeywords(card);
+    if (!keys.length) {
+      stopStreamKeywordTick();
+      return;
+    }
+    if (t._streamKwFired || t._afterGenRunning || t._afterGenTimer) return;
+    if (card.power === !1 || card.execute === "manual") return;
+    const SK = globalThis.__INLAY_STREAM_KW__;
+    const hay = String(t._scriptStreamText || "");
+    if (typeof SK?.haystackHasStreamKeyword == "function" && SK.haystackHasStreamKeyword(hay, keys)) {
+      t._streamKwFired = !0;
+      y("info", "scriptOutput.keyword", "hit → gen");
+      scheduleAutoGenOnReply("streamKeywords", hay);
+    }
+  }
+  function ensureStreamKeywordTick() {
+    if (t._streamKwTimer) return;
+    t._streamKwTimer = setInterval(tickStreamKeywords, 1e3);
+  }
   // Streaming chunks: hash relink; 500 chars or every 4s → 0.5s later compare DOM#0 growth.
   async function onScriptOutput(content) {
     try {
@@ -7905,7 +7956,13 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       if (!o.enabled) return content;
       const text = w(content, 5e4);
       if (text && text.length > 8) scheduleHashRelinkAfterReply("scriptOutput");
+      const prevLen = Number(t._scriptStreamPrevLen) || 0;
+      if (text.length < prevLen) t._streamKwFired = !1;
+      t._scriptStreamPrevLen = text.length;
+      t._scriptStreamText = text;
       const card = t.backendSettings?.card || {};
+      if (parsedStreamKeywords(card).length) ensureStreamKeywordTick();
+      else stopStreamKeywordTick();
       if (card.power === !1 || !card.auto_gen_on_reply || card.execute === "manual") return content;
       if (!text || text.length <= 8) return content;
       t._scriptStreaming = !0;
@@ -7932,11 +7989,19 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
         return y("info", "afterRequest.skip", "plugin disabled"), e;
       const a = w(e, 5e4);
       if (a && a.length > 8) scheduleHashRelinkAfterReply("afterRequest");
+      const kwAlready = !!t._streamKwFired;
+      t._scriptStreamText = a || t._scriptStreamText;
+      tickStreamKeywords();
+      const kwNow = !!t._streamKwFired;
+      stopStreamKeywordTick();
+      t._streamKwFired = !1;
+      t._scriptStreamPrevLen = 0;
       if (!a || messageBodyChars(a) <= 30)
         return y("info", "afterRequest.skip", "text too short"), e;
       const i = t.backendSettings?.card || {};
       if (i.power === !1) return y("info", "afterRequest.skip", "power off"), e;
       if (i.execute === "manual") return y("info", "afterRequest.skip", "execute=manual"), e;
+      if (kwAlready || kwNow) return y("info", "afterRequest.skip", "stream-keyword already armed"), e;
       if (!i.auto_gen_on_reply) return y("info", "afterRequest.skip", "reply-auto-gen-off"), e;
       await scheduleAutoGenOnReply("afterRequest", a);
       return e;
@@ -8445,8 +8510,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.59",
-    body: "외형 없는 캐릭은 다시 수집합니다. 에셋태그 작가의 노트. 업데이트 내역 탭 참고."
+    title: "2.3.60",
+    body: "스트리밍 키워드로 답 나오는 중에 한 번 생성. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

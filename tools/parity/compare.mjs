@@ -216,6 +216,8 @@ const normalize = (root) => {
         // 2.0 character-tab "승자만 보기". 1.x folded winners into unified_chat_priority;
         // unit tests + unify listing assert the split toggle.
         if (k === 'unified_winners_only') continue;
+        // 2.0 dashboard stream-keyword autogen — no 1.x field.
+        if (k === 'stream_keywords') continue;
         // Sticky pin hover preview removed in 2.0 (force-off + default false).
         // 1.x defaulted true; comparing the wire value only hides the deletion.
         if (k === 'hover_preview' || k === 'hover_preview_anchor') continue;

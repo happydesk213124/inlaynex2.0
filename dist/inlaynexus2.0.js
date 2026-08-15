@@ -4722,7 +4722,7 @@ button[data-char-autotag].armed{background:rgba(255,196,72,.24);border-color:rgb
       }).join("");
       u = `
         <div class="prompt-toolbar">
-          <div><strong>프롬프트</strong><div class="muted">작가의 노트만 남기고 나머지를 기본값으로 돌리거나, 전체/개별 JSON으로 백업할 수 있습니다.</div></div>
+          <div><strong>프롬프트</strong><div class="muted">작가의 노트·에셋태그 작가의 노트만 남기고 나머지를 기본값으로 돌리거나, 전체/개별 JSON으로 백업할 수 있습니다.</div></div>
           <div class="toolbar-actions" style="flex-wrap:wrap;gap:8px">
             <button id="nx-prompts-reset-defaults" class="secondary">기본값</button>
             <button id="nx-prompts-export" class="secondary">EXPORT</button>
@@ -7178,11 +7178,11 @@ ${Ye(250)}`;
         }
       });
     }), document.getElementById("nx-prompts-reset-defaults")?.addEventListener("click", async () => {
-      if (!globalThis.confirm?.("작가의 노트를 제외한 모든 프롬프트를 기본값으로 복원할까요?")) return;
+      if (!globalThis.confirm?.("작가의 노트와 에셋태그 작가의 노트를 제외한 모든 프롬프트를 기본값으로 복원할까요?")) return;
       try {
         await K("/v1/prompts/reset-defaults", { method: "POST", body: { keep_author_note: true } });
         t.promptDrafts = {};
-        t.uiMessage = { type: "success", text: "프롬프트 기본값 복원 (작가 노트 유지)" };
+        t.uiMessage = { type: "success", text: "프롬프트 기본값 복원 (작가 노트·에셋태그 노트 유지)" };
         await Je(), await P();
       } catch (err) {
         t.uiMessage = { type: "error", text: z(err?.message || err) };

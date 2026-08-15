@@ -213,6 +213,9 @@ const normalize = (root) => {
         if (k === 'fixed_prompt_prefix' || k === 'fixed_prompt_suffix') continue;
         // 2.0 bubble inline scale % — no 1.x field; default 100.
         if (k === 'inline_chat_scale_pct') continue;
+        // 2.0 character-tab "승자만 보기". 1.x folded winners into unified_chat_priority;
+        // unit tests + unify listing assert the split toggle.
+        if (k === 'unified_winners_only') continue;
         // Sticky pin hover preview removed in 2.0 (force-off + default false).
         // 1.x defaulted true; comparing the wire value only hides the deletion.
         if (k === 'hover_preview' || k === 'hover_preview_anchor') continue;
@@ -254,7 +257,7 @@ const diff = (a, b, at, into) => {
     // were evicted there that survive here. So the assertion worth making is that
     // no stage the old run recorded went missing; extra stages are the win.
     // Known 2.0 renames/drops (not regressions): allow these to disappear.
-    const ALLOW_GONE = new Set(['autotag.start', 'job.start']);
+    const ALLOW_GONE = new Set(['autotag.start', 'job.start', 'nai.read_bytes.done', 'nai.fetch.returned']);
     const gone = a.stages.filter((s) => !b.stages.includes(s) && !ALLOW_GONE.has(s));
     if (gone.length) into.push({ at: `${at}.stages`, old: gone.join(', '), new: '(absent)', note: 'stage no longer logged' });
     // An error appearing or disappearing is behaviour, so those match exactly.
@@ -296,6 +299,13 @@ const INTENTIONAL_DIFF_STEPS = new Set([
   // markers stay in appearance instead of spilling into attire via "chat"⊃"hat".
   'chars.seed_sess_chat_a',
   'chars.seed_sess_chat_b',
+  // 2.0 unified view is a live concat of root chats; 1.x wrote a cache row and
+  // fanned patches/deletes to every linked session.
+  'chars.unified_patch',
+  'chars.chat_b_after_patch',
+  'chars.unified_patch_single',
+  'chars.delete_cascade',
+  'chars.chat_b_after_delete',
 ]);
 
 /**
@@ -394,6 +404,52 @@ for (const name of oldSteps.keys()) {
         new: String(newStep.value?.wear_ok),
         note: '2.0 must keep seed marker in appearance, white dress in attire',
       });
+    }
+    if (name === 'chars.unified_patch') {
+      const chars = Array.isArray(newStep.value?.characters) ? newStep.value.characters : [];
+      const patched = chars.find((c) => c?.id === 'chat-a-nim');
+      const other = chars.find((c) => c?.id === 'chat-b-nim');
+      if (chars.length !== 2 || !String(patched?.appearance || '').includes('vivid violet') || !String(other?.appearance || '').includes('old chat B')) {
+        findings.push({
+          at: name,
+          old: '(1.x cache row)',
+          new: JSON.stringify({ length: chars.length, a: patched?.appearance, b: other?.appearance }).slice(0, 240),
+          note: '2.0 unify POST must return live concat: patched A + original B',
+        });
+      }
+    }
+    if (name === 'chars.chat_b_after_patch') {
+      const app = String(newStep.value?.characters?.[0]?.appearance || '');
+      if (!app.includes('old chat B')) {
+        findings.push({
+          at: name,
+          old: '(1.x fan-out)',
+          new: app.slice(0, 160),
+          note: '2.0 must leave chat B looks unchanged after an A-origin unified patch',
+        });
+      }
+    }
+    if (name === 'chars.unified_patch_single') {
+      const chars = Array.isArray(newStep.value?.characters) ? newStep.value.characters : [];
+      if (chars.length !== 3) {
+        findings.push({
+          at: name,
+          old: '(1.x cache)',
+          new: String(chars.length),
+          note: '2.0 unify POST must list all three root-chat rows',
+        });
+      }
+    }
+    if (name === 'chars.chat_b_after_delete') {
+      const n = Array.isArray(newStep.value?.characters) ? newStep.value.characters.length : -1;
+      if (n !== 1) {
+        findings.push({
+          at: name,
+          old: '(1.x fan-out delete)',
+          new: String(n),
+          note: '2.0 must keep chat B after deleting the A-origin unified row',
+        });
+      }
     }
     continue;
   }

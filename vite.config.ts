@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.57';
+const PLUGIN_VERSION = '2.3.58';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.58</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>캐릭터 탭에 승자만 보기. 통합챗 선택·저장·추가 때 다시 모음. 외형 ✕ 확인창</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.57</strong>
@@ -5250,6 +5256,7 @@ const VENDOR_CHAR_EDIT_CLEAR_LOOKS_PATCH =
       });
     }), i.querySelector("[data-ce-clear-looks]")?.addEventListener("click", (f) => {
       f.preventDefault(), f.stopPropagation();
+      if (!confirm("외형 칸을 비울까요?")) return;
       if (p) p.value = "";
     }), (() => {`;
 
@@ -5498,7 +5505,12 @@ const VENDOR_LOREFILTER_TAB_EVT_PATCH =
           }
         });
       });
-    })(), document.getElementById("nx-char-add-session")?.addEventListener("click", async () => {`;
+    })(), document.getElementById("nx-char-add-session")?.addEventListener("click", async () => {
+      try {
+        const sc = await Z();
+        if (sc.unified) await ensureUnifiedRoster(sc), await P();
+      } catch {
+      }`;
 
 const VENDOR_LOREFILTER_TAB_LOAD_NEEDLE =
   `    })), t.uiTab === "characters" && !t._charsBgRefresh) {`;
@@ -5543,6 +5555,7 @@ const VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_PATCH =
       };
       a.addEventListener("pointerdown", r), a.addEventListener("mousedown", r), a.addEventListener("click", (i) => {
         r(i);
+        if (!confirm("외형 칸을 비울까요?")) return;
         const s = a.closest("[data-char-scope]");
         const app = s?.querySelector("[data-char-appearance]");
         if (app) app.value = "";
@@ -6308,6 +6321,7 @@ const VENDOR_CHAR_TAB_BTNS_PATCH =
           <button id="nx-import-session-chars" class="secondary">IMPORT</button>
           <input id="nx-import-session-chars-file" type="file" accept=".json,application/json,text/plain" style="display:none">
           \${Nn ? '<button id="nx-unify-rebuild" class="secondary">다시 모으기</button>' : ""}
+          <label class="toggle-row" style="margin:0;white-space:nowrap"><input type="checkbox" id="nx-unified-winners" \${t.backendSettings?.card?.unified_winners_only ? "checked" : ""}><span>승자만 보기</span></label>
         </div>
         <div class="prompt-group-label" style="margin-top:18px">글로벌 캐릭터</div>
         <div class="notice info" style="margin-bottom:10px">글로벌 캐릭터는 모든 채팅에서 공유됩니다. 특정 챗에서만 끄려면 카드를 펼쳐 「이 캐릭터 챗에서 사용」을 해제하세요.</div>
@@ -6320,6 +6334,57 @@ const VENDOR_CHAR_TAB_BTNS_PATCH =
           <input id="nx-import-global-chars-file" type="file" accept=".json,application/json,text/plain" style="display:none">
           <button id="nx-refresh-chars" class="secondary">새로고침</button>
         </div>\`;`;
+
+const VENDOR_UNIFIED_SCOPE_CE_NEEDLE =
+  `      i.unified && await ensureUnifiedRoster(i), await ce(i.sessionId, !0), t.gallerySessionId = i.sessionId || "";`;
+const VENDOR_UNIFIED_SCOPE_CE_PATCH =
+  `      i.unified && await ensureUnifiedRoster(i), await ce(i.sessionId, !0), i.unified && await ensureUnifiedRoster(i), t.gallerySessionId = i.sessionId || "";`;
+
+const VENDOR_UNIFIED_REFRESH_CE_NEEDLE =
+  `      a.unified && await ensureUnifiedRoster(a), await ce(a.sessionId), await P();`;
+const VENDOR_UNIFIED_REFRESH_CE_PATCH =
+  `      a.unified && await ensureUnifiedRoster(a), await ce(a.sessionId), a.unified && await ensureUnifiedRoster(a), await P();`;
+
+const VENDOR_UNIFIED_REBUILD_CE_NEEDLE =
+  `        await ensureUnifiedRoster(a), await ce(a.sessionId), t.uiMessage = {
+          type: "success",
+          text: "통합 챗 캐릭터를 다시 모았습니다"
+        }, await P();`;
+const VENDOR_UNIFIED_REBUILD_CE_PATCH =
+  `        await ensureUnifiedRoster(a), await ce(a.sessionId), await ensureUnifiedRoster(a), t.uiMessage = {
+          type: "success",
+          text: "통합 챗 캐릭터를 다시 모았습니다"
+        }, await P();`;
+
+const VENDOR_UNIFIED_SAVE_REBUILD_NEEDLE =
+  `        t.charactersSession = i?.characters || r, t.appearance = i?.appearance || {}, t._charsDirty = !1, t.uiMessage = {
+          type: "success",
+          text: a.unified ? "채팅 캐릭터 저장됨 · 원본 채팅에 반영" : "채팅 캐릭터 저장됨"
+        };`;
+const VENDOR_UNIFIED_SAVE_REBUILD_PATCH =
+  `        t.charactersSession = i?.characters || r, t.appearance = i?.appearance || {}, t._charsDirty = !1, t.uiMessage = {
+          type: "success",
+          text: a.unified ? "채팅 캐릭터 저장됨 · 원본 채팅에 반영" : "채팅 캐릭터 저장됨"
+        };
+        a.unified && await ensureUnifiedRoster(a);`;
+
+const VENDOR_UNIFIED_WINNERS_EVT_NEEDLE =
+  `    }), document.getElementById("nx-unify-rebuild")?.addEventListener("click", async () => {`;
+const VENDOR_UNIFIED_WINNERS_EVT_PATCH =
+  `    }), document.getElementById("nx-unified-winners")?.addEventListener("change", async () => {
+      const on = ee("nx-unified-winners");
+      try {
+        t.backendSettings && (t.backendSettings.card = {
+          ...t.backendSettings.card,
+          unified_winners_only: on
+        });
+        await pe({ card: { unified_winners_only: on } });
+        const a = await Z();
+        a.unified && await ensureUnifiedRoster(a);
+      } catch {
+      }
+      await P();
+    }), document.getElementById("nx-unify-rebuild")?.addEventListener("click", async () => {`;
 
 const VENDOR_RESET_HELP_NEEDLE =
   `    "nx-reset-windows": { title: "창 위치 초기화", body: "뷰어·접힘 아이콘·핀이 화면 밖으로 나가 안 보일 때 기본 위치로 되돌립니다." },
@@ -8369,8 +8434,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.57",
-    body: "외형 ✕는 외형 칸만 비웁니다. 업데이트 내역 탭 참고."
+    title: "2.3.58",
+    body: "캐릭터 탭에서 승자만 보기. 통합챗은 고르면 다시 모읍니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11432,6 +11497,11 @@ const loadVendorUi = (): string => {
     [VENDOR_STATUS_GRID_SHOW_NEEDLE, 'status grid keep hidden'],
     [VENDOR_DASH_ACTIONS_HTML_NEEDLE, 'dashboard action buttons'],
     [VENDOR_CHAR_TAB_BTNS_NEEDLE, 'character tab button labels'],
+    [VENDOR_UNIFIED_SCOPE_CE_NEEDLE, 'unified scope reload after gallery'],
+    [VENDOR_UNIFIED_REFRESH_CE_NEEDLE, 'unified refresh reload after gallery'],
+    [VENDOR_UNIFIED_REBUILD_CE_NEEDLE, 'unified rebuild reload after gallery'],
+    [VENDOR_UNIFIED_SAVE_REBUILD_NEEDLE, 'unified save then remesh'],
+    [VENDOR_UNIFIED_WINNERS_EVT_NEEDLE, 'unified winners toggle'],
     [VENDOR_RESET_HELP_NEEDLE, 'reset help titles'],
     [VENDOR_XA_FULL_NEEDLE, 'xa full silent save'],
     [VENDOR_UNLOAD_SAVE_NEEDLE, 'unload xa silent save'],
@@ -11780,6 +11850,11 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_STATUS_GRID_SHOW_NEEDLE, VENDOR_STATUS_GRID_SHOW_PATCH)
     .replace(VENDOR_DASH_ACTIONS_HTML_NEEDLE, VENDOR_DASH_ACTIONS_HTML_PATCH)
     .replace(VENDOR_CHAR_TAB_BTNS_NEEDLE, VENDOR_CHAR_TAB_BTNS_PATCH)
+    .replace(VENDOR_UNIFIED_SCOPE_CE_NEEDLE, VENDOR_UNIFIED_SCOPE_CE_PATCH)
+    .replace(VENDOR_UNIFIED_REFRESH_CE_NEEDLE, VENDOR_UNIFIED_REFRESH_CE_PATCH)
+    .replace(VENDOR_UNIFIED_REBUILD_CE_NEEDLE, VENDOR_UNIFIED_REBUILD_CE_PATCH)
+    .replace(VENDOR_UNIFIED_SAVE_REBUILD_NEEDLE, VENDOR_UNIFIED_SAVE_REBUILD_PATCH)
+    .replace(VENDOR_UNIFIED_WINNERS_EVT_NEEDLE, VENDOR_UNIFIED_WINNERS_EVT_PATCH)
     .replace(VENDOR_RESET_HELP_NEEDLE, VENDOR_RESET_HELP_PATCH)
     .replace(VENDOR_XA_FULL_NEEDLE, VENDOR_XA_FULL_PATCH)
     .replace(VENDOR_UNLOAD_SAVE_NEEDLE, VENDOR_UNLOAD_SAVE_PATCH)

@@ -119,6 +119,7 @@
     "fixed_prompt_suffix": "",
     "viewer_minimize_mode": "icon",
     "unified_chat_priority": false,
+    "unified_winners_only": false,
     "overlay_hide_offscreen": true,
     "scroll_message_track": true,
     "click_message_track": true,

@@ -136,6 +136,8 @@ export interface CardSettings {
   active_preset_id: string;
   userchat: boolean;
   unified_chat_priority: boolean;
+  /** Unified character tab: keep one row per name (priority, then newest). */
+  unified_winners_only: boolean;
   generate_all_roles: boolean;
   auto_gen_on_reply: boolean;
   [key: string]: unknown;

@@ -285,6 +285,12 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
         t === 'character' || t === 'style' || t === 'character&style' ? t : 'character&style';
     }
   }
+  card.unified_winners_only =
+    card.unified_winners_only === true
+    || card.unified_winners_only === 'true'
+    || card.unified_winners_only === 1
+    || card.unified_winners_only === '1'
+    || card.unified_winners_only === 'on';
   // Always-on fixed prompt wrappers (empty = unused). Cap keeps settings JSON lean.
   card.fixed_prompt_prefix = String(card.fixed_prompt_prefix ?? '').trim().slice(0, 8000);
   card.fixed_prompt_suffix = String(card.fixed_prompt_suffix ?? '').trim().slice(0, 8000);

@@ -274,14 +274,14 @@ export async function listMergedSessionCharacters(sourceSessionIds: unknown[] = 
 
 export async function listUnifiedViewCharacters(sourceSessionIds: unknown[] = []): Promise<CharacterRecord[]> {
   const collected = await listMergedSessionCharacters(sourceSessionIds);
-  if (getConfig()?.card?.unified_chat_priority) return asRoster(pickUnifiedWinners(collected));
+  if (getConfig()?.card?.unified_winners_only) return asRoster(pickUnifiedWinners(collected));
   return collected;
 }
 
 /**
  * The roster a chat sees: its own rows plus every global the character has not
- * switched off. With `unified_chat_priority` the session half is winners from
- * the linked chats (priority, then newest updated_at).
+ * switched off. With `unified_chat_priority` the session half is the linked
+ * chats concatenated. `unified_winners_only` then keeps one row per name.
  */
 export async function rosterForSession(
   sessionId: string,
@@ -290,12 +290,14 @@ export async function rosterForSession(
   sourceSessionIds: unknown[] = [],
 ): Promise<CharacterRecord[]> {
   const prefer = !!getConfig()?.card?.unified_chat_priority;
+  const winnersOnly = !!getConfig()?.card?.unified_winners_only;
   const sources = (Array.isArray(sourceSessionIds) ? sourceSessionIds : [])
     .map((s) => cleanText(s, 200))
     .filter(Boolean);
   let session: CharacterRecord[];
   if (prefer && sources.length) {
-    session = asRoster(pickUnifiedWinners(await listMergedSessionCharacters(sources)));
+    const merged = await listMergedSessionCharacters(sources);
+    session = asRoster(winnersOnly ? pickUnifiedWinners(merged) : merged);
   } else {
     session = await listCharacters(cleanText(sessionId || '', 200));
   }

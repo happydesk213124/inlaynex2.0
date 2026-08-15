@@ -10190,17 +10190,38 @@ const VENDOR_THUMBS_HELPERS_PATCH =
       const items = Array.isArray(d.items) && d.items.length ? d.items : U(), VC = globalThis.__INLAY_VIEWER_CORE__;
       const contentW = typeof VC?.galleryStripContentWidth == "function" ? VC.galleryStripContentWidth({ count: items.length, selectedCount: d.selectedCount || selectedCountOf(items) || 0 }) : 0;
       return Math.max(0, contentW - Math.max(1, Number(d._thumbsRect?.width) || 1));
-    }, applyThumbsOffset = async () => {
-      const el = thumbsPaintEl(), x = Math.max(0, Number(d._thumbsScrollLeft) || 0);
+    }, stripWarmMax = () => {
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      const w = Math.max(1, Number(d._thumbsRect?.width) || Number(d.geo?.w) || 480);
+      return typeof VC?.galleryStripWarmMaxCount == "function" ? VC.galleryStripWarmMaxCount(w) : 12;
+    }, applyThumbsOffset = async (opts = {}) => {
+      const x = Math.max(0, Number(d._thumbsScrollLeft) || 0);
       d._thumbsScrollLeft = x;
-      try {
-        el && typeof el.setStyleAttribute == "function" && await el.setStyleAttribute(\`display:flex;gap:8px;align-items:center;width:max-content;max-width:none;transform:translate3d(\${-x}px,0,0);will-change:transform;touch-action:none;\`);
-      } catch {
+      const paint = async () => {
+        const el = thumbsPaintEl(), xx = Math.max(0, Number(d._thumbsScrollLeft) || 0);
+        try {
+          el && typeof el.setStyleAttribute == "function" && await el.setStyleAttribute(\`display:flex;gap:8px;align-items:center;width:max-content;max-width:none;transform:translate3d(\${-xx}px,0,0);will-change:transform;touch-action:none;\`);
+        } catch {
+        }
+      };
+      if (opts.immediate) {
+        d._thumbsOffRaf = 0;
+        await paint();
+        return;
       }
+      if (d._thumbsOffRaf) return;
+      d._thumbsOffRaf = 1;
+      const kick = () => {
+        d._thumbsOffRaf = 0;
+        paint().catch(() => {
+        });
+      };
+      if (typeof requestAnimationFrame == "function") requestAnimationFrame(kick);
+      else kick();
     }, setThumbsOffset = async (next, opts = {}) => {
       if (opts.refresh) await refreshThumbsRect();
       d._thumbsScrollLeft = Math.max(0, Math.min(thumbsMaxOffset(), Number(next) || 0));
-      await applyThumbsOffset();
+      await applyThumbsOffset(opts);
       return d._thumbsScrollLeft;
     }, paintThumbsChrome = async (items, idx) => {`;
 
@@ -10257,6 +10278,8 @@ const VENDOR_THUMB_SCROLL_INIT_PATCH =
   `    d._thumbsRect = null;
     d._thumbsRectAt = 0;
     d._thumbsScrollLeft = 0;
+    d._thumbSelIdx = -1;
+    d._thumbSrcById = Object.create(null);
     d.thumbsDrag = null;
     d._thumbWheelTargets = [];`;
 
@@ -10377,10 +10400,12 @@ const VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE =
 const VENDOR_THUMB_SCROLL_RESET_CHROME_PATCH =
   `        thumbBits.push(\`<img data-gal-idx="\${ut}" draggable="false" src="\${src}" style="\${thumbShellStyle(on, split)}" loading="lazy" decoding="async" />\`);
       }
+      d._thumbSelIdx = idx;
+      d._thumbSrcById = Object.create(null);
       const keepOff = Math.max(0, Number(d._thumbsScrollLeft) || 0);
       await thumbsPaintEl().setInnerHTML(thumbBits.join(""));
       await refreshThumbsRect();
-      await setThumbsOffset(keepOff);
+      await setThumbsOffset(keepOff, { immediate: !0 });
     }, paintThumbsQuick = async (idx) => {`;
 
 const VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE =
@@ -10392,12 +10417,123 @@ const VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE =
 const VENDOR_THUMB_SCROLL_RESET_STRIP_PATCH =
   `        thumbBits.push(\`<img data-gal-idx="\${ut}" draggable="false" src="\${src || THUMB_PLACEHOLDER}" style="\${shell}" loading="lazy" decoding="async" />\`);
       }
+      d._thumbSelIdx = idx;
+      d._thumbSrcById = Object.create(null);
       const keepOff = Math.max(0, Number(d._thumbsScrollLeft) || 0);
       await thumbsPaintEl().setInnerHTML(thumbBits.join(""));
       await refreshThumbsRect();
-      await setThumbsOffset(keepOff);
+      await setThumbsOffset(keepOff, { immediate: !0 });
     }, hitThumbAt = async (x, y) => {`;
 
+const VENDOR_STRIP_WARM_ITEMS_NEEDLE =
+  `VC.visibleGalleryImageIds(items, idx, 1, Math.max(8, (items || []).length || 0))`;
+const VENDOR_STRIP_WARM_ITEMS_PATCH =
+  `VC.visibleGalleryImageIds(items, idx, 1, stripWarmMax())`;
+
+const VENDOR_STRIP_WARM_LIST_NEEDLE =
+  `VC.visibleGalleryImageIds(list, idx, 1, Math.max(8, list.length || 0))`;
+const VENDOR_STRIP_WARM_LIST_PATCH =
+  `VC.visibleGalleryImageIds(list, idx, 1, stripWarmMax())`;
+
+const VENDOR_THUMBS_QUICK_NEEDLE =
+  `    }, paintThumbsQuick = async (idx) => {
+      // Style-only selection move: keep existing <img> nodes + \`|\` separator, just retarget outline/opacity.
+      try {
+        const items = Array.isArray(d.items) && d.items.length ? d.items : U();
+        const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await E.getChildren()) : [];
+        if (!kids?.length) {
+          await paintThumbsChrome(items, idx);
+          return;
+        }
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const splitAt = typeof VC?.galleryStripSplitAt == "function" ? VC.galleryStripSplitAt(d.selectedCount || selectedCountOf(items) || 0, items.length) : (d.selectedCount > 0 && d.selectedCount < items.length ? d.selectedCount : 0);
+        let touched = 0;
+        for (let W = 0; W < kids.length; W += 1) {
+          const el = kids[W];
+          if (!el) continue;
+          let galIdx = -1;
+          try {
+            if (typeof el.getAttribute == "function") {
+              const split = await el.getAttribute("data-nx-split");
+              if (split != null && split !== "") continue;
+              const raw = await el.getAttribute("data-gal-idx");
+              if (raw != null && raw !== "" && Number.isFinite(Number(raw))) galIdx = Number(raw);
+              else if (typeof VC?.galleryIndexFromChildIndex == "function") galIdx = VC.galleryIndexFromChildIndex(W, splitAt || d.selectedCount || 0, items.length);
+              else galIdx = W;
+            }
+          } catch {
+            continue;
+          }
+          if (galIdx < 0 || galIdx >= items.length) continue;
+          const on = galIdx === idx, split = splitAt > 0 && galIdx === splitAt, style = thumbShellStyle(on, split);
+          try {
+            if (typeof el.setStyleAttribute == "function") await el.setStyleAttribute(style);
+            else if (typeof el.setAttribute == "function") await el.setAttribute("style", style);
+          } catch {
+          }
+          touched += 1;
+        }
+        if (touched < Math.min(items.length, 1)) await paintThumbsChrome(items, idx);
+      } catch {
+        await paintThumbsChrome(Array.isArray(d.items) && d.items.length ? d.items : U(), idx);
+      }
+    }, softAfterSelect = async (gen) => {`;
+const VENDOR_THUMBS_QUICK_PATCH =
+  `    }, paintThumbsQuick = async (idx) => {
+      // Style only the previous + current thumb (O(1) SafeDOM), not every strip child.
+      try {
+        const items = Array.isArray(d.items) && d.items.length ? d.items : U();
+        const prev = Number.isFinite(Number(d._thumbSelIdx)) ? Number(d._thumbSelIdx) : -1;
+        if (prev === idx && prev >= 0) return;
+        const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await thumbsPaintEl().getChildren()) : [];
+        if (!kids?.length) {
+          await paintThumbsChrome(items, idx);
+          return;
+        }
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const splitAt = typeof VC?.galleryStripSplitAt == "function" ? VC.galleryStripSplitAt(d.selectedCount || selectedCountOf(items) || 0, items.length) : (d.selectedCount > 0 && d.selectedCount < items.length ? d.selectedCount : 0);
+        const childOf = (gal) => splitAt > 0 && gal >= splitAt ? gal + 1 : gal;
+        let ok = 0;
+        for (const gal of [prev, idx]) {
+          if (!(gal >= 0 && gal < items.length)) continue;
+          const el = kids[childOf(gal)];
+          if (!el) continue;
+          const on = gal === idx, split = splitAt > 0 && gal === splitAt, style = thumbShellStyle(on, split);
+          try {
+            if (typeof el.setStyleAttribute == "function") await el.setStyleAttribute(style);
+            else if (typeof el.setAttribute == "function") await el.setAttribute("style", style);
+            ok += 1;
+          } catch {
+          }
+        }
+        if (ok < 1) await paintThumbsChrome(items, idx);
+        else d._thumbSelIdx = idx;
+      } catch {
+        await paintThumbsChrome(Array.isArray(d.items) && d.items.length ? d.items : U(), idx);
+      }
+    }, softAfterSelect = async (gen) => {`;
+
+const VENDOR_SOFT_NO_QUICK_NEEDLE =
+  `        await fillThumbSrcs(items, d.index);
+        if (gen !== (d._metaGen || 0)) return;
+        await paintThumbsQuick(d.index);`;
+const VENDOR_SOFT_NO_QUICK_PATCH =
+  `        await fillThumbSrcs(items, d.index);
+        if (gen !== (d._metaGen || 0)) return;`;
+
+const VENDOR_FILL_SRC_SKIP_NEEDLE =
+  `          const src = Ie(card);
+          if (!src || typeof el.setAttribute != "function") continue;
+          try {
+            await el.setAttribute("src", src);`;
+const VENDOR_FILL_SRC_SKIP_PATCH =
+  `          const src = Ie(card);
+          if (!src || typeof el.setAttribute != "function") continue;
+          const painted = d._thumbSrcById || (d._thumbSrcById = Object.create(null));
+          if (painted[id] === src) continue;
+          try {
+            await el.setAttribute("src", src);
+            painted[id] = src;`;
 const VENDOR_THUMBS_KIDS_NEEDLE =
   `await k.unwarpSafeArray(await E.getChildren())`;
 const VENDOR_THUMBS_KIDS_PATCH =
@@ -11276,6 +11412,10 @@ const loadVendorUi = (): string => {
     [VENDOR_CHROME_HEIGHT_MEASURE_NEEDLE, 'viewer chrome height measure'],
     [VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE, 'thumb paint chrome track'],
     [VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE, 'thumb paint strip track'],
+    [VENDOR_STRIP_WARM_ITEMS_NEEDLE, 'viewer strip warm items cap'],
+    [VENDOR_THUMBS_QUICK_NEEDLE, 'viewer thumbs quick 2-node'],
+    [VENDOR_SOFT_NO_QUICK_NEEDLE, 'viewer softAfterSelect no restyle'],
+    [VENDOR_FILL_SRC_SKIP_NEEDLE, 'viewer fillThumbSrcs skip same'],
     [VENDOR_THUMBS_CLEAR_NEEDLE, 'thumbs clear track'],
     [VENDOR_THUMBS_POINTER_NEEDLE, 'thumbs pointer drag start'],
     [VENDOR_THUMBS_DRAG_NEEDLE, 'thumbs drag handlers'],
@@ -11296,6 +11436,17 @@ const loadVendorUi = (): string => {
     }
     if (count !== 2) {
       throw new Error(`[build] expected 2× appearance label shared, found ${count}`);
+    }
+  }
+  {
+    let count = 0;
+    let at = raw.indexOf(VENDOR_STRIP_WARM_LIST_NEEDLE);
+    while (at !== -1) {
+      count += 1;
+      at = raw.indexOf(VENDOR_STRIP_WARM_LIST_NEEDLE, at + VENDOR_STRIP_WARM_LIST_NEEDLE.length);
+    }
+    if (count !== 2) {
+      throw new Error(`[build] expected 2× viewer strip warm list cap, found ${count}`);
     }
   }
   return (() => {
@@ -11597,6 +11748,11 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHROME_HEIGHT_MEASURE_NEEDLE, VENDOR_CHROME_HEIGHT_MEASURE_PATCH)
     .replace(VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE, VENDOR_THUMB_SCROLL_RESET_CHROME_PATCH)
     .replace(VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE, VENDOR_THUMB_SCROLL_RESET_STRIP_PATCH)
+    .replace(VENDOR_THUMBS_QUICK_NEEDLE, VENDOR_THUMBS_QUICK_PATCH)
+    .replace(VENDOR_STRIP_WARM_ITEMS_NEEDLE, VENDOR_STRIP_WARM_ITEMS_PATCH)
+    .replaceAll(VENDOR_STRIP_WARM_LIST_NEEDLE, VENDOR_STRIP_WARM_LIST_PATCH)
+    .replace(VENDOR_SOFT_NO_QUICK_NEEDLE, VENDOR_SOFT_NO_QUICK_PATCH)
+    .replace(VENDOR_FILL_SRC_SKIP_NEEDLE, VENDOR_FILL_SRC_SKIP_PATCH)
     .replaceAll(VENDOR_THUMBS_KIDS_NEEDLE, VENDOR_THUMBS_KIDS_PATCH)
     .replace(VENDOR_THUMBS_CLEAR_NEEDLE, VENDOR_THUMBS_CLEAR_PATCH)
     .replace(VENDOR_THUMBS_POINTER_NEEDLE, VENDOR_THUMBS_POINTER_PATCH)

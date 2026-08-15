@@ -83,7 +83,6 @@ import {
   INLINE_KEEP_MAX_PER_SIDE,
   shouldSelectMessageByTextDrag,
   visibleGalleryImageIds,
-  galleryStripWarmMaxCount,
   nearbyMessageImageIds,
   isNearbyDomIndex,
   nearbyDomIndexWindow,
@@ -737,13 +736,6 @@ test("visibleGalleryImageIds returns nearby unique ids", () => {
 test("visibleGalleryImageIds caps eager loads at maxCount 8", () => {
   const items = Array.from({ length: 12 }, (_, i) => ({ id: `i${i}` }));
   assert.equal(visibleGalleryImageIds(items, 5, 10, 8).length, 8);
-});
-
-test("galleryStripWarmMaxCount stays in 8..16 and tracks viewport", () => {
-  assert.equal(galleryStripWarmMaxCount(0), 8);
-  assert.equal(galleryStripWarmMaxCount(400), 10);
-  assert.equal(galleryStripWarmMaxCount(800), 16);
-  assert.equal(galleryStripWarmMaxCount(4000), 16);
 });
 
 test("visibleGalleryImageIds pins current-message prefix when focus is on the right strip", () => {

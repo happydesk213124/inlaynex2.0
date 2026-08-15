@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.23';
+const PLUGIN_VERSION = '2.3.51';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.51</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>샷/캐릭 수정: 딤을 먼저 띄우고 폼은 뒤에 채움. 닫기·저장은 창을 먼저 닫음</li>
+            <li>뷰어 썸: 근처 12장만 워밍. 연타는 마지막 장만 그림</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.23</strong>
@@ -8369,8 +8376,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.23",
-    body: "샷마다 옷을 다시 고르지 않고, 이전 옷 상태를 이어 갑니다. 업데이트 내역 탭 참고."
+    title: "2.3.51",
+    body: "샷/캐릭 창은 딤을 먼저 띄우고, 뷰어 썸은 근처만 워밍합니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -10327,38 +10334,17 @@ const VENDOR_THUMBS_HELPERS_PATCH =
       const items = Array.isArray(d.items) && d.items.length ? d.items : U(), VC = globalThis.__INLAY_VIEWER_CORE__;
       const contentW = typeof VC?.galleryStripContentWidth == "function" ? VC.galleryStripContentWidth({ count: items.length, selectedCount: d.selectedCount || selectedCountOf(items) || 0 }) : 0;
       return Math.max(0, contentW - Math.max(1, Number(d._thumbsRect?.width) || 1));
-    }, stripWarmMax = () => {
-      const VC = globalThis.__INLAY_VIEWER_CORE__;
-      const w = Math.max(1, Number(d._thumbsRect?.width) || Number(d.geo?.w) || 480);
-      return typeof VC?.galleryStripWarmMaxCount == "function" ? VC.galleryStripWarmMaxCount(w) : 12;
-    }, applyThumbsOffset = async (opts = {}) => {
-      const x = Math.max(0, Number(d._thumbsScrollLeft) || 0);
+    }, applyThumbsOffset = async () => {
+      const el = thumbsPaintEl(), x = Math.max(0, Number(d._thumbsScrollLeft) || 0);
       d._thumbsScrollLeft = x;
-      const paint = async () => {
-        const el = thumbsPaintEl(), xx = Math.max(0, Number(d._thumbsScrollLeft) || 0);
-        try {
-          el && typeof el.setStyleAttribute == "function" && await el.setStyleAttribute(\`display:flex;gap:8px;align-items:center;width:max-content;max-width:none;transform:translate3d(\${-xx}px,0,0);will-change:transform;touch-action:none;\`);
-        } catch {
-        }
-      };
-      if (opts.immediate) {
-        d._thumbsOffRaf = 0;
-        await paint();
-        return;
+      try {
+        el && typeof el.setStyleAttribute == "function" && await el.setStyleAttribute(\`display:flex;gap:8px;align-items:center;width:max-content;max-width:none;transform:translate3d(\${-x}px,0,0);will-change:transform;touch-action:none;\`);
+      } catch {
       }
-      if (d._thumbsOffRaf) return;
-      d._thumbsOffRaf = 1;
-      const kick = () => {
-        d._thumbsOffRaf = 0;
-        paint().catch(() => {
-        });
-      };
-      if (typeof requestAnimationFrame == "function") requestAnimationFrame(kick);
-      else kick();
     }, setThumbsOffset = async (next, opts = {}) => {
       if (opts.refresh) await refreshThumbsRect();
       d._thumbsScrollLeft = Math.max(0, Math.min(thumbsMaxOffset(), Number(next) || 0));
-      await applyThumbsOffset(opts);
+      await applyThumbsOffset();
       return d._thumbsScrollLeft;
     }, paintThumbsChrome = async (items, idx) => {`;
 
@@ -10390,7 +10376,7 @@ const VENDOR_THUMB_HIT_PATCH =
       const items = Array.isArray(d.items) && d.items.length ? d.items : U();
       if (!items.length) return -1;
       try {
-        if (!(d._thumbsRect && Date.now() - (d._thumbsRectAt || 0) < 280)) await refreshThumbsRect();
+        await refreshThumbsRect();
         const strip = d._thumbsRect;
         if (!strip || x < strip.left || x > strip.right || y < strip.top || y > strip.bottom) return -1;
         const VC = globalThis.__INLAY_VIEWER_CORE__;
@@ -10415,11 +10401,8 @@ const VENDOR_THUMB_SCROLL_INIT_PATCH =
   `    d._thumbsRect = null;
     d._thumbsRectAt = 0;
     d._thumbsScrollLeft = 0;
-    d._thumbSelIdx = -1;
-    d._selectBusy = !1;
-    d._pendingGalIdx = 0;
-    d._metaPendingHtml = !1;
-    d._thumbSrcById = Object.create(null);
+    d._galBusy = !1;
+    d._galWant = 0;
     d.thumbsDrag = null;
     d._thumbWheelTargets = [];`;
 
@@ -10540,12 +10523,10 @@ const VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE =
 const VENDOR_THUMB_SCROLL_RESET_CHROME_PATCH =
   `        thumbBits.push(\`<img data-gal-idx="\${ut}" draggable="false" src="\${src}" style="\${thumbShellStyle(on, split)}" loading="lazy" decoding="async" />\`);
       }
-      d._thumbSelIdx = idx;
-      d._thumbSrcById = Object.create(null);
       const keepOff = Math.max(0, Number(d._thumbsScrollLeft) || 0);
       await thumbsPaintEl().setInnerHTML(thumbBits.join(""));
       await refreshThumbsRect();
-      await setThumbsOffset(keepOff, { immediate: !0 });
+      await setThumbsOffset(keepOff);
     }, paintThumbsQuick = async (idx) => {`;
 
 const VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE =
@@ -10557,103 +10538,22 @@ const VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE =
 const VENDOR_THUMB_SCROLL_RESET_STRIP_PATCH =
   `        thumbBits.push(\`<img data-gal-idx="\${ut}" draggable="false" src="\${src || THUMB_PLACEHOLDER}" style="\${shell}" loading="lazy" decoding="async" />\`);
       }
-      d._thumbSelIdx = idx;
-      d._thumbSrcById = Object.create(null);
       const keepOff = Math.max(0, Number(d._thumbsScrollLeft) || 0);
       await thumbsPaintEl().setInnerHTML(thumbBits.join(""));
       await refreshThumbsRect();
-      await setThumbsOffset(keepOff, { immediate: !0 });
+      await setThumbsOffset(keepOff);
     }, hitThumbAt = async (x, y) => {`;
 
-const VENDOR_STRIP_WARM_ITEMS_NEEDLE =
+const VENDOR_STRIP_WARM_CAP_NEEDLE =
   `VC.visibleGalleryImageIds(items, idx, 1, Math.max(8, (items || []).length || 0))`;
-const VENDOR_STRIP_WARM_ITEMS_PATCH =
-  `VC.visibleGalleryImageIds(items, idx, 1, stripWarmMax())`;
-
-const VENDOR_STRIP_WARM_LIST_NEEDLE =
+const VENDOR_STRIP_WARM_CAP_PATCH =
+  `VC.visibleGalleryImageIds(items, idx, 1, 12)`;
+const VENDOR_STRIP_WARM_CAP_LIST_NEEDLE =
   `VC.visibleGalleryImageIds(list, idx, 1, Math.max(8, list.length || 0))`;
-const VENDOR_STRIP_WARM_LIST_PATCH =
-  `VC.visibleGalleryImageIds(list, idx, 1, stripWarmMax())`;
+const VENDOR_STRIP_WARM_CAP_LIST_PATCH =
+  `VC.visibleGalleryImageIds(list, idx, 1, 12)`;
 
-const VENDOR_THUMBS_QUICK_NEEDLE =
-  `    }, paintThumbsQuick = async (idx) => {
-      // Style-only selection move: keep existing <img> nodes + \`|\` separator, just retarget outline/opacity.
-      try {
-        const items = Array.isArray(d.items) && d.items.length ? d.items : U();
-        const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await E.getChildren()) : [];
-        if (!kids?.length) {
-          await paintThumbsChrome(items, idx);
-          return;
-        }
-        const VC = globalThis.__INLAY_VIEWER_CORE__;
-        const splitAt = typeof VC?.galleryStripSplitAt == "function" ? VC.galleryStripSplitAt(d.selectedCount || selectedCountOf(items) || 0, items.length) : (d.selectedCount > 0 && d.selectedCount < items.length ? d.selectedCount : 0);
-        let touched = 0;
-        for (let W = 0; W < kids.length; W += 1) {
-          const el = kids[W];
-          if (!el) continue;
-          let galIdx = -1;
-          try {
-            if (typeof el.getAttribute == "function") {
-              const split = await el.getAttribute("data-nx-split");
-              if (split != null && split !== "") continue;
-              const raw = await el.getAttribute("data-gal-idx");
-              if (raw != null && raw !== "" && Number.isFinite(Number(raw))) galIdx = Number(raw);
-              else if (typeof VC?.galleryIndexFromChildIndex == "function") galIdx = VC.galleryIndexFromChildIndex(W, splitAt || d.selectedCount || 0, items.length);
-              else galIdx = W;
-            }
-          } catch {
-            continue;
-          }
-          if (galIdx < 0 || galIdx >= items.length) continue;
-          const on = galIdx === idx, split = splitAt > 0 && galIdx === splitAt, style = thumbShellStyle(on, split);
-          try {
-            if (typeof el.setStyleAttribute == "function") await el.setStyleAttribute(style);
-            else if (typeof el.setAttribute == "function") await el.setAttribute("style", style);
-          } catch {
-          }
-          touched += 1;
-        }
-        if (touched < Math.min(items.length, 1)) await paintThumbsChrome(items, idx);
-      } catch {
-        await paintThumbsChrome(Array.isArray(d.items) && d.items.length ? d.items : U(), idx);
-      }
-    }, softAfterSelect = async (gen) => {`;
-const VENDOR_THUMBS_QUICK_PATCH =
-  `    }, paintThumbsQuick = async (idx) => {
-      // Style only the previous + current thumb (O(1) SafeDOM), not every strip child.
-      try {
-        const items = Array.isArray(d.items) && d.items.length ? d.items : U();
-        const prev = Number.isFinite(Number(d._thumbSelIdx)) ? Number(d._thumbSelIdx) : -1;
-        if (prev === idx && prev >= 0) return;
-        const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await thumbsPaintEl().getChildren()) : [];
-        if (!kids?.length) {
-          await paintThumbsChrome(items, idx);
-          return;
-        }
-        const VC = globalThis.__INLAY_VIEWER_CORE__;
-        const splitAt = typeof VC?.galleryStripSplitAt == "function" ? VC.galleryStripSplitAt(d.selectedCount || selectedCountOf(items) || 0, items.length) : (d.selectedCount > 0 && d.selectedCount < items.length ? d.selectedCount : 0);
-        const childOf = (gal) => splitAt > 0 && gal >= splitAt ? gal + 1 : gal;
-        let ok = 0;
-        for (const gal of [prev, idx]) {
-          if (!(gal >= 0 && gal < items.length)) continue;
-          const el = kids[childOf(gal)];
-          if (!el) continue;
-          const on = gal === idx, split = splitAt > 0 && gal === splitAt, style = thumbShellStyle(on, split);
-          try {
-            if (typeof el.setStyleAttribute == "function") await el.setStyleAttribute(style);
-            else if (typeof el.setAttribute == "function") await el.setAttribute("style", style);
-            ok += 1;
-          } catch {
-          }
-        }
-        if (ok < 1) await paintThumbsChrome(items, idx);
-        else d._thumbSelIdx = idx;
-      } catch {
-        await paintThumbsChrome(Array.isArray(d.items) && d.items.length ? d.items : U(), idx);
-      }
-    }, softAfterSelect = async (gen) => {`;
-
-const VENDOR_SELECT_META_PENDING_NEEDLE =
+const VENDOR_SELECT_COALESCE_NEEDLE =
   `    }, selectGalIndex = async (idx) => {
       const items = Array.isArray(d.items) && d.items.length ? d.items : U();
       if (!items.length) {
@@ -10677,15 +10577,14 @@ const VENDOR_SELECT_META_PENDING_NEEDLE =
         });
       }, 90);
     }, syncToCardId = async (cardId) => {`;
-const VENDOR_SELECT_META_PENDING_PATCH =
+const VENDOR_SELECT_COALESCE_PATCH =
   `    }, selectGalIndex = async (idx) => {
-      d._pendingGalIdx = Math.max(0, Number.isFinite(Number(idx)) ? Number(idx) : 0);
-      d._metaGen = (d._metaGen || 0) + 1;
-      if (d._selectBusy) return;
-      d._selectBusy = !0;
+      d._galWant = Math.max(0, Number.isFinite(Number(idx)) ? Number(idx) : 0);
+      if (d._galBusy) return;
+      d._galBusy = !0;
       try {
         for (;;) {
-          const want = d._pendingGalIdx;
+          const want = d._galWant;
           const items = Array.isArray(d.items) && d.items.length ? d.items : U();
           if (!items.length) {
             await T();
@@ -10693,41 +10592,31 @@ const VENDOR_SELECT_META_PENDING_PATCH =
           }
           d.index = Math.max(0, Math.min(want, items.length - 1));
           d.selectedCount = selectedCountOf(items);
-          if (want !== d._pendingGalIdx) continue;
+          if (want !== d._galWant) continue;
           const card = items[d.index];
           paintThumbsQuick(d.index).catch(() => {
           });
           await paintMainNow(card);
-          if (want !== d._pendingGalIdx) continue;
-          const gen = d._metaGen = (d._metaGen || 0) + 1;
-          if (String(card?.id || "") !== String(d._metaCardId || "")) {
-            d.metaHits = [];
-            d._metaCardId = "";
-            if (!d._metaPendingHtml) {
-              d._metaPendingHtml = !0;
-              void Promise.resolve(j.setInnerHTML('<span style="color:#8b97ab;font-size:12px;padding:8px 0;pointer-events:none">로딩중…</span>')).catch(() => {
-              });
-            }
-          }
+          if (want !== d._galWant) continue;
+          d._metaGen = (d._metaGen || 0) + 1;
+          const gen = d._metaGen;
           warmVisibleImages(items, d.index);
           d._softTimer && clearTimeout(d._softTimer);
           d._softTimer = setTimeout(() => {
             if (gen !== d._metaGen || t.uiOpen) return;
-            d._metaPendingHtml = !1;
             softAfterSelect(gen).catch(() => {
             });
           }, 90);
-          if (want === d._pendingGalIdx) break;
+          break;
         }
       } finally {
-        d._selectBusy = !1;
-        if (d._pendingGalIdx !== d.index) void selectGalIndex(d._pendingGalIdx);
+        d._galBusy = !1;
+        if (d._galWant !== d.index) void selectGalIndex(d._galWant);
       }
     }, syncToCardId = async (cardId) => {`;
 
-const VENDOR_SOFT_NO_QUICK_NEEDLE =
-  `      // Background: warm srcs in place. Do NOT rewrite strip HTML (flickers \`|\` and feels laggy).
-      try {
+const VENDOR_SOFT_SKIP_FILL_NEEDLE =
+  `      try {
         await fillThumbSrcs(items, d.index);
         if (gen !== (d._metaGen || 0)) return;
         await paintThumbsQuick(d.index);
@@ -10736,24 +10625,9 @@ const VENDOR_SOFT_NO_QUICK_NEEDLE =
         await paintThumbsStrip(items, d.index);
       }
       if (gen !== (d._metaGen || 0)) return;`;
-const VENDOR_SOFT_NO_QUICK_PATCH =
-  `      // Thumbs warm in the background (warmVisibleImages). Do not await fill here —
-      // that was the hitch stacked under chip createElement.
-      if (gen !== (d._metaGen || 0)) return;`;
+const VENDOR_SOFT_SKIP_FILL_PATCH =
+  `      if (gen !== (d._metaGen || 0)) return;`;
 
-const VENDOR_FILL_SRC_SKIP_NEEDLE =
-  `          const src = Ie(card);
-          if (!src || typeof el.setAttribute != "function") continue;
-          try {
-            await el.setAttribute("src", src);`;
-const VENDOR_FILL_SRC_SKIP_PATCH =
-  `          const src = Ie(card);
-          if (!src || typeof el.setAttribute != "function") continue;
-          const painted = d._thumbSrcById || (d._thumbSrcById = Object.create(null));
-          if (painted[id] === src) continue;
-          try {
-            await el.setAttribute("src", src);
-            painted[id] = src;`;
 const VENDOR_THUMBS_KIDS_NEEDLE =
   `await k.unwarpSafeArray(await E.getChildren())`;
 const VENDOR_THUMBS_KIDS_PATCH =
@@ -11648,11 +11522,9 @@ const loadVendorUi = (): string => {
     [VENDOR_CHROME_HEIGHT_MEASURE_NEEDLE, 'viewer chrome height measure'],
     [VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE, 'thumb paint chrome track'],
     [VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE, 'thumb paint strip track'],
-    [VENDOR_STRIP_WARM_ITEMS_NEEDLE, 'viewer strip warm items cap'],
-    [VENDOR_THUMBS_QUICK_NEEDLE, 'viewer thumbs quick 2-node'],
-    [VENDOR_SELECT_META_PENDING_NEEDLE, 'viewer select meta pending'],
-    [VENDOR_SOFT_NO_QUICK_NEEDLE, 'viewer softAfterSelect chips after settle'],
-    [VENDOR_FILL_SRC_SKIP_NEEDLE, 'viewer fillThumbSrcs skip same'],
+    [VENDOR_STRIP_WARM_CAP_NEEDLE, 'viewer strip warm cap items'],
+    [VENDOR_SELECT_COALESCE_NEEDLE, 'viewer select coalesce last index'],
+    [VENDOR_SOFT_SKIP_FILL_NEEDLE, 'viewer softAfterSelect skip fill await'],
     [VENDOR_THUMBS_CLEAR_NEEDLE, 'thumbs clear track'],
     [VENDOR_THUMBS_POINTER_NEEDLE, 'thumbs pointer drag start'],
     [VENDOR_THUMBS_DRAG_NEEDLE, 'thumbs drag handlers'],
@@ -11677,10 +11549,10 @@ const loadVendorUi = (): string => {
   }
   {
     let count = 0;
-    let at = raw.indexOf(VENDOR_STRIP_WARM_LIST_NEEDLE);
+    let at = raw.indexOf(VENDOR_STRIP_WARM_CAP_LIST_NEEDLE);
     while (at !== -1) {
       count += 1;
-      at = raw.indexOf(VENDOR_STRIP_WARM_LIST_NEEDLE, at + VENDOR_STRIP_WARM_LIST_NEEDLE.length);
+      at = raw.indexOf(VENDOR_STRIP_WARM_CAP_LIST_NEEDLE, at + VENDOR_STRIP_WARM_CAP_LIST_NEEDLE.length);
     }
     if (count !== 2) {
       throw new Error(`[build] expected 2× viewer strip warm list cap, found ${count}`);
@@ -11994,12 +11866,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHROME_HEIGHT_MEASURE_NEEDLE, VENDOR_CHROME_HEIGHT_MEASURE_PATCH)
     .replace(VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE, VENDOR_THUMB_SCROLL_RESET_CHROME_PATCH)
     .replace(VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE, VENDOR_THUMB_SCROLL_RESET_STRIP_PATCH)
-    .replace(VENDOR_THUMBS_QUICK_NEEDLE, VENDOR_THUMBS_QUICK_PATCH)
-    .replace(VENDOR_SELECT_META_PENDING_NEEDLE, VENDOR_SELECT_META_PENDING_PATCH)
-    .replace(VENDOR_STRIP_WARM_ITEMS_NEEDLE, VENDOR_STRIP_WARM_ITEMS_PATCH)
-    .replaceAll(VENDOR_STRIP_WARM_LIST_NEEDLE, VENDOR_STRIP_WARM_LIST_PATCH)
-    .replace(VENDOR_SOFT_NO_QUICK_NEEDLE, VENDOR_SOFT_NO_QUICK_PATCH)
-    .replace(VENDOR_FILL_SRC_SKIP_NEEDLE, VENDOR_FILL_SRC_SKIP_PATCH)
+    .replace(VENDOR_STRIP_WARM_CAP_NEEDLE, VENDOR_STRIP_WARM_CAP_PATCH)
+    .replaceAll(VENDOR_STRIP_WARM_CAP_LIST_NEEDLE, VENDOR_STRIP_WARM_CAP_LIST_PATCH)
+    .replace(VENDOR_SELECT_COALESCE_NEEDLE, VENDOR_SELECT_COALESCE_PATCH)
+    .replace(VENDOR_SOFT_SKIP_FILL_NEEDLE, VENDOR_SOFT_SKIP_FILL_PATCH)
     .replaceAll(VENDOR_THUMBS_KIDS_NEEDLE, VENDOR_THUMBS_KIDS_PATCH)
     .replace(VENDOR_THUMBS_CLEAR_NEEDLE, VENDOR_THUMBS_CLEAR_PATCH)
     .replace(VENDOR_THUMBS_POINTER_NEEDLE, VENDOR_THUMBS_POINTER_PATCH)

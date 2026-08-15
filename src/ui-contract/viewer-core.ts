@@ -1987,18 +1987,6 @@ export function clampThumbScrollOffset(offset: number, contentWidth: number, vie
   return Math.max(0, Math.min(max, raw));
 }
 
-/**
- * How many strip thumbs to data-URL-warm. Viewport cells + overscan, hard-capped
- * so a 100-card gallery cannot enqueue 100 full-size encodes.
- */
-export function galleryStripWarmMaxCount(viewportWidth = 0, overscan = 4): number {
-  const pitch = VIEWER_THUMB_LAYOUT.width + VIEWER_THUMB_LAYOUT.gap;
-  const vw = Math.max(0, finiteNumber(viewportWidth, 0));
-  const visible = Math.max(1, Math.ceil(vw / Math.max(1, pitch)));
-  const extra = Math.max(0, Math.min(8, finiteNumber(overscan, 4)));
-  return Math.max(8, Math.min(16, visible + extra));
-}
-
 /** Nearby gallery card ids for eager data-URL encoding (visible window, capped). */
 export function visibleGalleryImageIds(
   items: Array<{ id?: string } | null | undefined> | null | undefined,

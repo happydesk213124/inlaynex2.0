@@ -4049,12 +4049,27 @@ const VENDOR_STICKY_OPEN_CARD_PATCH = `  async function openCardTagEdit(e) {
       y("error", "card.tags.open", "plugin document unavailable");
       return;
     }
+    t._editOpenGen = (t._editOpenGen || 0) + 1;
+    const openGen = t._editOpenGen;
     await closeCharacterCreateModal().catch(() => null);
     await closeCardTagEdit();
     void xe();
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
-    void hideFloatingViewerForModal();
-    void Ht();
+    const openedShell = !t.uiOpen;
+    if (openedShell && typeof k.showContainer == "function") {
+      await k.showContainer("fullscreen");
+      document.body.style.cssText = "margin:0;min-height:100vh;background:transparent;font:13px/1.45 Segoe UI,sans-serif;color:#e2e8f0;";
+    }
+    try { document.getElementById("nx-card-tag-modal")?.remove?.(); } catch {}
+    const veil = document.createElement("div");
+    veil.id = "nx-card-tag-modal";
+    veil.setAttribute("data-ct-root", "1");
+    veil.innerHTML = '<div data-ct-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.55);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;"><div style="width:min(620px,100%);padding:28px 20px;border-radius:16px;background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);color:#9aa6b8;font-size:13px;text-align:center">불러오는 중…</div></div>';
+    document.body.appendChild(veil);
+    t.cardTagUi = { root: veil, openedContainer: openedShell, _stub: !0 };
+    await hideFloatingViewerForModal();
+    if (typeof requestAnimationFrame == "function") await new Promise((res) => requestAnimationFrame(res));
+    if (openGen !== t._editOpenGen) return;
     if (!t._viewerRoster) void ensureViewerRosterLoaded().catch(() => null);`;
 
 /** Shot-tag modal was rebuilding char prompts from live roster + expression/action/sex,
@@ -4351,11 +4366,26 @@ const VENDOR_STICKY_OPEN_CHAR_PATCH = `  async function Ua(e) {
       y("error", "char.edit.open", "plugin document unavailable");
       return;
     }
+    t._editOpenGen = (t._editOpenGen || 0) + 1;
+    const openGen = t._editOpenGen;
     await closeCardTagEdit(), await closeCharacterCreateModal().catch(() => null);
     void xe();
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
-    void hideFloatingViewerForModal();
-    void Ht();
+    const openedShell = !t.uiOpen;
+    if (openedShell && typeof k.showContainer == "function") {
+      await k.showContainer("fullscreen");
+      document.body.style.cssText = "margin:0;min-height:100vh;background:transparent;font:13px/1.45 Segoe UI,sans-serif;color:#e2e8f0;";
+    }
+    try { document.getElementById("nx-char-edit-modal")?.remove?.(); } catch {}
+    const veil = document.createElement("div");
+    veil.id = "nx-char-edit-modal";
+    veil.setAttribute("data-ce-root", "1");
+    veil.innerHTML = '<div data-ce-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.72);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;"><div style="width:min(720px,100%);padding:28px 20px;border-radius:16px;background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);color:#9aa6b8;font-size:13px;text-align:center">불러오는 중…</div></div>';
+    document.body.appendChild(veil);
+    t.charEditUi = { root: veil, openedContainer: openedShell, _stub: !0 };
+    await hideFloatingViewerForModal();
+    if (typeof requestAnimationFrame == "function") await new Promise((res) => requestAnimationFrame(res));
+    if (openGen !== t._editOpenGen) return;
     const rosterResolved = t._viewerRoster || null;
     if (!rosterResolved) void ensureViewerRosterLoaded().catch(() => null);`;
 
@@ -4379,16 +4409,13 @@ const VENDOR_STICKY_CLOSE_CARD_PATCH = `  async function closeCardTagEdit() {
     } catch {
     }
     const o = !!e?.openedContainer;
-    if (t.cardTagUi = null, o && !t.uiOpen && typeof k.hideContainer == "function") try {
-      await k.hideContainer();
-    } catch {
+    t.cardTagUi = null;
+    if (t.overlayUi && !t.charEditUi && !t.uiOpen) t.overlayUi._stickyEditorOpen = !1;
+    if (o && !t.uiOpen && typeof k.hideContainer == "function") void k.hideContainer();
+    if (!t.charEditUi && !t.uiOpen) {
+      void restoreFloatingViewerAfterModal();
+      void Ht();
     }
-    // Settings open calls xe()/close helpers while hiding viewer — do not undo that.
-    if (t.overlayUi && !t.charEditUi && !t.uiOpen) {
-      t.overlayUi._stickyEditorOpen = !1;
-      try { await Ht(); } catch {}
-    }
-    if (!t.charEditUi && !t.uiOpen) try { await restoreFloatingViewerAfterModal(); } catch {}
   }`;
 
 const VENDOR_STICKY_CLOSE_CHAR_NEEDLE = `    if (t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), o && !t.uiOpen && typeof k.hideContainer == "function") try {
@@ -4403,22 +4430,122 @@ const VENDOR_STICKY_CLOSE_CHAR_NEEDLE = `    if (t.charEditUi = null, t.autotagF
   }
   async function Ua(e) {`;
 
-const VENDOR_STICKY_CLOSE_CHAR_PATCH = `    if (t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), t.charRefFocus?.scope === "modal" && (t.charRefFocus = null), o && !t.uiOpen && typeof k.hideContainer == "function") try {
-      await k.hideContainer();
-    } catch {
+const VENDOR_STICKY_CLOSE_CHAR_PATCH = `    t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), t.charRefFocus?.scope === "modal" && (t.charRefFocus = null);
+    if (o && !t.uiOpen && typeof k.hideContainer == "function") void k.hideContainer();
+    if (t.overlayUi && !t.cardTagUi && !t.uiOpen) t.overlayUi._stickyEditorOpen = !1;
+    if (!t.cardTagUi && !t.uiOpen) {
+      void restoreFloatingViewerAfterModal();
+      void Ht();
     }
-    if (t.galleryUi?.renderCast) try {
-      await t.galleryUi.renderCast();
-    } catch {
-    }
-    // At() always calls xe() after hideFloatingViewerForModal — skip restore while settings open.
-    if (t.overlayUi && !t.cardTagUi && !t.uiOpen) {
-      t.overlayUi._stickyEditorOpen = !1;
-      try { await Ht(); } catch {}
-    }
-    if (!t.cardTagUi && !t.uiOpen) try { await restoreFloatingViewerAfterModal(); } catch {}
   }
   async function Ua(e) {`;
+
+const VENDOR_SHOT_SKIP_SHOW_NEEDLE =
+  `    opened && typeof k.showContainer == "function" && (await k.showContainer("fullscreen"), document.body.style.cssText = "margin:0;min-height:100vh;background:transparent;font:13px/1.45 Segoe UI,sans-serif;color:#e2e8f0;");
+    const root = document.createElement("div"), initMode = settingsMode === "off" ? "gender" : settingsMode, initAuto = settingsMode !== "off";`;
+const VENDOR_SHOT_SKIP_SHOW_PATCH =
+  `    const root = document.createElement("div"), initMode = settingsMode === "off" ? "gender" : settingsMode, initAuto = settingsMode !== "off";`;
+
+const VENDOR_CHAR_SKIP_SHOW_NEEDLE =
+  `    r && typeof k.showContainer == "function" && (await k.showContainer("fullscreen"), document.body.style.cssText = "margin:0;min-height:100vh;background:transparent;font:13px/1.45 Segoe UI,sans-serif;color:#e2e8f0;");
+    const i = document.createElement("div");`;
+const VENDOR_CHAR_SKIP_SHOW_PATCH =
+  `    const i = document.createElement("div");`;
+
+const VENDOR_SHOT_SWAP_VEIL_NEEDLE =
+  `    ].join(""), document.body.appendChild(root);
+    const baseEl = root.querySelector("[data-ct-base]"), negEl = root.querySelector("[data-ct-neg]")`;
+const VENDOR_SHOT_SWAP_VEIL_PATCH =
+  `    ].join("");
+    try { t.cardTagUi?._stub && t.cardTagUi.root?.remove?.(); } catch {}
+    document.body.appendChild(root);
+    const baseEl = root.querySelector("[data-ct-base]"), negEl = root.querySelector("[data-ct-neg]")`;
+
+const VENDOR_CHAR_SWAP_VEIL_NEEDLE =
+  `    ].join(""), document.body.appendChild(i);
+    const s = i.querySelector("[data-ce-name]")`;
+const VENDOR_CHAR_SWAP_VEIL_PATCH =
+  `    ].join("");
+    try { t.charEditUi?._stub && t.charEditUi.root?.remove?.(); } catch {}
+    document.body.appendChild(i);
+    const s = i.querySelector("[data-ce-name]")`;
+
+const VENDOR_CHIP_SKIP_ROSTER_NEEDLE =
+  `      await ensureViewerRosterLoaded().catch(() => null);
+      const idx = Number.isFinite(Number(charI)) ? Number(charI) : Number(String(kind).replace(/^char/i, "")) - 1;`;
+const VENDOR_CHIP_SKIP_ROSTER_PATCH =
+  `      void ensureViewerRosterLoaded().catch(() => null);
+      const idx = Number.isFinite(Number(charI)) ? Number(charI) : Number(String(kind).replace(/^char/i, "")) - 1;`;
+
+const VENDOR_SAVE_ONLY_BG_NEEDLE =
+  `    }, saveOnly = async () => {
+      const payload = collectPayload(), cardId = e.id, keepPara = paraKeep, keepShot = shotKeep;
+      try {
+        setStatus("저장 중…"), await K(\`/v1/cards/\${encodeURIComponent(cardId)}/tags\`, {
+          method: "POST",
+          body: payload
+        }, 15e3), y("info", "card.tags.save", \`\${String(cardId).slice(0, 8)} chars=\${payload.characters.length} only\`), await closeCardTagEdit(), await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, cardId), t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(\`태그 저장됨 · \${String(cardId).slice(0, 8)}\`);
+      } catch (Yt) {
+        y("error", "card.tags.save.fail", Yt?.message || Yt);
+        try {
+          t.cardTagUi?.root && setStatus(\`실패: \${z(Yt?.message || Yt, 80)}\`);
+        } catch {
+        }
+      }
+    }, save = async () => {`;
+const VENDOR_SAVE_ONLY_BG_PATCH =
+  `    }, saveOnly = async () => {
+      const payload = collectPayload(), cardId = e.id, keepPara = paraKeep, keepShot = shotKeep;
+      void closeCardTagEdit();
+      void (async () => {
+        try {
+          await K(\`/v1/cards/\${encodeURIComponent(cardId)}/tags\`, { method: "POST", body: payload }, 15e3);
+          y("info", "card.tags.save", \`\${String(cardId).slice(0, 8)} chars=\${payload.characters.length} only\`);
+          await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, cardId);
+          t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(\`태그 저장됨 · \${String(cardId).slice(0, 8)}\`);
+        } catch (Yt) {
+          y("error", "card.tags.save.fail", Yt?.message || Yt);
+          try { t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(\`태그 저장 실패: \${z(Yt?.message || Yt, 80)}\`); } catch {}
+        }
+      })();
+    }, save = async () => {`;
+
+const VENDOR_SAVE_REROLL_BG_NEEDLE =
+  `        setStatus("저장 중…"), await K(\`/v1/cards/\${encodeURIComponent(cardId)}/tags\`, {
+          method: "POST",
+          body: payload
+        }, 15e3), y("info", "card.tags.save", \`\${String(cardId).slice(0, 8)} chars=\${payload.characters.length} autoPerson=\${!!autoEl?.checked}\`), await closeCardTagEdit();
+        const Yt = await withImageRerollToast("태그 저장 후 리롤 중…", async () => await K(\`/v1/cards/\${encodeURIComponent(cardId)}/reroll\`, {`;
+const VENDOR_SAVE_REROLL_BG_PATCH =
+  `        void closeCardTagEdit();
+        await K(\`/v1/cards/\${encodeURIComponent(cardId)}/tags\`, {
+          method: "POST",
+          body: payload
+        }, 15e3), y("info", "card.tags.save", \`\${String(cardId).slice(0, 8)} chars=\${payload.characters.length} autoPerson=\${!!autoEl?.checked}\`);
+        const Yt = await withImageRerollToast("태그 저장 후 리롤 중…", async () => await K(\`/v1/cards/\${encodeURIComponent(cardId)}/reroll\`, {`;
+
+const VENDOR_CHAR_SAVE_BG_NEEDLE =
+  `        if (t.charactersSession = v?.characters || t.charactersSession, t.charactersGlobal = v?.global || t.charactersGlobal, t.appearance = v?.appearance || t.appearance, y("info", "char.edit.save", \`\${I} → \${rosterMeta?.rosterUnified ? "roots" : x === "__global__" ? "global" : "session"} app=\${F.length} attire=\${T.length} acc=\${Acc.length}\`), t.galleryUi?.status?.setTextContent) try {
+          await t.galleryUi.status.setTextContent(\`캐릭터 저장됨 · \${I}\`);
+        } catch {
+        }
+        await xe();`;
+const VENDOR_CHAR_SAVE_BG_PATCH =
+  `        if (t.charactersSession = v?.characters || t.charactersSession, t.charactersGlobal = v?.global || t.charactersGlobal, t.appearance = v?.appearance || t.appearance, y("info", "char.edit.save", \`\${I} → \${rosterMeta?.rosterUnified ? "roots" : x === "__global__" ? "global" : "session"} app=\${F.length} attire=\${T.length} acc=\${Acc.length}\`), t.galleryUi?.status?.setTextContent) try {
+          await t.galleryUi.status.setTextContent(\`캐릭터 저장됨 · \${I}\`);
+        } catch {
+        }`;
+const VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE =
+  `          priority: Number(n.priority || 0)
+        };
+        let v;
+        if (x === "__global__") {`;
+const VENDOR_CHAR_SAVE_CLOSE_FIRST_PATCH =
+  `          priority: Number(n.priority || 0)
+        };
+        void xe();
+        let v;
+        if (x === "__global__") {`;
 
 /** Settings open: same sticky 0% + viewer hide as shot/char edit (markers live outside overlay root). */
 const VENDOR_SETTINGS_OPEN_STICKY_NEEDLE = `  async function At() {
@@ -11087,6 +11214,13 @@ const VENDOR_HIDE_MODAL_CANCEL_EXPAND_PATCH =
     if (g?._actionsLpTimer) clearTimeout(g._actionsLpTimer), g._actionsLpTimer = null;
     if (!g?.panel) return;
     try {
+      const hideSticky = "position:fixed;display:none;pointer-events:none;opacity:0;";
+      for (const m of t.overlayUi?.markers || []) {
+        try {
+          m?.thumb && typeof m.thumb.setStyleAttribute == "function" && m.thumb.setStyleAttribute(hideSticky).catch(() => {});
+          m?.el && typeof m.el.setStyleAttribute == "function" && m.el.setStyleAttribute(hideSticky).catch(() => {});
+        } catch {}
+      }
       // True 0×0 (not 1px): kills mobile hitboxes; geo stays so restore can applyChrome.
       if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:0;visibility:hidden;");
       await g.panel.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;min-width:0;min-height:0;max-width:0;max-height:0;padding:0;margin:0;border:0;opacity:0;pointer-events:none;visibility:hidden;overflow:hidden;z-index:1;resize:none;display:block;");
@@ -11314,6 +11448,15 @@ const loadVendorUi = (): string => {
     [VENDOR_STICKY_OPEN_CHAR_NEEDLE, 'sticky open char edit'],
     [VENDOR_STICKY_CLOSE_CARD_NEEDLE, 'sticky close card edit'],
     [VENDOR_STICKY_CLOSE_CHAR_NEEDLE, 'sticky close char edit'],
+    [VENDOR_SHOT_SKIP_SHOW_NEEDLE, 'shot modal skip second showContainer'],
+    [VENDOR_CHAR_SKIP_SHOW_NEEDLE, 'char modal skip second showContainer'],
+    [VENDOR_SHOT_SWAP_VEIL_NEEDLE, 'shot modal swap veil'],
+    [VENDOR_CHAR_SWAP_VEIL_NEEDLE, 'char modal swap veil'],
+    [VENDOR_CHIP_SKIP_ROSTER_NEEDLE, 'chip click skip roster await'],
+    [VENDOR_SAVE_ONLY_BG_NEEDLE, 'shot saveOnly background'],
+    [VENDOR_SAVE_REROLL_BG_NEEDLE, 'shot save reroll close first'],
+    [VENDOR_CHAR_SAVE_BG_NEEDLE, 'char save skip close after POST'],
+    [VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, 'char save close before POST'],
     [VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, 'settings open sticky hide'],
     [VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, 'settings At hide panel + rehide'],
     [VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, 'settings close sticky restore'],
@@ -11669,6 +11812,15 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_STICKY_OPEN_CHAR_NEEDLE, VENDOR_STICKY_OPEN_CHAR_PATCH)
     .replace(VENDOR_STICKY_CLOSE_CARD_NEEDLE, VENDOR_STICKY_CLOSE_CARD_PATCH)
     .replace(VENDOR_STICKY_OPEN_CARD_NEEDLE, VENDOR_STICKY_OPEN_CARD_PATCH)
+    .replace(VENDOR_SHOT_SKIP_SHOW_NEEDLE, VENDOR_SHOT_SKIP_SHOW_PATCH)
+    .replace(VENDOR_CHAR_SKIP_SHOW_NEEDLE, VENDOR_CHAR_SKIP_SHOW_PATCH)
+    .replace(VENDOR_SHOT_SWAP_VEIL_NEEDLE, VENDOR_SHOT_SWAP_VEIL_PATCH)
+    .replace(VENDOR_CHAR_SWAP_VEIL_NEEDLE, VENDOR_CHAR_SWAP_VEIL_PATCH)
+    .replace(VENDOR_CHIP_SKIP_ROSTER_NEEDLE, VENDOR_CHIP_SKIP_ROSTER_PATCH)
+    .replace(VENDOR_SAVE_ONLY_BG_NEEDLE, VENDOR_SAVE_ONLY_BG_PATCH)
+    .replace(VENDOR_SAVE_REROLL_BG_NEEDLE, VENDOR_SAVE_REROLL_BG_PATCH)
+    .replace(VENDOR_CHAR_SAVE_BG_NEEDLE, VENDOR_CHAR_SAVE_BG_PATCH)
+    .replace(VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, VENDOR_CHAR_SAVE_CLOSE_FIRST_PATCH)
     .replace(VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, VENDOR_SETTINGS_OPEN_STICKY_PATCH)
     .replace(VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH)
     .replace(VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, VENDOR_SETTINGS_CLOSE_STICKY_PATCH)

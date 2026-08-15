@@ -7950,6 +7950,13 @@ ${Ye(250)}`;
     if (g?._actionsLpTimer) clearTimeout(g._actionsLpTimer), g._actionsLpTimer = null;
     if (!g?.panel) return;
     try {
+      const hideSticky = "position:fixed;display:none;pointer-events:none;opacity:0;";
+      for (const m of t.overlayUi?.markers || []) {
+        try {
+          m?.thumb && typeof m.thumb.setStyleAttribute == "function" && m.thumb.setStyleAttribute(hideSticky).catch(() => {});
+          m?.el && typeof m.el.setStyleAttribute == "function" && m.el.setStyleAttribute(hideSticky).catch(() => {});
+        } catch {}
+      }
       // True 0×0 (not 1px): kills mobile hitboxes; geo stays so restore can applyChrome.
       if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:0;visibility:hidden;");
       await g.panel.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;min-width:0;min-height:0;max-width:0;max-height:0;padding:0;margin:0;border:0;opacity:0;pointer-events:none;visibility:hidden;overflow:hidden;z-index:1;resize:none;display:block;");
@@ -8743,20 +8750,13 @@ ${Ye(250)}`;
     } catch {
     }
     const o = !!e?.openedContainer;
-    if (t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), t.charRefFocus?.scope === "modal" && (t.charRefFocus = null), o && !t.uiOpen && typeof k.hideContainer == "function") try {
-      await k.hideContainer();
-    } catch {
+    t.charEditUi = null, t.autotagFocus?.scope === "modal" && (t.autotagFocus = null), t.charRefFocus?.scope === "modal" && (t.charRefFocus = null);
+    if (o && !t.uiOpen && typeof k.hideContainer == "function") void k.hideContainer();
+    if (t.overlayUi && !t.cardTagUi && !t.uiOpen) t.overlayUi._stickyEditorOpen = !1;
+    if (!t.cardTagUi && !t.uiOpen) {
+      void restoreFloatingViewerAfterModal();
+      void Ht();
     }
-    if (t.galleryUi?.renderCast) try {
-      await t.galleryUi.renderCast();
-    } catch {
-    }
-    // At() always calls xe() after hideFloatingViewerForModal — skip restore while settings open.
-    if (t.overlayUi && !t.cardTagUi && !t.uiOpen) {
-      t.overlayUi._stickyEditorOpen = !1;
-      try { await Ht(); } catch {}
-    }
-    if (!t.cardTagUi && !t.uiOpen) try { await restoreFloatingViewerAfterModal(); } catch {}
   }
   async function Ua(e) {
     if (!e?.name) return;
@@ -8764,11 +8764,26 @@ ${Ye(250)}`;
       y("error", "char.edit.open", "plugin document unavailable");
       return;
     }
+    t._editOpenGen = (t._editOpenGen || 0) + 1;
+    const openGen = t._editOpenGen;
     await closeCardTagEdit(), await closeCharacterCreateModal().catch(() => null);
     void xe();
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
-    void hideFloatingViewerForModal();
-    void Ht();
+    const openedShell = !t.uiOpen;
+    if (openedShell && typeof k.showContainer == "function") {
+      await k.showContainer("fullscreen");
+      document.body.style.cssText = "margin:0;min-height:100vh;background:transparent;font:13px/1.45 Segoe UI,sans-serif;color:#e2e8f0;";
+    }
+    try { document.getElementById("nx-char-edit-modal")?.remove?.(); } catch {}
+    const veil = document.createElement("div");
+    veil.id = "nx-char-edit-modal";
+    veil.setAttribute("data-ce-root", "1");
+    veil.innerHTML = '<div data-ce-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.72);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;"><div style="width:min(720px,100%);padding:28px 20px;border-radius:16px;background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);color:#9aa6b8;font-size:13px;text-align:center">불러오는 중…</div></div>';
+    document.body.appendChild(veil);
+    t.charEditUi = { root: veil, openedContainer: openedShell, _stub: !0 };
+    await hideFloatingViewerForModal();
+    if (typeof requestAnimationFrame == "function") await new Promise((res) => requestAnimationFrame(res));
+    if (openGen !== t._editOpenGen) return;
     const rosterResolved = t._viewerRoster || null;
     if (!rosterResolved) void ensureViewerRosterLoaded().catch(() => null);
     const n = e.roster || Dt(e.name) || {
@@ -8782,7 +8797,6 @@ ${Ye(250)}`;
       id: ""
     }, o = Array.isArray(n.aliases) ? n.aliases.join(", ") : String(n.aliases || ""), a = n.scope === "__global__" ? "글로벌" : rosterResolved?.rosterUnified ? "통합" : "채팅", r = !t.uiOpen;
     // Keep floating viewer visible: transparent plugin shell, do not hide host chrome.
-    r && typeof k.showContainer == "function" && (await k.showContainer("fullscreen"), document.body.style.cssText = "margin:0;min-height:100vh;background:transparent;font:13px/1.45 Segoe UI,sans-serif;color:#e2e8f0;");
     const i = document.createElement("div");
     i.id = "nx-char-edit-modal", i.setAttribute("data-ce-root", "1"), i.innerHTML = [
       '<div data-ce-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;">',
@@ -8826,7 +8840,9 @@ ${Ye(250)}`;
       '<button type="button" data-ce-cancel style="cursor:pointer;border:0;background:#334155;color:#fff;padding:8px 12px;border-radius:9px;font:12px Segoe UI,sans-serif">취소</button>',
       '<button type="button" data-ce-save style="cursor:pointer;border:0;background:#7c6cff;color:#fff;padding:8px 14px;border-radius:9px;font:600 12px Segoe UI,sans-serif">저장</button>',
       "</div></div></div></div>"
-    ].join(""), document.body.appendChild(i);
+    ].join("");
+    try { t.charEditUi?._stub && t.charEditUi.root?.remove?.(); } catch {}
+    document.body.appendChild(i);
     const s = i.querySelector("[data-ce-name]"), c = i.querySelector("[data-ce-original]"), genderEl = i.querySelector("[data-ce-gender]"), surnameEl = i.querySelector("[data-ce-surname]"), givenEl = i.querySelector("[data-ce-given]"), surnameVariantsEl = i.querySelector("[data-ce-surname-variants]"), givenVariantsEl = i.querySelector("[data-ce-given-variants]"), l = i.querySelector("[data-ce-aliases]"), p = i.querySelector("[data-ce-appearance]"), m = i.querySelector("[data-ce-attire]"), accEl = i.querySelector("[data-ce-accessories]"), attireLockedEl = i.querySelector("[data-ce-attire-locked]"), accLockedEl = i.querySelector("[data-ce-accessories-locked]"), presetEl = i.querySelector("[data-ce-preset]"), u = i.querySelector("[data-ce-status]"), b = i.querySelector("[data-ce-autotag]"), C = i.querySelector("[data-ce-autotag-badge]"), S = i.querySelector("[data-ce-autotag-status]"), E = (f) => {
       u && (u.textContent = f);
     }, applyPreset = (f) => {
@@ -9002,6 +9018,7 @@ ${Ye(250)}`;
             }));
           })()
         };
+        void xe();
         let v;
         if (x === "__global__") {
           v = await K("/v1/characters", {
@@ -9035,7 +9052,6 @@ ${Ye(250)}`;
           await t.galleryUi.status.setTextContent(`캐릭터 저장됨 · ${I}`);
         } catch {
         }
-        await xe();
       } catch (v) {
         y("error", "char.edit.save.fail", v?.message || v), E(`저장 실패: ${z(v?.message || v, 80)}`);
       }
@@ -9275,16 +9291,13 @@ ${Ye(250)}`;
     } catch {
     }
     const o = !!e?.openedContainer;
-    if (t.cardTagUi = null, o && !t.uiOpen && typeof k.hideContainer == "function") try {
-      await k.hideContainer();
-    } catch {
+    t.cardTagUi = null;
+    if (t.overlayUi && !t.charEditUi && !t.uiOpen) t.overlayUi._stickyEditorOpen = !1;
+    if (o && !t.uiOpen && typeof k.hideContainer == "function") void k.hideContainer();
+    if (!t.charEditUi && !t.uiOpen) {
+      void restoreFloatingViewerAfterModal();
+      void Ht();
     }
-    // Settings open calls xe()/close helpers while hiding viewer — do not undo that.
-    if (t.overlayUi && !t.charEditUi && !t.uiOpen) {
-      t.overlayUi._stickyEditorOpen = !1;
-      try { await Ht(); } catch {}
-    }
-    if (!t.charEditUi && !t.uiOpen) try { await restoreFloatingViewerAfterModal(); } catch {}
   }
   async function closeCharacterCreateModal() {
     const e = t.charCreateUi, n = e?.root || (typeof document < "u" ? document.getElementById("nx-char-create-modal") : null);
@@ -9503,12 +9516,27 @@ ${Ye(250)}`;
       y("error", "card.tags.open", "plugin document unavailable");
       return;
     }
+    t._editOpenGen = (t._editOpenGen || 0) + 1;
+    const openGen = t._editOpenGen;
     await closeCharacterCreateModal().catch(() => null);
     await closeCardTagEdit();
     void xe();
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
-    void hideFloatingViewerForModal();
-    void Ht();
+    const openedShell = !t.uiOpen;
+    if (openedShell && typeof k.showContainer == "function") {
+      await k.showContainer("fullscreen");
+      document.body.style.cssText = "margin:0;min-height:100vh;background:transparent;font:13px/1.45 Segoe UI,sans-serif;color:#e2e8f0;";
+    }
+    try { document.getElementById("nx-card-tag-modal")?.remove?.(); } catch {}
+    const veil = document.createElement("div");
+    veil.id = "nx-card-tag-modal";
+    veil.setAttribute("data-ct-root", "1");
+    veil.innerHTML = '<div data-ct-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.55);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;"><div style="width:min(620px,100%);padding:28px 20px;border-radius:16px;background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);color:#9aa6b8;font-size:13px;text-align:center">불러오는 중…</div></div>';
+    document.body.appendChild(veil);
+    t.cardTagUi = { root: veil, openedContainer: openedShell, _stub: !0 };
+    await hideFloatingViewerForModal();
+    if (typeof requestAnimationFrame == "function") await new Promise((res) => requestAnimationFrame(res));
+    if (openGen !== t._editOpenGen) return;
     if (!t._viewerRoster) void ensureViewerRosterLoaded().catch(() => null);
     const MAX = 6, field = "width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:12px/1.4 Segoe UI,sans-serif", foldBox = "border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);padding:10px 12px", foldSum = "cursor:pointer;list-style:none;font-weight:700;font-size:12px;color:#d7deea;display:flex;align-items:center;justify-content:space-between;gap:8px;user-select:none", PERSON_COUNT_RE = /^\d+\+?(?:girls?|boys?|people|person)$/i, BARE_PERSON_RE = /^(?:girls?|boys?|people|person|solo)$/i, FEMALE_RE = /\b(?:\d+\+?)?girls?\b|\bwom(?:an|en)\b|\bfemale\b|\blady\b|\bladies\b|\bmilf\b|\bloli\b|\bmaiden\b/gi, MALE_RE = /\b(?:\d+\+?)?boys?\b|\bm(?:a|e)n\b|\bmale\b|\bguys?\b|\bgentleman\b|\botoko\b/gi, settingsMode = (() => {
       const Vt = t.backendSettings?.card || {}, Xt = String(Vt.person_tag_mode || "").toLowerCase();
@@ -9616,7 +9644,6 @@ ${Ye(250)}`;
       }
       return [formatCountTag(Kt, "1girl", "girls", "6+girls"), formatCountTag(Qt, "1boy", "boys", "6+boys")].filter(Boolean).join(", ");
     };
-    opened && typeof k.showContainer == "function" && (await k.showContainer("fullscreen"), document.body.style.cssText = "margin:0;min-height:100vh;background:transparent;font:13px/1.45 Segoe UI,sans-serif;color:#e2e8f0;");
     const root = document.createElement("div"), initMode = ["gender", "girls", "people", "off"].includes(settingsMode) ? settingsMode : "gender", initAuto = settingsMode !== "off";
     root.id = "nx-card-tag-modal", root.setAttribute("data-ct-root", "1"), root.innerHTML = [
       '<div data-ct-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;">',
@@ -9638,7 +9665,9 @@ ${Ye(250)}`;
       '<button type="button" data-ct-save-only style="cursor:pointer;border:1px solid rgba(124,108,255,.45);background:rgba(124,108,255,.16);color:#e8e4ff;padding:8px 14px;border-radius:9px;font:600 12px Segoe UI,sans-serif">저장</button>',
       '<button type="button" data-ct-save style="cursor:pointer;border:0;background:#7c6cff;color:#fff;padding:8px 14px;border-radius:9px;font:600 12px Segoe UI,sans-serif">저장·리롤</button>',
       "</div></div></div></div>"
-    ].join(""), document.body.appendChild(root);
+    ].join("");
+    try { t.cardTagUi?._stub && t.cardTagUi.root?.remove?.(); } catch {}
+    document.body.appendChild(root);
     const baseEl = root.querySelector("[data-ct-base]"), negEl = root.querySelector("[data-ct-neg]"), statusEl = root.querySelector("[data-ct-status]"), slotsEl = root.querySelector("[data-ct-slots]"), countEl = root.querySelector("[data-ct-count]"), autoEl = root.querySelector("[data-ct-auto-person]"), modeEl = root.querySelector("[data-ct-person-mode]"), hintEl = root.querySelector("[data-ct-person-hint]"), setStatus = (Vt) => {
       statusEl && (statusEl.textContent = Vt);
     }, syncFromDom = () => {
@@ -9785,25 +9814,26 @@ ${Ye(250)}`;
       }
     }, saveOnly = async () => {
       const payload = collectPayload(), cardId = e.id, keepPara = paraKeep, keepShot = shotKeep;
-      try {
-        setStatus("저장 중…"), await K(`/v1/cards/${encodeURIComponent(cardId)}/tags`, {
-          method: "POST",
-          body: payload
-        }, 15e3), y("info", "card.tags.save", `${String(cardId).slice(0, 8)} chars=${payload.characters.length} only`), await closeCardTagEdit(), await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, cardId), t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(`태그 저장됨 · ${String(cardId).slice(0, 8)}`);
-      } catch (Yt) {
-        y("error", "card.tags.save.fail", Yt?.message || Yt);
+      void closeCardTagEdit();
+      void (async () => {
         try {
-          t.cardTagUi?.root && setStatus(`실패: ${z(Yt?.message || Yt, 80)}`);
-        } catch {
+          await K(`/v1/cards/${encodeURIComponent(cardId)}/tags`, { method: "POST", body: payload }, 15e3);
+          y("info", "card.tags.save", `${String(cardId).slice(0, 8)} chars=${payload.characters.length} only`);
+          await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, cardId);
+          t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(`태그 저장됨 · ${String(cardId).slice(0, 8)}`);
+        } catch (Yt) {
+          y("error", "card.tags.save.fail", Yt?.message || Yt);
+          try { t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(`태그 저장 실패: ${z(Yt?.message || Yt, 80)}`); } catch {}
         }
-      }
+      })();
     }, save = async () => {
       const payload = collectPayload(), cardId = e.id, keepPara = paraKeep, keepShot = shotKeep;
       try {
-        setStatus("저장 중…"), await K(`/v1/cards/${encodeURIComponent(cardId)}/tags`, {
+        void closeCardTagEdit();
+        await K(`/v1/cards/${encodeURIComponent(cardId)}/tags`, {
           method: "POST",
           body: payload
-        }, 15e3), y("info", "card.tags.save", `${String(cardId).slice(0, 8)} chars=${payload.characters.length} autoPerson=${!!autoEl?.checked}`), await closeCardTagEdit();
+        }, 15e3), y("info", "card.tags.save", `${String(cardId).slice(0, 8)} chars=${payload.characters.length} autoPerson=${!!autoEl?.checked}`);
         const Yt = await withImageRerollToast("태그 저장 후 리롤 중…", async () => await K(`/v1/cards/${encodeURIComponent(cardId)}/reroll`, {
           method: "POST",
           body: {
@@ -10741,7 +10771,7 @@ ${Ye(250)}`;
         return;
       }
       if (!/^char\d+/i.test(kind) && kind !== "char") return;
-      await ensureViewerRosterLoaded().catch(() => null);
+      void ensureViewerRosterLoaded().catch(() => null);
       const idx = Number.isFinite(Number(charI)) ? Number(charI) : Number(String(kind).replace(/^char/i, "")) - 1;
       const cast = R(target), entry = cast.find((row) => Number(row.index) === idx) || cast[idx];
       if (entry?.name) {

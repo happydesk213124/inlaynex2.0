@@ -180,6 +180,82 @@ export function normalizeCharacterRecord(
   });
 }
 
+/** Which keys the caller actually sent. Omitted look fields must not become "". */
+export type CharacterUpsertProvided = {
+  appearance: boolean;
+  attire: boolean;
+  accessories: boolean;
+  original: boolean;
+  surname: boolean;
+  given_name: boolean;
+  surname_variants: boolean;
+  given_name_variants: boolean;
+  costumes: boolean;
+  active_costume: boolean;
+  wear_state: boolean;
+  attire_locked: boolean;
+  accessories_locked: boolean;
+};
+
+/**
+ * Patch `incoming` onto an existing row. `normalizeCharacterRecord` fills missing
+ * looks with "", so a wear_state-only save would otherwise wipe appearance.
+ * Empty string still clears when that key was present on the payload.
+ */
+export function foldCharacterUpsert(
+  base: CharacterInput,
+  incoming: MigratedCharacter,
+  provided: CharacterUpsertProvided,
+): MigratedCharacter | null {
+  const nextAppearance = cleanText(incoming.appearance || '', 4000);
+  const nextAttire = cleanText(incoming.attire || '', 4000);
+  const nextAccessories = cleanText(incoming.accessories || '', 4000);
+  const nextOriginal = cleanText(incoming.original || '', 400);
+  const nextSurname = cleanText(incoming.surname || '', 200);
+  const nextGiven = cleanText(incoming.given_name || '', 200);
+  return normalizeCharacterRecord({
+    ...base,
+    ...incoming,
+    id: base.id,
+    name: base.name || incoming.name,
+    aliases: parseAliasList([
+      ...(base.aliases || []),
+      ...(incoming.aliases || []),
+      incoming.name,
+      base.name,
+    ]),
+    original: provided.original ? nextOriginal : nextOriginal || base.original || '',
+    appearance: provided.appearance ? nextAppearance : nextAppearance || base.appearance || '',
+    attire: provided.attire ? nextAttire : nextAttire || base.attire || '',
+    accessories: provided.accessories ? nextAccessories : nextAccessories || base.accessories || '',
+    surname: provided.surname ? nextSurname : nextSurname || base.surname || '',
+    given_name: provided.given_name ? nextGiven : nextGiven || base.given_name || '',
+    surname_variants: provided.surname_variants
+      ? parseAliasList([...(incoming.surname_variants || []), nextSurname])
+      : parseAliasList([
+          ...(base.surname_variants || []),
+          ...(incoming.surname_variants || []),
+          nextSurname,
+          base.surname,
+        ]),
+    given_name_variants: provided.given_name_variants
+      ? parseAliasList([...(incoming.given_name_variants || []), nextGiven])
+      : parseAliasList([
+          ...(base.given_name_variants || []),
+          ...(incoming.given_name_variants || []),
+          nextGiven,
+          base.given_name,
+        ]),
+    attire_locked: provided.attire_locked ? incoming.attire_locked : base.attire_locked,
+    accessories_locked: provided.accessories_locked ? incoming.accessories_locked : base.accessories_locked,
+    priority: Math.max(Number(base.priority || 0), Number(incoming.priority || 0)),
+    costumes: provided.costumes ? incoming.costumes : base.costumes,
+    active_costume: provided.active_costume ? incoming.active_costume : base.active_costume,
+    wear_state: provided.wear_state ? incoming.wear_state : (base.wear_state || incoming.wear_state),
+    gender: incoming.gender || base.gender,
+  });
+}
+
 /**
  * Merge per-chat session characters with globals for tagging / generation.
  *

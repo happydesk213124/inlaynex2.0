@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { mergeSessionAndGlobalRoster, normalizeCharacterRecord } from "../.test-build/roster-merge.mjs";
+import { foldCharacterUpsert, mergeSessionAndGlobalRoster, normalizeCharacterRecord } from "../.test-build/roster-merge.mjs";
 
 function helpers() {
   const key = (v) => String(v || "").trim().toLowerCase();
@@ -88,4 +88,55 @@ test("legacy flat tags dump into appearance without splitting", () => {
   assert.equal(rec.appearance, "black hair, white shirt, sword");
   assert.equal(rec.attire, "");
   assert.equal(rec.accessories, "");
+});
+
+function omittedLooks() {
+  return {
+    appearance: false,
+    attire: false,
+    accessories: false,
+    original: false,
+    surname: false,
+    given_name: false,
+    surname_variants: false,
+    given_name_variants: false,
+    costumes: false,
+    active_costume: false,
+    wear_state: true,
+    attire_locked: false,
+    accessories_locked: false,
+  };
+}
+
+test("foldCharacterUpsert keeps appearance when payload omits it", () => {
+  const base = normalizeCharacterRecord({
+    id: "han",
+    name: "Han",
+    appearance: "black hair, brown eyes",
+    attire: "coat",
+  });
+  const incoming = normalizeCharacterRecord({
+    id: "han",
+    name: "Han",
+    wear_state: "topless",
+  });
+  const folded = foldCharacterUpsert(base, incoming, omittedLooks());
+  assert.equal(folded.appearance, "black hair, brown eyes");
+  assert.equal(folded.attire, "coat");
+  assert.equal(folded.wear_state, "topless");
+});
+
+test("foldCharacterUpsert still clears appearance when the key is present", () => {
+  const base = normalizeCharacterRecord({
+    id: "han",
+    name: "Han",
+    appearance: "black hair",
+  });
+  const incoming = normalizeCharacterRecord({
+    id: "han",
+    name: "Han",
+    appearance: "",
+  });
+  const folded = foldCharacterUpsert(base, incoming, { ...omittedLooks(), appearance: true, wear_state: false });
+  assert.equal(folded.appearance, "");
 });

@@ -31,6 +31,7 @@ import { characterMatchesIdentity, inferGenderFromExactTags, normalizeGender, la
 import type { CharacterInput, MigratedCharacter } from '../domain/character/identity';
 import {
   characterAliasKeys,
+  foldCharacterUpsert,
   mergeCharactersByAlias,
   mergeSessionAndGlobalRoster,
   normalizeCharacterRecord,
@@ -349,49 +350,35 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
   const existingList = await listCharacters(scopeKey);
   const selfId = cleanText(rec.id, 80);
   const incoming = rec;
+  const provided = {
+    appearance: appearanceProvided,
+    attire: attireProvided,
+    accessories: accessoriesProvided,
+    original: originalProvided,
+    surname: surnameProvided,
+    given_name: givenProvided,
+    surname_variants: surnameVariantsProvided,
+    given_name_variants: givenVariantsProvided,
+    costumes: costumesProvided,
+    active_costume: activeCostumeProvided,
+    wear_state: wearStateProvided,
+    attire_locked: hasOwn(raw, 'attire_locked'),
+    accessories_locked: hasOwn(raw, 'accessories_locked'),
+  };
+  const sameRow = selfId
+    ? existingList.find((c) => cleanText(c.id, 80) === selfId)
+    : undefined;
+  if (sameRow) {
+    rec = foldCharacterUpsert(sameRow, rec, provided);
+    if (!rec) return null;
+  }
   const dup = existingList.find((c) => {
     if (selfId && cleanText(c.id, 80) === selfId) return false;
+    if (rec && cleanText(c.id, 80) === cleanText(rec.id, 80)) return false;
     return Boolean(resolveCharacter(incoming.name, [c]) || (incoming.aliases || []).some((a) => resolveCharacter(a, [c])));
   });
   if (dup) {
-    const aliases = parseAliasList([...(dup.aliases || []), ...(rec.aliases || []), rec.name, dup.name]);
-    const nextAppearance = cleanText(rec.appearance || '', 4000);
-    const nextAttire = cleanText(rec.attire || '', 4000);
-    const nextAccessories = cleanText(rec.accessories || '', 4000);
-    const nextOriginal = cleanText(rec.original || '', 400);
-    const nextSurname = cleanText(rec.surname || '', 200);
-    const nextGiven = cleanText(rec.given_name || '', 200);
-    rec = normalizeCharacterRecord({
-      ...dup,
-      ...rec,
-      id: dup.id,
-      name: dup.name || rec.name,
-      aliases,
-      // Allow intentional clear from UI/modal saves (empty string). Only fall back
-      // to the previous value when the field was omitted from the payload.
-      original: originalProvided ? nextOriginal : nextOriginal || dup.original || '',
-      appearance: appearanceProvided ? nextAppearance : nextAppearance || dup.appearance || '',
-      attire: attireProvided ? nextAttire : nextAttire || dup.attire || '',
-      accessories: accessoriesProvided ? nextAccessories : nextAccessories || dup.accessories || '',
-      surname: surnameProvided ? nextSurname : nextSurname || dup.surname || '',
-      given_name: givenProvided ? nextGiven : nextGiven || dup.given_name || '',
-      surname_variants: surnameVariantsProvided
-        ? parseAliasList([...(rec.surname_variants || []), nextSurname])
-        : parseAliasList([...(dup.surname_variants || []), ...(rec.surname_variants || []), nextSurname, dup.surname]),
-      given_name_variants: givenVariantsProvided
-        ? parseAliasList([...(rec.given_name_variants || []), nextGiven])
-        : parseAliasList([...(dup.given_name_variants || []), ...(rec.given_name_variants || []), nextGiven, dup.given_name]),
-      attire_locked: hasOwn(raw, 'attire_locked')
-        ? wearLocked(rec.attire_locked)
-        : wearLocked(dup.attire_locked),
-      accessories_locked: hasOwn(raw, 'accessories_locked')
-        ? wearLocked(rec.accessories_locked)
-        : wearLocked(dup.accessories_locked),
-      priority: Math.max(Number(dup.priority || 0), Number(rec.priority || 0)),
-      costumes: costumesProvided ? rec.costumes : dup.costumes,
-      active_costume: activeCostumeProvided ? rec.active_costume : dup.active_costume,
-      wear_state: wearStateProvided ? rec.wear_state : (dup.wear_state || rec.wear_state),
-    });
+    rec = foldCharacterUpsert(dup, rec, provided);
     if (!rec) return null;
   }
 
@@ -1025,6 +1012,9 @@ export async function persistChatWearStates(
       name: rec.name,
       aliases: rec.aliases,
       wear_state: state,
+      ...(cleanText(rec.appearance || '') ? { appearance: rec.appearance } : {}),
+      ...(cleanText(rec.attire || '') ? { attire: rec.attire } : {}),
+      ...(cleanText(rec.accessories || '') ? { accessories: rec.accessories } : {}),
     });
   }
 }

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.56';
+const PLUGIN_VERSION = '2.3.57';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.57</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>외형 ✕는 외형 칸 글자만 지움 (저장·옷·악세는 건드리지 않음)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.56</strong>
@@ -5230,9 +5236,9 @@ const VENDOR_CHAR_EDIT_COSTUME_PATCH =
   `<div data-nx-costume-bar style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 8px"><div style="display:flex;align-items:stretch;min-width:140px;flex:1.2"><input data-ce-costume-name placeholder="코스튬 이름" value="\${h((()=>{const L=Array.isArray(n.costumes)&&n.costumes.length?n.costumes:[{name:"default",note:"",attire:n.attire||"",accessories:n.accessories||""}];const i=Math.max(0,Math.min(L.length-1,Number(n.active_costume||0)||0));return(L[i]&&L[i].name)||"default";})())}" style="flex:1;min-width:0;width:100%;box-sizing:border-box;border-radius:10px 0 0 10px;border:1px solid rgba(255,255,255,.14);border-right:0;background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"><div style="position:relative;width:36px;flex:0 0 36px"><div aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14);border-left:0;border-radius:0 10px 10px 0;background:#0b0f18;color:#d7deea;font:700 12px/1 Segoe UI,sans-serif;pointer-events:none">▾</div><select data-ce-costume title="코스튬 선택" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;color:#e8eef8;background:#0b0f18;font-size:13px;border:0;margin:0;padding:0"><option value="__add__" style="color:#e8eef8;background:#0b0f18">＋ 코스튬 추가</option>\${(Array.isArray(n.costumes)&&n.costumes.length?n.costumes:[{name:"default",note:"",attire:n.attire||"",accessories:n.accessories||""}]).map((c,i)=>\`<option value="\${i}" data-name="\${h(c&&c.name||"")}" data-note="\${h(c&&c.note||"")}" data-attire="\${h(c&&c.attire||"")}" data-accessories="\${h(c&&c.accessories||"")}" style="color:#e8eef8;background:#0b0f18" \${Number(n.active_costume||0)===i?"selected":""}>\${h((c&&c.name)||("costume"+i))}[\${i}]\${c&&c.note?" · "+h(c.note):""}</option>\`).join("")}</select></div></div><input data-ce-costume-note placeholder="언제 쓸지 · 예: 수영장 / 천사 상태" value="\${h((()=>{const L=Array.isArray(n.costumes)&&n.costumes.length?n.costumes:[{name:"default",note:""}];const i=Math.max(0,Math.min(L.length-1,Number(n.active_costume||0)||0));return(L[i]&&L[i].note)||"";})())}" style="flex:1.4;min-width:140px;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"><button type="button" data-ce-costume-delete style="cursor:pointer;border:0;background:rgba(248,113,113,.2);color:#fecaca;padding:8px 10px;border-radius:10px;font:600 12px Segoe UI,sans-serif;white-space:nowrap">삭제</button><button type="button" data-ce-costume-slot-save style="cursor:pointer;border:0;background:rgba(124,108,255,.22);color:#d7deea;padding:8px 10px;border-radius:10px;font:600 12px Segoe UI,sans-serif;white-space:nowrap">저장</button><button type="button" data-ce-costume-default style="cursor:pointer;border:0;background:rgba(124,108,255,.22);color:#d7deea;padding:8px 10px;border-radius:10px;font:600 12px Segoe UI,sans-serif;white-space:nowrap">기본값으로</button></div><div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px"><div style="display:grid;gap:4px;min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:#9aa6b8;font-size:11px;font-weight:600;flex-wrap:nowrap"><span>옷 태그</span>`;
 
 const VENDOR_CHAR_EDIT_APPEARANCE_LABEL_NEEDLE = `<span>외형 태그 (girl/boy · 옷·악세사리 제외)</span>`;
-const VENDOR_CHAR_EDIT_APPEARANCE_LABEL_PATCH = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>외형 태그 (girl/boy · 옷·무기 제외)</span><button type="button" data-ce-clear-looks title="외형·옷·악세 비우기 (다음 태깅 시 재수집)" style="cursor:pointer;border:0;background:rgba(248,113,113,.2);color:#fecaca;padding:2px 9px;border-radius:8px;font:700 12px Segoe UI,sans-serif;flex-shrink:0">✕</button></div>`;
+const VENDOR_CHAR_EDIT_APPEARANCE_LABEL_PATCH = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>외형 태그 (girl/boy · 옷·무기 제외)</span><button type="button" data-ce-clear-looks title="외형 칸 비우기" style="cursor:pointer;border:0;background:rgba(248,113,113,.2);color:#fecaca;padding:2px 9px;border-radius:8px;font:700 12px Segoe UI,sans-serif;flex-shrink:0">✕</button></div>`;
 
-/** Clear looks (keep identity) — X next to appearance; save so next tag regenerates. */
+/** Clear looks — wipe appearance textarea only. */
 const VENDOR_CHAR_EDIT_CLEAR_LOOKS_NEEDLE =
   `    }), i.querySelector("[data-ce-x]")?.addEventListener("click", (f) => {
       f.preventDefault(), f.stopPropagation(), U().catch(() => {
@@ -5242,23 +5248,16 @@ const VENDOR_CHAR_EDIT_CLEAR_LOOKS_PATCH =
   `    }), i.querySelector("[data-ce-x]")?.addEventListener("click", (f) => {
       f.preventDefault(), f.stopPropagation(), U().catch(() => {
       });
-    }), i.querySelector("[data-ce-clear-looks]")?.addEventListener("click", async (f) => {
+    }), i.querySelector("[data-ce-clear-looks]")?.addEventListener("click", (f) => {
       f.preventDefault(), f.stopPropagation();
-      if (!confirm("외형·옷·악세사리를 비울까요?\\n캐릭터는 유지되고, 다음 태깅에서 다시 수집됩니다.")) return;
       if (p) p.value = "";
-      if (m) m.value = "";
-      if (accEl) accEl.value = "";
-      try {
-        await U(), E("외형 비움·저장됨 · 다음 태깅 시 재수집");
-      } catch {
-      }
     }), (() => {`;
 
 /** Character tab: ✕ beside 삭제 — clear looks without removing the row. */
 const VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_NEEDLE =
   `<button type="button" class="secondary" data-char-delete style="min-height:30px;padding:4px 10px;flex-shrink:0">삭제</button>`;
 const VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_PATCH =
-  `<button type="button" class="secondary" data-char-clear-looks title="외형·옷·악세 비우기 (다음 태깅 시 재수집)" style="min-height:30px;padding:4px 10px;flex-shrink:0">✕</button>
+  `<button type="button" class="secondary" data-char-clear-looks title="외형 칸 비우기" style="min-height:30px;padding:4px 10px;flex-shrink:0">✕</button>
             <button type="button" class="secondary" data-char-delete style="min-height:30px;padding:4px 10px;flex-shrink:0">삭제</button>`;
 
 /** Job create: apply lorefilter whitelist before ca() / trigger keys. */
@@ -5542,48 +5541,12 @@ const VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_PATCH =
       const r = (i) => {
         i.preventDefault(), i.stopPropagation();
       };
-      a.addEventListener("pointerdown", r), a.addEventListener("mousedown", r), a.addEventListener("click", async (i) => {
+      a.addEventListener("pointerdown", r), a.addEventListener("mousedown", r), a.addEventListener("click", (i) => {
         r(i);
         const s = a.closest("[data-char-scope]");
-        if (!s) return;
-        if (!confirm("외형·옷·악세사리를 비울까요?\\n캐릭터는 유지되고, 다음 태깅에서 다시 수집됩니다.")) return;
-        const app = s.querySelector("[data-char-appearance]"), att = s.querySelector("[data-char-attire]"), acc = s.querySelector("[data-char-accessories]");
+        const app = s?.querySelector("[data-char-appearance]");
         if (app) app.value = "";
-        if (att) att.value = "";
-        if (acc) acc.value = "";
         t._charsDirty = !0;
-        try {
-          t.charactersSession = oe("session"), t.charactersGlobal = oe("global");
-        } catch {
-        }
-        try {
-          const scope = await Z().catch(() => null);
-          const body = withRootSessions({
-            session_id: scope?.sessionId || "",
-            character_id: scope?.characterId || "",
-            unified_session_id: scope?.unifiedSessionId || ""
-          }, scope);
-          const c = s.getAttribute("data-char-scope");
-          if (c === "session") body.characters = t.charactersSession || [];
-          else body.global = t.charactersGlobal || [];
-          const res = await K("/v1/characters", {
-            method: "POST",
-            body
-          }, 15e3);
-          if (Array.isArray(res?.characters)) t.charactersSession = res.characters;
-          if (Array.isArray(res?.global)) t.charactersGlobal = res.global;
-          t._charsDirty = !1;
-          t.uiMessage = {
-            type: "success",
-            text: "외형 비움·저장됨 · 다음 태깅 시 재수집"
-          };
-          await P();
-        } catch (err) {
-          t.uiMessage = {
-            type: "error",
-            text: \`비우기 저장 실패: \${z(err?.message || err)}\`
-          };
-        }
       });
     }), document.querySelectorAll("[data-nx-costume-bar]").forEach((bar) => {
       if (bar.dataset.nxCostumeBound) return;
@@ -8406,8 +8369,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.56",
-    body: "통합챗은 전 채팅을 그대로 보고, 수정은 원본 채팅만 저장합니다. 업데이트 내역 탭 참고."
+    title: "2.3.57",
+    body: "외형 ✕는 외형 칸만 비웁니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

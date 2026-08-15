@@ -827,14 +827,20 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     if (!name || covered.has(normalizeAlias(name))) continue;
     const existing = resolveCharacter(name, roster);
     if (existing && characterHasAppearance(existing)) continue;
+    const shotApp = joinTags(char.label, char.age, char.appearance, char.body);
+    const shotAttire = cleanText(char.attire || '');
+    const shotAcc = cleanText(char.accessories || '');
+    // Empty shot wear is caption-only. Do not queue a roster write that would
+    // clear looks (upsert treats present "" as an intentional wipe).
+    if (!shotApp && !shotAttire && !shotAcc) continue;
     newList.push({
       name: existing?.name || name,
       // `parseAliasList` always returns an array, so the two fallbacks never run.
       aliases: parseAliasList(char.aliases) || existing?.aliases || [name],
       original: cleanText(char.original || char.original_tag || existing?.original || '', 400),
-      appearance: joinTags(char.label, char.age, char.appearance, char.body),
-      attire: cleanText(char.attire || ''),
-      accessories: cleanText(char.accessories || ''),
+      appearance: shotApp || existing?.appearance || '',
+      attire: shotAttire || existing?.attire || '',
+      accessories: shotAcc || existing?.accessories || '',
       ...namePartsFrom(char, existing),
     });
     covered.add(normalizeAlias(name));
@@ -888,20 +894,22 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
           : [{ name: 'default', attire: newAttire, accessories: newAccessories }],
         { protectDefault: false },
       );
+      const attire = newAttire || existing.attire || costumes[0]?.attire || '';
+      const accessories = newAccessories || existing.accessories || costumes[0]?.accessories || '';
       await upsertCharacter(writeScope, {
         id: existing.id || rec.id,
         name: existing.name || rec.name,
         aliases: aliases.length ? aliases : existing.aliases || rec.aliases,
         original,
-        appearance,
-        attire: newAttire || costumes[0]?.attire || '',
-        accessories: newAccessories || costumes[0]?.accessories || '',
         costumes,
         active_costume: 0,
         attire_locked: wearLocked(existing.attire_locked),
         accessories_locked: wearLocked(existing.accessories_locked),
         priority: Math.max(assetPriorityFloor, Number(existing.priority || 0), Number(rec.priority || 0)),
         ...nameParts,
+        ...(appearance ? { appearance } : {}),
+        ...(attire ? { attire } : {}),
+        ...(accessories ? { accessories } : {}),
       });
       roster = await readRoster();
       continue;
@@ -915,15 +923,23 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
           : [{ name: 'default', attire: newAttire, accessories: newAccessories }],
         { protectDefault: false },
       );
+      const appearance = newApp || '';
+      const attire = newAttire || costumes[0]?.attire || '';
+      const accessories = newAccessories || costumes[0]?.accessories || '';
+      const { appearance: _dropApp, attire: _dropAtt, accessories: _dropAcc, ...rest } = rec;
+      void _dropApp;
+      void _dropAtt;
+      void _dropAcc;
       await upsertCharacter(writeSessionId, {
-        ...rec,
-        attire: newAttire || costumes[0]?.attire || '',
-        accessories: newAccessories || costumes[0]?.accessories || '',
+        ...rest,
         costumes,
         active_costume: 0,
         attire_locked: wearLocked(rec.attire_locked),
         accessories_locked: wearLocked(rec.accessories_locked),
         priority: Math.max(assetPriorityFloor, Number(rec.priority || 0)),
+        ...(appearance ? { appearance } : {}),
+        ...(attire ? { attire } : {}),
+        ...(accessories ? { accessories } : {}),
       });
     }
     roster = await readRoster();
@@ -964,16 +980,17 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
       const appearance = joinTags(char.label, char.age, char.appearance || '', char.body || '');
       const attire = cleanText(char.attire || '');
       const accessories = cleanText(char.accessories || '');
+      if (!appearance && !attire && !accessories) continue;
       await upsertCharacter(writeSessionId, {
         name,
         aliases: parseAliasList(char.aliases) || [name],
         original: cleanText(char.original || char.original_tag || '', 400),
-        appearance,
-        attire,
-        accessories,
         attire_locked: true,
         accessories_locked: true,
         ...namePartsFrom(char, null),
+        ...(appearance ? { appearance } : {}),
+        ...(attire ? { attire } : {}),
+        ...(accessories ? { accessories } : {}),
       });
     }
     roster = await readRoster();

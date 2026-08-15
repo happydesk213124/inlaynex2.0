@@ -8,7 +8,7 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.3.52';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.3.53';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
@@ -33,6 +33,7 @@ export const FORCE_PROMPT_KEYS: readonly PromptKey[] = [
 export const GLOBAL_SCOPE = '__global__';
 
 // --- device-store keys (IndexedDB via risuai.getLocalPluginStorage) ---
+// Settings also mirror to risuai.pluginStorage (account save). Images do not.
 export const SETTINGS_KEY = 'inx_native_settings';
 export const STORE_KEY = (name: string): string => `inx_nxstore_${name}`;
 export const IMAGE_KEY = (id: string): string => `inx_nximg_${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;

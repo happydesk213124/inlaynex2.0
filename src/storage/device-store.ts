@@ -70,8 +70,45 @@ export async function getDeviceStore(): Promise<DeviceStore> {
   return deviceStorePromise;
 }
 
+function saveFileApi(): UsableKvApi | null {
+  const api = risuHost()?.pluginStorage as KvApi | undefined;
+  return isUsable(api) ? api : null;
+}
+
 function legacyPluginStorage(): KvApi | null {
-  return (risuHost()?.pluginStorage as KvApi | undefined) ?? null;
+  return saveFileApi();
+}
+
+/** Save-file `pluginStorage` (account sync). Null when the host has no save store. */
+export async function saveFileGet(key: string): Promise<unknown> {
+  try {
+    const api = saveFileApi();
+    if (!api) return null;
+    const v = await api.getItem(key);
+    if (v != null && v !== '') return v;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Mirror a small JSON value into the save file. Never used for PNG rows. */
+export async function saveFileSet(key: string, value: unknown): Promise<boolean> {
+  const api = saveFileApi();
+  if (!api) return false;
+  const approx = approxBytes(value);
+  try {
+    await api.setItem(key, value);
+    if (approx > 8_000) dbg('storage.savefile.set', { message: key, bytes: approx, background: true });
+    return true;
+  } catch (err) {
+    dbg(
+      'storage.savefile.set',
+      { message: `${key}: ${(err as Error)?.message || err}`, bytes: approx, background: true },
+      'warn',
+    );
+    return false;
+  }
 }
 
 /** Reads a key, falling back once to the 1.x key and migrating it forward. */

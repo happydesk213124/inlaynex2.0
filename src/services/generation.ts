@@ -39,6 +39,7 @@ import {
   normalizePersonTagMode,
   personCountTagsForShot,
   stripPersonCountTags,
+  appendNoHumansWhenNoCast,
 } from '../domain/character/tags';
 import { dimsForAspect } from '../domain/nai-meta/aspect.ts';
 import { resolveGenerationSeed } from '../domain/prompt/command-rewrite';
@@ -265,6 +266,7 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   let main = person ? (body ? `${person}, ${body}` : person) : body;
   const naiaModel = modelToNaia(nai.model || 'nai-diffusion-4-5-full');
   if (nai.apply_quality_tags !== false) main += QUALITY_TAGS[naiaModel] || '';
+  main = appendNoHumansWhenNoCast(main, chars.length, card.no_humans_when_no_char);
   const ucPreset = cleanText(nai.uc_preset) || 'human_focus';
   const neg = joinTags(styleNeg, fixedNeg, (UC_PRESETS[naiaModel] || {})[ucPreset] || '');
 

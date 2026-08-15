@@ -498,6 +498,20 @@ export function personTagSoloOn(value: unknown): boolean {
 }
 
 /**
+ * When the shot has no characters, append `no humans` at the end of the NAI
+ * positive. Independent of person_tag_mode (안 넣기). Already present → no dup.
+ */
+export function appendNoHumansWhenNoCast(
+  main: unknown,
+  charCount: number,
+  enabled: unknown,
+): string {
+  const text = cleanText(main);
+  if (!flagOn(enabled) || !Number.isFinite(charCount) || charCount > 0) return text;
+  return joinTags(text, 'no humans');
+}
+
+/**
  * Person-count tags for one shot's cast, using roster looks to guess each sex.
  * When `soloWhenOne` is on and the cast is exactly one character, returns `solo`
  * instead of `1girl`/`1boy` — including when mode is `off` (안 넣기 still allows solo).

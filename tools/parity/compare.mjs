@@ -193,6 +193,7 @@ const normalize = (root) => {
           k === 'asset_nai_tags'
           || k === 'auto_aspect'
           || k === 'person_tag_solo'
+          || k === 'no_humans_when_no_char'
           || k === 'llm_json_retry'
           || k === 'focus_character'
           || k === 'focus_weight'

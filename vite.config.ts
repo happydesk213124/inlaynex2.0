@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.60';
+const PLUGIN_VERSION = '2.3.61';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -328,6 +328,7 @@ const VENDOR_NATURAL_BASE_HELP_PATCH =
   `"nx-natural-base": { title: "자연어 base", body: "NovelAI base에 넣는 자연어 장면을 고릅니다. 안넣기 / 짧게 넣기(머리·나이·성별·행동) / 구도·자세히(구도·표정·옷·조명) / 태그 보완 자연어(태그가 못 담는 문장)." },
   "nx-person-tag-weight": { title: "사람 태그 강조", body: "메인 프롬프트 맨 앞 인원 태그(1girl, 1boy, solo…)에 NovelAI 강조(N::태그::)를 겁니다. 0=감싸지 않음, 1–5=가중치. 큐레이션 leaf의 composition 인원 태그는 넣지 않습니다." },
   "nx-person-tag-solo": { title: "캐릭 1명일 때 solo", body: "샷 캐릭터가 1명이면 1girl/1boy 대신 solo를 맨 앞에 넣습니다. 사람 태그 강조 수치가 그대로 적용됩니다. 사람 태그 자동넣기가 「안 넣기」여도 이 토글이 켜져 있으면 solo만은 넣습니다." },
+  "nx-no-humans": { title: "캐릭 없을 때 no humans", body: "샷에 캐릭터가 한 명도 없으면 NAI 프롬프트 맨 끝에 no humans를 붙입니다. 사람 태그 자동넣기 「안 넣기」와는 무관합니다." },
   "nx-curation-mode": { title: "큐레이팅 모드", body: "사용안함: 지금과 동일. 2단: 그룹 선택 후 하위 옵션으로 씬 태그. 임베딩식: 자유 씬 태그를 카탈로그와 유사도 매칭해 교체(캐릭터 태그는 유지)." },
   "nx-curation-strict-ids": { title: "엄격 ID 모드", body: "2단 모드 전용. 켜면 카메라·상황·자연어·동작/표정을 자유 문장으로 쓰지 않고 카탈로그 ID로만 조립합니다. 캐릭터별 ID(characters[].option_ids)도 추가로 받아 배우 index별로 적용하며, 외형/의상은 절대 덮어쓰지 않습니다." },
   "nx-curation-catalog": { title: "큐레이션 카탈로그", body: "Inlay groups JSON 또는 NovelAI DEFAULT_PRESET_CATALOG(modifier_library)를 불러올 수 있습니다. 기본은 소형 SFW. 거대 카탈로그는 저장소·임베딩 비용이 큽니다." },
@@ -393,6 +394,7 @@ const VENDOR_PERSON_TAG_SOLO_CT_NEEDLE =
 const VENDOR_PERSON_TAG_SOLO_CT_PATCH =
   `      preprocessing: !!e.preprocessing,
       person_tag_solo: document.getElementById("nx-person-tag-solo") ? ee("nx-person-tag-solo") : !!e.person_tag_solo,
+      no_humans_when_no_char: document.getElementById("nx-no-humans") ? ee("nx-no-humans") : !!e.no_humans_when_no_char,
 `;
 
 /** Shot-tag modal: add 안 넣기 + solo-when-one (reads card.person_tag_solo). */
@@ -488,6 +490,7 @@ const VENDOR_ASSET_NAI_CARD_PATCH =
   `<div class="checks-grid" style="grid-column:1/-1;margin-top:4px">
             <label class="toggle-row" data-nx-help-id="nx-person-tag-solo" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-person-tag-solo" \${i.person_tag_solo ? "checked" : ""} style="flex-shrink:0;margin:0"><span>캐릭 1명일 때 solo 태그</span></label>
             <label class="toggle-row" data-nx-help-id="nx-costume" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-costume" \${i.costume === !0 || i.costume === "true" || i.costume === 1 || i.costume === "1" || i.costume === "on" ? "checked" : ""} style="flex-shrink:0;margin:0"><span>코스튬 (샷에서 복장 고르기)</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-no-humans" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-no-humans" \${i.no_humans_when_no_char ? "checked" : ""} style="flex-shrink:0;margin:0"><span>캐릭 없을 때 no humans</span></label>
             </div>
             <label class="wide" data-nx-help-id="nx-asset-nai-tags"><span>에셋 NAI 태그</span><select id="nx-asset-nai-tags">
               <option value="off" \${i.asset_nai_tags === !1 || i.asset_nai_tags === "off" || !i.asset_nai_tags ? "selected" : ""}>사용안함</option>
@@ -717,6 +720,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.61</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>생성 옵션: 캐릭 없을 때 no humans 토글</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.60</strong>
@@ -8510,8 +8519,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.60",
-    body: "스트리밍 키워드로 답 나오는 중에 한 번 생성. 업데이트 내역 탭 참고."
+    title: "2.3.61",
+    body: "캐릭 없는 샷에 no humans. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

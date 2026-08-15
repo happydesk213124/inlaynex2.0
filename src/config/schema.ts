@@ -212,6 +212,12 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     || card.person_tag_solo === 1
     || card.person_tag_solo === '1'
     || card.person_tag_solo === 'on';
+  card.no_humans_when_no_char =
+    card.no_humans_when_no_char === true
+    || card.no_humans_when_no_char === 'true'
+    || card.no_humans_when_no_char === 1
+    || card.no_humans_when_no_char === '1'
+    || card.no_humans_when_no_char === 'on';
   // person_tag_weight: NAI emphasis on Inlay person-count tags (0 = plain, 1–5 = N::…::)
   card.person_tag_weight = normalizePersonTagWeight(card.person_tag_weight);
   card.message_select_gesture = normalizeMessageSelectGesture(card.message_select_gesture);

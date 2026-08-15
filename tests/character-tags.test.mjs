@@ -18,6 +18,7 @@ import {
   syncGenderIntoAppearance,
   applyWearContinuityToShots,
   incomingLooksForIncomplete,
+  appendNoHumansWhenNoCast,
 } from "../.test-build/character-tags.mjs";
 
 test("syncGenderIntoAppearance inserts girl unless girl/1girl exact token exists", () => {
@@ -89,6 +90,14 @@ test("personCountTagsForShot keeps both genders (not just 1boy)", () => {
   );
   assert.equal(tags, "1girl, 1boy");
   assert.equal(emphasizePersonTags(tags, 2), "2::1girl, 1boy::");
+});
+
+test("appendNoHumansWhenNoCast only when toggle on and cast empty", () => {
+  assert.equal(appendNoHumansWhenNoCast("forest, night", 0, true), "forest, night, no humans");
+  assert.equal(appendNoHumansWhenNoCast("forest, no humans", 0, true), "forest, no humans");
+  assert.equal(appendNoHumansWhenNoCast("forest, night", 1, true), "forest, night");
+  assert.equal(appendNoHumansWhenNoCast("forest, night", 0, false), "forest, night");
+  assert.equal(appendNoHumansWhenNoCast("forest, night", 0, "off"), "forest, night");
 });
 
 test("personCountTagsForShot solo replaces 1girl/1boy when cast is one", () => {

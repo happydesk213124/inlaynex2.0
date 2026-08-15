@@ -82,6 +82,11 @@ export interface CardSettings {
    */
   person_tag_solo: boolean;
   /**
+   * When true and the shot has zero characters, append `no humans` at the end
+   * of the NAI positive. Independent of person_tag_mode.
+   */
+  no_humans_when_no_char: boolean;
+  /**
    * When true, main tagger injects costume catalogs and may pick/create
    * costumes per shot. Asset char_looks always builds costumes[] regardless.
    */

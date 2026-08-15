@@ -33,6 +33,7 @@
     "person_tag_mode": "gender",
     "auto_person_tags": true,
     "person_tag_solo": false,
+    "no_humans_when_no_char": false,
     "person_tag_weight": 3,
     "costume": false,
     "focus_character": "off",

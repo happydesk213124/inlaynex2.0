@@ -8764,11 +8764,13 @@ ${Ye(250)}`;
       y("error", "char.edit.open", "plugin document unavailable");
       return;
     }
-    await closeCardTagEdit(), await xe(), await closeCharacterCreateModal().catch(() => null);
+    await closeCardTagEdit(), await closeCharacterCreateModal().catch(() => null);
+    void xe();
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
-    try { await hideFloatingViewerForModal(); } catch {}
-    try { await Ht(); } catch {}
-    const rosterResolved = await ensureViewerRosterLoaded().catch(() => null);
+    void hideFloatingViewerForModal();
+    void Ht();
+    const rosterResolved = t._viewerRoster || null;
+    if (!rosterResolved) void ensureViewerRosterLoaded().catch(() => null);
     const n = e.roster || Dt(e.name) || {
       name: e.name,
       aliases: [e.name],
@@ -9502,14 +9504,12 @@ ${Ye(250)}`;
       return;
     }
     await closeCharacterCreateModal().catch(() => null);
-    await closeCardTagEdit(), await xe();
+    await closeCardTagEdit();
+    void xe();
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
-    try { await hideFloatingViewerForModal(); } catch {}
-    try { await Ht(); } catch {}
-    try {
-      await ensureViewerRosterLoaded();
-    } catch {
-    }
+    void hideFloatingViewerForModal();
+    void Ht();
+    if (!t._viewerRoster) void ensureViewerRosterLoaded().catch(() => null);
     const MAX = 6, field = "width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:12px/1.4 Segoe UI,sans-serif", foldBox = "border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);padding:10px 12px", foldSum = "cursor:pointer;list-style:none;font-weight:700;font-size:12px;color:#d7deea;display:flex;align-items:center;justify-content:space-between;gap:8px;user-select:none", PERSON_COUNT_RE = /^\d+\+?(?:girls?|boys?|people|person)$/i, BARE_PERSON_RE = /^(?:girls?|boys?|people|person|solo)$/i, FEMALE_RE = /\b(?:\d+\+?)?girls?\b|\bwom(?:an|en)\b|\bfemale\b|\blady\b|\bladies\b|\bmilf\b|\bloli\b|\bmaiden\b/gi, MALE_RE = /\b(?:\d+\+?)?boys?\b|\bm(?:a|e)n\b|\bmale\b|\bguys?\b|\bgentleman\b|\botoko\b/gi, settingsMode = (() => {
       const Vt = t.backendSettings?.card || {}, Xt = String(Vt.person_tag_mode || "").toLowerCase();
       return ["gender", "girls", "people", "off"].includes(Xt) ? Xt : Vt.auto_person_tags === !1 ? "off" : "gender";

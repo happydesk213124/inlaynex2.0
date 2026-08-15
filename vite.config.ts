@@ -4037,7 +4037,11 @@ const VENDOR_STICKY_OPEN_CARD_NEEDLE = `  async function openCardTagEdit(e) {
       return;
     }
     await closeCharacterCreateModal().catch(() => null);
-    await closeCardTagEdit(), await xe();`;
+    await closeCardTagEdit(), await xe();
+    try {
+      await ensureViewerRosterLoaded();
+    } catch {
+    }`;
 
 const VENDOR_STICKY_OPEN_CARD_PATCH = `  async function openCardTagEdit(e) {
     if (!e?.id) return;
@@ -4046,10 +4050,12 @@ const VENDOR_STICKY_OPEN_CARD_PATCH = `  async function openCardTagEdit(e) {
       return;
     }
     await closeCharacterCreateModal().catch(() => null);
-    await closeCardTagEdit(), await xe();
+    await closeCardTagEdit();
+    void xe();
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
-    try { await hideFloatingViewerForModal(); } catch {}
-    try { await Ht(); } catch {}`;
+    void hideFloatingViewerForModal();
+    void Ht();
+    if (!t._viewerRoster) void ensureViewerRosterLoaded().catch(() => null);`;
 
 /** Shot-tag modal was rebuilding char prompts from live roster + expression/action/sex,
  * which drops generation caption pieces (original, normalized order, curation-only bits
@@ -4336,7 +4342,8 @@ const VENDOR_STICKY_OPEN_CHAR_NEEDLE = `  async function Ua(e) {
       y("error", "char.edit.open", "plugin document unavailable");
       return;
     }
-    await closeCardTagEdit(), await xe(), await closeCharacterCreateModal().catch(() => null);`;
+    await closeCardTagEdit(), await xe(), await closeCharacterCreateModal().catch(() => null);
+    const rosterResolved = await ensureViewerRosterLoaded().catch(() => null);`;
 
 const VENDOR_STICKY_OPEN_CHAR_PATCH = `  async function Ua(e) {
     if (!e?.name) return;
@@ -4344,10 +4351,13 @@ const VENDOR_STICKY_OPEN_CHAR_PATCH = `  async function Ua(e) {
       y("error", "char.edit.open", "plugin document unavailable");
       return;
     }
-    await closeCardTagEdit(), await xe(), await closeCharacterCreateModal().catch(() => null);
+    await closeCardTagEdit(), await closeCharacterCreateModal().catch(() => null);
+    void xe();
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
-    try { await hideFloatingViewerForModal(); } catch {}
-    try { await Ht(); } catch {}`;
+    void hideFloatingViewerForModal();
+    void Ht();
+    const rosterResolved = t._viewerRoster || null;
+    if (!rosterResolved) void ensureViewerRosterLoaded().catch(() => null);`;
 
 const VENDOR_STICKY_CLOSE_CARD_NEEDLE = `  async function closeCardTagEdit() {
     const e = t.cardTagUi, n = e?.root || (typeof document < "u" ? document.getElementById("nx-card-tag-modal") : null);

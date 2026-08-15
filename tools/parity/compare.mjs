@@ -146,7 +146,7 @@ const normalize = (root) => {
           .filter((p) => {
             const k = String(p.key);
             if (k.startsWith('curation_')) return false;
-            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll' || k === 'lorefilter_scan') return false;
+            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll' || k === 'lorefilter_scan' || k === 'asset_author_note') return false;
             return true;
           })
           .map((v) => walk(v, key));
@@ -160,7 +160,7 @@ const normalize = (root) => {
         && node.includes('format')
       ) {
         return node
-          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll' && k !== 'lorefilter_scan')
+          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll' && k !== 'lorefilter_scan' && k !== 'asset_author_note')
           .map((v) => walk(v, key));
       }
       return node.map((v) => walk(v, key));

@@ -17,6 +17,7 @@ import {
   stripPersonCountTags,
   syncGenderIntoAppearance,
   applyWearContinuityToShots,
+  incomingLooksForIncomplete,
 } from "../.test-build/character-tags.mjs";
 
 test("syncGenderIntoAppearance inserts girl unless girl/1girl exact token exists", () => {
@@ -219,6 +220,37 @@ test("normalizeTaggedLookBuckets fills identity from shot only when primary look
 test("characterHasAppearance rejects clothing-only rows", () => {
   assert.equal(characterHasAppearance({ appearance: "white shirt, mitre" }), false);
   assert.equal(characterHasAppearance({ appearance: "black hair, white shirt" }), true);
+});
+
+test("incomingLooksForIncomplete fills empty-appearance rows and skips filled ones", () => {
+  assert.deepEqual(
+    incomingLooksForIncomplete(
+      { name: "민희", appearance: "" },
+      { appearance: "long hair, blue eyes", attire: "hanbok", accessories: "norigae" },
+    ),
+    { appearance: "long hair, blue eyes", attire: "hanbok", accessories: "norigae" },
+  );
+  assert.equal(
+    incomingLooksForIncomplete(
+      { name: "민희", appearance: "black hair, brown eyes" },
+      { appearance: "should not apply", attire: "x", accessories: "y" },
+    ),
+    null,
+  );
+  assert.equal(
+    incomingLooksForIncomplete(
+      { name: "민희", appearance: "" },
+      { appearance: "", attire: "", accessories: "" },
+    ),
+    null,
+  );
+  assert.deepEqual(
+    incomingLooksForIncomplete(
+      { name: "민희", appearance: "girl" },
+      { appearance: "pink hair, blue eyes", attire: "", accessories: "" },
+    ),
+    { appearance: "pink hair, blue eyes", attire: "", accessories: "" },
+  );
 });
 
 test("flagOn accepts true/on/1", () => {

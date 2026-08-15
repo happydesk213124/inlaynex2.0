@@ -571,6 +571,22 @@ export function characterHasAppearance(char: unknown): boolean {
   return meaningful.length > 0;
 }
 
+/**
+ * Looks to write onto a roster row that has no real appearance.
+ * Filled identity rows stay untouched. Empty incoming looks are ignored.
+ */
+export function incomingLooksForIncomplete(
+  existing: unknown,
+  incoming: { appearance?: unknown; attire?: unknown; accessories?: unknown },
+): { appearance: string; attire: string; accessories: string } | null {
+  if (characterHasAppearance(existing)) return null;
+  const appearance = cleanText(incoming?.appearance || '', 4000);
+  const attire = cleanText(incoming?.attire || '', 4000);
+  const accessories = cleanText(incoming?.accessories || '', 4000);
+  if (!appearance && !attire && !accessories) return null;
+  return { appearance, attire, accessories };
+}
+
 /** Wear lock default ON: missing/undefined counts as locked. */
 export function wearLocked(value: unknown): boolean {
   return value !== false;

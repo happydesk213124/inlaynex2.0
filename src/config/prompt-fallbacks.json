@@ -1,5 +1,6 @@
 {
   "author_note": "",
+  "asset_author_note": "",
   "tagger": "Tag the chat message into Danbooru-style English image prompts. Output ONE JSON object only.",
   "format": "{\"scenes\":[{\"place\":\"...\",\"shots\":[{\"paragraph\":0,\"y_percent\":50,\"line\":7,\"aspect\":\"portrait|square|landscape\",\"camera\":\"...\",\"situation\":\"...\",\"characters\":[{\"name\":\"...\",\"action\":\"...\"}]}]}],\"new_characters\":[]}",
   "appearance_inject": "Registered: {registered_block}\nIncomplete: {incomplete_block}\nDetected: {detected_block}",

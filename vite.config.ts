@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.58';
+const PLUGIN_VERSION = '2.3.59';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -96,16 +96,21 @@ const VENDOR_PROMPT_TAB_HTML_PATCH = `    } else if (t.uiTab === "prompts") {
           title: "작가의 노트 (사용자 프롬프트 지침)",
           hint: "비워두면 무시됩니다. 태깅 LLM 요청 맨 끝에 최우선 지침으로 들어갑니다.",
         },
+        asset_author_note: {
+          title: "에셋태그 작가의 노트",
+          hint: "비워두면 무시됩니다. 에셋태그(외형 수집) LLM 요청 맨 끝에 최우선 지침으로 들어갑니다.",
+        },
       };
       const promptCards = (t.prompts || []).map((d) => {
         const meta = promptMeta[d.key] || null;
         const title = meta?.title || d.key;
         const hint = meta?.hint ? \`<div class="muted" style="margin:4px 0 8px">\${h(meta.hint)}</div>\` : "";
+        const notePh = d.key === "author_note" || d.key === "asset_author_note";
         return \`
           <div class="card">
             <strong>\${h(title)}</strong>\${d.key !== title ? \`<div class="muted" style="font-size:11px;margin-top:2px">\${h(d.key)}</div>\` : ""}
             \${hint}
-            <textarea id="nx-prompt-\${h(d.key)}" placeholder="\${d.key === "author_note" ? "예: 항상 실내 조명, 캐릭터는 교복 유지…" : ""}">\${h(t.promptDrafts[d.key] ?? d.text ?? "")}</textarea>
+            <textarea id="nx-prompt-\${h(d.key)}" placeholder="\${notePh ? "예: 항상 실내 조명, 캐릭터는 교복 유지…" : ""}">\${h(t.promptDrafts[d.key] ?? d.text ?? "")}</textarea>
             <div class="row" style="flex-wrap:wrap;gap:8px">
               <button data-save-prompt="\${h(d.key)}">저장</button>
               <button class="secondary" data-reset-prompt="\${h(d.key)}">기본값</button>
@@ -702,6 +707,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.59</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>외형 없는 캐릭은 다시 태그 수집. 에셋태그 작가의 노트</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.58</strong>
@@ -8434,8 +8445,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.58",
-    body: "캐릭터 탭에서 승자만 보기. 통합챗은 고르면 다시 모읍니다. 업데이트 내역 탭 참고."
+    title: "2.3.59",
+    body: "외형 없는 캐릭은 다시 수집합니다. 에셋태그 작가의 노트. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11201,7 +11212,7 @@ const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
  * LLM, which is far harder to notice than a broken build.
  */
 const PROMPT_KEYS = [
-  'author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
+  'author_note', 'asset_author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
   'char_inject', 'preprocess', 'prefill', 'preset_1', 'autotag',
   'curation_refine', 'curation_embed_hint', 'asset_tags_inject', 'char_looks',
   'command_reroll', 'lorefilter_scan',

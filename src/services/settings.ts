@@ -129,7 +129,7 @@ export async function resetPromptsToDefaults(opts?: { keep_author_note?: boolean
   const now = Date.now() / 1000;
   let updated = 0;
   for (const key of PROMPT_KEYS) {
-    if (keepAuthor && key === 'author_note') continue;
+    if (keepAuthor && (key === 'author_note' || key === 'asset_author_note')) continue;
     await idbPut('meta', { key: `prompt:${key}`, text: promptText(key), updated_at: now });
     updated += 1;
   }

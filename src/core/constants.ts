@@ -8,7 +8,7 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.3.58';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.3.59';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
@@ -17,7 +17,7 @@ export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN
 export const PROMPT_PACK = '2026-08-07-command-reroll';
 
 export const PROMPT_KEYS = [
-  'author_note', 'tagger', 'format', 'prefill', 'preprocess',
+  'author_note', 'asset_author_note', 'tagger', 'format', 'prefill', 'preprocess',
   'preset_1', 'lore_inject', 'char_inject', 'appearance_inject', 'asset_tags_inject', 'char_looks', 'autotag',
   'curation_refine', 'curation_embed_hint', 'command_reroll', 'lorefilter_scan',
 ] as const;

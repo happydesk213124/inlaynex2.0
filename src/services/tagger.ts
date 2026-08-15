@@ -220,7 +220,8 @@ function incompleteTargetsForLooks(
 
 /**
  * Looks-only pre-pass: asset tags + Character Image lore (+ optional images).
- * No chat message, no filled-roster dump, no story lore, no char/user info, no author note.
+ * No chat message, no filled-roster dump, no story lore, no char/user info.
+ * Optional asset_author_note is appended last, same shape as the main tagger note.
  */
 export async function buildCharacterLooksMessages(
   request: TaggerArgs,
@@ -291,6 +292,15 @@ export async function buildCharacterLooksMessages(
     dbg('job.char_looks.previews', { count: usablePreviews.length, names: usablePreviews.map((p) => p.name) });
   } else {
     messages.push({ role: 'user', content: userText });
+  }
+  const assetAuthorNote = cleanText(await getPrompt('asset_author_note'), 8000);
+  if (assetAuthorNote) {
+    messages.push({
+      role: 'user',
+      content:
+        `# Priority: Asset Author's Note\n${assetAuthorNote}\n`
+        + '> These are instructions explicitly given by the user. If in conflict with previous instructions, this section MUST take precedence.',
+    });
   }
   return messages;
 }

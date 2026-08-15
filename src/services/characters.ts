@@ -40,6 +40,7 @@ import {
 } from '../domain/character/roster';
 import {
   characterHasAppearance,
+  incomingLooksForIncomplete,
   fullTags,
   normalizeTaggedLookBuckets,
   parseWearState,
@@ -766,7 +767,7 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
   const covered = new Set(newList.map((raw) => normalizeAlias(raw?.name)));
   for (const row of pool) {
     const key = normalizeAlias(row.name);
-    if (key) covered.add(key);
+    if (key && characterHasAppearance(row)) covered.add(key);
   }
   const shotLookFallbacks = new Map<string, { appearance: string; attire: string; accessories: string }>();
   const namePartsFrom = (rec: NamePartSource, existing: NamePartSource = null): NameParts => ({
@@ -804,7 +805,7 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
       continue;
     }
     const existing = resolveCharacter(name, pool);
-    if (existing) continue;
+    if (existing && characterHasAppearance(existing)) continue;
     if (!shotApp && !shotAttire && !shotAcc) continue;
     newList.push({
       name,
@@ -837,6 +838,21 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     const newAttire = cleanText(rec.attire || '');
     const newAccessories = cleanText(rec.accessories || '');
     if (existing) {
+      const fill = incomingLooksForIncomplete(existing, {
+        appearance: newApp,
+        attire: newAttire,
+        accessories: newAccessories,
+      });
+      if (fill) {
+        const writeScope = existing.scope === GLOBAL_SCOPE ? GLOBAL_SCOPE : (existing.scope || writeSessionId);
+        await upsertCharacter(writeScope, {
+          id: existing.id,
+          name: existing.name,
+          appearance: fill.appearance,
+          attire: fill.attire,
+          accessories: fill.accessories,
+        });
+      }
       roster = await readRoster();
       continue;
     }

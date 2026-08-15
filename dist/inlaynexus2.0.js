@@ -10433,6 +10433,16 @@ ${Ye(250)}`;
       await paintMainNow(card);
       d._metaGen = (d._metaGen || 0) + 1;
       const gen = d._metaGen;
+      // New card: drop old chips now (so they cannot hitch on the same turn as the image).
+      // In-flight buildMetaUi / fill sees gen mismatch and stops.
+      if (String(card?.id || "") !== String(d._metaCardId || "")) {
+        d.metaHits = [];
+        d._metaCardId = "";
+        try {
+          await j.setInnerHTML('<span style="color:#8b97ab;font-size:12px;padding:8px 0;pointer-events:none">로딩중…</span>');
+        } catch {
+        }
+      }
       warmVisibleImages(items, d.index);
       d._softTimer && clearTimeout(d._softTimer);
       d._softTimer = setTimeout(() => {
@@ -10547,14 +10557,8 @@ ${Ye(250)}`;
       if (gen !== (d._metaGen || 0) || d.minimized) return;
       const items = Array.isArray(d.items) && d.items.length ? d.items : U(), Q = items[d.index];
       if (!Q) return;
-      // Background: warm srcs in place. Do NOT rewrite strip HTML (flickers `|` and feels laggy).
-      try {
-        await fillThumbSrcs(items, d.index);
-        if (gen !== (d._metaGen || 0)) return;
-      } catch {
-        if (gen !== (d._metaGen || 0)) return;
-        await paintThumbsStrip(items, d.index);
-      }
+      // Thumbs warm in the background (warmVisibleImages). Do not await fill here —
+      // that was the hitch stacked under chip createElement.
       if (gen !== (d._metaGen || 0)) return;
       // Rebuild when card changes OR hit-test zones were lost (stale/racy bind).
       if ((d._metaCardId || "") !== String(Q.id || "") || !(d.metaHits || []).length) {

@@ -10513,13 +10513,54 @@ const VENDOR_THUMBS_QUICK_PATCH =
       }
     }, softAfterSelect = async (gen) => {`;
 
+const VENDOR_SELECT_META_PENDING_NEEDLE =
+  `      await paintMainNow(card);
+      d._metaGen = (d._metaGen || 0) + 1;
+      const gen = d._metaGen;
+      warmVisibleImages(items, d.index);
+      d._softTimer && clearTimeout(d._softTimer);
+      d._softTimer = setTimeout(() => {
+        if (gen !== d._metaGen || t.uiOpen) return;
+        softAfterSelect(gen).catch(() => {
+        });
+      }, 90);`;
+const VENDOR_SELECT_META_PENDING_PATCH =
+  `      await paintMainNow(card);
+      d._metaGen = (d._metaGen || 0) + 1;
+      const gen = d._metaGen;
+      // New card: drop old chips now (so they cannot hitch on the same turn as the image).
+      // In-flight buildMetaUi / fill sees gen mismatch and stops.
+      if (String(card?.id || "") !== String(d._metaCardId || "")) {
+        d.metaHits = [];
+        d._metaCardId = "";
+        try {
+          await j.setInnerHTML('<span style="color:#8b97ab;font-size:12px;padding:8px 0;pointer-events:none">로딩중…</span>');
+        } catch {
+        }
+      }
+      warmVisibleImages(items, d.index);
+      d._softTimer && clearTimeout(d._softTimer);
+      d._softTimer = setTimeout(() => {
+        if (gen !== d._metaGen || t.uiOpen) return;
+        softAfterSelect(gen).catch(() => {
+        });
+      }, 90);`;
+
 const VENDOR_SOFT_NO_QUICK_NEEDLE =
-  `        await fillThumbSrcs(items, d.index);
+  `      // Background: warm srcs in place. Do NOT rewrite strip HTML (flickers \`|\` and feels laggy).
+      try {
+        await fillThumbSrcs(items, d.index);
         if (gen !== (d._metaGen || 0)) return;
-        await paintThumbsQuick(d.index);`;
+        await paintThumbsQuick(d.index);
+      } catch {
+        if (gen !== (d._metaGen || 0)) return;
+        await paintThumbsStrip(items, d.index);
+      }
+      if (gen !== (d._metaGen || 0)) return;`;
 const VENDOR_SOFT_NO_QUICK_PATCH =
-  `        await fillThumbSrcs(items, d.index);
-        if (gen !== (d._metaGen || 0)) return;`;
+  `      // Thumbs warm in the background (warmVisibleImages). Do not await fill here —
+      // that was the hitch stacked under chip createElement.
+      if (gen !== (d._metaGen || 0)) return;`;
 
 const VENDOR_FILL_SRC_SKIP_NEEDLE =
   `          const src = Ie(card);
@@ -11414,7 +11455,8 @@ const loadVendorUi = (): string => {
     [VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE, 'thumb paint strip track'],
     [VENDOR_STRIP_WARM_ITEMS_NEEDLE, 'viewer strip warm items cap'],
     [VENDOR_THUMBS_QUICK_NEEDLE, 'viewer thumbs quick 2-node'],
-    [VENDOR_SOFT_NO_QUICK_NEEDLE, 'viewer softAfterSelect no restyle'],
+    [VENDOR_SELECT_META_PENDING_NEEDLE, 'viewer select meta pending'],
+    [VENDOR_SOFT_NO_QUICK_NEEDLE, 'viewer softAfterSelect chips after settle'],
     [VENDOR_FILL_SRC_SKIP_NEEDLE, 'viewer fillThumbSrcs skip same'],
     [VENDOR_THUMBS_CLEAR_NEEDLE, 'thumbs clear track'],
     [VENDOR_THUMBS_POINTER_NEEDLE, 'thumbs pointer drag start'],
@@ -11749,6 +11791,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_THUMB_SCROLL_RESET_CHROME_NEEDLE, VENDOR_THUMB_SCROLL_RESET_CHROME_PATCH)
     .replace(VENDOR_THUMB_SCROLL_RESET_STRIP_NEEDLE, VENDOR_THUMB_SCROLL_RESET_STRIP_PATCH)
     .replace(VENDOR_THUMBS_QUICK_NEEDLE, VENDOR_THUMBS_QUICK_PATCH)
+    .replace(VENDOR_SELECT_META_PENDING_NEEDLE, VENDOR_SELECT_META_PENDING_PATCH)
     .replace(VENDOR_STRIP_WARM_ITEMS_NEEDLE, VENDOR_STRIP_WARM_ITEMS_PATCH)
     .replaceAll(VENDOR_STRIP_WARM_LIST_NEEDLE, VENDOR_STRIP_WARM_LIST_PATCH)
     .replace(VENDOR_SOFT_NO_QUICK_NEEDLE, VENDOR_SOFT_NO_QUICK_PATCH)

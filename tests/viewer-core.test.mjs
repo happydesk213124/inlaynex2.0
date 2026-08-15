@@ -420,12 +420,11 @@ test("claimStickyMarkerByCardId splices the active pin so partial swaps cannot o
   assert.equal(claimStickyMarkerByCardId([{ card: { id: "x" } }], "x"), null);
 });
 
-test("resolveStickyThumbPct is settings size when always on and not collapsed (editor uses z-bury)", () => {
+test("resolveStickyThumbPct is 0 when collapsed, overlay off, or editor open", () => {
   assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: true, userCollapsed: false, editorOpen: false }), 120);
   assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: false, userCollapsed: false, editorOpen: false }), 0);
   assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: true, userCollapsed: true, editorOpen: false }), 0);
-  // Settings/editor open keeps size — paint path buries via z-index instead of 0%.
-  assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: true, userCollapsed: false, editorOpen: true }), 120);
+  assert.equal(resolveStickyThumbPct({ settingsPct: 120, alwaysOn: true, userCollapsed: false, editorOpen: true }), 0);
   assert.equal(resolveStickyThumbPct({ settingsPct: 0, alwaysOn: true, userCollapsed: false, editorOpen: false }), 0);
 });
 

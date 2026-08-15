@@ -9385,6 +9385,8 @@ const VENDOR_RISU_SETTINGS_HIDE_VIEWER_PATCH =
       else if (g.panel) await g.panel.setStyleAttribute(Ft(g.geo || se, !!g.minimized));
     } catch {
     }
+    if (t.overlayUi) t.overlayUi._lastThumbPct = null, t.overlayUi._v2LayoutKey = null;
+    try { await Ht(); } catch {}
   }
   async function hideFloatingViewerForRisuSettings() {
     if (t._viewerHiddenForRisuSettings) return;
@@ -11094,15 +11096,10 @@ const VENDOR_HIDE_MODAL_CANCEL_EXPAND_PATCH =
     const g = t.galleryUi;
     if (g?.drag) g.drag.expandOnTap = !1;
     if (g?._actionsLpTimer) clearTimeout(g._actionsLpTimer), g._actionsLpTimer = null;
+    if (t.overlayUi) t.overlayUi._lastThumbPct = null, t.overlayUi._v2LayoutKey = null;
+    try { await Ht(); } catch {}
     if (!g?.panel) return;
     try {
-      const hideSticky = "position:fixed;display:none;pointer-events:none;opacity:0;";
-      for (const m of t.overlayUi?.markers || []) {
-        try {
-          m?.thumb && typeof m.thumb.setStyleAttribute == "function" && m.thumb.setStyleAttribute(hideSticky).catch(() => {});
-          m?.el && typeof m.el.setStyleAttribute == "function" && m.el.setStyleAttribute(hideSticky).catch(() => {});
-        } catch {}
-      }
       // True 0×0 (not 1px): kills mobile hitboxes; geo stays so restore can applyChrome.
       if (g.root && typeof g.root.setStyleAttribute == "function") await g.root.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;z-index:99990;pointer-events:none;opacity:0;visibility:hidden;");
       await g.panel.setStyleAttribute("position:fixed;left:0;top:0;width:0;height:0;min-width:0;min-height:0;max-width:0;max-height:0;padding:0;margin:0;border:0;opacity:0;pointer-events:none;visibility:hidden;overflow:hidden;z-index:1;resize:none;display:block;");

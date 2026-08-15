@@ -1396,8 +1396,8 @@ export function shouldKeepStickyThumbHidden(
 /**
  * Effective sticky always-image size %.
  *
- * Hide is size 0 (not display:none): 상시 off or click-collapse.
- * Settings/editor open no longer forces 0% — the paint path buries via z-index.
+ * Hide is size 0 (same as tap-접기): 상시 off, click-collapse, or settings/shot/char editor.
+ * editorOpen does not flip the user's 접기 flag — close uses that flag to restore size.
  */
 export function resolveStickyThumbPct(opts: {
   settingsPct: unknown;
@@ -1405,8 +1405,7 @@ export function resolveStickyThumbPct(opts: {
   userCollapsed: boolean;
   editorOpen?: boolean;
 }): number {
-  void opts.editorOpen;
-  if (!opts.alwaysOn || opts.userCollapsed) return 0;
+  if (!opts.alwaysOn || opts.userCollapsed || opts.editorOpen) return 0;
   const pct = finiteNumber(opts.settingsPct, 0);
   return pct > 0 ? pct : 0;
 }

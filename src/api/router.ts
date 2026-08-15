@@ -618,9 +618,8 @@ async function updateCharacters(body: Record<string, unknown>): Promise<RouteRes
   if (deleteRefs.length && rootSessionIds.length) {
     await characters.deleteMatchingInSessions(rootSessionIds, deleteRefs, '');
   }
-  // Root edits invalidate the unified view, so rebuild it before responding.
   if (rootSessionIds.length && sessionId) {
-    await characters.unifyCharacterSessions(sessionId, rootSessionIds, false);
+    return ok(await characters.unifyCharacterSessions(sessionId, rootSessionIds, false));
   }
   return ok(await characters.getCharactersPayload(sessionId, characterId));
 }

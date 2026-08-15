@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.55';
+const PLUGIN_VERSION = '2.3.56';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -702,6 +702,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.56</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>통합챗은 전 채팅 목록만 보고, 수정은 그 채팅에만 저장. 태깅은 우선순위/최신만 고름</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.55</strong>
@@ -8400,8 +8406,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.55",
-    body: "캐릭터 저장과 외형·옷 태그 구분을 바로잡았습니다. 업데이트 내역 탭 참고."
+    title: "2.3.56",
+    body: "통합챗은 전 채팅을 그대로 보고, 수정은 원본 채팅만 저장합니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

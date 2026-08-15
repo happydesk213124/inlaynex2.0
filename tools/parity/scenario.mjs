@@ -228,8 +228,9 @@ export async function runScenario(N, handles) {
     session_id: 'sess_unified',
     root_session_ids: ['sess_chat_a', 'sess_chat_b'],
     characters: [{
-      id: 'view-nim', name: '니메리엘', aliases: ['니메리엘', 'Nimeriel'],
+      id: 'chat-a-nim', name: '니메리엘', aliases: ['니메리엘', 'Nimeriel'],
       appearance: '1girl, vivid violet eyes, long silver hair', attire: 'blue dress',
+      scope: 'sess_chat_a',
     }],
   }));
   await rec('chars.chat_a_after_patch', () => get('/v1/characters?session_id=sess_chat_a'));
@@ -244,8 +245,9 @@ export async function runScenario(N, handles) {
     session_id: 'sess_unified',
     root_session_ids: ['sess_chat_a', 'sess_chat_b', 'sess_chat_c'],
     character: {
-      id: 'view-nim', name: '니메리엘', aliases: ['니메리엘', 'Nimeriel'],
+      id: 'chat-a-nim', name: '니메리엘', aliases: ['니메리엘', 'Nimeriel'],
       appearance: '1girl, vivid violet eyes, long silver hair', attire: 'blue dress',
+      scope: 'sess_chat_a',
     },
   }));
   await rec('chars.chat_c_untouched', () => get('/v1/characters?session_id=sess_chat_c'));

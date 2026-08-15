@@ -35,6 +35,7 @@ import {
   mergeCharactersByAlias,
   mergeSessionAndGlobalRoster,
   normalizeCharacterRecord,
+  pickUnifiedWinners,
   resolveCharacter,
 } from '../domain/character/roster';
 import {
@@ -268,13 +269,19 @@ export async function listMergedSessionCharacters(sourceSessionIds: unknown[] = 
     seen.add(sid);
     collected.push(...(await listCharacters(sid)));
   }
-  return asRoster(mergeCharactersByAlias(collected));
+  return collected;
+}
+
+export async function listUnifiedViewCharacters(sourceSessionIds: unknown[] = []): Promise<CharacterRecord[]> {
+  const collected = await listMergedSessionCharacters(sourceSessionIds);
+  if (getConfig()?.card?.unified_chat_priority) return asRoster(pickUnifiedWinners(collected));
+  return collected;
 }
 
 /**
  * The roster a chat sees: its own rows plus every global the character has not
- * switched off. With `unified_chat_priority` the session half is a live merge of
- * the linked chats rather than a separate store.
+ * switched off. With `unified_chat_priority` the session half is winners from
+ * the linked chats (priority, then newest updated_at).
  */
 export async function rosterForSession(
   sessionId: string,
@@ -288,7 +295,7 @@ export async function rosterForSession(
     .filter(Boolean);
   let session: CharacterRecord[];
   if (prefer && sources.length) {
-    session = await listMergedSessionCharacters(sources);
+    session = asRoster(pickUnifiedWinners(await listMergedSessionCharacters(sources)));
   } else {
     session = await listCharacters(cleanText(sessionId || '', 200));
   }
@@ -493,6 +500,35 @@ function refList(value: unknown[]): CharacterInput[] {
   });
 }
 
+async function originScopeForUnifiedRow(
+  raw: CharacterInput,
+  sessionIds: unknown[],
+): Promise<string> {
+  const roots = [...new Set(
+    (sessionIds || []).map((s) => cleanText(s, 200)).filter((sid) => sid && sid !== GLOBAL_SCOPE),
+  )];
+  const hinted = cleanText((raw as { scope?: unknown }).scope, 200);
+  if (hinted && roots.includes(hinted)) return hinted;
+  const id = cleanText(raw.id, 80);
+  if (id) {
+    const idHits: string[] = [];
+    for (const sid of roots) {
+      const hit = (await listCharacters(sid)).find((c) => cleanText(c.id, 80) === id);
+      if (hit) idHits.push(sid);
+    }
+    if (idHits.length === 1) return idHits[0]!;
+  }
+  const nameHits: string[] = [];
+  for (const sid of roots) {
+    const list = await listCharacters(sid);
+    if (resolveCharacter(raw.name, list) || (id && list.some((c) => cleanText(c.id, 80) === id))) {
+      nameHits.push(sid);
+    }
+  }
+  if (nameHits.length === 1) return nameHits[0]!;
+  return '';
+}
+
 /**
  * Delete matching roster rows from root chat sessions (unified view delete → roots).
  * Never creates rows.
@@ -505,30 +541,24 @@ export async function deleteMatchingInSessions(
   const refs = refList(deletedRefs);
   if (!refs.length) return { deleted: 0, sessions: 0 };
   const skip = cleanText(skipSessionId, 200);
-  const seen = new Set<string>();
   let deleted = 0;
   let sessions = 0;
-  for (const rawSid of sessionIds || []) {
-    const sid = cleanText(rawSid, 200);
-    if (!sid || sid === skip || sid === GLOBAL_SCOPE || seen.has(sid)) continue;
-    seen.add(sid);
+  const touched = new Set<string>();
+  for (const ref of refs) {
+    const sid = await originScopeForUnifiedRow(ref, sessionIds);
+    if (!sid || sid === skip) continue;
     const list = await listCharacters(sid);
-    let hit = false;
     for (const char of list) {
-      if (!refs.some((ref) => characterMatchesDeleteRef(char, ref))) continue;
+      if (!characterMatchesDeleteRef(char, ref) && cleanText(char.id, 80) !== cleanText(ref.id, 80)) continue;
       await deleteCharacter(sid, char.id);
       deleted += 1;
-      hit = true;
+      touched.add(sid);
     }
-    if (hit) sessions += 1;
   }
+  sessions = touched.size;
   return { deleted, sessions };
 }
 
-/**
- * Patch appearance/identity onto root chats that already have the character.
- * Does not create rows where the identity is missing.
- */
 export async function patchExistingInSessions(
   sessionIds: unknown[],
   characters: unknown[],
@@ -537,37 +567,27 @@ export async function patchExistingInSessions(
   const rows = refList(characters);
   if (!rows.length) return { updated: 0, sessions: 0 };
   const skip = cleanText(skipSessionId, 200);
-  const seen = new Set<string>();
   let updated = 0;
-  let sessions = 0;
-  for (const rawSid of sessionIds || []) {
-    const sid = cleanText(rawSid, 200);
-    if (!sid || sid === skip || sid === GLOBAL_SCOPE || seen.has(sid)) continue;
-    seen.add(sid);
+  const touched = new Set<string>();
+  for (const raw of rows) {
+    const sid = await originScopeForUnifiedRow(raw, sessionIds);
+    if (!sid || sid === skip) continue;
     const list = await listCharacters(sid);
-    let hit = false;
-    for (const raw of rows) {
-      const existing = resolveCharacter(raw.name, list)
-        || (Array.isArray(raw.aliases) ? raw.aliases.map((a) => resolveCharacter(a, list)).find(Boolean) : null)
-        || (cleanText(raw.id, 80) ? list.find((c) => cleanText(c.id, 80) === cleanText(raw.id, 80)) : null);
-      if (!existing) continue;
-      const rec = await upsertCharacter(sid, {
-        ...raw,
-        id: existing.id,
-        name: existing.name || raw.name,
-        appearance: raw.appearance != null ? raw.appearance : '',
-        attire: raw.attire != null ? raw.attire : '',
-        accessories: raw.accessories != null ? raw.accessories : '',
-        original: raw.original != null ? raw.original : '',
-      });
-      if (rec) {
-        updated += 1;
-        hit = true;
-      }
+    const existing = (cleanText(raw.id, 80) ? list.find((c) => cleanText(c.id, 80) === cleanText(raw.id, 80)) : null)
+      || resolveCharacter(raw.name, list)
+      || (Array.isArray(raw.aliases) ? raw.aliases.map((a) => resolveCharacter(a, list)).find(Boolean) : null);
+    if (!existing) continue;
+    const rec = await upsertCharacter(sid, {
+      ...raw,
+      id: existing.id,
+      name: existing.name || raw.name,
+    });
+    if (rec) {
+      updated += 1;
+      touched.add(sid);
     }
-    if (hit) sessions += 1;
   }
-  return { updated, sessions };
+  return { updated, sessions: touched.size };
 }
 
 export async function replaceCharacters(
@@ -576,39 +596,22 @@ export async function replaceCharacters(
   opts: ReplaceOptions = {},
 ): Promise<CharacterRecord[]> {
   const scopeKey = cleanText(scope, 200) || GLOBAL_SCOPE;
-  // Default upsert-only (jobs / appearance patches). UI save passes prune:true
-  // so removed roster rows are actually deleted from the scope.
   const prune = opts.prune === true;
   const rootSessionIds = Array.isArray(opts.rootSessionIds) ? opts.rootSessionIds : [];
-  const merged = mergeCharactersByAlias((characters || []) as CharacterInput[]);
-  // Unified view: write only to existing root chat rows (no create, no __unified__ authority).
   if (rootSessionIds.length) {
-    if (prune) {
-      const keepKeys = new Set<string>();
-      for (const raw of merged) {
-        for (const key of characterAliasKeys(raw)) keepKeys.add(key);
-        const nk = normalizeAlias(raw.name);
-        if (nk) keepKeys.add(nk);
-      }
-      for (const sid of rootSessionIds) {
-        const sidClean = cleanText(sid, 200);
-        if (!sidClean || sidClean === GLOBAL_SCOPE) continue;
-        for (const old of await listCharacters(sidClean)) {
-          const keys = [...characterAliasKeys(old)];
-          const nameKey = normalizeAlias(old.name);
-          if (nameKey) keys.push(nameKey);
-          if (keys.some((k) => keepKeys.has(k))) continue;
-          await deleteCharacter(sidClean, old.id);
-        }
-      }
+    const rows = (characters || [])
+      .map((raw) => normalizeCharacterRecord(raw))
+      .filter((c): c is MigratedCharacter => Boolean(c));
+    const out: CharacterRecord[] = [];
+    for (const raw of rows) {
+      const sid = await originScopeForUnifiedRow(raw, rootSessionIds);
+      if (!sid) continue;
+      const rec = await upsertCharacter(sid, raw);
+      if (rec) out.push(rec);
     }
-    if (merged.length) await patchExistingInSessions(rootSessionIds, merged, '');
-    return asRoster(
-      merged
-        .map((c) => normalizeCharacterRecord(c))
-        .filter((c): c is MigratedCharacter => Boolean(c)),
-    );
+    return out;
   }
+  const merged = mergeCharactersByAlias((characters || []) as CharacterInput[]);
   const out: CharacterRecord[] = [];
   for (const raw of merged) {
     const rec = await upsertCharacter(scopeKey, raw);
@@ -657,43 +660,22 @@ export async function unifyCharacterSessions(
 ): Promise<ApiResult> {
   const target = cleanText(targetSessionId, 200);
   if (!target) return { ok: false, error: { code: 'bad_request', message: 'target_session_id required' } };
-  const collected: CharacterRecord[] = [];
-  const seenScopes = new Set<string>();
-  for (const sid of sourceSessionIds || []) {
-    const scope = cleanText(sid, 200);
-    if (!scope || seenScopes.has(scope)) continue;
-    seenScopes.add(scope);
-    collected.push(...(await listCharacters(scope)));
-  }
-  if (includeTarget && !seenScopes.has(target)) collected.push(...(await listCharacters(target)));
-  const merged = mergeCharactersByAlias(collected);
-  const saved: CharacterRecord[] = [];
-  for (const raw of merged) {
-    const existing = resolveCharacter(raw.name, await listCharacters(target));
-    const rec = await upsertCharacter(target, {
-      ...raw,
-      id: existing?.id || raw.id,
-      priority: Math.max(Number(existing?.priority || 0), Number(raw.priority || 0)),
-    });
-    if (rec) saved.push(rec);
-  }
-  // Unified is a display cache: drop rows that no longer exist in any source chat.
-  // Without this, deletes in chat1 leave ghosts that come back on refresh/rebuild.
-  const keepKeys = new Set<string>();
-  for (const rec of saved) {
-    for (const key of characterAliasKeys(rec)) keepKeys.add(key);
-    const nameKey = normalizeAlias(rec.name);
-    if (nameKey) keepKeys.add(nameKey);
-  }
-  for (const old of await listCharacters(target)) {
-    const keys = [...characterAliasKeys(old)];
-    const nameKey = normalizeAlias(old.name);
-    if (nameKey) keys.push(nameKey);
-    if (keys.some((k) => keepKeys.has(k))) continue;
-    await deleteCharacter(target, old.id);
-  }
-  const payload = await getCharactersPayload(target);
-  return { ...payload, ok: true, merged: saved.length, sources: [...seenScopes] };
+  const sources = [...(sourceSessionIds || [])];
+  if (includeTarget) sources.push(target);
+  const listed = await listUnifiedViewCharacters(sources);
+  const payload = await getCharactersPayload('', '');
+  const appearance = Object.fromEntries(listed.map((c) => [c.name, fullTags(c)]));
+  return {
+    ...payload,
+    ok: true,
+    session_id: target,
+    characters: listed,
+    appearance,
+    merged: listed.length,
+    sources: [...new Set(
+      (sourceSessionIds || []).map((s) => cleanText(s, 200)).filter(Boolean),
+    )],
+  };
 }
 
 export async function getAppearance(sessionId: string): Promise<Record<string, string>> {
@@ -768,8 +750,15 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     rosterForSession(sessionId, unifiedSessionId, characterId, sourceSessionIds);
 
   let roster = await readRoster();
+  const pool = sourceSessionIds.length
+    ? await listMergedSessionCharacters([writeSessionId, ...sourceSessionIds])
+    : roster;
   const newList = [...(tagged.new_characters || [])];
   const covered = new Set(newList.map((raw) => normalizeAlias(raw?.name)));
+  for (const row of pool) {
+    const key = normalizeAlias(row.name);
+    if (key) covered.add(key);
+  }
   const shotLookFallbacks = new Map<string, { appearance: string; attire: string; accessories: string }>();
   const namePartsFrom = (rec: NamePartSource, existing: NamePartSource = null): NameParts => ({
     surname: cleanText(rec?.surname || existing?.surname || '', 200),
@@ -805,20 +794,17 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
       }
       continue;
     }
-    const existing = resolveCharacter(name, roster);
-    if (existing && characterHasAppearance(existing)) continue;
-    // Empty shot wear is caption-only. Do not queue a roster write that would
-    // clear looks (upsert treats present "" as an intentional wipe).
+    const existing = resolveCharacter(name, pool);
+    if (existing) continue;
     if (!shotApp && !shotAttire && !shotAcc) continue;
     newList.push({
-      name: existing?.name || name,
-      // `parseAliasList` always returns an array, so the two fallbacks never run.
-      aliases: parseAliasList(char.aliases) || existing?.aliases || [name],
-      original: cleanText(char.original || char.original_tag || existing?.original || '', 400),
-      appearance: shotApp || existing?.appearance || '',
-      attire: shotAttire || existing?.attire || '',
-      accessories: shotAcc || existing?.accessories || '',
-      ...namePartsFrom(char, existing),
+      name,
+      aliases: parseAliasList(char.aliases) || [name],
+      original: cleanText(char.original || char.original_tag || '', 400),
+      appearance: shotApp,
+      attire: shotAttire,
+      accessories: shotAcc,
+      ...namePartsFrom(char, null),
     });
     covered.add(key);
   }
@@ -837,93 +823,39 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     rec.appearance = buckets.appearance;
     rec.attire = buckets.attire;
     rec.accessories = buckets.accessories;
-    const existing = resolveCharacter(rec.name, roster);
+    const existing = resolveCharacter(rec.name, pool) || resolveCharacter(rec.name, roster);
     const newApp = cleanText(rec.appearance || '');
     const newAttire = cleanText(rec.attire || '');
     const newAccessories = cleanText(rec.accessories || '');
-    const nameParts = namePartsFrom(rec, existing);
-
-    // Looks already on the roster: shot/tagger wear is caption-only (see
-    // composeCharacterCaptionTags). Never overwrite stored attire/accessories.
-    // Still allow appending non-default costumes from new_characters.costumes.
-    if (existing && characterHasAppearance(existing)) {
-      const incomingCostumes = Array.isArray(raw.costumes) ? raw.costumes : [];
-      if (incomingCostumes.length) {
-        const writeScope = existing.scope === GLOBAL_SCOPE ? GLOBAL_SCOPE : (existing.scope || writeSessionId);
-        const merged = mergeCostumeLists(existing.costumes, incomingCostumes, { protectDefault: true });
-        await upsertCharacter(writeScope, {
-          id: existing.id,
-          name: existing.name,
-          costumes: merged,
-          active_costume: existing.active_costume,
-        });
-      }
+    if (existing) {
       roster = await readRoster();
       continue;
     }
-
-    if (existing && !characterHasAppearance(existing)) {
-      // Incomplete → new_characters re-collect overwrites all three look buckets.
-      const writeScope = existing.scope === GLOBAL_SCOPE ? GLOBAL_SCOPE : (existing.scope || writeSessionId);
-      const aliases = parseAliasList([...(existing.aliases || []), ...(rec.aliases || [])]);
-      const appearance = newApp || existing.appearance || '';
-      const original = existing.original || rec.original || '';
-      const incomingCostumes = Array.isArray(raw.costumes) && raw.costumes.length
+    const costumes = mergeCostumeLists(
+      null,
+      Array.isArray(raw.costumes) && raw.costumes.length
         ? raw.costumes
-        : newAttire || newAccessories
-          ? [{ name: 'default', attire: newAttire, accessories: newAccessories }]
-          : [];
-      const costumes = incomingCostumes.length
-        ? mergeCostumeLists(existing.costumes, incomingCostumes, { protectDefault: false })
-        : ensureCostumes(existing).costumes;
-      const attire = newAttire || existing.attire || costumes[0]?.attire || '';
-      const accessories = newAccessories || existing.accessories || costumes[0]?.accessories || '';
-      await upsertCharacter(writeScope, {
-        id: existing.id || rec.id,
-        name: existing.name || rec.name,
-        aliases: aliases.length ? aliases : existing.aliases || rec.aliases,
-        original,
-        costumes,
-        active_costume: 0,
-        attire_locked: wearLocked(existing.attire_locked),
-        accessories_locked: wearLocked(existing.accessories_locked),
-        priority: Math.max(assetPriorityFloor, Number(existing.priority || 0), Number(rec.priority || 0)),
-        ...nameParts,
-        ...(appearance ? { appearance } : {}),
-        ...(attire ? { attire } : {}),
-        ...(accessories ? { accessories } : {}),
-      });
-      roster = await readRoster();
-      continue;
-    }
-
-    if (!existing) {
-      const costumes = mergeCostumeLists(
-        null,
-        Array.isArray(raw.costumes) && raw.costumes.length
-          ? raw.costumes
-          : [{ name: 'default', attire: newAttire, accessories: newAccessories }],
-        { protectDefault: false },
-      );
-      const appearance = newApp || '';
-      const attire = newAttire || costumes[0]?.attire || '';
-      const accessories = newAccessories || costumes[0]?.accessories || '';
-      const { appearance: _dropApp, attire: _dropAtt, accessories: _dropAcc, ...rest } = rec;
-      void _dropApp;
-      void _dropAtt;
-      void _dropAcc;
-      await upsertCharacter(writeSessionId, {
-        ...rest,
-        costumes,
-        active_costume: 0,
-        attire_locked: wearLocked(rec.attire_locked),
-        accessories_locked: wearLocked(rec.accessories_locked),
-        priority: Math.max(assetPriorityFloor, Number(rec.priority || 0)),
-        ...(appearance ? { appearance } : {}),
-        ...(attire ? { attire } : {}),
-        ...(accessories ? { accessories } : {}),
-      });
-    }
+        : [{ name: 'default', attire: newAttire, accessories: newAccessories }],
+      { protectDefault: false },
+    );
+    const appearance = newApp || '';
+    const attire = newAttire || costumes[0]?.attire || '';
+    const accessories = newAccessories || costumes[0]?.accessories || '';
+    const { appearance: _dropApp, attire: _dropAtt, accessories: _dropAcc, ...rest } = rec;
+    void _dropApp;
+    void _dropAtt;
+    void _dropAcc;
+    await upsertCharacter(writeSessionId, {
+      ...rest,
+      costumes,
+      active_costume: 0,
+      attire_locked: wearLocked(rec.attire_locked),
+      accessories_locked: wearLocked(rec.accessories_locked),
+      priority: Math.max(assetPriorityFloor, Number(rec.priority || 0)),
+      ...(appearance ? { appearance } : {}),
+      ...(attire ? { attire } : {}),
+      ...(accessories ? { accessories } : {}),
+    });
     roster = await readRoster();
   }
 
@@ -952,8 +884,7 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
   for (const char of shotChars || []) {
     const name = cleanText(char.name, 200);
     if (!name) continue;
-    const existing = resolveCharacter(name, roster);
-    // Filled looks: shot wear is caption-only. Incomplete looks: wait for new_characters.
+    const existing = resolveCharacter(name, pool) || resolveCharacter(name, roster);
     if (existing) continue;
     {
       const appearance = joinTags(char.label, char.age, char.appearance || '', char.body || '');

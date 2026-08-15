@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { foldCharacterUpsert, mergeSessionAndGlobalRoster, normalizeCharacterRecord } from "../.test-build/roster-merge.mjs";
+import { foldCharacterUpsert, mergeSessionAndGlobalRoster, normalizeCharacterRecord, pickUnifiedWinners } from "../.test-build/roster-merge.mjs";
 
 function helpers() {
   const key = (v) => String(v || "").trim().toLowerCase();
@@ -140,3 +140,32 @@ test("foldCharacterUpsert still clears appearance when the key is present", () =
   const folded = foldCharacterUpsert(base, incoming, { ...omittedLooks(), appearance: true, wear_state: false });
   assert.equal(folded.appearance, "");
 });
+
+test("pickUnifiedWinners keeps the higher-priority row as-is", () => {
+  const winners = pickUnifiedWinners([
+    { name: "민희", appearance: "chat2 look", attire: "dress", priority: 1, updated_at: 200, id: "b", scope: "chat2" },
+    { name: "민희", appearance: "chat1 look", attire: "shirt", priority: 5, updated_at: 10, id: "a", scope: "chat1" },
+  ]);
+  assert.equal(winners.length, 1);
+  assert.equal(winners[0].appearance, "chat1 look");
+  assert.equal(winners[0].attire, "shirt");
+  assert.equal(winners[0].scope, "chat1");
+});
+
+test("pickUnifiedWinners uses newer updated_at when priority ties", () => {
+  const winners = pickUnifiedWinners([
+    { name: "민희", appearance: "old", priority: 1, updated_at: 10, id: "a" },
+    { name: "민희", appearance: "new", priority: 1, updated_at: 90, id: "b" },
+  ]);
+  assert.equal(winners[0].appearance, "new");
+});
+
+test("pickUnifiedWinners does not fold loser looks into the winner", () => {
+  const winners = pickUnifiedWinners([
+    { name: "민희", appearance: "short hair", attire: "", priority: 9, id: "a" },
+    { name: "민희", appearance: "long hair", attire: "kimono", priority: 1, id: "b" },
+  ]);
+  assert.equal(winners[0].appearance, "short hair");
+  assert.equal(winners[0].attire, "");
+});
+

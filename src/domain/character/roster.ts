@@ -10,7 +10,7 @@
 import type { ShotCharacter } from '../../core/types.ts';
 import { cleanText, compactText, hashCode, joinTags, normalizeAlias, parseAliasList } from '../../core/util/text.ts';
 import type { CharacterInput, MigratedCharacter } from './identity.ts';
-import { mergeCharacterView, migrateCharacter, resolveCharacterIdentity, normalizeGender } from './identity.ts';
+import { mergeCharacterView, migrateCharacter, resolveCharacterIdentity, normalizeGender, characterMatchesIdentity } from './identity.ts';
 
 /** Injected helpers for `mergeSessionAndGlobalRoster`; every one has a no-op default. */
 export interface RosterMergeHelpers {
@@ -104,6 +104,41 @@ export function characterAliasKeys(char: CharacterInput | null | undefined): Set
   const name = normalizeAlias(char?.name);
   if (name) keys.add(name);
   return keys;
+}
+
+/**
+ * Same-person groups keep the winning row as-is (no look folding).
+ * Winner: higher `priority`, then newer `updated_at`.
+ */
+export function pickUnifiedWinners(
+  characters: CharacterInput[] | null | undefined,
+): MigratedCharacter[] {
+  const records = (characters || []).map((character) => migrateCharacter(character));
+  const groups: MigratedCharacter[][] = [];
+  const assigned = new Set<number>();
+  for (let i = 0; i < records.length; i += 1) {
+    if (assigned.has(i)) continue;
+    const group = [records[i]];
+    assigned.add(i);
+    for (let j = i + 1; j < records.length; j += 1) {
+      if (assigned.has(j)) continue;
+      if (group.some((member) => characterMatchesIdentity(member, records[j]))) {
+        assigned.add(j);
+        group.push(records[j]);
+      }
+    }
+    groups.push(group);
+  }
+  return groups.map((group) => {
+    const sorted = [...group].sort((a, b) => {
+      const priority = Number(b.priority || 0) - Number(a.priority || 0);
+      if (priority) return priority;
+      const updated = Number(b.updated_at || 0) - Number(a.updated_at || 0);
+      if (updated) return updated;
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
+    return sorted[0];
+  });
 }
 
 /** One row per person: rows that are the same character fold into their best record. */

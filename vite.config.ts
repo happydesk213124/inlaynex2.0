@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.69';
+const PLUGIN_VERSION = '2.3.70';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -720,6 +720,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.70</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>에셋 픽: 이름 상위만 연다 (정확일치 → default → normal → profile → smil*). 무메타 표정 덤프가 읽기 예산을 먹지 않음</li>
+            <li>가져오기: 기본 전체해제. 로어 옆은 키, CharInfo는 charinfo. 메타 없으면 최우선 1장 비전 → 로어 본문</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.69</strong>
@@ -6275,7 +6282,7 @@ const VENDOR_CHAR_IMPORT_EVT_PATCH =
           const nm = h(it.name || id);
           const bd = h(it.badge || "");
           const pv = h(it.preview || "");
-          return \`<label style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer"><input type="checkbox" data-imp-pick data-kind="\${h(it.kind)}" data-id="\${h(id)}" \${kind==="persona" ? "" : "checked"}><span style="flex:1;min-width:0"><strong>\${nm}</strong> <span class="muted">\${bd}</span><div class="muted" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\${pv}</div></span></label>\`;
+          return \`<label style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer"><input type="checkbox" data-imp-pick data-kind="\${h(it.kind)}" data-id="\${h(id)}"><span style="flex:1;min-width:0"><strong>\${nm}</strong> <span class="muted">\${bd}</span><div class="muted" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\${pv}</div></span></label>\`;
         }).join("") || '<div class="muted">항목 없음</div>';
         veil.innerHTML = \`<div style="background:#1b2330;border-radius:14px 14px 0 0;width:min(560px,100%);max-height:86vh;display:flex;flex-direction:column;padding:14px">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>\${kind==="persona"?"페소에서 (글로벌)":"가져오기"}</strong>
@@ -8539,8 +8546,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.69",
-    body: "가져오기=에셋 룩과 동일. 업데이트 내역 탭 참고."
+    title: "2.3.70",
+    body: "에셋은 이름 상위만. 가져오기 기본 해제. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

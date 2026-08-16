@@ -200,9 +200,14 @@ test('filterAssetTriggersForUnfilledLooks drops filled character triggers only',
   assert.deepEqual([...out].sort(), ['성당', '세노이', 'senoy'].sort());
 });
 
-test('asset priority: exact > preferred look > shorter prefix', () => {
+test('asset priority: exact > default > normal > profile > smil* > other', () => {
   const tr = 'senoy';
   assert.ok(assetPriorityForTrigger('Senoy.webp', tr) > assetPriorityForTrigger('Senoy-normal.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy-default.webp', tr) > assetPriorityForTrigger('Senoy-normal.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy-normal.webp', tr) > assetPriorityForTrigger('Senoy-profile.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy-profile.webp', tr) > assetPriorityForTrigger('Senoy-smile.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy-smile.webp', tr) > assetPriorityForTrigger('Senoy-smiling.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy-smiling.webp', tr) > assetPriorityForTrigger('Senoy-angry.webp', tr));
   assert.ok(assetPriorityForTrigger('Senoy-normal.webp', tr) > assetPriorityForTrigger('Senoy-angry.webp', tr));
   assert.ok(assetPriorityForTrigger('Senoy-default.webp', tr) > assetPriorityForTrigger('Senoy-angry-pregnant.webp', tr));
   assert.ok(assetPriorityForTrigger('Senoy-a.webp', tr) > assetPriorityForTrigger('Senoy-angry-pregnant.webp', tr));
@@ -229,11 +234,35 @@ test('pickAssetsPerTrigger takes 4 per trigger preferring exact/normal/short', (
   }));
   const picked = pickAssetsPerTrigger(scored, ['juwon', 'naru']);
   assert.equal(picked.length, 8);
-  // juwon: exact, then preferred (default/normal)
   assert.equal(picked[0].name, 'Juwon.png');
-  assert.ok(['Juwon_default.png', 'Juwon_normal.png'].includes(picked[1].name));
-  // naru: preferred default/normal/smile before angry/cry
-  assert.ok(picked.slice(4, 8).some((p) => p.name === 'naru_default.png' || p.name === 'naru_normal.png' || p.name === 'naru_smile.png'));
+  assert.equal(picked[1].name, 'Juwon_default.png');
+  assert.equal(picked[2].name, 'Juwon_normal.png');
+  assert.deepEqual(picked.slice(4, 7).map((p) => p.name), [
+    'naru_default.png',
+    'naru_normal.png',
+    'naru_smile.png',
+  ]);
+});
+
+test('pickAssetsPerTrigger does not spend a dump of emotion files before another character', () => {
+  const stephanie = Array.from({ length: 40 }, (_, i) => ({
+    name: `stephanie_emotion${i}.png`,
+    key: `st${i}`,
+    score: 1,
+    hits: ['stephanie'],
+  }));
+  const scored = [
+    ...stephanie,
+    { name: 'sora_default.png', key: 'sora', score: 1, hits: ['sora'] },
+    { name: 'shiro_default.png', key: 'shiro', score: 1, hits: ['shiro'] },
+  ].map((row) => ({
+    ...row,
+    score: assetPriorityForTrigger(row.name, row.hits[0]),
+  }));
+  const picked = pickAssetsPerTrigger(scored, ['stephanie', 'sora', 'shiro']);
+  assert.equal(picked.filter((p) => p.hits.includes('stephanie')).length, 4);
+  assert.ok(picked.some((p) => p.name === 'sora_default.png'));
+  assert.ok(picked.some((p) => p.name === 'shiro_default.png'));
 });
 
 test('promptFromNaiMetadata merges base and char captions', () => {

@@ -155,7 +155,7 @@ Depends on: `characters`, `settings`, `asset-tags`.
 
 ## `char-import.ts`
 
-Manual roster fill from the character tab (페소에서 / 가져오기). Lore picks call `collectAssetNaiTags` then `buildCharacterLooksMessages` (same as the job looks prepass, including previews). Persona/CharInfo with NAI meta pack tags the same way and save through `mergeRosterFromTagged`.
+Manual roster fill from the character tab (페소에서 / 가져오기). Lore picks call `collectAssetNaiTags` then `buildCharacterLooksMessages` (same as the job looks prepass, including previews). Matching assets with no NAI meta use `collectBestLookAssets` (one best-ranked file) + autotag, then lore body. Persona/CharInfo with NAI meta pack tags the same way and save through `mergeRosterFromTagged`. Picker lore `badge` is the key list; CharInfo is `charinfo`.
 
 ```ts
 export async function listImportPicker(kind: string, characterId: string): Promise<ApiResult>;

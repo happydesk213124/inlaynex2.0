@@ -20,13 +20,12 @@ import {
   ASSETS_PER_TRIGGER,
   assetBasenameCompact,
   assetMatchTriggers,
-  assetPriorityForTrigger,
   compactAssetKey,
   filterAssetTriggersForUnfilledLooks,
   loreKeysByCompactTrigger,
   orderTriggersForAssetPick,
-  pickAssetsPerTrigger,
   originalTagFromPlains,
+  rankPoolForTrigger,
   scoreAssetName,
 } from '../domain/nai-meta/match.ts';
 import { characterHasAppearance } from '../domain/character/tags.ts';
@@ -319,21 +318,10 @@ async function scoreAndReadAssets(
     return true;
   };
 
-  // Prefer the planned picks (exact/normal first), then fall through the rest of that trigger's pool.
-  const planned = new Set(pickAssetsPerTrigger(scored, triggers, ASSETS_PER_TRIGGER).map((a) => a.key));
+  // Top names only — do not walk the rest of an emotion dump after those miss.
   for (const tr of orderTriggersForAssetPick(triggers)) {
     if (packedRows.length >= MAX_ASSETS_HARD) break;
-    const pool = scored
-      .filter((a) => a.hits.includes(tr))
-      .sort((a, b) => {
-        const pa = planned.has(a.key) ? 1 : 0;
-        const pb = planned.has(b.key) ? 1 : 0;
-        if (pb !== pa) return pb - pa;
-        return (
-          assetPriorityForTrigger(b.name, tr) - assetPriorityForTrigger(a.name, tr)
-          || a.name.localeCompare(b.name)
-        );
-      });
+    const pool = rankPoolForTrigger(scored, tr).slice(0, ASSETS_PER_TRIGGER);
     let got = 0;
     for (const asset of pool) {
       if (got >= ASSETS_PER_TRIGGER) break;
@@ -463,6 +451,53 @@ export async function collectAssetNaiTags(
   return { block, packed, weightMap, previews, previewTargets, originalHints };
 }
 
+export interface BestLookAsset {
+  trigger: string;
+  name: string;
+  key: string;
+  bytes: Uint8Array;
+}
+
+/** Highest-ranked matching file per trigger, even when it has no NAI meta. */
+export async function collectBestLookAssets(
+  triggerKeys: readonly unknown[],
+  opts: { roster?: CharacterInput[] | null } = {},
+): Promise<BestLookAsset[]> {
+  const triggers = filterAssetTriggersForUnfilledLooks(triggerKeys, opts.roster);
+  if (!triggers.length) return [];
+  if (!hostHas('getCharacter') || !hostHas('readImage')) return [];
+
+  let character: unknown;
+  try {
+    character = await risuHost()!.getCharacter!();
+  } catch (err) {
+    dbg('asset-tags.best_look.fail', { message: String((err as Error)?.message || err) }, 'warn');
+    return [];
+  }
+
+  const pool = await listSearchableAssets(character);
+  if (!pool.assets.length) return [];
+
+  const scored = pool.assets
+    .map((a) => {
+      const s = scoreAssetName(a.name, triggers);
+      return s ? { ...a, score: s.score, hits: s.hits } : null;
+    })
+    .filter(Boolean) as ScoredAsset[];
+
+  const out: BestLookAsset[] = [];
+  const seen = new Set<string>();
+  for (const tr of orderTriggersForAssetPick(triggers)) {
+    const top = rankPoolForTrigger(scored, tr).find((a) => !seen.has(a.key));
+    if (!top) continue;
+    const bytes = await readAssetBytes(top.key);
+    if (!bytes?.length) continue;
+    seen.add(top.key);
+    out.push({ trigger: tr, name: top.name, key: top.key, bytes });
+  }
+  return out;
+}
+
 /**
  * Debug probe: same pipeline as collect, but always returns a readable report.
  * Applies character lorefilter first (same as job head) when character_id is set.
@@ -552,7 +587,7 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
     roster_incomplete_names: rosterIncomplete,
     note:
       'lorefilter whitelist applied first when character_id set (same as job); '
-      + 'leading filename words == trigger words; per trigger ≤4; exact > default|normal|profile|smile > shorter; '
+      + 'leading filename words == trigger words; per trigger ≤4 reads; exact > default > normal > profile > smil* > shorter; '
       + 'common tags computed per trigger group; ALL keys of a lit lore entry become asset triggers (see lore_entries_fired.sibling_keys_not_in_message)',
   };
 
@@ -616,13 +651,7 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
   }));
   // Which trigger pulled which files (answers “why is Saviel/MISC here?”).
   report.per_trigger_picks = orderTriggersForAssetPick(matchTriggers).map((tr) => {
-    const poolForTr = scored
-      .filter((a) => a.hits.includes(tr))
-      .sort(
-        (a, b) =>
-          assetPriorityForTrigger(b.name, tr) - assetPriorityForTrigger(a.name, tr)
-          || a.name.localeCompare(b.name),
-      );
+    const poolForTr = rankPoolForTrigger(scored, tr);
     return {
       trigger: tr,
       lore_keys: loreKeysByCompactTrigger(triggerPool, [tr], relatedGroups).get(tr) || [],

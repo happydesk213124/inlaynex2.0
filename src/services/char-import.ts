@@ -1,6 +1,7 @@
 /**
  * Manual roster fill from personas / character-lore / CharInfo.
  * Lore picks reuse the job asset scan + char_looks prepass.
+ * No NAI meta → one best-ranked asset via autotag, then lore body.
  * Persona / CharInfo with NAI meta use the same looks messages + mergeRoster.
  */
 import { dbg } from '../core/debug';
@@ -21,15 +22,17 @@ import {
   tagsFromImageBytes,
   type PackedAssetTags,
 } from '../domain/nai-meta/index';
-import { compactAssetKey, originalTagFromPlains } from '../domain/nai-meta/match';
+import { assetMatchTriggers, compactAssetKey, originalTagFromPlains } from '../domain/nai-meta/match';
 import { prepareAutotagImage } from '../core/util/image';
 import type { LlmContentPart, LlmMessage } from '../providers/llm/transform';
 import { callLlm } from '../providers/llm/client';
 import {
   applyCharRefsFromPreviewTargets,
   collectAssetNaiTags,
+  collectBestLookAssets,
   setLastAssetWeightMap,
   type AssetLookPreview,
+  type BestLookAsset,
 } from './asset-tags';
 import { getConfig } from './context';
 import {
@@ -239,6 +242,15 @@ async function foldPickAliases(scope: string, rows: ResolvedRow[]): Promise<void
       name: hit.name,
       aliases: parseAliasList([...(hit.aliases || []), ...r.aliases, r.name, hit.name]),
     });
+  }
+}
+
+function assignLookBytes(rows: ResolvedRow[], looks: BestLookAsset[]): void {
+  for (const row of rows) {
+    if (row.bytes?.length) continue;
+    const keys = new Set(assetMatchTriggers(parseAliasList([row.name, ...row.aliases])));
+    const hit = looks.find((l) => keys.has(compactAssetKey(l.trigger, 200)));
+    if (hit) row.bytes = hit.bytes;
   }
 }
 
@@ -476,7 +488,11 @@ export async function listImportPicker(kind: string, characterId: string): Promi
       id,
       name: cleanText(row?.title, 200) || id,
       preview: cleanText(row?.content, 240),
-      badge: '캐릭로어',
+      badge: (Array.isArray(row?.keys) ? row.keys : [])
+        .map((k) => cleanText(k, 80))
+        .filter(Boolean)
+        .join(', ')
+        .slice(0, 160),
       has_image: false,
     };
   });
@@ -488,7 +504,7 @@ export async function listImportPicker(kind: string, characterId: string): Promi
     id: 'charinfo',
     name: charName,
     preview: desc.slice(0, 240),
-    badge: 'CharInfo',
+    badge: 'charinfo',
     has_image: Boolean(cleanText(ch?.image, 400)),
   };
   return {
@@ -653,8 +669,17 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
 
   await runLoreAssetLooks(writeScope, characterId, lore);
 
+  const loreNeedImg = (await stillMissing(writeScope, characterId, lore))
+    .filter((r) => !r.bytes?.length);
+  if (loreNeedImg.length) {
+    const triggerKeys = parseAliasList(loreNeedImg.flatMap((r) => [r.name, ...r.aliases]));
+    const rosterAfter = await rosterForSession(writeScope, '', characterId, []);
+    const looks = await collectBestLookAssets(triggerKeys, { roster: rosterAfter });
+    assignLookBytes(loreNeedImg, looks);
+  }
+
   let visionToText = 0;
-  const hostLore = own.length ? await fetchHostLorebookEntries() : [];
+  const hostLore = own.length || lore.length ? await fetchHostLorebookEntries() : [];
 
   const meta = (await stillMissing(writeScope, characterId, own)).filter((r) => r.plains.length);
   const metaChunks = chunk(meta, META_PER);
@@ -672,7 +697,7 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
     }
   });
 
-  const vision = (await stillMissing(writeScope, characterId, own))
+  const vision = (await stillMissing(writeScope, characterId, [...own, ...lore]))
     .filter((r) => !r.plains.length && r.bytes?.length);
   const visFail: ResolvedRow[] = [];
   const visChunks = chunk(vision, VISION_PER);
@@ -682,13 +707,8 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
   });
   visionToText = visFail.length;
 
-  const needText = [
-    ...(await stillMissing(writeScope, characterId, lore)),
-    ...(await stillMissing(writeScope, characterId, own)).filter((r) => !r.plains.length && !r.bytes?.length),
-    ...visFail,
-  ];
   const seen = new Set<string>();
-  const textRows = needText.filter((r) => {
+  const textRows = (await stillMissing(writeScope, characterId, work)).filter((r) => {
     const k = `${r.pick.kind}:${r.pick.id}`;
     if (seen.has(k)) return false;
     seen.add(k);
@@ -702,7 +722,7 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
   const leftover = await stillMissing(writeScope, characterId, work);
   const filled = work.length - leftover.length;
   const afterAll = await rosterForSession(writeScope, '', characterId, []);
-  await seedRefsFromRows(own, afterAll);
+  await seedRefsFromRows(work, afterAll);
 
   dbg('char-import.done', {
     scope: writeScope,

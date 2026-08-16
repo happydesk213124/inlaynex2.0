@@ -11,7 +11,7 @@
  *
  * Per-trigger pick order (higher first), up to {@link ASSETS_PER_TRIGGER}:
  * 1. Exact word-list match (e.g. `Senoy.webp`)
- * 2. Prefix + preferred look word (default/normal/profile/smile); shorter wins
+ * 2. Prefix + look word: default > normal > profile > smil* (smile/smiling)
  * 3. Prefix only; shorter name wins
  */
 import { cleanText } from '../../core/util/text.ts';
@@ -23,8 +23,13 @@ const MIN_LATIN_HANJA_LEN = 3;
 /** Hangul syllables + jamo (covers NFD names before NFC normalize). */
 const HANGUL_RE = /[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]/;
 
-/** Preferred look keywords in the filename (rank 2). */
-const PREFERRED_LOOK = ['default', 'normal', 'profile', 'smile'] as const;
+/** Look-word bands after exact match (higher first). `smil` is a prefix. */
+const LOOK_BANDS: ReadonlyArray<{ rank: number; test: (word: string) => boolean }> = [
+  { rank: 4, test: (w) => w === 'default' },
+  { rank: 3, test: (w) => w === 'normal' },
+  { rank: 2, test: (w) => w === 'profile' },
+  { rank: 1, test: (w) => w.startsWith('smil') },
+];
 
 /** Split basename / trigger / tag on anything that is not a letter or number. */
 const WORD_SPLIT = /[^\p{L}\p{N}]+/gu;
@@ -222,13 +227,19 @@ export interface AssetMatchScore {
   hits: string[];
 }
 
-function hasPreferredLook(words: readonly string[]): boolean {
-  return PREFERRED_LOOK.some((w) => words.includes(w));
+function lookBand(words: readonly string[]): number {
+  let best = 0;
+  for (const word of words) {
+    for (const band of LOOK_BANDS) {
+      if (band.test(word) && band.rank > best) best = band.rank;
+    }
+  }
+  return best;
 }
 
 /**
  * Priority within one trigger's candidate pool (higher = better).
- * 1 exact words → 2 preferred look words → 3 shorter prefix → 4 longer prefix.
+ * exact → default → normal → profile → smil* → other prefix (shorter wins).
  */
 export function assetPriorityForTrigger(name: unknown, trigger: string): number {
   const trigWords = assetNameWords(trigger);
@@ -237,12 +248,26 @@ export function assetPriorityForTrigger(name: unknown, trigger: string): number 
   if (!wordsStartWith(fileWords, trigWords)) return -1;
 
   const exact = fileWords.length === trigWords.length;
-  const preferred = hasPreferredLook(fileWords);
+  const band = lookBand(fileWords);
   const shortBonus = Math.max(0, 2_000 - fileWords.join('').length);
 
-  if (exact) return 3_000_000 + shortBonus;
-  if (preferred) return 2_000_000 + shortBonus;
+  if (exact) return 5_000_000 + shortBonus;
+  if (band) return 1_000_000 + band * 200_000 + shortBonus;
   return 1_000_000 + shortBonus;
+}
+
+/** Name-rank a trigger's pool (highest first). Caller slices before reading bytes. */
+export function rankPoolForTrigger<T extends RankedAssetCandidate>(
+  scored: readonly T[],
+  trigger: string,
+): T[] {
+  return scored
+    .filter((a) => a.hits.includes(trigger))
+    .sort(
+      (a, b) =>
+        assetPriorityForTrigger(b.name, trigger) - assetPriorityForTrigger(a.name, trigger)
+        || a.name.localeCompare(b.name),
+    );
 }
 
 /** Longer trigger wins when several prefix-match the same file. */
@@ -324,13 +349,7 @@ export function pickAssetsPerTrigger<T extends RankedAssetCandidate>(
   const seen = new Set<string>();
 
   for (const tr of orderedTriggers) {
-    const pool = scored
-      .filter((a) => a.hits.includes(tr) && !seen.has(a.key))
-      .sort(
-        (a, b) =>
-          assetPriorityForTrigger(b.name, tr) - assetPriorityForTrigger(a.name, tr)
-          || a.name.localeCompare(b.name),
-      );
+    const pool = rankPoolForTrigger(scored, tr).filter((a) => !seen.has(a.key));
 
     let got = 0;
     for (const asset of pool) {

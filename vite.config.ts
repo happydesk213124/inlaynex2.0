@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.62';
+const PLUGIN_VERSION = '2.3.63';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -720,6 +720,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.63</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>캐릭터 수정 팝업: 붙여넣기(글자·이미지)가 채팅에 포커스 남아도 동작</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.62</strong>
@@ -5964,6 +5970,8 @@ const VENDOR_CHAR_REF_TAB_EVT_PATCH =
       const r = Array.from(a.clipboardData?.items || []).find((p) => p.type.startsWith("image/"));
       if (!r) return;
       if (t.charRefFocus.scope === "modal" && t.charRefFocus.id === "char-edit") {
+        const ae = document.activeElement, tag = String(ae?.tagName || "").toLowerCase();
+        if (tag === "textarea" || tag === "input" || ae?.isContentEditable) return;
         const run = t.charEditUi?.uploadRef;
         if (typeof run != "function") return;
         a.preventDefault();
@@ -6072,6 +6080,7 @@ const VENDOR_CHAR_REF_EDIT_EVT_PATCH =
         };
         const btn = i.querySelector("[data-ce-ref]");
         if (btn) btn.textContent = "붙여넣기 대기";
+        try { i.setAttribute("tabindex", "-1"); i.focus?.(); } catch {}
       }), i.querySelector("[data-ce-ref]")?.addEventListener("dblclick", (f) => {
         f.preventDefault(), f.stopPropagation();
         const inp = document.createElement("input");
@@ -6121,6 +6130,8 @@ const VENDOR_AUTOTAG_WINDOW_PASTE_PATCH =
       const r = Array.from(a.clipboardData?.items || []).find((p) => p.type.startsWith("image/"));
       if (!r) return;
       if (t.autotagFocus.scope === "modal") {
+        const ae = document.activeElement, tag = String(ae?.tagName || "").toLowerCase();
+        if (tag === "textarea" || tag === "input" || ae?.isContentEditable) return;
         const id = String(t.autotagFocus.id || "");
         const run = id === "char-edit" ? t.charEditUi?.runAutotag : id === "char-create" ? t.charCreateUi?.runAutotag : null;
         if (typeof run != "function") return;
@@ -6152,7 +6163,24 @@ const VENDOR_CHAR_EDIT_MODAL_PASTE_NEEDLE =
     });
     const U = async () => {`;
 const VENDOR_CHAR_EDIT_MODAL_PASTE_PATCH =
-  `    });
+  `    }), i.addEventListener("paste", async (f) => {
+      const ae = f.target || document.activeElement, tag = String(ae?.tagName || "").toLowerCase();
+      if (tag === "textarea" || tag === "input" || ae?.isContentEditable) return;
+      const x = Array.from(f.clipboardData?.items || []).find((R) => R.type.startsWith("image/"));
+      if (!x) return;
+      const I = x.getAsFile();
+      if (!I) return;
+      if (t.charRefFocus?.scope === "modal" && t.charRefFocus?.id === "char-edit") {
+        const run = t.charEditUi?.uploadRef;
+        if (typeof run != "function") return;
+        f.preventDefault(), f.stopPropagation();
+        await run(I);
+        return;
+      }
+      if (!(t.autotagFocus?.scope === "modal" && t.autotagFocus?.id === "char-edit")) return;
+      f.preventDefault(), f.stopPropagation();
+      await d(I);
+    });
     const U = async () => {`;
 
 const VENDOR_CHAR_EDIT_UI_PASTE_NEEDLE =
@@ -6162,7 +6190,11 @@ const VENDOR_CHAR_EDIT_UI_PASTE_NEEDLE =
       openedContainer: r,
       roster: n,
       entry: e
-    };`;
+    };
+    try {
+      s?.focus?.();
+    } catch {
+    }`;
 const VENDOR_CHAR_EDIT_UI_PASTE_PATCH =
   `    }), t.charEditUi = {
       root: i,
@@ -6173,9 +6205,55 @@ const VENDOR_CHAR_EDIT_UI_PASTE_PATCH =
       runAutotag: d,
       uploadRef: typeof t._ceUploadRef == "function" ? t._ceUploadRef : null
     };
-    t._ceUploadRef = null;`;
+    t._ceUploadRef = null;
+    try {
+      i.setAttribute("tabindex", "-1");
+      const grab = () => { try { (p || s || i).focus?.(); } catch {} };
+      grab();
+      if (typeof requestAnimationFrame == "function") requestAnimationFrame(() => { grab(); setTimeout(grab, 80); });
+      else setTimeout(grab, 80);
+    } catch {}
+    if (!t._modalHostPasteBound) {
+      t._modalHostPasteBound = !0;
+      try {
+        const host = window.parent && window.parent !== window ? window.parent : null;
+        host && host.addEventListener("paste", async (ev) => {
+          if (!t.charEditUi?.root?.isConnected && !t.charCreateUi?.root?.isConnected) return;
+          const focus = t.charRefFocus?.scope === "modal" ? t.charRefFocus : t.autotagFocus?.scope === "modal" ? t.autotagFocus : null;
+          if (!focus) return;
+          const item = Array.from(ev.clipboardData?.items || []).find((R) => R.type.startsWith("image/"));
+          if (!item) return;
+          const file = item.getAsFile();
+          if (!file) return;
+          ev.preventDefault();
+          try { ev.stopPropagation(); } catch {}
+          const id = String(focus.id || "");
+          if (t.charRefFocus?.scope === "modal" && t.charRefFocus?.id === id) {
+            const run = id === "char-edit" ? t.charEditUi?.uploadRef : null;
+            if (typeof run == "function") await run(file);
+            return;
+          }
+          const run = id === "char-edit" ? t.charEditUi?.runAutotag : id === "char-create" ? t.charCreateUi?.runAutotag : null;
+          if (typeof run == "function") await run(file);
+        }, !0);
+      } catch {}
+    }`;
 
 /** Create modal: same window-paste routing as edit. */
+const VENDOR_CHAR_EDIT_AUTOTAG_ARM_NEEDLE =
+  `    }), b?.addEventListener("click", (f) => {
+      f.preventDefault(), f.stopPropagation();
+      const x = t.autotagFocus?.scope === "modal" && t.autotagFocus?.id === "char-edit";
+      j(!x);
+    }),`;
+const VENDOR_CHAR_EDIT_AUTOTAG_ARM_PATCH =
+  `    }), b?.addEventListener("click", (f) => {
+      f.preventDefault(), f.stopPropagation();
+      const x = t.autotagFocus?.scope === "modal" && t.autotagFocus?.id === "char-edit";
+      j(!x);
+      try { i.setAttribute("tabindex", "-1"); if (!x) i.focus?.(); } catch {}
+    }),`;
+
 const VENDOR_CHAR_CREATE_MODAL_PASTE_NEEDLE =
   `    }), root.addEventListener("paste", async (ev) => {
       if (!(t.autotagFocus?.scope === "modal" && t.autotagFocus?.id === "char-create")) return;
@@ -8541,8 +8619,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.62",
-    body: "해시 재부착 후 말풍선 삽화. 업데이트 내역 탭 참고."
+    title: "2.3.63",
+    body: "수정 팝업 붙여넣기. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11588,8 +11666,9 @@ const loadVendorUi = (): string => {
     [VENDOR_CHAR_REF_TAB_EVT_NEEDLE, 'char ref tab events'],
     [VENDOR_CHAR_REF_EDIT_EVT_NEEDLE, 'char ref edit events'],
     [VENDOR_AUTOTAG_WINDOW_PASTE_NEEDLE, 'autotag window paste modal'],
-    [VENDOR_CHAR_EDIT_MODAL_PASTE_NEEDLE, 'char edit drop element paste'],
+    [VENDOR_CHAR_EDIT_MODAL_PASTE_NEEDLE, 'char edit modal paste keep'],
     [VENDOR_CHAR_EDIT_UI_PASTE_NEEDLE, 'char edit ui paste hooks'],
+    [VENDOR_CHAR_EDIT_AUTOTAG_ARM_NEEDLE, 'char edit autotag arm focus'],
     [VENDOR_CHAR_CREATE_MODAL_PASTE_NEEDLE, 'char create drop element paste'],
     [VENDOR_CHAR_CREATE_UI_PASTE_NEEDLE, 'char create ui paste hooks'],
     [VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, 'char create wear attire'],
@@ -11943,6 +12022,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHAR_REF_EDIT_EVT_NEEDLE, VENDOR_CHAR_REF_EDIT_EVT_PATCH)
     .replace(VENDOR_CHAR_EDIT_MODAL_PASTE_NEEDLE, VENDOR_CHAR_EDIT_MODAL_PASTE_PATCH)
     .replace(VENDOR_CHAR_EDIT_UI_PASTE_NEEDLE, VENDOR_CHAR_EDIT_UI_PASTE_PATCH)
+    .replace(VENDOR_CHAR_EDIT_AUTOTAG_ARM_NEEDLE, VENDOR_CHAR_EDIT_AUTOTAG_ARM_PATCH)
     .replace(VENDOR_CHAR_CREATE_MODAL_PASTE_NEEDLE, VENDOR_CHAR_CREATE_MODAL_PASTE_PATCH)
     .replace(VENDOR_CHAR_CREATE_UI_PASTE_NEEDLE, VENDOR_CHAR_CREATE_UI_PASTE_PATCH)
     .replace(VENDOR_CHAR_CREATE_WEAR_ATTIRE_NEEDLE, VENDOR_CHAR_CREATE_WEAR_ATTIRE_PATCH)

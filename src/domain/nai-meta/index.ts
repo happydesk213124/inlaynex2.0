@@ -114,6 +114,7 @@ export interface NaiImageInspect {
   textKeys: string[];
   stealthHead: string;
   promptLen: number;
+  promptSample: string;
   reason: string;
 }
 
@@ -141,23 +142,24 @@ export async function inspectNaiImageBytes(bytes: BytesLike): Promise<NaiImageIn
       textKeys,
       stealthHead,
       promptLen: 0,
+      promptSample: '',
       reason: !pngDecode && kind === 'png' ? 'png_decode_fail' : 'no_stealth',
     };
   }
   const prompt = promptFromNaiMetadata(meta);
   if (!prompt.trim()) {
     return {
-      tags: null, kind, colorType, pngDecode, textKeys, stealthHead, promptLen: 0, reason: 'empty_prompt',
+      tags: null, kind, colorType, pngDecode, textKeys, stealthHead, promptLen: 0, promptSample: '', reason: 'empty_prompt',
     };
   }
   const filtered = filterAssetPromptTags(prompt);
   if (!filtered.plains.length) {
     return {
-      tags: null, kind, colorType, pngDecode, textKeys, stealthHead, promptLen: prompt.length, reason: 'filtered_empty',
+      tags: null, kind, colorType, pngDecode, textKeys, stealthHead, promptLen: prompt.length, promptSample: prompt.slice(0, 180), reason: 'filtered_empty',
     };
   }
   return {
-    tags: filtered, kind, colorType, pngDecode, textKeys, stealthHead, promptLen: prompt.length, reason: 'ok',
+    tags: filtered, kind, colorType, pngDecode, textKeys, stealthHead, promptLen: prompt.length, promptSample: prompt.slice(0, 180), reason: 'ok',
   };
 }
 

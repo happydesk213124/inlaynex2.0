@@ -261,8 +261,8 @@ export function filterAssetPromptTags(prompt: unknown): FilteredPromptTags {
 
   for (const token of splitNaiPromptTokens(prompt)) {
     if (isNegativeWeight(token)) continue;
-    if (containsArtist(token)) continue;
     for (const { plain, restore } of expandTokenPlains(token)) {
+      if (containsArtist(plain) || containsArtist(restore)) continue;
       const key = plain.toLowerCase();
       if (shouldDropPlain(key)) continue;
       if (!weightMap.has(key)) weightMap.set(key, restore);

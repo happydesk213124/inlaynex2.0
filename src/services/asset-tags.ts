@@ -304,6 +304,7 @@ async function scoreAndReadAssets(
           text_keys: inspected.textKeys,
           stealth_head: inspected.stealthHead,
           prompt_len: inspected.promptLen,
+          prompt_sample: inspected.promptSample,
         });
         return false;
       }

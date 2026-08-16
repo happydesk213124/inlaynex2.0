@@ -85,6 +85,15 @@ test('filterAssetPromptTags drops artist/year/quality/negatives and strips empha
   assert.equal(weightMap.get('dark green hair'), 'dark green hair');
 });
 
+test('filterAssetPromptTags keeps looks when artist shares a brace group', () => {
+  const { plains } = filterAssetPromptTags(
+    '{best quality, 0.5::artist:foo::, 1girl, white hair, red eyes}',
+  );
+  assert.ok(plains.includes('1girl'));
+  assert.ok(plains.includes('white hair'));
+  assert.ok(!plains.some((p) => /artist/i.test(p)));
+});
+
 test('filterAssetPromptTags drops *background and straight-on variants', () => {
   const { plains } = filterAssetPromptTags(
     'blonde hair, white background, simple-background, pink background, straight on, straight-on, straighton, blue eyes',

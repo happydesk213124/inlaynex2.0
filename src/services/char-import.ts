@@ -113,11 +113,19 @@ async function looksSystem(): Promise<string> {
   return [looks, how].filter(Boolean).join('\n\n');
 }
 
-async function callLooks(messages: LlmMessage[]): Promise<Record<string, unknown>[]> {
-  const raw = await callLlm(resolveLlmRole(getConfig(), 'asset_char'), messages);
+async function callLooks(
+  messages: LlmMessage[],
+  role: 'asset_char' | 'autotag' = 'asset_char',
+): Promise<Record<string, unknown>[]> {
+  const raw = await callLlm(resolveLlmRole(getConfig(), role), messages);
   const parsed = parseJsonLoose(raw) as { new_characters?: unknown };
   const list = Array.isArray(parsed?.new_characters) ? parsed.new_characters : [];
-  return list.filter((x) => x && typeof x === 'object') as Record<string, unknown>[];
+  if (list.length) return list.filter((x) => x && typeof x === 'object') as Record<string, unknown>[];
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const rec = parsed as Record<string, unknown>;
+    if (rec.appearance || rec.attire || rec.gender) return [rec];
+  }
+  return [];
 }
 
 async function saveLooks(
@@ -182,11 +190,13 @@ async function runMetaBatch(scope: string, rows: ResolvedRow[]): Promise<{ fille
 
 async function runVisionBatch(scope: string, rows: ResolvedRow[]): Promise<{ filled: number; failed: ResolvedRow[] }> {
   try {
-    const sys = await looksSystem();
+    const sys = stripCbs(await getPrompt('autotag')).trim()
+      || 'Tag character reference images into Danbooru-style English prompts. JSON only.';
     const parts: LlmContentPart[] = [{
       type: 'text',
       text:
-        'Fill `new_characters` from these images + names. COPY visual tags. JSON only.\n'
+        'Return ONE JSON object: {"new_characters":[{"name","gender","appearance","attire","accessories","original","aliases"}]}.\n'
+        + 'Use the given names. Images are in the same order. COPY visual tags.\n'
         + rows.map((r) => `- ${r.name}${r.text ? `: ${cleanText(r.text, 800)}` : ''}`).join('\n'),
     }];
     for (const r of rows) {
@@ -199,8 +209,12 @@ async function runVisionBatch(scope: string, rows: ResolvedRow[]): Promise<{ fil
     const chars = await callLooks([
       { role: 'system', content: sys },
       { role: 'user', content: parts },
-    ]);
-    const filled = await saveLooks(scope, chars, {});
+    ], 'autotag');
+    const named = chars.map((c, i) => ({
+      ...c,
+      name: cleanText(c.name, 200) || rows[i]?.name || '',
+    }));
+    const filled = await saveLooks(scope, named, {});
     return { filled, failed: [] };
   } catch (err) {
     dbg('char-import.vision.fail', { message: String((err as Error)?.message || err) }, 'warn');

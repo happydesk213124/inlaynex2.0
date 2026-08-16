@@ -2,7 +2,7 @@
  * NovelAI image metadata → filtered tag plains for asset injection.
  */
 import { asU8, isPngBytes, isWebpBytes, type BytesLike } from '../../core/util/bytes.ts';
-import { promptFromNaiMetadata } from './from-metadata.ts';
+import { naiMetaHasPrompt, promptFromNaiMetadata } from './from-metadata.ts';
 import { readPngTextChunks } from './png-text.ts';
 import {
   filterAssetPromptTags,
@@ -48,11 +48,14 @@ export async function extractNaiMetadata(bytes: BytesLike): Promise<unknown | nu
   const u8 = asU8(bytes);
   if (!u8.length) return null;
 
-  // Prefer file-level metadata when present.
+  // Text chunks first only when they actually hold a prompt.
+  // NAI files almost always have Source=NovelAI; that is not the prompt.
+  // Stopping here skipped stealth — the path the NAI site uses on paste.
   if (isPngBytes(u8)) {
     const texts = await readPngTextChunks(u8);
     if (texts.Comment || texts.Description || texts.Source) {
-      return metaFromTextMap(texts);
+      const fromText = metaFromTextMap(texts);
+      if (naiMetaHasPrompt(fromText)) return fromText;
     }
   } else if (isWebpBytes(u8)) {
     const texts = webpExifTextMap(u8);
@@ -60,7 +63,8 @@ export async function extractNaiMetadata(bytes: BytesLike): Promise<unknown | nu
       const map: Record<string, string> = {};
       if (texts.UserComment) map.Comment = texts.UserComment;
       if (texts.ImageDescription) map.Description = texts.ImageDescription;
-      return metaFromTextMap(map);
+      const fromText = metaFromTextMap(map);
+      if (naiMetaHasPrompt(fromText)) return fromText;
     }
   }
 

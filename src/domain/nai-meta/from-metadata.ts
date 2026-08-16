@@ -72,8 +72,23 @@ export function promptFromNaiMetadata(meta: unknown): string {
   takePrompt(rootObj);
 
   // Description sometimes holds the prompt when Comment is nested oddly.
+  // "NovelAI" / software names are PNG Source/Description labels, not prompts.
   const desc = cleanText(rootObj.Description ?? rootObj.description ?? '');
-  if (desc && !parts.some((p) => p.includes(desc.slice(0, 40)))) parts.push(desc);
+  if (desc && !isNaiSoftwareLabel(desc) && !parts.some((p) => p.includes(desc.slice(0, 40)))) {
+    parts.push(desc);
+  }
 
   return joinTags(...parts);
+}
+
+const NAI_SOFTWARE_LABEL = /^(novelai|stable diffusion|comfyui|automatic1111|unknown)$/i;
+
+function isNaiSoftwareLabel(value: string): boolean {
+  return NAI_SOFTWARE_LABEL.test(value.trim());
+}
+
+/** True when the blob has a usable positive prompt (not just Source=NovelAI). */
+export function naiMetaHasPrompt(meta: unknown): boolean {
+  const prompt = promptFromNaiMetadata(meta).trim();
+  return Boolean(prompt) && !isNaiSoftwareLabel(prompt);
 }

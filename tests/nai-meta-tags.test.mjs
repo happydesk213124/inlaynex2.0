@@ -9,7 +9,7 @@ import {
   splitNaiPromptTokens,
 } from '../.test-build/nai-meta-prompt-tags.mjs';
 import { assetMatchTriggers, assetNameTokens, scoreAssetName, assetPriorityForTrigger, pickAssetsPerTrigger, filterAssetTriggersForUnfilledLooks, loreKeysByCompactTrigger, originalTagFromPlains } from '../.test-build/nai-meta-match.mjs';
-import { promptFromNaiMetadata } from '../.test-build/nai-meta-from-metadata.mjs';
+import { naiMetaHasPrompt, promptFromNaiMetadata } from '../.test-build/nai-meta-from-metadata.mjs';
 import { dimsForAspect, normalizeShotAspect } from '../.test-build/nai-meta-aspect.mjs';
 import { filterStylePresetPositive, styleFieldsFromNaiMetadata } from '../.test-build/nai-meta-style-preset.mjs';
 import {
@@ -284,6 +284,13 @@ test('promptFromNaiMetadata merges base and char captions', () => {
   assert.match(prompt, /white background/);
   assert.match(prompt, /dark green hair/);
   assert.match(prompt, /witch hat/);
+});
+
+test('Source=NovelAI alone is not a prompt (must fall through to stealth)', () => {
+  assert.equal(promptFromNaiMetadata({ Source: 'NovelAI' }), '');
+  assert.equal(naiMetaHasPrompt({ Source: 'NovelAI' }), false);
+  assert.equal(naiMetaHasPrompt({ Description: 'NovelAI' }), false);
+  assert.equal(naiMetaHasPrompt({ Comment: { prompt: '1girl, white hair' } }), true);
 });
 
 test('splitNaiPromptTokens keeps brace groups', () => {

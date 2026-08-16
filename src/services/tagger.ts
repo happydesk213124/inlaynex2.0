@@ -4,9 +4,12 @@
  * Almost everything below is prompt assembly, and the assembly *is* the
  * behaviour. Block order, the blank lines between blocks and the exact wording
  * were tuned against real model output, so the concatenations are reproduced
- * character-for-character and must not be reflowed or "tidied". Two constraints
- * are worth knowing before touching them:
+ * character-for-character and must not be reflowed or "tidied". Constraints:
  *
+ *  - Stable how-to (tagger/format/inject rules/placement) is the leading
+ *    system prefix so consecutive tagger calls can reuse an LLM prompt cache.
+ *    Per-message lore, roster lines, asset soup, and the labeled chat are
+ *    later user turns (`# Reference: …` then the L1| message).
  *  - The lorebook injection wraps the `lb-xnai.lb.extra` pack in explicit
  *    START/END markers. Without them models treat the ordinary matched lore that
  *    follows as image-tag ground truth and copy lore prose into appearance tags.
@@ -53,6 +56,7 @@ export function extractTaggerChatContext(messages: readonly LlmMessage[]): strin
     const content = typeof row.content === 'string' ? row.content : '';
     if (!content.trim()) continue;
     if (content.startsWith('# Priority: Author')) continue;
+    if (content.startsWith('# Reference:')) continue;
     return content;
   }
   return '';
@@ -132,15 +136,14 @@ function formatAppearanceInjectLine(
   return parts.length ? `${name} ← ${parts.join(' | ')}` : name;
 }
 
-async function pushLoreMessages(
-  messages: LlmMessage[],
+function collectLorePayload(
   request: TaggerArgs,
   card: Record<string, unknown>,
   assistant: string,
   rosterEarly: CharacterRecord[],
   opts: { extraOnly?: boolean } = {},
-): Promise<void> {
-  if (!card.lorebook) return;
+): string {
+  if (!card.lorebook) return '';
   const filledNames = filledNamesForLoreExtra(rosterEarly);
   const triggerKeys = Array.isArray(request.lore_trigger_keys) ? request.lore_trigger_keys : null;
   const loreExtraMode = normalizeLoreExtraMode(card.lore_extra);
@@ -193,9 +196,13 @@ async function pushLoreMessages(
       .filter(Boolean)
       .join(' | '),
   });
-  if (loreParts.length) {
-    messages.push({ role: 'system', content: `${await getPrompt('lore_inject')}\n${loreParts.join('\n\n')}` });
-  }
+  return loreParts.join('\n\n');
+}
+
+function pushReferenceUser(messages: LlmMessage[], title: string, body: string): void {
+  const text = cleanText(body, 200000);
+  if (!text) return;
+  messages.push({ role: 'user', content: `# Reference: ${title}\n${text}` });
 }
 
 /** Incomplete roster rows that belong with this looks pre-pass (asset / message match). */
@@ -221,7 +228,7 @@ function incompleteTargetsForLooks(
 /**
  * Looks-only pre-pass: asset tags + Character Image lore (+ optional images).
  * No chat message, no filled-roster dump, no story lore, no char/user info.
- * Optional asset_author_note is appended last, same shape as the main tagger note.
+ * Optional asset_author_note sits in the instruction prefix (not after the fill turn).
  */
 export async function buildCharacterLooksMessages(
   request: TaggerArgs,
@@ -233,6 +240,19 @@ export async function buildCharacterLooksMessages(
   const sessionId = cleanText(request.session_id, 200);
   const looks = stripCbs(await getPrompt('char_looks'));
   const messages: LlmMessage[] = [{ role: 'system', content: looks.trim() }];
+  const assetHowTo = stripCbs(await getPrompt('asset_tags_inject')).replace(/\{asset_tags_block\}/g, '').trim();
+  if (assetHowTo) {
+    messages[0].content = `${messages[0].content}\n\n${assetHowTo}`;
+  }
+  const assetAuthorNote = cleanText(await getPrompt('asset_author_note'), 8000);
+  if (assetAuthorNote) {
+    messages.push({
+      role: 'system',
+      content:
+        `# Priority: Asset Author's Note\n${assetAuthorNote}\n`
+        + '> These are instructions explicitly given by the user. If in conflict with previous instructions, this section MUST take precedence.',
+    });
+  }
 
   const assistant = cleanText(request.assistant_text, 20000);
   const sourceSessionIds = Array.isArray(request.source_session_ids)
@@ -246,10 +266,12 @@ export async function buildCharacterLooksMessages(
   );
 
   // Character Image / lb-xnai only — not general reference lore.
-  await pushLoreMessages(messages, request, card, assistant, rosterEarly, { extraOnly: true });
-
-  const assetTemplate = await getPrompt('asset_tags_inject');
-  pushAssetBlockMessage(messages, assetTemplate, assetBlock, 'char_looks_prepass', assetNames);
+  pushReferenceUser(
+    messages,
+    'Lorebook',
+    collectLorePayload(request, card, assistant, rosterEarly, { extraOnly: true }),
+  );
+  pushReferenceUser(messages, 'NovelAI asset tags', assetBlock);
 
   const incomplete = incompleteTargetsForLooks(rosterEarly, assetNames, assistant);
   if (incomplete.length) {
@@ -257,13 +279,13 @@ export async function buildCharacterLooksMessages(
       const aliases = characterTriggers(char).slice(0, 8).join(', ');
       return `- ${char.name}${aliases ? ` (aliases: ${aliases})` : ''}`;
     });
-    messages.push({
-      role: 'system',
-      content:
-        '## Incomplete (empty appearance) — fill these in `new_characters`\n'
+    pushReferenceUser(
+      messages,
+      'Incomplete names',
+      '## Incomplete (empty appearance) — fill these in `new_characters`\n'
         + 'Use these exact name spellings. Skip anyone already filled on the roster.\n'
         + lines.join('\n'),
-    });
+    );
   }
   dbg('job.char_looks.targets', {
     assets: assetNames,
@@ -293,31 +315,22 @@ export async function buildCharacterLooksMessages(
   } else {
     messages.push({ role: 'user', content: userText });
   }
-  const assetAuthorNote = cleanText(await getPrompt('asset_author_note'), 8000);
-  if (assetAuthorNote) {
-    messages.push({
-      role: 'user',
-      content:
-        `# Priority: Asset Author's Note\n${assetAuthorNote}\n`
-        + '> These are instructions explicitly given by the user. If in conflict with previous instructions, this section MUST take precedence.',
-    });
-  }
+  dbg('asset-tags.inject', { reason: 'char_looks_prepass', assets: assetNames });
   return messages;
 }
 
-async function pushAppearanceMessages(
-  messages: LlmMessage[],
+function appearancePayload(
   card: Record<string, unknown>,
   assistant: string,
   sessionId: string,
   rosterEarly: CharacterRecord[],
-): Promise<void> {
-  if (card.char_appearance === false) return;
+): string {
+  if (card.char_appearance === false) return '';
   const roster = rosterEarly;
   const filled = roster.filter((c) => characterHasAppearance(c));
   const incomplete = roster.filter((c) => cleanText(c.name, 200) && !characterHasAppearance(c));
   const matched = matchCharactersInText(assistant, roster);
-  if (!filled.length && !incomplete.length && !matched.length) return;
+  if (!filled.length && !incomplete.length && !matched.length) return '';
   const matchedFilled = matched.filter((c) => characterHasAppearance(c));
   const matchedIncomplete = matched.filter((c) => !characterHasAppearance(c));
   const withCostumes = card.costume === true
@@ -333,28 +346,6 @@ async function pushAppearanceMessages(
       .map((char) => `- ${char.name} (aliases: ${characterTriggers(char).slice(0, 8).join(', ')}) → empty appearance; full looks required in new_characters`)
       .join('\n')
     : '(none)';
-  let content = await getPrompt('appearance_inject');
-  if (withCostumes) {
-    content += [
-      '',
-      '## Costumes (enabled)',
-      'Registered lines list costumes as name[index] with a short note.',
-      'Set characters[].costume to the name, index, or name[index] for this shot.',
-      'If unclear, use 0 (default). Do not invent freeform shot attire when a costume fits.',
-      'To add a new wardrobe set: new_costumes: [{ "name": "<exact char name>", "costumes": [{ "name", "note", "attire", "accessories" }] }].',
-      'attire = detailed clothes (colors, top/bottom/skirt/dress…). accessories = weapons/held props for that set.',
-    ].join('\n');
-  }
-  if (content.includes('{registered_block}')) {
-    content = content.replace('{registered_block}', detectedBlock);
-  }
-  content = content.includes('{incomplete_block}')
-    ? content.replace('{incomplete_block}', incompleteBlock)
-    : `${content}\n\n## Incomplete\n${incompleteBlock}`;
-  content = content.includes('{detected_block}')
-    ? content.replace('{detected_block}', detectedBlock)
-    : `${content}\n\n${detectedBlock}`;
-  messages.push({ role: 'system', content });
   dbg('job.roster.split', {
     filled: filled.map((c) => c.name),
     incomplete: incomplete.map((c) => c.name),
@@ -362,14 +353,24 @@ async function pushAppearanceMessages(
     matched_with_looks: matchedFilled.map((c) => c.name),
     session_id: sessionId,
   });
+  return [
+    '## Characters in this message',
+    detectedBlock,
+    '',
+    '## Incomplete in this message (empty appearance)',
+    incompleteBlock,
+  ].join('\n');
 }
 
-function pushAssetBlockMessage(messages: LlmMessage[], assetPromptTemplate: string, block: string, reason: string, assetNames: string[]): void {
-  const assetPrompt = assetPromptTemplate.includes('{asset_tags_block}')
-    ? assetPromptTemplate.replace('{asset_tags_block}', block)
-    : `${assetPromptTemplate}\n\n${block}`;
-  messages.push({ role: 'system', content: assetPrompt });
-  dbg('asset-tags.inject', { reason, assets: assetNames });
+function costumeHowTo(): string {
+  return [
+    '## Costumes (enabled)',
+    'Registered lines list costumes as name[index] with a short note.',
+    'Set characters[].costume to the name, index, or name[index] for this shot.',
+    'If unclear, use 0 (default). Do not invent freeform shot attire when a costume fits.',
+    'To add a new wardrobe set: new_costumes: [{ "name": "<exact char name>", "costumes": [{ "name", "note", "attire", "accessories" }] }].',
+    'attire = detailed clothes (colors, top/bottom/skirt/dress…). accessories = weapons/held props for that set.',
+  ].join('\n');
 }
 
 /** Builds the full system/user message list for one tagging call. */
@@ -381,7 +382,64 @@ export async function buildTaggerMessages(
   const sessionId = cleanText(request.session_id, 200);
   const tagger = stripCbs(await getPrompt('tagger'));
   const fmt = stripCbs(await getPrompt('format'));
-  const messages: LlmMessage[] = [{ role: 'system', content: `${tagger}\n\n${fmt}`.trim() }];
+  const loreHow = stripCbs(await getPrompt('lore_inject')).trim();
+  const appearanceHow = stripCbs(await getPrompt('appearance_inject')).trim();
+  const withCostumes = card.costume === true;
+  const assetMode = normalizeAssetNaiTagsMode(card.asset_nai_tags);
+  const includeAssetHow = !opts.skipAssetInject && assetMode !== 'off';
+  const assetHow = includeAssetHow
+    ? stripCbs(await getPrompt('asset_tags_inject')).replace(/\{asset_tags_block\}/g, '').trim()
+    : '';
+
+  const naturalMode = normalizeNaturalBaseMode(card.natural_base);
+  const charMax = characterMaxLimit(card);
+  const imageMin = Math.max(1, Number(card.image_min ?? 1) || 1);
+  const imageMax = Math.max(imageMin, Number(card.image_max ?? 3) || 3);
+  const placement = [
+    // Always ask for y_percent so values are saved. Toggle only affects display (equal bands vs LLM %).
+    'Every shot MUST include `y_percent` (0–100): reading position top→bottom. Spread across the full range in order (shot0 < shot1 < …); ~even gaps. E.g. 2→~25/~75; 3→~20/~50/~80; 4→~15/~40/~65/~90. Forbidden: all under 40, duplicates, or gaps under ~15 unless 1 shot.',
+    'LINE: message lines are labeled `L1|…`, `L2|…`. Set each shot `line` to that L number (illustration sits immediately before that line). Pick the L# whose text matches the shot moment. `paragraph` = shot order (0,1,2…). `line` is NOT shot order. INVALID: emitting line=1,2,3… just because you have 1st/2nd/3rd shots.',
+    imageMin === imageMax
+      ? `SHOT COUNT: produce exactly ${imageMax} shot(s) in scenes[].shots (across all scenes).`
+      : `SHOT COUNT: produce between ${imageMin} and ${imageMax} shots in scenes[].shots (across all scenes). Prefer the count that fits the message; never fewer than ${imageMin} or more than ${imageMax}.`,
+    naturalBaseSystemMessage(naturalMode),
+    `CHARACTER CAP: at most ${charMax} characters per shot (char1..char${charMax}). If more are visible, keep the ${charMax} most important; fold extras into situation/place.`,
+    focusCharacterSystemMessage(
+      normalizeFocusCharacterMode(card.focus_character),
+      charMax,
+      normalizeFocusPromptMode(card.focus_prompt),
+    ),
+    card.auto_aspect
+      ? 'ASPECT (required on every shot): set `aspect` to exactly one of `portrait` (832×1216 vertical), `square` (1024×1024), or `landscape` (1216×832 horizontal). Pick from the scene framing — tall full-body / standing → portrait; equal crop / face close-up square → square; wide group / side-by-side / scenic → landscape. Like NovelAI size presets 1/5/2.'
+      : '',
+  ].filter(Boolean).join('\n');
+
+  const messages: LlmMessage[] = [{
+    role: 'system',
+    content: [
+      `${tagger}\n\n${fmt}`.trim(),
+      loreHow,
+      appearanceHow,
+      withCostumes ? costumeHowTo() : '',
+      assetHow,
+      placement,
+    ].filter(Boolean).join('\n\n'),
+  }];
+
+  const curationMsg = await curationTaggerSystemMessage();
+  if (curationMsg) {
+    messages.push({ role: 'system', content: curationMsg });
+  }
+
+  const authorNote = cleanText(await getPrompt('author_note'), 8000);
+  if (authorNote) {
+    messages.push({
+      role: 'system',
+      content:
+        `# Priority: Author's Note\n${authorNote}\n`
+        + '> These are instructions explicitly given by the user. If in conflict with previous instructions, this section MUST take precedence.',
+    });
+  }
 
   if (card.char_info && cleanText(request.character_description)) {
     messages.push({
@@ -402,7 +460,7 @@ export async function buildTaggerMessages(
     : [];
   const unifiedSessionId = cleanText(request.unified_session_id || '', 200);
   const characterId = cleanText(request.character_id || '', 200);
-  let rosterEarly: CharacterRecord[] = card.lorebook || card.char_appearance !== false || normalizeAssetNaiTagsMode(card.asset_nai_tags) !== 'off'
+  let rosterEarly: CharacterRecord[] = card.lorebook || card.char_appearance !== false || assetMode !== 'off'
     ? await rosterForSession(
       sessionId,
       unifiedSessionId,
@@ -419,11 +477,9 @@ export async function buildTaggerMessages(
     });
   }
 
-  await pushLoreMessages(messages, request, card, assistant, rosterEarly);
-  await pushAppearanceMessages(messages, card, assistant, sessionId, rosterEarly);
+  pushReferenceUser(messages, 'Lorebook', collectLorePayload(request, card, assistant, rosterEarly));
+  pushReferenceUser(messages, 'Characters in this message', appearancePayload(card, assistant, sessionId, rosterEarly));
 
-  // Asset soup on the main tagger: inline mode, or prepass fallback when skipAssetInject is false.
-  const assetMode = normalizeAssetNaiTagsMode(card.asset_nai_tags);
   if (!opts.skipAssetInject && assetMode !== 'off') {
     const triggerPool = assetTriggerPoolForRequest(request);
     try {
@@ -434,14 +490,11 @@ export async function buildTaggerMessages(
         message: assistant,
       });
       if (collected?.block) {
-        const assetTemplate = await getPrompt('asset_tags_inject');
-        pushAssetBlockMessage(
-          messages,
-          assetTemplate,
-          collected.block,
-          `asset_nai_tags_${assetMode}`,
-          collected.packed.groups.flatMap((g) => g.assets.map((a) => a.name)),
-        );
+        pushReferenceUser(messages, 'NovelAI asset tags', collected.block);
+        dbg('asset-tags.inject', {
+          reason: `asset_nai_tags_${assetMode}`,
+          assets: collected.packed.groups.flatMap((g) => g.assets.map((a) => a.name)),
+        });
       } else {
         setLastAssetWeightMap(new Map());
         dbg('asset-tags.inject.skip', { reason: assetMode, cause: 'collect_empty', triggers: triggerPool.length });
@@ -456,42 +509,6 @@ export async function buildTaggerMessages(
     dbg('asset-tags.inject.skip', { reason: 'off' });
   }
 
-  const naturalMode = normalizeNaturalBaseMode(card.natural_base);
-  const charMax = characterMaxLimit(card);
-  const imageMin = Math.max(1, Number(card.image_min ?? 1) || 1);
-  const imageMax = Math.max(imageMin, Number(card.image_max ?? 3) || 3);
-  // One system block: placement + shot count + natural mode + cast cap (was near-duplicate messages).
-  messages.push({
-    role: 'system',
-    content: [
-      // Always ask for y_percent so values are saved. Toggle only affects display (equal bands vs LLM %).
-      'Every shot MUST include `y_percent` (0–100): reading position top→bottom. Spread across the full range in order (shot0 < shot1 < …); ~even gaps. E.g. 2→~25/~75; 3→~20/~50/~80; 4→~15/~40/~65/~90. Forbidden: all under 40, duplicates, or gaps under ~15 unless 1 shot.',
-      // Chat user message is L1|… numbered — line must cite those labels, never shot order.
-      'LINE: message lines are labeled `L1|…`, `L2|…`. Set each shot `line` to that L number (illustration sits immediately before that line). Pick the L# whose text matches the shot moment. `paragraph` = shot order (0,1,2…). `line` is NOT shot order. INVALID: emitting line=1,2,3… just because you have 1st/2nd/3rd shots.',
-      imageMin === imageMax
-        ? `SHOT COUNT: produce exactly ${imageMax} shot(s) in scenes[].shots (across all scenes).`
-        : `SHOT COUNT: produce between ${imageMin} and ${imageMax} shots in scenes[].shots (across all scenes). Prefer the count that fits the message; never fewer than ${imageMin} or more than ${imageMax}.`,
-      naturalBaseSystemMessage(naturalMode),
-      `CHARACTER CAP: at most ${charMax} characters per shot (char1..char${charMax}). If more are visible, keep the ${charMax} most important; fold extras into situation/place.`,
-      focusCharacterSystemMessage(
-        normalizeFocusCharacterMode(card.focus_character),
-        charMax,
-        normalizeFocusPromptMode(card.focus_prompt),
-      ),
-      card.auto_aspect
-        ? 'ASPECT (required on every shot): set `aspect` to exactly one of `portrait` (832×1216 vertical), `square` (1024×1024), or `landscape` (1216×832 horizontal). Pick from the scene framing — tall full-body / standing → portrait; equal crop / face close-up square → square; wide group / side-by-side / scenic → landscape. Like NovelAI size presets 1/5/2.'
-        : '',
-    ].filter(Boolean).join('\n'),
-  });
-
-  const curationMsg = await curationTaggerSystemMessage();
-  if (curationMsg) {
-    messages.push({
-      role: 'system',
-      content: curationMsg,
-    });
-  }
-
   const chunks: string[] = [];
   const includeMax = Number(card.include_max || 0);
   if (includeMax > 0) {
@@ -503,22 +520,10 @@ export async function buildTaggerMessages(
       chunks.push(`[${role}]\n${body}`);
     }
   }
-  // Number only the tagged message so shot.line can cite L# (recent context stays plain).
   if (assistant) chunks.push(numberMessageLinesForTagger(assistant));
   const userContent = chunks.length ? chunks.join('\n\n') : numberMessageLinesForTagger(assistant);
   if (!userContent) throw new Error('태깅할 메시지 텍스트가 없습니다.');
   messages.push({ role: 'user', content: userContent });
-
-  // User author's note — empty by default; when set, highest-priority override (like module CustomInst).
-  const authorNote = cleanText(await getPrompt('author_note'), 8000);
-  if (authorNote) {
-    messages.push({
-      role: 'user',
-      content:
-        `# Priority: Author's Note\n${authorNote}\n`
-        + '> These are instructions explicitly given by the user. If in conflict with previous instructions, this section MUST take precedence.',
-    });
-  }
   return messages;
 }
 

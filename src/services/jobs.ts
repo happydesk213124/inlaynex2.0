@@ -736,7 +736,6 @@ async function runJob(jobId: string): Promise<void> {
     }
 
     const messages = await buildTaggerMessages(request, { skipAssetInject });
-    // Same chat user blob as pass 1 — keep byte-identical for LLM prompt cache on pass 2.
     const chatContext = extractTaggerChatContext(messages);
     dbg('job.tagger.messages', { msgs: messages.length, skip_asset_inject: skipAssetInject });
     if (getConfig().card?.preprocessing) {

@@ -6,6 +6,7 @@
  * (`alpha.T.reshape(-1)` in numpy), then LSB-packed MSB-first (`np.packbits`).
  */
 import { asU8 } from '../../core/util/bytes.ts';
+import { inflateZlib } from './png-text.ts';
 
 /** Walk alpha samples in NovelAI order: column-major, then take LSB of each. */
 export function iterAlphaLsbColumnMajor(
@@ -42,6 +43,16 @@ function packBitsMsbFirst(bits: readonly number[]): Uint8Array {
 
 export function packAlphaLsbColumnMajor(rgba: Uint8Array, width: number, height: number): Uint8Array {
   return packBitsMsbFirst(iterAlphaLsbColumnMajor(rgba, width, height));
+}
+
+export function packAlphaLsbRowMajor(rgba: Uint8Array, width: number, height: number): Uint8Array {
+  const bits: number[] = [];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      bits.push(rgba[(y * width + x) * 4 + 3]! & 1);
+    }
+  }
+  return packBitsMsbFirst(bits);
 }
 
 /** RGB LSBs, column-major, R then G then B per pixel (A1111-style stealth_rgb*). */
@@ -120,7 +131,7 @@ async function parseStealthBytes(
   if (byteLen < 1 || pos + byteLen > bytes.length) return null;
   let payload = bytes.subarray(pos, pos + byteLen);
   if (compressed) {
-    const inflated = await gunzip(payload);
+    const inflated = (await gunzip(payload)) || (await inflateZlib(payload));
     if (!inflated) return null;
     payload = inflated;
   }
@@ -157,6 +168,12 @@ export async function extractStealthFromRgba(
     'stealth_pnginfo',
   );
   if (alpha) return alpha;
+  const row = await parseStealthBytes(
+    packAlphaLsbRowMajor(rgba, width, height),
+    'stealth_pngcomp',
+    'stealth_pnginfo',
+  );
+  if (row) return row;
   return parseStealthBytes(
     packRgbLsbColumnMajor(rgba, width, height),
     'stealth_rgbcomp',

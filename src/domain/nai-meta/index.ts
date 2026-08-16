@@ -9,7 +9,7 @@ import {
   type FilteredPromptTags,
 } from './prompt-tags.ts';
 import { decodePngToRgba } from './png-rgba.ts';
-import { decodeImageToRgba, extractStealthFromRgba } from './stealth.ts';
+import { decodeImageToRgba, extractStealthFromRgba, packAlphaLsbColumnMajor } from './stealth.ts';
 import { webpExifTextMap } from './webp-exif.ts';
 
 export {
@@ -84,12 +84,85 @@ export async function extractNaiMetadata(bytes: BytesLike): Promise<unknown | nu
   return fromCanvas && naiMetaHasPrompt(fromCanvas) ? fromCanvas : null;
 }
 
+function peekKind(u8: Uint8Array): string {
+  if (isPngBytes(u8)) return 'png';
+  if (isWebpBytes(u8)) return 'webp';
+  if (u8.length >= 3 && u8[0] === 0xff && u8[1] === 0xd8 && u8[2] === 0xff) return 'jpeg';
+  return 'other';
+}
+
+function peekPngColorType(u8: Uint8Array): number | null {
+  if (!isPngBytes(u8) || u8.length < 26) return null;
+  return u8[25] ?? null;
+}
+
+function asciiHead(bytes: Uint8Array, n = 16): string {
+  const lim = Math.min(n, bytes.length);
+  let s = '';
+  for (let i = 0; i < lim; i += 1) {
+    const c = bytes[i]!;
+    s += c >= 32 && c < 127 ? String.fromCharCode(c) : '.';
+  }
+  return s;
+}
+
+export interface NaiImageInspect {
+  tags: FilteredPromptTags | null;
+  kind: string;
+  colorType: number | null;
+  pngDecode: boolean;
+  textKeys: string[];
+  stealthHead: string;
+  promptLen: number;
+  reason: string;
+}
+
+/** Same extract as tagsFromImageBytes, plus why it failed (debug read_log). */
+export async function inspectNaiImageBytes(bytes: BytesLike): Promise<NaiImageInspect> {
+  const u8 = asU8(bytes);
+  const kind = peekKind(u8);
+  const colorType = peekPngColorType(u8);
+  let textKeys: string[] = [];
+  let pngDecode = false;
+  let stealthHead = '';
+  if (isPngBytes(u8)) {
+    textKeys = Object.keys(await readPngTextChunks(u8));
+    const raw = await decodePngToRgba(u8);
+    pngDecode = Boolean(raw);
+    if (raw) stealthHead = asciiHead(packAlphaLsbColumnMajor(raw.rgba, raw.width, raw.height));
+  }
+  const meta = await extractNaiMetadata(u8);
+  if (!meta) {
+    return {
+      tags: null,
+      kind,
+      colorType,
+      pngDecode,
+      textKeys,
+      stealthHead,
+      promptLen: 0,
+      reason: !pngDecode && kind === 'png' ? 'png_decode_fail' : 'no_stealth',
+    };
+  }
+  const prompt = promptFromNaiMetadata(meta);
+  if (!prompt.trim()) {
+    return {
+      tags: null, kind, colorType, pngDecode, textKeys, stealthHead, promptLen: 0, reason: 'empty_prompt',
+    };
+  }
+  const filtered = filterAssetPromptTags(prompt);
+  if (!filtered.plains.length) {
+    return {
+      tags: null, kind, colorType, pngDecode, textKeys, stealthHead, promptLen: prompt.length, reason: 'filtered_empty',
+    };
+  }
+  return {
+    tags: filtered, kind, colorType, pngDecode, textKeys, stealthHead, promptLen: prompt.length, reason: 'ok',
+  };
+}
+
 /** Full pipeline: image bytes → filtered plains + weight map. */
 export async function tagsFromImageBytes(bytes: BytesLike): Promise<FilteredPromptTags | null> {
-  const meta = await extractNaiMetadata(bytes);
-  if (!meta) return null;
-  const prompt = promptFromNaiMetadata(meta);
-  if (!prompt.trim()) return null;
-  const filtered = filterAssetPromptTags(prompt);
-  return filtered.plains.length ? filtered : null;
+  const inspected = await inspectNaiImageBytes(bytes);
+  return inspected.tags;
 }

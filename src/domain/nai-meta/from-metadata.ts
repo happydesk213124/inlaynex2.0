@@ -69,6 +69,9 @@ export function promptFromNaiMetadata(meta: unknown): string {
   };
 
   takePrompt(commentObj);
+  if (!commentObj && typeof comment === 'string' && comment.trim() && !isNaiSoftwareLabel(comment)) {
+    parts.push(cleanText(comment));
+  }
   takePrompt(rootObj);
 
   // Description sometimes holds the prompt when Comment is nested oddly.

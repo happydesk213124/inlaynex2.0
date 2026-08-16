@@ -13,7 +13,7 @@ import {
   mergeWeightMaps,
   packAssetTagGroups,
   packedAssetNames,
-  tagsFromImageBytes,
+  inspectNaiImageBytes,
   type PackedAssetTags,
 } from '../domain/nai-meta/index.ts';
 import {
@@ -289,14 +289,26 @@ async function scoreAndReadAssets(
         attemptLog.push({ name: asset.name, key: asset.key, ok: false, reason: 'read_empty' });
         return false;
       }
-      const filtered = await tagsFromImageBytes(bytes);
-      if (!filtered?.plains.length) {
-        dbg('asset-tags.no_meta', { name: asset.name });
-        attemptLog.push({ name: asset.name, key: asset.key, ok: false, reason: 'no_nai_meta', bytes: bytes.length });
+      const inspected = await inspectNaiImageBytes(bytes);
+      if (!inspected.tags?.plains.length) {
+        dbg('asset-tags.no_meta', { name: asset.name, reason: inspected.reason });
+        attemptLog.push({
+          name: asset.name,
+          key: asset.key,
+          ok: false,
+          reason: inspected.reason || 'no_nai_meta',
+          bytes: bytes.length,
+          kind: inspected.kind,
+          color_type: inspected.colorType,
+          png_decode: inspected.pngDecode,
+          text_keys: inspected.textKeys,
+          stealth_head: inspected.stealthHead,
+          prompt_len: inspected.promptLen,
+        });
         return false;
       }
-      plains = filtered.plains;
-      weightMap = filtered.weightMap;
+      plains = inspected.tags.plains;
+      weightMap = inspected.tags.weightMap;
       tagCache.set(asset.key, {
         plains,
         weights: [...weightMap.entries()],

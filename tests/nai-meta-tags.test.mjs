@@ -289,6 +289,11 @@ test('promptFromNaiMetadata merges base and char captions', () => {
   assert.match(prompt, /witch hat/);
 });
 
+test('Comment string that is not JSON is still a prompt', () => {
+  assert.ok(naiMetaHasPrompt({ Comment: '1girl, white hair, red eyes' }));
+  assert.match(promptFromNaiMetadata({ Comment: '1girl, white hair, red eyes' }), /white hair/);
+});
+
 test('Source=NovelAI alone is not a prompt (must fall through to stealth)', () => {
   assert.equal(promptFromNaiMetadata({ Source: 'NovelAI' }), '');
   assert.equal(naiMetaHasPrompt({ Source: 'NovelAI' }), false);

@@ -719,250 +719,47 @@ const VENDOR_CURATION_PANEL_PATCH =
     } else t.uiTab === "explorer" ? u = ma() : t.uiTab === "changelog" ? (u = \`
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
-          <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 패치 단위는 시리즈별로 요약했습니다.</div>
+          <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.67</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>태거 지침을 앞에 고정하고 로어·외형·에셋·원문은 뒤로</li>
+            <li>프롬프트 캐싱을 위해 태거 지침을 앞에 모으고, 로어·외형·에셋·원문은 뒤로 정리</li>
+            <li>프롬프트 탭에서 <b>기본값으로 초기화</b>하세요. 이번 정리분이 기본 프롬프트에 들어 있습니다.</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
-          <strong>2.3.66</strong>
+          <strong>2.3.60 ~ 2.3.66</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>에셋 태그 전체 읽기 상한 16 → 32</li>
+            <li>스트리밍 키워드 자동생성 · 캐릭 없을 때 no humans · 쌍둥이 해시 시 말풍선 강제 삽입 · 캐릭 팝업 붙여넣기</li>
+            <li>에셋: 파일명 앞 단어=로어 키, 트리거당 4장, 읽기 상한 32, 원본태그는 메타 정체성 우선</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
-          <strong>2.3.65</strong>
+          <strong>2.3.50 ~ 2.3.59</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>에셋 태그: 트리거당 파일 2개 → 4개</li>
+            <li>샷/캐릭 팝업 체감 · 빈 샷으로 룩을 지우지 않음 · 설정은 계정 세이브, 그림은 이 기기</li>
+            <li>캐릭 저장 분리 · 통합챗 · 외형 ✕는 외형만 · 승자만 보기 · 외형 없는 캐릭 재수집 · 에셋 작가의 노트</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
-          <strong>2.3.64</strong>
+          <strong>2.3.20 ~ 2.3.29</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>에셋 매칭: 파일명 앞 단어 = 로어 키. 원본태그는 메타 정체성 태그 우선</li>
+            <li>스크롤 선택 시 삽화 갱신 · 재마운트 감소 · 빠진 삽화 마커 재부착 · 옷 상태(wear_state)를 채팅에서 이어 감</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
-          <strong>2.3.63</strong>
+          <strong>2.3.10 ~ 2.3.19</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>캐릭터 수정 팝업: 붙여넣기(글자·이미지)가 채팅에 포커스 남아도 동작</li>
+            <li>응답 후 자동 생성: afterRequest 폴링·한 번만 생성 · 스트리밍 스냅샷(150→500자) · LBDATA는 글자 수에서 제외</li>
+            <li>인라인 말풍선 재주입 · ±1에서 짧은 라이트보드 건너뛰기</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
-          <strong>2.3.62</strong>
+          <strong>2.3.1 ~ 2.3.9</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>쌍둥이 해시 붙으면 말풍선 삽화도 강제 삽입 (스트리밍 중엔 안 넣음)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.61</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>생성 옵션: 캐릭 없을 때 no humans 토글</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.60</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>대시보드 스트리밍 키워드: 답 나오는 중 글자가 맞으면 한 번 생성</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.59</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>외형 없는 캐릭은 다시 태그 수집. 에셋태그 작가의 노트</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.58</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>캐릭터 탭에 승자만 보기. 통합챗 선택·저장·추가 때 다시 모음. 외형 ✕ 확인창</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.57</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>외형 ✕는 외형 칸 글자만 지움 (저장·옷·악세는 건드리지 않음)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.56</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>통합챗은 전 채팅 목록만 보고, 수정은 그 채팅에만 저장. 태깅은 우선순위/최신만 고름</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.55</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>캐릭터 저장을 태깅·읽기와 분리하고, 외형/옷/무기 태그 칸을 바로잡음</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.54</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>샷 태깅 후 옷 상태만 저장할 때 캐릭터 외형을 지우지 않음</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.53</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>인레이 설정이 같은 Risu 계정 세이브를 따라감 (그림은 이 기기)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.52</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>샷에 옷·외형이 비어 있으면 캐릭터 탭 룩을 지우지 않음</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.51</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>샷/캐릭 수정: 딤을 먼저 띄우고 폼은 뒤에 채움. 닫기·저장은 창을 먼저 닫음</li>
-            <li>뷰어 썸: 근처 12장만 워밍. 연타는 마지막 장만 그림</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.23</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>옷 상태(clothed/torn/topless/bottomless/nude/completely)를 채팅에서 이어 가고, 바뀔 때만 태거에 넣음</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.22</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>말풍선 연결은 그대로인데 삽화만 빠진 경우(설정 나갔다 오기 등) 마커를 보고 다시 붙임</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.21</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>체감은 그대로, 스크롤·상태창·말풍선 읽기·생성 완료 재마운트만 덜 돌림</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.20</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>스크롤로 말풍선을 고를 때도 삽화 유무를 갱신. 이미지 없는 칸은 기존 삽화를 지움</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.19</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>말풍선 삽화 ±1: 라이트보드(본문 30자 이하)도 유저처럼 건너뛰고 다음 칸을 씀</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.18</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>챗 완료 시 인라인 on이면 말풍선 삽화를 강제 재주입 (같은 카드 cheap skip 무시)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.17</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>스트리밍 글자 스냅샷: 150자 → 500자 (4초 트랙은 그대로)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.16</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>스트리밍 150자/4초 스냅샷을 따로 보관. 서로 비교해서 생성하지 않음</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.15</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>생성 글자 수: [LBDATA START]~[LBDATA END] 블록(태그 포함)은 빼고 센다. 나머지가 30자 이하면 선택해도 생성 안 함</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.14</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>스트리밍 자동 생성 체크: 30자 → 150자</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.13</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>스트리밍 자동 생성: 30자 또는 4초마다 0.5초 뒤 DOM#0 비교, 3글자 미만이면 한 번 생성</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.12</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>응답 후 자동 생성: afterRequest는 0.5초 뒤 한 번만 (0.3초 3연타 제거)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.11</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>응답 후 자동 생성 2트랙: afterRequest 0.3초 폴링 + 스트리밍 중 말풍선 5초 안정 시 같은 생성</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.10</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>응답 후 자동 생성: 0.3초마다 말풍선 글자 확인(최대 3번), 30자 이상이면 생성</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.9</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>응답 후 자동 생성: afterRequest(주 채팅 model)만 · 스트리밍 중 스킵 · script 출력은 종료 폴백만</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.8</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>말풍선 선택: [data-chat-id] / data-chat-index 기준, 화면 아래(최신)가 DOM#0</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.7</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>응답 후 자동 생성: 말풍선 DOM 확정 뒤 1초 대기 후 생성</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.6</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>응답 후 자동 생성: afterRequest + chat 출력 + 스트리밍 잠잠(800ms) 폴백 — 최신 캐릭 말풍선 클릭 선택으로 생성</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.5</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>Risu 설정 → Inlay 설정 → 닫기 → Risu 닫기 후 플로팅 뷰어 복구 (modal hide 플래그 잔류 수정)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.4</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>응답 후 자동 생성: 주 채팅(model)만 · 0.1초 뒤 클릭과 같은 선택으로 생성(provisional Ka 스킵 제거)</li>
-            <li>보조 모델 afterRequest는 선택·생성 안 함</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.3</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>이미지 탐색: 선택/폴더 삭제 UI 즉시 반영, 저장소 삭제는 백그라운드</li>
-            <li>응답 후 자동 생성: 응답 완료(afterRequest) 시점에만 생성(스트리밍 중 추정 생성 제거)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.2</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>스타일 프리셋 전환: 폼·칩 즉시 반영, 저장은 백그라운드(전체 리렌더 생략)</li>
-            <li>프리셋 삭제 후 선택: 맨 앞 대신 이웃(같은 자리→다음, 끝이면 이전)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.1</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>스타일 프리셋 삭제: UI 먼저 반영 후 vibe clear·저장은 백그라운드(모바일 체감 지연 완화)</li>
+            <li>프리셋·탐색 UI를 먼저 그리고 저장은 뒤에서 · 응답 완료(afterRequest) 때만 자동 생성</li>
+            <li>주 채팅만 · 말풍선 DOM#0 · 설정 닫은 뒤 플로팅 뷰어 복구</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
@@ -8644,7 +8441,7 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
     title: "2.3.67",
-    body: "태거 지침 앞·참고 뒤. 업데이트 내역 탭 참고."
+    body: "프롬프트 캐싱 정리. 프롬프트 탭에서 기본값으로 초기화하세요."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

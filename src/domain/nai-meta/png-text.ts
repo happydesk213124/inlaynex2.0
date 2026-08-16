@@ -19,7 +19,7 @@ function readUtf8(u8: Uint8Array, start: number, end: number): string {
   }
 }
 
-async function inflateZlib(data: Uint8Array): Promise<Uint8Array | null> {
+export async function inflateZlib(data: Uint8Array): Promise<Uint8Array | null> {
   if (typeof DecompressionStream !== 'function') return null;
   try {
     // PNG zTXt / iTXt compressed uses zlib wrapper.

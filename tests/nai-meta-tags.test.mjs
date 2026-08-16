@@ -16,6 +16,8 @@ import {
   extractStealthFromRgba,
   writeStealthAlphaLsb,
 } from '../.test-build/nai-meta-stealth.mjs';
+import { decodePngToRgba } from '../.test-build/nai-meta-png-rgba.mjs';
+import { deflateSync } from 'node:zlib';
 import {
   assetsFromEnabledModules,
   collectEnabledModuleIds,
@@ -425,4 +427,74 @@ test('extractStealthFromRgba reads column-major alpha LSBs (NovelAI order)', asy
   const meta = await extractStealthFromRgba(rgba, width, height);
   assert.ok(meta && typeof meta === 'object');
   assert.match(String(meta.prompt || ''), /stealth ok/);
+});
+
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (const b of bytes) {
+    c ^= b;
+    for (let k = 0; k < 8; k += 1) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const t = Buffer.from(type, 'latin1');
+  const body = Buffer.concat([t, Buffer.from(data)]);
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([len, body, crc]);
+}
+
+test('decodePngToRgba keeps alpha LSBs so stealth survives Source=NovelAI PNG', async () => {
+  const width = 32;
+  const height = 32;
+  const rgba = new Uint8Array(width * height * 4);
+  for (let i = 0; i < rgba.length; i += 4) {
+    rgba[i] = 200;
+    rgba[i + 1] = 80;
+    rgba[i + 2] = 40;
+    rgba[i + 3] = 255;
+  }
+  const json = JSON.stringify({ prompt: '1girl, white hair, red eyes' });
+  const jsonBytes = new TextEncoder().encode(json);
+  const magic = new TextEncoder().encode('stealth_pnginfo');
+  const bitLen = jsonBytes.length * 8;
+  const header = new Uint8Array(4);
+  header[0] = (bitLen >>> 24) & 0xff;
+  header[1] = (bitLen >>> 16) & 0xff;
+  header[2] = (bitLen >>> 8) & 0xff;
+  header[3] = bitLen & 0xff;
+  const payload = new Uint8Array(magic.length + 4 + jsonBytes.length);
+  payload.set(magic, 0);
+  payload.set(header, magic.length);
+  payload.set(jsonBytes, magic.length + 4);
+  writeStealthAlphaLsb(rgba, width, height, payload);
+
+  const scan = Buffer.alloc(height * (1 + width * 4));
+  for (let y = 0; y < height; y += 1) {
+    scan[y * (1 + width * 4)] = 0;
+    scan.set(rgba.subarray(y * width * 4, (y + 1) * width * 4), y * (1 + width * 4) + 1);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const source = Buffer.from('Source\0NovelAI', 'latin1');
+  const png = Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('tEXt', source),
+    pngChunk('IDAT', deflateSync(scan)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+
+  const decoded = await decodePngToRgba(png);
+  assert.ok(decoded);
+  assert.equal(decoded.colorType, 6);
+  const meta = await extractStealthFromRgba(decoded.rgba, decoded.width, decoded.height);
+  assert.match(String(meta?.prompt || ''), /white hair/);
 });

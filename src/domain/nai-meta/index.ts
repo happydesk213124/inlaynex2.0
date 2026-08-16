@@ -8,6 +8,7 @@ import {
   filterAssetPromptTags,
   type FilteredPromptTags,
 } from './prompt-tags.ts';
+import { decodePngToRgba } from './png-rgba.ts';
 import { decodeImageToRgba, extractStealthFromRgba } from './stealth.ts';
 import { webpExifTextMap } from './webp-exif.ts';
 
@@ -68,9 +69,19 @@ export async function extractNaiMetadata(bytes: BytesLike): Promise<unknown | nu
     }
   }
 
+  // Raw PNG pixels first. Canvas/createImageBitmap changes alpha LSBs.
+  if (isPngBytes(u8)) {
+    const raw = await decodePngToRgba(u8);
+    if (raw) {
+      const stealth = await extractStealthFromRgba(raw.rgba, raw.width, raw.height);
+      if (stealth && naiMetaHasPrompt(stealth)) return stealth;
+    }
+  }
+
   const decoded = await decodeImageToRgba(u8);
   if (!decoded) return null;
-  return extractStealthFromRgba(decoded.rgba, decoded.width, decoded.height);
+  const fromCanvas = await extractStealthFromRgba(decoded.rgba, decoded.width, decoded.height);
+  return fromCanvas && naiMetaHasPrompt(fromCanvas) ? fromCanvas : null;
 }
 
 /** Full pipeline: image bytes → filtered plains + weight map. */

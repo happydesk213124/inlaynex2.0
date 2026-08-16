@@ -581,23 +581,14 @@ async function resolvePicks(picks: ImportPick[], characterId: string): Promise<R
   return out;
 }
 
-async function runLoreAssetLooks(
+async function runLoreAssetLooksChunk(
   sessionId: string,
   characterId: string,
   rows: ResolvedRow[],
+  lorebook: LoreEntry[],
 ): Promise<void> {
-  if (!rows.length) return;
   const triggerKeys = parseAliasList(rows.flatMap((r) => [r.name, ...r.aliases]));
   if (!triggerKeys.length) return;
-  const hostLore = await fetchHostLorebookEntries();
-  const lorebook: LoreEntry[] = hostLore.length
-    ? hostLore
-    : rows.map((r) => ({
-      comment: r.name,
-      content: r.text,
-      keys: r.aliases,
-      key: r.aliases,
-    }));
   const roster = await rosterForSession(sessionId, '', characterId, []);
   const collected = await collectAssetNaiTags(triggerKeys, {
     withPreviews: false,
@@ -625,6 +616,27 @@ async function runLoreAssetLooks(
   } catch (err) {
     dbg('char-import.lore.fail', { message: String((err as Error)?.message || err) }, 'warn');
   }
+}
+
+async function runLoreAssetLooks(
+  sessionId: string,
+  characterId: string,
+  rows: ResolvedRow[],
+  parallel: boolean,
+): Promise<void> {
+  if (!rows.length) return;
+  const hostLore = await fetchHostLorebookEntries();
+  const lorebook: LoreEntry[] = hostLore.length
+    ? hostLore
+    : rows.map((r) => ({
+      comment: r.name,
+      content: r.text,
+      keys: r.aliases,
+      key: r.aliases,
+    }));
+  await mapPool(chunk(rows, META_PER), parallel, async (part) => {
+    await runLoreAssetLooksChunk(sessionId, characterId, part, lorebook);
+  });
 }
 
 export async function runImportFill(body: Record<string, unknown>): Promise<ApiResult> {
@@ -656,7 +668,7 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
   const lore = work.filter((r) => r.pick.kind === 'lore');
   const own = work.filter((r) => r.pick.kind !== 'lore');
 
-  await runLoreAssetLooks(writeScope, characterId, lore);
+  await runLoreAssetLooks(writeScope, characterId, lore, parallel);
 
   const loreNeedImg = (await stillMissing(writeScope, characterId, lore))
     .filter((r) => !r.bytes?.length);

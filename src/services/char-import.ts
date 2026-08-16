@@ -50,7 +50,6 @@ const META_PER = 8;
 const VISION_PER = 4;
 const TEXT_TOKEN_BUDGET = 60_000;
 const PARALLEL_MAX = 10;
-const MAX_LOOK_PREVIEWS = 5;
 
 export type ImportKind = 'persona' | 'lore' | 'charinfo';
 
@@ -266,24 +265,6 @@ async function seedRefsFromRows(rows: ResolvedRow[], roster: Awaited<ReturnType<
       dbg('char-import.ref.fail', { name: r.name, message: String((err as Error)?.message || err) }, 'warn');
     }
   }
-}
-
-async function previewsFromRows(rows: ResolvedRow[]): Promise<AssetLookPreview[]> {
-  const out: AssetLookPreview[] = [];
-  for (const r of rows) {
-    if (!r.bytes?.length || out.length >= MAX_LOOK_PREVIEWS) continue;
-    try {
-      const prepared = await prepareAutotagImage(r.bytes);
-      const b64 = await bytesToBase64Async(prepared.bytes);
-      out.push({
-        name: r.name,
-        dataUrl: `data:${prepared.mime || 'image/png'};base64,${b64}`,
-      });
-    } catch (err) {
-      dbg('char-import.preview.fail', { name: r.name, message: String((err as Error)?.message || err) }, 'warn');
-    }
-  }
-  return out;
 }
 
 async function runPackedLooks(
@@ -611,7 +592,7 @@ async function runLoreAssetLooks(
     }));
   const roster = await rosterForSession(sessionId, '', characterId, []);
   const collected = await collectAssetNaiTags(triggerKeys, {
-    withPreviews: true,
+    withPreviews: false,
     roster,
     lorebook,
     message: triggerKeys.join('\n'),
@@ -625,7 +606,7 @@ async function runLoreAssetLooks(
       sessionId,
       characterId,
       collected.packed,
-      collected.previews || [],
+      [],
       rows,
       lorebook,
       collected.originalHints || {},
@@ -686,8 +667,7 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
   await mapPool(metaChunks, parallel, async (rows) => {
     try {
       const packed = packedFromMetaRows(rows);
-      const previews = await previewsFromRows(rows);
-      const chars = await runPackedLooks(writeScope, characterId, packed, previews, rows, hostLore);
+      const chars = await runPackedLooks(writeScope, characterId, packed, [], rows, hostLore);
       if (chars.length) {
         const after = await rosterForSession(writeScope, '', characterId, []);
         await seedRefsFromRows(rows, after);

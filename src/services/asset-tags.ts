@@ -52,9 +52,9 @@ function foldNameHas(name: unknown, trigger: string): boolean {
 }
 
 /** Hard cap across all triggers (ASSETS_PER_TRIGGER × several cast members). */
-const MAX_ASSETS_HARD = 16;
+const MAX_ASSETS_HARD = 32;
 /** Cap how many name-matched candidates we try to read before giving up. */
-const MAX_READ_ATTEMPTS = 24;
+const MAX_READ_ATTEMPTS = 48;
 /** One vision preview per matched character/trigger (hard cap for multimodal). */
 const MAX_LOOK_PREVIEWS = 5;
 

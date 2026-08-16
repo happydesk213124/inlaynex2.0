@@ -552,7 +552,7 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
     roster_incomplete_names: rosterIncomplete,
     note:
       'lorefilter whitelist applied first when character_id set (same as job); '
-      + 'leading filename words == trigger words; per trigger ≤2; exact > default|normal|profile|smile > shorter; '
+      + 'leading filename words == trigger words; per trigger ≤4; exact > default|normal|profile|smile > shorter; '
       + 'common tags computed per trigger group; ALL keys of a lit lore entry become asset triggers (see lore_entries_fired.sibling_keys_not_in_message)',
   };
 

@@ -30,7 +30,7 @@ const PREFERRED_LOOK = ['default', 'normal', 'profile', 'smile'] as const;
 const WORD_SPLIT = /[^\p{L}\p{N}]+/gu;
 
 /** Max assets kept per lore trigger (with NAI meta). */
-export const ASSETS_PER_TRIGGER = 2;
+export const ASSETS_PER_TRIGGER = 4;
 
 /**
  * Fold + drop separators that users treat as absent (space / - / _ / .).

@@ -195,7 +195,7 @@ test('asset priority: exact > preferred look > shorter prefix', () => {
   assert.equal(assetPriorityForTrigger('senoyii.webp', tr), -1);
 });
 
-test('pickAssetsPerTrigger takes 2 per trigger preferring exact/normal/short', () => {
+test('pickAssetsPerTrigger takes 4 per trigger preferring exact/normal/short', () => {
   const scored = [
     { name: 'Juwon.png', key: 'a0', score: 1, hits: ['juwon'] },
     { name: 'Juwon_normal.png', key: 'a1', score: 1, hits: ['juwon'] },
@@ -212,13 +212,13 @@ test('pickAssetsPerTrigger takes 2 per trigger preferring exact/normal/short', (
     ...row,
     score: assetPriorityForTrigger(row.name, row.hits[0]),
   }));
-  const picked = pickAssetsPerTrigger(scored, ['juwon', 'naru'], 2);
-  assert.equal(picked.length, 4);
+  const picked = pickAssetsPerTrigger(scored, ['juwon', 'naru']);
+  assert.equal(picked.length, 8);
   // juwon: exact, then preferred (default/normal)
   assert.equal(picked[0].name, 'Juwon.png');
   assert.ok(['Juwon_default.png', 'Juwon_normal.png'].includes(picked[1].name));
   // naru: preferred default/normal/smile before angry/cry
-  assert.ok(picked.slice(2, 4).some((p) => p.name === 'naru_default.png' || p.name === 'naru_normal.png' || p.name === 'naru_smile.png'));
+  assert.ok(picked.slice(4, 8).some((p) => p.name === 'naru_default.png' || p.name === 'naru_normal.png' || p.name === 'naru_smile.png'));
 });
 
 test('promptFromNaiMetadata merges base and char captions', () => {

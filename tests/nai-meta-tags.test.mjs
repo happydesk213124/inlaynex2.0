@@ -143,6 +143,21 @@ test('packAssetTagGroups computes common and unique per trigger', () => {
   assert.doesNotMatch(block, /공통|에셋/);
 });
 
+test('packAssetTagGroups single image puts all plains in common', () => {
+  const tags = filterAssetPromptTags('girl, pink hair, 1.3::dress::');
+  const packed = packAssetTagGroups(
+    [{ name: 'Colizabeth', plains: tags.plains, weightMap: tags.weightMap, trigger: 'colizabeth' }],
+    new Map([['colizabeth', ['콜리자베스', 'Colizabeth']]]),
+  );
+  assert.equal(packed.groups.length, 1);
+  assert.ok(packed.groups[0].common.includes('girl'));
+  assert.ok(packed.groups[0].common.includes('pink hair'));
+  assert.ok(packed.groups[0].common.includes('dress'));
+  assert.deepEqual(packed.groups[0].assets[0].unique, []);
+  assert.ok(packed.groups[0].lore_keys.includes('콜리자베스'));
+  assert.match(formatAssetTagsInjectBlock(packed), /lore_keys:.*콜리자베스/);
+});
+
 test('asset matching uses leading filename words, not substring', () => {
   assert.deepEqual(assetMatchTriggers(['h', 'yu', 'yuki', 'witch', '나루', '이한', '주']), [
     'yuki',

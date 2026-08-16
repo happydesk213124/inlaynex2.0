@@ -262,7 +262,7 @@ character_name, chat_name, folder_key`.
 | `POST /v1/characters/unify` | `{target_session_id, source_session_ids[], include_target}` |
 | `GET /v1/characters/ref?character_id=` | `{ configured, preview_url }` |
 | `GET /v1/characters/import-picker?kind=persona|session&character_id=` | `{ items[{kind,id,name,preview,badge,has_image}], lore_empty }` |
-| `POST /v1/characters/import-fill` | `{scope, session_id, character_id, parallel, picks[{kind,id}]}` → `{filled, failed[], vision_to_text}` timeout 160s |
+| `POST /v1/characters/import-fill` | `{scope, session_id, character_id, parallel, picks[{kind,id}]}` → `{filled, failed[], vision_to_text}` timeout 160s. Lore picks: asset scan + `char_looks` (same as job prepass, including previews). Persona/CharInfo with NAI meta: same looks messages + `mergeRosterFromTagged`. No meta + image → autotag then roster merge; else description + `char_looks`. |
 | `POST /v1/characters/lorefilter` | `{character_id, selected[]}` save, or `{character_id, rescan:true, lorebook?}` seed via `asset_char` |
 | `POST /v1/characters/ref` | `{character_id, image_b64}` or `{character_id, copy_from}` or `{character_id, clear:true}` — bytes as-is |
 | `POST /v1/characters/ref/clear` | `{character_id}` |

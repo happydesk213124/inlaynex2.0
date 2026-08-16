@@ -121,6 +121,7 @@ main.ts                     entry: builds the bridge, publishes globals
 | How rows are saved | `src/storage/stores.ts` |
 | Image caching / data URLs | `src/storage/image-urls.ts` |
 | The job pipeline order | `src/services/jobs.ts` |
+| Manual roster fill (페소에서 / 가져오기) | `src/services/char-import.ts` — lore uses `collectAssetNaiTags` + `buildCharacterLooksMessages`; save via `mergeRosterFromTagged` |
 | Whether a message is already busy | `src/services/job-locks.ts` — shared by `jobs` and `cards`; do not re-derive it |
 | Gallery / explorer queries | `src/services/gallery.ts` |
 | Anything the UI reads off `globalThis` | `src/bridge/ui-globals.ts` |

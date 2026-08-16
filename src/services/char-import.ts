@@ -1,18 +1,23 @@
 /**
  * Manual roster fill from personas / character-lore / CharInfo.
- * One HTTP; classify then batch looks LLM (meta 8 / vision 4 / text ~60k).
+ * Lore picks reuse the job asset scan + char_looks prepass.
+ * Persona / CharInfo with NAI meta use the same looks messages + mergeRoster.
  */
 import { dbg } from '../core/debug';
 import { hostHas, risuHost } from '../core/host';
 import { GLOBAL_SCOPE } from '../core/constants';
-import type { ApiResult } from '../core/types';
-import { asU8, bytesToBase64Async } from '../core/util/bytes';
+import type { ApiResult, JobRequest, LoreEntry } from '../core/types';
+import { asU8, bytesToBase64Async, u8ToArrayBuffer } from '../core/util/bytes';
 import { parseJsonLoose } from '../core/util/object';
-import { cleanText, stripCbs } from '../core/util/text';
+import { cleanText, parseAliasList, stripCbs } from '../core/util/text';
+import { resolveCharacter } from '../domain/character/roster';
 import { characterHasAppearance } from '../domain/character/tags';
 import { resolveLlmRole } from '../domain/llm/roles';
 import {
   formatAssetTagsInjectBlock,
+  packAssetTagGroups,
+  packedAssetNames,
+  restoreAssetTagWeights,
   tagsFromImageBytes,
   type PackedAssetTags,
 } from '../domain/nai-meta/index';
@@ -20,15 +25,29 @@ import { compactAssetKey, originalTagFromPlains } from '../domain/nai-meta/match
 import { prepareAutotagImage } from '../core/util/image';
 import type { LlmContentPart, LlmMessage } from '../providers/llm/transform';
 import { callLlm } from '../providers/llm/client';
+import {
+  applyCharRefsFromPreviewTargets,
+  collectAssetNaiTags,
+  setLastAssetWeightMap,
+  type AssetLookPreview,
+} from './asset-tags';
 import { getConfig } from './context';
-import { listCharacters, upsertCharacter } from './characters';
-import { getLorefilterPayload } from './lorefilter';
+import {
+  listCharacters,
+  mergeRosterFromTagged,
+  rosterForSession,
+  upsertCharacter,
+} from './characters';
+import { fetchHostLorebookEntries, getLorefilterPayload } from './lorefilter';
+import { setCharRefImage } from './nai-assets';
 import { getPrompt } from './settings';
+import { buildCharacterLooksMessages } from './tagger';
 
 const META_PER = 8;
 const VISION_PER = 4;
 const TEXT_TOKEN_BUDGET = 60_000;
 const PARALLEL_MAX = 10;
+const MAX_LOOK_PREVIEWS = 5;
 
 export type ImportKind = 'persona' | 'lore' | 'charinfo';
 
@@ -44,6 +63,7 @@ interface ResolvedRow {
   text: string;
   bytes: Uint8Array | null;
   plains: string[];
+  weightMap: Map<string, string>;
   originalHint: string;
 }
 
@@ -95,25 +115,56 @@ async function mapPool<T>(
   await Promise.all(Array.from({ length: Math.min(n, items.length) || 1 }, () => worker()));
 }
 
-function packedFromRows(rows: ResolvedRow[]): PackedAssetTags {
+function looksRequest(opts: {
+  sessionId: string;
+  characterId: string;
+  names: string[];
+  lorebook?: LoreEntry[];
+  triggerKeys?: string[];
+}): JobRequest {
   return {
-    weightMap: new Map(),
-    groups: rows.map((r) => ({
-      trigger: compactAssetKey(r.name, 200) || r.name,
-      lore_keys: [r.name, ...r.aliases].filter(Boolean),
-      common: r.plains,
-      assets: [{ name: r.name, unique: [] }],
-    })),
+    session_id: opts.sessionId,
+    character_id: opts.characterId,
+    assistant_text: opts.names.join('\n'),
+    lorebook: opts.lorebook || [],
+    lore_trigger_keys: opts.triggerKeys || [],
   };
 }
 
-async function looksSystem(): Promise<string> {
-  const looks = stripCbs(await getPrompt('char_looks')).trim();
-  const how = stripCbs(await getPrompt('asset_tags_inject')).replace(/\{asset_tags_block\}/g, '').trim();
-  return [looks, how].filter(Boolean).join('\n\n');
+function packedFromMetaRows(rows: ResolvedRow[]): PackedAssetTags {
+  const loreKeys = new Map<string, string[]>();
+  for (const r of rows) {
+    const tr = compactAssetKey(r.name, 200) || r.name;
+    loreKeys.set(tr, parseAliasList([r.name, ...r.aliases]));
+  }
+  return packAssetTagGroups(
+    rows.map((r) => ({
+      name: r.name,
+      plains: r.plains,
+      weightMap: r.weightMap,
+      trigger: compactAssetKey(r.name, 200) || r.name,
+    })),
+    loreKeys,
+  );
 }
 
-async function callLooks(
+function originalHintsFrom(rows: ResolvedRow[], extra: Record<string, string> = {}): Record<string, string> {
+  const hints: Record<string, string> = { ...extra };
+  const add = (key: string, tag: string) => {
+    const ck = compactAssetKey(key, 200);
+    if (!ck || !tag) return;
+    const prev = hints[ck];
+    if (!prev || tag.length > prev.length) hints[ck] = tag;
+  };
+  for (const r of rows) {
+    if (!r.originalHint) continue;
+    add(r.name, r.originalHint);
+    for (const a of r.aliases) add(a, r.originalHint);
+  }
+  return hints;
+}
+
+async function parseLooks(
   messages: LlmMessage[],
   role: 'asset_char' | 'autotag' = 'asset_char',
 ): Promise<Record<string, unknown>[]> {
@@ -128,76 +179,159 @@ async function callLooks(
   return [];
 }
 
+function stampIdentity(
+  chars: Record<string, unknown>[],
+  rows: ResolvedRow[],
+): Record<string, unknown>[] {
+  return chars.map((c, i) => {
+    const named = cleanText(c.name, 200);
+    const row = rows.find((r) => cleanText(r.name, 200) === named)
+      || rows.find((r) => r.aliases.some((a) => cleanText(a, 200) === named))
+      || rows[i];
+    if (!row) return c;
+    return {
+      ...c,
+      name: named || row.name,
+      aliases: parseAliasList([
+        ...(Array.isArray(c.aliases) ? c.aliases : []),
+        ...row.aliases,
+        row.name,
+      ]),
+    };
+  });
+}
+
 async function saveLooks(
-  scope: string,
+  sessionId: string,
+  characterId: string,
   chars: Record<string, unknown>[],
   hints: Record<string, string>,
-): Promise<number> {
-  let n = 0;
-  const existing = await listCharacters(scope);
-  for (const raw of chars) {
-    const name = cleanText(raw.name, 200);
-    if (!name) continue;
-    const hit = existing.find((c) => cleanText(c.name, 200) === name);
-    if (hit && characterHasAppearance(hit)) continue;
-    const ck = compactAssetKey(name, 200);
-    const original = cleanText(raw.original, 200) || (ck ? hints[ck] : '') || '';
-    const rec = await upsertCharacter(scope, {
-      ...raw,
-      name,
-      original,
-      appearance: raw.appearance,
-      attire: raw.attire,
-      accessories: raw.accessories,
-      aliases: raw.aliases,
-      surname: raw.surname,
-      given_name: raw.given_name,
-      gender: raw.gender,
-    });
-    if (rec) n += 1;
-  }
-  return n;
-}
-
-async function runMetaBatch(scope: string, rows: ResolvedRow[]): Promise<{ filled: number; failed: string[] }> {
-  const failed: string[] = [];
-  try {
-    const sys = await looksSystem();
-    const block = formatAssetTagsInjectBlock(packedFromRows(rows));
-    const names = rows.map((r) => `- ${r.name}`).join('\n');
-    const chars = await callLooks([
-      { role: 'system', content: sys },
-      {
-        role: 'user',
-        content:
-          `# Reference: NovelAI asset tags\n${block}\n\n`
-          + `## Incomplete\n${names}\n\n`
-          + 'Fill `new_characters` for these names. COPY tags verbatim. JSON only.',
-      },
-    ]);
-    const hints: Record<string, string> = {};
-    for (const r of rows) {
-      const ck = compactAssetKey(r.name, 200);
-      if (ck && r.originalHint) hints[ck] = r.originalHint;
+  weightMap?: Map<string, string>,
+): Promise<void> {
+  if (!chars.length) return;
+  if (weightMap?.size) {
+    setLastAssetWeightMap(weightMap);
+    for (const c of chars) {
+      c.appearance = restoreAssetTagWeights(c.appearance, weightMap);
+      c.attire = restoreAssetTagWeights(c.attire, weightMap);
+      c.accessories = restoreAssetTagWeights(c.accessories, weightMap);
     }
-    const filled = await saveLooks(scope, chars, hints);
-    return { filled, failed };
-  } catch (err) {
-    dbg('char-import.meta.fail', { message: String((err as Error)?.message || err) }, 'warn');
-    return { filled: 0, failed: rows.map((r) => r.name) };
+  }
+  await mergeRosterFromTagged({
+    sessionId,
+    tagged: { new_characters: chars, scenes: [] },
+    shotChars: [],
+    characterId,
+    assetLooks: true,
+    originalHints: hints,
+  });
+}
+
+async function foldPickAliases(scope: string, rows: ResolvedRow[]): Promise<void> {
+  const list = await listCharacters(scope);
+  for (const r of rows) {
+    if (!r.aliases.length) continue;
+    const hit = resolveCharacter(r.name, list)
+      || r.aliases.map((a) => resolveCharacter(a, list)).find(Boolean);
+    if (!hit) continue;
+    await upsertCharacter(hit.scope || scope, {
+      id: hit.id,
+      name: hit.name,
+      aliases: parseAliasList([...(hit.aliases || []), ...r.aliases, r.name, hit.name]),
+    });
   }
 }
 
-async function runVisionBatch(scope: string, rows: ResolvedRow[]): Promise<{ filled: number; failed: ResolvedRow[] }> {
+async function seedRefsFromRows(rows: ResolvedRow[], roster: Awaited<ReturnType<typeof rosterForSession>>): Promise<void> {
+  for (const r of rows) {
+    if (!r.bytes?.length) continue;
+    const hit = resolveCharacter(r.name, roster);
+    const cid = cleanText(hit?.id, 80);
+    if (!cid) continue;
+    try {
+      await setCharRefImage(cid, u8ToArrayBuffer(r.bytes), { overwrite: false });
+    } catch (err) {
+      dbg('char-import.ref.fail', { name: r.name, message: String((err as Error)?.message || err) }, 'warn');
+    }
+  }
+}
+
+async function previewsFromRows(rows: ResolvedRow[]): Promise<AssetLookPreview[]> {
+  const out: AssetLookPreview[] = [];
+  for (const r of rows) {
+    if (!r.bytes?.length || out.length >= MAX_LOOK_PREVIEWS) continue;
+    try {
+      const prepared = await prepareAutotagImage(r.bytes);
+      const b64 = await bytesToBase64Async(prepared.bytes);
+      out.push({
+        name: r.name,
+        dataUrl: `data:${prepared.mime || 'image/png'};base64,${b64}`,
+      });
+    } catch (err) {
+      dbg('char-import.preview.fail', { name: r.name, message: String((err as Error)?.message || err) }, 'warn');
+    }
+  }
+  return out;
+}
+
+async function runPackedLooks(
+  sessionId: string,
+  characterId: string,
+  packed: PackedAssetTags,
+  previews: AssetLookPreview[],
+  rows: ResolvedRow[],
+  lorebook: LoreEntry[],
+  extraHints: Record<string, string> = {},
+): Promise<Record<string, unknown>[]> {
+  setLastAssetWeightMap(packed.weightMap || new Map());
+  const block = formatAssetTagsInjectBlock(packed);
+  const names = packedAssetNames(packed);
+  const triggerKeys = rows.flatMap((r) => [r.name, ...r.aliases]).filter(Boolean);
+  const messages = await buildCharacterLooksMessages(
+    looksRequest({
+      sessionId,
+      characterId,
+      names: rows.map((r) => r.name),
+      lorebook,
+      triggerKeys,
+    }),
+    block,
+    names,
+    previews,
+  );
+  const chars = stampIdentity(await parseLooks(messages, 'asset_char'), rows);
+  if (!chars.length) return [];
+  await saveLooks(
+    sessionId,
+    characterId,
+    chars,
+    originalHintsFrom(rows, extraHints),
+    packed.weightMap,
+  );
+  await foldPickAliases(sessionId, rows);
+  return chars;
+}
+
+async function looksSystem(): Promise<string> {
+  const looks = stripCbs(await getPrompt('char_looks')).trim();
+  const how = stripCbs(await getPrompt('asset_tags_inject')).replace(/\{asset_tags_block\}/g, '').trim();
+  return [looks, how].filter(Boolean).join('\n\n');
+}
+
+async function runVisionBatch(scope: string, characterId: string, rows: ResolvedRow[]): Promise<ResolvedRow[]> {
   try {
     const sys = stripCbs(await getPrompt('autotag')).trim()
       || 'Tag character reference images into Danbooru-style English prompts. JSON only.';
     const parts: LlmContentPart[] = [{
       type: 'text',
       text:
-        'Return ONE JSON object: {"new_characters":[{"name","gender","appearance","attire","accessories","original","aliases"}]}.\n'
-        + 'Use the given names. Images are in the same order. COPY visual tags.\n'
-        + rows.map((r) => `- ${r.name}${r.text ? `: ${cleanText(r.text, 800)}` : ''}`).join('\n'),
+        'Return ONE JSON object: {"new_characters":[{"name","gender","appearance","attire","accessories","original","aliases","surname","given_name","costumes"}]}.\n'
+        + 'Use the given names and lore_keys as aliases (exact spelling). original: only a known media Danbooru tag, else "".\n'
+        + 'Images are in the same order. COPY visual tags. JSON only.\n'
+        + rows.map((r) => {
+          const keys = parseAliasList([r.name, ...r.aliases]).join(', ');
+          return `- ${r.name} (lore_keys: ${keys})${r.text ? `\n${cleanText(r.text, 800)}` : ''}`;
+        }).join('\n'),
     }];
     for (const r of rows) {
       if (!r.bytes?.length) continue;
@@ -206,39 +340,44 @@ async function runVisionBatch(scope: string, rows: ResolvedRow[]): Promise<{ fil
       parts.push({ type: 'text', text: `Image name: ${r.name}` });
       parts.push({ type: 'image_url', image_url: { url: `data:${prepared.mime || 'image/png'};base64,${b64}` } });
     }
-    const chars = await callLooks([
-      { role: 'system', content: sys },
-      { role: 'user', content: parts },
-    ], 'autotag');
-    const named = chars.map((c, i) => ({
-      ...c,
-      name: cleanText(c.name, 200) || rows[i]?.name || '',
-    }));
-    const filled = await saveLooks(scope, named, {});
-    return { filled, failed: [] };
+    const chars = stampIdentity(
+      await parseLooks([{ role: 'system', content: sys }, { role: 'user', content: parts }], 'autotag'),
+      rows,
+    );
+    if (!chars.length) return rows;
+    await saveLooks(scope, characterId, chars, originalHintsFrom(rows));
+    await foldPickAliases(scope, rows);
+    return [];
   } catch (err) {
     dbg('char-import.vision.fail', { message: String((err as Error)?.message || err) }, 'warn');
-    return { filled: 0, failed: rows };
+    return rows;
   }
 }
 
-async function runTextBatch(scope: string, rows: ResolvedRow[]): Promise<{ filled: number; failed: string[] }> {
+async function runTextBatch(scope: string, characterId: string, rows: ResolvedRow[]): Promise<boolean> {
   try {
     const sys = await looksSystem();
-    const body = rows.map((r) => `### ${r.name}\n${r.text || '(no description)'}`).join('\n\n');
-    const chars = await callLooks([
+    const body = rows.map((r) => {
+      const keys = parseAliasList([r.name, ...r.aliases]).join(', ');
+      return `### ${r.name}\nlore_keys: ${keys || r.name}\n${r.text || '(no description)'}`;
+    }).join('\n\n');
+    const chars = stampIdentity(await parseLooks([
       { role: 'system', content: sys },
       {
         role: 'user',
         content:
-          '# Reference: descriptions\n' + body + '\n\nFill `new_characters` for each heading. JSON only.',
+          '# Reference: descriptions\n'
+          + body
+          + '\n\nFill `new_characters` for each heading. Use lore_keys for name/aliases. JSON only.',
       },
-    ]);
-    const filled = await saveLooks(scope, chars, {});
-    return { filled, failed: [] };
+    ]), rows);
+    if (!chars.length) return false;
+    await saveLooks(scope, characterId, chars, originalHintsFrom(rows));
+    await foldPickAliases(scope, rows);
+    return true;
   } catch (err) {
     dbg('char-import.text.fail', { message: String((err as Error)?.message || err) }, 'warn');
-    return { filled: 0, failed: rows.map((r) => r.name) };
+    return false;
   }
 }
 
@@ -264,6 +403,24 @@ function chunkText(rows: ResolvedRow[]): ResolvedRow[][] {
   }
   if (cur.length) out.push(cur);
   return out;
+}
+
+function rowHasLooks(
+  row: ResolvedRow,
+  roster: Awaited<ReturnType<typeof rosterForSession>>,
+): boolean {
+  const hit = resolveCharacter(row.name, roster)
+    || row.aliases.map((a) => resolveCharacter(a, roster)).find(Boolean);
+  return Boolean(hit && characterHasAppearance(hit));
+}
+
+async function stillMissing(
+  sessionId: string,
+  characterId: string,
+  rows: ResolvedRow[],
+): Promise<ResolvedRow[]> {
+  const roster = await rosterForSession(sessionId, '', characterId, []);
+  return rows.filter((r) => !rowHasLooks(r, roster));
 }
 
 async function personasFromHost(): Promise<Array<Record<string, unknown>>> {
@@ -342,6 +499,15 @@ export async function listImportPicker(kind: string, characterId: string): Promi
   };
 }
 
+async function tagsFromPickBytes(bytes: Uint8Array | null): Promise<{
+  plains: string[];
+  weightMap: Map<string, string>;
+}> {
+  if (!bytes?.length) return { plains: [], weightMap: new Map() };
+  const tags = await tagsFromImageBytes(bytes);
+  return { plains: tags?.plains || [], weightMap: tags?.weightMap || new Map() };
+}
+
 async function resolvePicks(picks: ImportPick[], characterId: string): Promise<ResolvedRow[]> {
   const personas = await personasFromHost();
   const ch = await currentCharacter();
@@ -361,28 +527,34 @@ async function resolvePicks(picks: ImportPick[], characterId: string): Promise<R
       const name = cleanText(p.name, 200) || pick.id;
       const text = cleanText(p.personaPrompt || p.note, 12000);
       const bytes = await readHostImage(cleanText(p.icon, 400));
-      let plains: string[] = [];
-      let originalHint = '';
-      if (bytes?.length) {
-        const tags = await tagsFromImageBytes(bytes);
-        plains = tags?.plains || [];
-        originalHint = originalTagFromPlains(plains, name);
-      }
-      out.push({ pick, name, aliases: [], text, bytes, plains, originalHint });
+      const tags = await tagsFromPickBytes(bytes);
+      out.push({
+        pick,
+        name,
+        aliases: [],
+        text,
+        bytes,
+        plains: tags.plains,
+        weightMap: tags.weightMap,
+        originalHint: originalTagFromPlains(tags.plains, name),
+      });
       continue;
     }
     if (pick.kind === 'charinfo') {
       const name = cleanText(ch?.name, 200) || 'character';
       const text = cleanText(ch?.description || ch?.desc, 12000);
       const bytes = await readHostImage(cleanText(ch?.image, 400));
-      let plains: string[] = [];
-      let originalHint = '';
-      if (bytes?.length) {
-        const tags = await tagsFromImageBytes(bytes);
-        plains = tags?.plains || [];
-        originalHint = originalTagFromPlains(plains, name);
-      }
-      out.push({ pick, name, aliases: [], text, bytes, plains, originalHint });
+      const tags = await tagsFromPickBytes(bytes);
+      out.push({
+        pick,
+        name,
+        aliases: [],
+        text,
+        bytes,
+        plains: tags.plains,
+        weightMap: tags.weightMap,
+        originalHint: originalTagFromPlains(tags.plains, name),
+      });
       continue;
     }
     const row = byLore.get(pick.id);
@@ -397,10 +569,57 @@ async function resolvePicks(picks: ImportPick[], characterId: string): Promise<R
       text,
       bytes: null,
       plains: [],
+      weightMap: new Map(),
       originalHint: '',
     });
   }
   return out;
+}
+
+async function runLoreAssetLooks(
+  sessionId: string,
+  characterId: string,
+  rows: ResolvedRow[],
+): Promise<void> {
+  if (!rows.length) return;
+  const triggerKeys = parseAliasList(rows.flatMap((r) => [r.name, ...r.aliases]));
+  if (!triggerKeys.length) return;
+  const hostLore = await fetchHostLorebookEntries();
+  const lorebook: LoreEntry[] = hostLore.length
+    ? hostLore
+    : rows.map((r) => ({
+      comment: r.name,
+      content: r.text,
+      keys: r.aliases,
+      key: r.aliases,
+    }));
+  const roster = await rosterForSession(sessionId, '', characterId, []);
+  const collected = await collectAssetNaiTags(triggerKeys, {
+    withPreviews: true,
+    roster,
+    lorebook,
+    message: triggerKeys.join('\n'),
+  });
+  if (!collected?.block) {
+    dbg('char-import.lore.no_assets', { names: rows.map((r) => r.name) });
+    return;
+  }
+  try {
+    const chars = await runPackedLooks(
+      sessionId,
+      characterId,
+      collected.packed,
+      collected.previews || [],
+      rows,
+      lorebook,
+      collected.originalHints || {},
+    );
+    if (!chars.length) return;
+    const after = await rosterForSession(sessionId, '', characterId, []);
+    await applyCharRefsFromPreviewTargets(chars, collected.previewTargets || [], after);
+  } catch (err) {
+    dbg('char-import.lore.fail', { message: String((err as Error)?.message || err) }, 'warn');
+  }
 }
 
 export async function runImportFill(body: Record<string, unknown>): Promise<ApiResult> {
@@ -426,55 +645,77 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
 
   const characterId = cleanText(body.character_id || body.characterId, 200);
   const resolved = await resolvePicks(picks, characterId);
-  const roster = await listCharacters(writeScope);
-  const skip = new Set(
-    roster.filter((c) => characterHasAppearance(c)).map((c) => cleanText(c.name, 200)),
-  );
-  const work = resolved.filter((r) => r.name && !skip.has(r.name));
-  const meta = work.filter((r) => r.plains.length);
-  const vision = work.filter((r) => !r.plains.length && r.bytes?.length);
-  const text = work.filter((r) => !r.plains.length && !r.bytes?.length);
+  const roster = await rosterForSession(writeScope, '', characterId, []);
+  const work = resolved.filter((r) => r.name && !rowHasLooks(r, roster));
 
-  let filled = 0;
-  const failed: string[] = [];
+  const lore = work.filter((r) => r.pick.kind === 'lore');
+  const own = work.filter((r) => r.pick.kind !== 'lore');
+
+  await runLoreAssetLooks(writeScope, characterId, lore);
+
   let visionToText = 0;
+  const hostLore = own.length ? await fetchHostLorebookEntries() : [];
 
+  const meta = (await stillMissing(writeScope, characterId, own)).filter((r) => r.plains.length);
   const metaChunks = chunk(meta, META_PER);
   await mapPool(metaChunks, parallel, async (rows) => {
-    const r = await runMetaBatch(writeScope, rows);
-    filled += r.filled;
-    failed.push(...r.failed);
+    try {
+      const packed = packedFromMetaRows(rows);
+      const previews = await previewsFromRows(rows);
+      const chars = await runPackedLooks(writeScope, characterId, packed, previews, rows, hostLore);
+      if (chars.length) {
+        const after = await rosterForSession(writeScope, '', characterId, []);
+        await seedRefsFromRows(rows, after);
+      }
+    } catch (err) {
+      dbg('char-import.meta.fail', { message: String((err as Error)?.message || err) }, 'warn');
+    }
   });
 
+  const vision = (await stillMissing(writeScope, characterId, own))
+    .filter((r) => !r.plains.length && r.bytes?.length);
   const visFail: ResolvedRow[] = [];
   const visChunks = chunk(vision, VISION_PER);
   await mapPool(visChunks, parallel, async (rows) => {
-    const r = await runVisionBatch(writeScope, rows);
-    filled += r.filled;
-    visFail.push(...r.failed);
+    const leftover = await runVisionBatch(writeScope, characterId, rows);
+    visFail.push(...leftover);
   });
   visionToText = visFail.length;
 
-  const textRows = [...text, ...visFail];
+  const needText = [
+    ...(await stillMissing(writeScope, characterId, lore)),
+    ...(await stillMissing(writeScope, characterId, own)).filter((r) => !r.plains.length && !r.bytes?.length),
+    ...visFail,
+  ];
+  const seen = new Set<string>();
+  const textRows = needText.filter((r) => {
+    const k = `${r.pick.kind}:${r.pick.id}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
   const textChunks = chunkText(textRows);
   await mapPool(textChunks, parallel, async (rows) => {
-    const r = await runTextBatch(writeScope, rows);
-    filled += r.filled;
-    failed.push(...r.failed);
+    await runTextBatch(writeScope, characterId, rows);
   });
+
+  const leftover = await stillMissing(writeScope, characterId, work);
+  const filled = work.length - leftover.length;
+  const afterAll = await rosterForSession(writeScope, '', characterId, []);
+  await seedRefsFromRows(own, afterAll);
 
   dbg('char-import.done', {
     scope: writeScope,
     picks: picks.length,
     filled,
-    failed: failed.length,
+    failed: leftover.length,
     vision_to_text: visionToText,
     parallel,
   });
   return {
     ok: true,
     filled,
-    failed,
+    failed: leftover.map((r) => r.name),
     skipped: resolved.length - work.length,
     vision_to_text: visionToText,
     message: visionToText
@@ -482,5 +723,3 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
       : '',
   };
 }
-
-

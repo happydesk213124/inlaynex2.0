@@ -142,10 +142,27 @@ Builds the LLM tagging request and flattens the reply into shots.
 
 ```ts
 export async function buildTaggerMessages(args: TaggerArgs): Promise<LlmMessage[]>; // 4779
+export async function buildCharacterLooksMessages(
+  request: TaggerArgs,
+  assetBlock: string,
+  assetNames?: string[],
+  previews?: AssetLookPreview[],
+): Promise<LlmMessage[]>;
 export function flattenShots(tagged: unknown): TaggedShot[];                        // 4966
 ```
 
-Depends on: `characters`, `settings`.
+Depends on: `characters`, `settings`, `asset-tags`.
+
+## `char-import.ts`
+
+Manual roster fill from the character tab (페소에서 / 가져오기). Lore picks call `collectAssetNaiTags` then `buildCharacterLooksMessages` (same as the job looks prepass, including previews). Persona/CharInfo with NAI meta pack tags the same way and save through `mergeRosterFromTagged`.
+
+```ts
+export async function listImportPicker(kind: string, characterId: string): Promise<ApiResult>;
+export async function runImportFill(body: Record<string, unknown>): Promise<ApiResult>;
+```
+
+Depends on: `tagger`, `characters`, `asset-tags`, `lorefilter`, `nai-assets`, `settings`.
 
 ## `generation.ts` — legacy 4980–5216
 

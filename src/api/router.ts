@@ -32,6 +32,7 @@ import * as generation from '../services/generation';
 import * as jobs from '../services/jobs';
 import * as naiAssets from '../services/nai-assets';
 import * as lorefilter from '../services/lorefilter';
+import * as charImport from '../services/char-import';
 import * as settings from '../services/settings';
 import * as curation from '../services/curation';
 import { authorized, parseQuery, q, type Headers, type Query } from './http';
@@ -159,6 +160,11 @@ const GET_ROUTES: readonly Route[] = [
         preview_url: configured ? '/v1/nai/vibe.png' : '',
       });
     },
+  },
+  {
+    match: exact('/v1/characters/import-picker'),
+    handler: async ({ query }) =>
+      ok(await charImport.listImportPicker(q(query, 'kind') || '', q(query, 'character_id') || '')),
   },
   {
     match: exact('/v1/characters/lorefilter'),
@@ -370,6 +376,10 @@ const WRITE_ROUTES: readonly Route[] = [
           message_index: Number(body.message_index ?? body.messageIndex ?? -1),
         }),
       ),
+  },
+  {
+    match: exact('/v1/characters/import-fill'),
+    handler: async ({ body }) => ok(await charImport.runImportFill(body)),
   },
   {
     match: exact('/v1/characters/lorefilter'),

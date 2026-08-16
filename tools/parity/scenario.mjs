@@ -174,6 +174,8 @@ export async function runScenario(N, handles) {
     selected: ['t:alice'],
   }));
   await rec('lorefilter.get_after_set', () => get('/v1/characters/lorefilter?character_id=char_parity'));
+  await rec('chars.import_picker_persona', () => get('/v1/characters/import-picker?kind=persona'));
+  await rec('chars.import_fill_empty', () => post('/v1/characters/import-fill', { picks: [] }));
 
   // ── characters: shared surname must not merge ───────────────────────────
   await rec('chars.create_shared_surname', () => post('/v1/characters', {

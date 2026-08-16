@@ -360,6 +360,18 @@ const NEW_ONLY_STEPS = new Map([
       ? null
       : `2.0 lorefilter GET after set must keep selected, got ${JSON.stringify(v)}`),
   ],
+  [
+    'chars.import_picker_persona',
+    (v) => (v?.ok === true && Array.isArray(v?.items)
+      ? null
+      : `import-picker must return items[], got ${JSON.stringify(v)}`),
+  ],
+  [
+    'chars.import_fill_empty',
+    (v) => (v?.ok === false
+      ? null
+      : `import-fill with no picks must be ok:false, got ${JSON.stringify(v)}`),
+  ],
 ]);
 
 const byName = (run) => new Map(run.transcript.map((t) => [t.name, t]));

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.67';
+const PLUGIN_VERSION = '2.3.68';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -720,6 +720,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.68</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>캐릭터 탭: 페소에서 / 가져오기 — 메타·이미지·설명을 묶어서 룩 채우기 (동시 요청 토글)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.67</strong>
@@ -6234,6 +6240,91 @@ const VENDOR_DASH_ACTIONS_HTML_NEEDLE =
 const VENDOR_DASH_ACTIONS_HTML_PATCH =
   `          <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">창위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">전체 초기화</button></div>`;
 
+const VENDOR_CHAR_IMPORT_EVT_NEEDLE =
+  `    }), document.getElementById("nx-char-add-global")?.addEventListener("click", async () => {`;
+const VENDOR_CHAR_IMPORT_EVT_PATCH =
+  `    }), (async () => {
+      const openCharImport = async (kind) => {
+        const scope = await Z().catch(() => ({}));
+        const cid = String(scope.characterId || t.lastScope?.characterId || "").trim();
+        const qk = kind === "persona"
+          ? "/v1/characters/import-picker?kind=persona"
+          : "/v1/characters/import-picker?kind=session&character_id=" + encodeURIComponent(cid);
+        let data = { items: [], lore_empty: !1 };
+        try {
+          data = await K(qk, { method: "GET" }, 15e3) || data;
+        } catch (err) {
+          t.uiMessage = { type: "error", text: z(err?.message || err) };
+          await P();
+          return;
+        }
+        const items = Array.isArray(data.items) ? data.items : [];
+        document.getElementById("nx-char-import-modal")?.remove?.();
+        const veil = document.createElement("div");
+        veil.id = "nx-char-import-modal";
+        veil.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;padding:12px";
+        const loreEmpty = data.lore_empty && kind !== "persona";
+        const rows = items.map((it) => {
+          const id = String(it.id || "");
+          const nm = h(it.name || id);
+          const bd = h(it.badge || "");
+          const pv = h(it.preview || "");
+          return \`<label style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer"><input type="checkbox" data-imp-pick data-kind="\${h(it.kind)}" data-id="\${h(id)}" \${kind==="persona" ? "" : "checked"}><span style="flex:1;min-width:0"><strong>\${nm}</strong> <span class="muted">\${bd}</span><div class="muted" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\${pv}</div></span></label>\`;
+        }).join("") || '<div class="muted">항목 없음</div>';
+        veil.innerHTML = \`<div style="background:#1b2330;border-radius:14px 14px 0 0;width:min(560px,100%);max-height:86vh;display:flex;flex-direction:column;padding:14px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>\${kind==="persona"?"페소에서 (글로벌)":"가져오기"}</strong>
+            <button type="button" class="secondary" data-imp-all>전체선택</button>
+            <button type="button" class="secondary" data-imp-none>전체해제</button>
+            <button type="button" class="secondary" data-imp-close style="margin-left:auto">닫기</button></div>
+          \${loreEmpty ? '<div class="notice info" style="margin-top:8px">캐릭터 로어북이 비어 있습니다. 탭에서 자동채우기를 먼저 하세요.</div>' : ""}
+          <div data-imp-list style="overflow:auto;flex:1;margin-top:10px">\${rows}</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
+            <label class="toggle-row" style="margin:0"><input type="checkbox" data-imp-parallel><span>동시 요청</span></label>
+            <button type="button" data-imp-fill>채우기</button>
+          </div></div>\`;
+        (t.uiRoot || document.body).appendChild(veil);
+        const boxes = () => [...veil.querySelectorAll("[data-imp-pick]")];
+        veil.querySelector("[data-imp-close]")?.addEventListener("click", () => veil.remove());
+        veil.addEventListener("click", (e) => { if (e.target === veil) veil.remove(); });
+        veil.querySelector("[data-imp-all]")?.addEventListener("click", () => boxes().forEach((b) => b.checked = !0));
+        veil.querySelector("[data-imp-none]")?.addEventListener("click", () => boxes().forEach((b) => b.checked = !1));
+        veil.querySelector("[data-imp-fill]")?.addEventListener("click", async () => {
+          const picks = boxes().filter((b) => b.checked).map((b) => ({ kind: b.getAttribute("data-kind"), id: b.getAttribute("data-id") }));
+          if (!picks.length) return;
+          const btn = veil.querySelector("[data-imp-fill]");
+          const par = !!veil.querySelector("[data-imp-parallel]")?.checked;
+          if (btn) { btn.disabled = !0; btn.textContent = "채우는 중…"; }
+          try {
+            const res = await K("/v1/characters/import-fill", { method: "POST", body: {
+              scope: kind === "persona" ? "__global__" : (scope.sessionId || ""),
+              session_id: scope.sessionId || "",
+              character_id: cid,
+              global: kind === "persona",
+              parallel: par,
+              picks
+            } }, 16e4);
+            const msg = [res?.filled != null ? (res.filled + " 채움") : "", (res?.failed||[]).length ? (res.failed.length + " 실패") : "", res?.message || ""].filter(Boolean).join(" · ");
+            t.uiMessage = { type: (res?.failed||[]).length ? "error" : "success", text: msg || "완료" };
+            veil.remove();
+            await ce(scope.sessionId || "", !0);
+            await P();
+          } catch (err) {
+            t.uiMessage = { type: "error", text: z(err?.message || err) };
+            if (btn) { btn.disabled = !1; btn.textContent = "채우기"; }
+            await P();
+          }
+        });
+      };
+      document.getElementById("nx-char-import-session")?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        await openCharImport("session");
+      });
+      document.getElementById("nx-char-import-global")?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        await openCharImport("persona");
+      });
+    })(), document.getElementById("nx-char-add-global")?.addEventListener("click", async () => {`;
+
 const VENDOR_CHAR_TAB_BTNS_NEEDLE =
   `        <div class="row" style="margin-top:10px">
           <button id="nx-char-add-session" class="secondary">\${Nn ? "통합 캐릭터 추가" : "채팅 캐릭터 추가"}</button>
@@ -6257,6 +6348,7 @@ const VENDOR_CHAR_TAB_BTNS_NEEDLE =
 const VENDOR_CHAR_TAB_BTNS_PATCH =
   `        <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
           <button id="nx-char-add-session" class="secondary">추가</button>
+          <button id="nx-char-import-session" class="secondary">가져오기</button>
           <button id="nx-save-chars">저장</button>
           <button id="nx-export-session-chars" class="secondary">EXPORT</button>
           <button id="nx-import-session-chars" class="secondary">IMPORT</button>
@@ -6269,6 +6361,7 @@ const VENDOR_CHAR_TAB_BTNS_PATCH =
         <div id="nx-char-global-list">\${x}</div>
         <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
           <button id="nx-char-add-global" class="secondary">추가</button>
+          <button id="nx-char-import-global" class="secondary">페소에서</button>
           <button id="nx-save-global-chars">저장</button>
           <button id="nx-export-global-chars" class="secondary">EXPORT</button>
           <button id="nx-import-global-chars" class="secondary">IMPORT</button>
@@ -8440,8 +8533,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.67",
-    body: "프롬프트 캐싱 정리. 프롬프트 탭에서 기본값으로 초기화하세요."
+    title: "2.3.68",
+    body: "캐릭터 가져오기/페소에서. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11504,6 +11597,7 @@ const loadVendorUi = (): string => {
     [VENDOR_STATUS_GRID_SHOW_NEEDLE, 'status grid keep hidden'],
     [VENDOR_DASH_ACTIONS_HTML_NEEDLE, 'dashboard action buttons'],
     [VENDOR_CHAR_TAB_BTNS_NEEDLE, 'character tab button labels'],
+    [VENDOR_CHAR_IMPORT_EVT_NEEDLE, 'character import picker modal'],
     [VENDOR_UNIFIED_SCOPE_CE_NEEDLE, 'unified scope reload after gallery'],
     [VENDOR_UNIFIED_REFRESH_CE_NEEDLE, 'unified refresh reload after gallery'],
     [VENDOR_UNIFIED_REBUILD_CE_NEEDLE, 'unified rebuild reload after gallery'],
@@ -11858,6 +11952,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_STATUS_GRID_SHOW_NEEDLE, VENDOR_STATUS_GRID_SHOW_PATCH)
     .replace(VENDOR_DASH_ACTIONS_HTML_NEEDLE, VENDOR_DASH_ACTIONS_HTML_PATCH)
     .replace(VENDOR_CHAR_TAB_BTNS_NEEDLE, VENDOR_CHAR_TAB_BTNS_PATCH)
+    .replace(VENDOR_CHAR_IMPORT_EVT_NEEDLE, VENDOR_CHAR_IMPORT_EVT_PATCH)
     .replace(VENDOR_UNIFIED_SCOPE_CE_NEEDLE, VENDOR_UNIFIED_SCOPE_CE_PATCH)
     .replace(VENDOR_UNIFIED_REFRESH_CE_NEEDLE, VENDOR_UNIFIED_REFRESH_CE_PATCH)
     .replace(VENDOR_UNIFIED_REBUILD_CE_NEEDLE, VENDOR_UNIFIED_REBUILD_CE_PATCH)

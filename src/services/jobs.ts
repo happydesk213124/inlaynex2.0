@@ -693,6 +693,7 @@ async function runJob(jobId: string): Promise<void> {
               characterId,
               sourceSessionIds,
               assetLooks: true,
+              originalHints: assetCollected.originalHints || {},
             });
             try {
               const lookRoster = await rosterForSession(

@@ -8,7 +8,7 @@ import {
   restoreAssetTagWeights,
   splitNaiPromptTokens,
 } from '../.test-build/nai-meta-prompt-tags.mjs';
-import { assetMatchTriggers, assetNameTokens, scoreAssetName, assetPriorityForTrigger, pickAssetsPerTrigger, filterAssetTriggersForUnfilledLooks, loreKeysByCompactTrigger } from '../.test-build/nai-meta-match.mjs';
+import { assetMatchTriggers, assetNameTokens, scoreAssetName, assetPriorityForTrigger, pickAssetsPerTrigger, filterAssetTriggersForUnfilledLooks, loreKeysByCompactTrigger, originalTagFromPlains } from '../.test-build/nai-meta-match.mjs';
 import { promptFromNaiMetadata } from '../.test-build/nai-meta-from-metadata.mjs';
 import { dimsForAspect, normalizeShotAspect } from '../.test-build/nai-meta-aspect.mjs';
 import { filterStylePresetPositive, styleFieldsFromNaiMetadata } from '../.test-build/nai-meta-style-preset.mjs';
@@ -143,7 +143,7 @@ test('packAssetTagGroups computes common and unique per trigger', () => {
   assert.doesNotMatch(block, /공통|에셋/);
 });
 
-test('asset matching uses compact contains (drop space/-/_/. then join)', () => {
+test('asset matching uses leading filename words, not substring', () => {
   assert.deepEqual(assetMatchTriggers(['h', 'yu', 'yuki', 'witch', '나루', '이한', '주']), [
     'yuki',
     'witch',
@@ -154,16 +154,23 @@ test('asset matching uses compact contains (drop space/-/_/. then join)', () => 
   assert.deepEqual(assetMatchTriggers(['sen-oy', 'sen_oy', 'Senoy']), ['senoy']);
   assert.deepEqual(assetMatchTriggers(['安', '漢', '漢字']), []);
   assert.deepEqual(assetMatchTriggers(['大漢字', 'abc']), ['大漢字', 'abc']);
-  // compact contains
-  assert.ok(scoreAssetName('양나루_프로필.png', ['나루']));
   assert.ok(scoreAssetName('나루_smile.png', ['나루']));
   assert.ok(scoreAssetName('Juwon_happy.png', ['juwon']));
   assert.ok(scoreAssetName('Senoy(Fallen).webp', ['senoy']));
   assert.ok(scoreAssetName('senoy-normal.webp', ['senoy']));
-  assert.ok(scoreAssetName('sen_oy-default.webp', ['senoy']));
   assert.ok(scoreAssetName('세노이(P).webp', ['세노이']));
-  assert.ok(scoreAssetName('Senoy.webp', ['sen-oy']));
+  assert.equal(scoreAssetName('양나루_프로필.png', ['나루']), null);
+  assert.equal(scoreAssetName('kurokage_away.webp', ['awa']), null);
+  assert.equal(scoreAssetName('sen_oy-default.webp', ['senoy']), null);
   assert.deepEqual(assetMatchTriggers(['ha', 'han']), ['han']);
+});
+
+test('originalTagFromPlains prefers qualified identity tag', () => {
+  assert.equal(
+    originalTagFromPlains(['florian (pokemon)', 'happy', 'smile'], 'florian'),
+    'florian (pokemon)',
+  );
+  assert.equal(originalTagFromPlains(['happy', 'smile'], 'florian'), '');
 });
 
 test('filterAssetTriggersForUnfilledLooks drops filled character triggers only', () => {
@@ -178,13 +185,14 @@ test('filterAssetTriggersForUnfilledLooks drops filled character triggers only',
   assert.deepEqual([...out].sort(), ['성당', '세노이', 'senoy'].sort());
 });
 
-test('asset priority: exact > preferred look > shorter contains', () => {
+test('asset priority: exact > preferred look > shorter prefix', () => {
   const tr = 'senoy';
   assert.ok(assetPriorityForTrigger('Senoy.webp', tr) > assetPriorityForTrigger('Senoy-normal.webp', tr));
   assert.ok(assetPriorityForTrigger('Senoy-normal.webp', tr) > assetPriorityForTrigger('Senoy-angry.webp', tr));
   assert.ok(assetPriorityForTrigger('Senoy-default.webp', tr) > assetPriorityForTrigger('Senoy-angry-pregnant.webp', tr));
-  assert.ok(assetPriorityForTrigger('senoyii.webp', tr) > assetPriorityForTrigger('senoyjdflkajdflkadjsl.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy-a.webp', tr) > assetPriorityForTrigger('Senoy-angry-pregnant.webp', tr));
   assert.ok(assetPriorityForTrigger('Senoy(Fallen).webp', tr) > 0);
+  assert.equal(assetPriorityForTrigger('senoyii.webp', tr), -1);
 });
 
 test('pickAssetsPerTrigger takes 2 per trigger preferring exact/normal/short', () => {

@@ -25,12 +25,14 @@
  */
 
 import { GLOBAL_SCOPE } from '../core/constants';
+import { compactAssetKey } from '../domain/nai-meta/match.ts';
 import type { ApiResult, CharacterRecord, ShotCharacter, TaggerResult } from '../core/types';
 import { cleanText, joinTags, normalizeAlias, parseAliasList } from '../core/util/text';
 import { characterMatchesIdentity, inferGenderFromExactTags, normalizeGender, latinGivenTokenOverlap, absorbAliasesFromDonor, ASSET_LOOKS_PRIORITY } from '../domain/character/identity';
 import type { CharacterInput, MigratedCharacter } from '../domain/character/identity';
 import {
   characterAliasKeys,
+  characterTriggers,
   foldCharacterUpsert,
   mergeCharactersByAlias,
   mergeSessionAndGlobalRoster,
@@ -77,6 +79,8 @@ export interface MergeRosterArgs {
   sourceSessionIds?: unknown[];
   /** When true (char_looks prepass), bump written rows to ASSET_LOOKS_PRIORITY. */
   assetLooks?: boolean;
+  /** Compact trigger/name → NAI identity tag; wins over LLM `original` when set. */
+  originalHints?: Record<string, string>;
 }
 
 interface SessionEditCount {
@@ -754,6 +758,19 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
   const characterId = cleanText(args.characterId || '', 200);
   const assetLooks = !!args.assetLooks;
   const assetPriorityFloor = assetLooks ? ASSET_LOOKS_PRIORITY : 0;
+  const originalHints = args.originalHints && typeof args.originalHints === 'object' ? args.originalHints : {};
+  const originalFromHint = (raw: unknown): string => {
+    if (!raw || typeof raw !== 'object') return '';
+    const rec = raw as CharacterInput;
+    const keys = [rec.name, ...(rec.aliases || []), ...characterTriggers(rec)];
+    let best = '';
+    for (const k of keys) {
+      const ck = compactAssetKey(k, 200);
+      const hit = ck ? originalHints[ck] : '';
+      if (hit && hit.length > best.length) best = hit;
+    }
+    return best;
+  };
   // Autotag / new chars always land on the live chat — never the unified cache.
   const writeSessionId = cleanText(sessionId || '', 200);
   const readRoster = (): Promise<CharacterRecord[]> =>
@@ -823,6 +840,8 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
   for (const raw of newList) {
     const rec = normalizeCharacterRecord(raw);
     if (!rec) continue;
+    const hinted = originalFromHint(raw) || originalFromHint(rec);
+    if (hinted) rec.original = hinted;
     const weightMap = getLastAssetWeightMap();
     if (weightMap.size) {
       rec.appearance = restoreAssetTagWeights(rec.appearance, weightMap);
@@ -851,6 +870,7 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
           appearance: fill.appearance,
           attire: fill.attire,
           accessories: fill.accessories,
+          ...(hinted ? { original: hinted } : {}),
         });
       }
       roster = await readRoster();

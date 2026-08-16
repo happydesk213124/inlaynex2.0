@@ -1,17 +1,18 @@
 /**
  * Match lore trigger keys to Risu additionalAssets names.
  *
- * Matching is case-insensitive **substring contains** after compacting both
- * sides: space, `-`, `_`, and `.` are dropped (not split delimiters) so the
- * remaining characters are concatenated. e.g. `sen_oy-default` ↔ `senoy`.
+ * Filename and trigger are split into words on non-letter/non-number
+ * (`senoy_default` → senoy, default). A hit requires the trigger words to
+ * equal the **leading** filename words — not a substring anywhere
+ * (`awa` does not match `kurokage_away`).
  *
  * Hangul triggers may be short; Latin/Hanja-only keys still need length ≥3
- * on the compact form.
+ * on the compact form (trigger eligibility only).
  *
  * Per-trigger pick order (higher first), up to {@link ASSETS_PER_TRIGGER}:
- * 1. Exact compact basename == compact trigger (e.g. `Senoy.webp`)
- * 2. Contains trigger + preferred look word (default/normal/profile/smile); shorter wins
- * 3. Contains trigger; shorter name wins
+ * 1. Exact word-list match (e.g. `Senoy.webp`)
+ * 2. Prefix + preferred look word (default/normal/profile/smile); shorter wins
+ * 3. Prefix only; shorter name wins
  */
 import { cleanText } from '../../core/util/text.ts';
 import type { CharacterInput } from '../character/identity.ts';
@@ -22,8 +23,11 @@ const MIN_LATIN_HANJA_LEN = 3;
 /** Hangul syllables + jamo (covers NFD names before NFC normalize). */
 const HANGUL_RE = /[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]/;
 
-/** Preferred look keywords in the filename (rank 2). Checked on compact text. */
+/** Preferred look keywords in the filename (rank 2). */
 const PREFERRED_LOOK = ['default', 'normal', 'profile', 'smile'] as const;
+
+/** Split basename / trigger / tag on anything that is not a letter or number. */
+const WORD_SPLIT = /[^\p{L}\p{N}]+/gu;
 
 /** Max assets kept per lore trigger (with NAI meta). */
 export const ASSETS_PER_TRIGGER = 2;
@@ -46,6 +50,20 @@ export function assetBasenameCompact(name: unknown): string {
     .toLowerCase()
     .replace(/\.[a-z0-9]{2,5}$/i, '');
   return folded.replace(/[\s_\-.]/g, '');
+}
+
+/** Lowercased words of a filename / trigger / tag (extension stripped for names). */
+export function assetNameWords(value: unknown): string[] {
+  const raw = cleanText(value, 400).normalize('NFC').toLowerCase();
+  if (!raw) return [];
+  const noExt = raw.replace(/\.[a-z0-9]{2,5}$/i, '');
+  return noExt.split(WORD_SPLIT).map((w) => w.trim()).filter(Boolean);
+}
+
+/** True when `prefix` words equal the leading words of `full`. */
+export function wordsStartWith(full: readonly string[], prefix: readonly string[]): boolean {
+  if (!prefix.length || full.length < prefix.length) return false;
+  return prefix.every((w, i) => full[i] === w);
 }
 
 /** @deprecated Prefer {@link assetBasenameCompact}. */
@@ -204,40 +222,56 @@ export interface AssetMatchScore {
   hits: string[];
 }
 
-function hasPreferredLook(compactBase: string): boolean {
-  return PREFERRED_LOOK.some((w) => compactBase.includes(w));
+function hasPreferredLook(words: readonly string[]): boolean {
+  return PREFERRED_LOOK.some((w) => words.includes(w));
 }
 
 /**
  * Priority within one trigger's candidate pool (higher = better).
- * 1 exact → 2 preferred look words → 3 shorter contains → 4 longer contains.
+ * 1 exact words → 2 preferred look words → 3 shorter prefix → 4 longer prefix.
  */
 export function assetPriorityForTrigger(name: unknown, trigger: string): number {
-  const tr = compactAssetKey(trigger, 200);
-  if (!tr) return -1;
-  const base = assetBasenameCompact(name);
-  if (!base.includes(tr)) return -1;
+  const trigWords = assetNameWords(trigger);
+  if (!trigWords.length) return -1;
+  const fileWords = assetNameWords(name);
+  if (!wordsStartWith(fileWords, trigWords)) return -1;
 
-  const exact = base === tr;
-  const preferred = hasPreferredLook(base);
-  // Shorter basename wins among the same tier (cap length so scores stay ordered).
-  const shortBonus = Math.max(0, 2_000 - base.length);
+  const exact = fileWords.length === trigWords.length;
+  const preferred = hasPreferredLook(fileWords);
+  const shortBonus = Math.max(0, 2_000 - fileWords.join('').length);
 
   if (exact) return 3_000_000 + shortBonus;
   if (preferred) return 2_000_000 + shortBonus;
   return 1_000_000 + shortBonus;
 }
 
-/** Score asset name vs triggers: compact contains, best trigger priority. */
+/** Longer trigger wins when several prefix-match the same file. */
+function triggerClaimScore(trigger: string): number {
+  const words = assetNameWords(trigger);
+  const joined = words.join('');
+  return words.length * 10_000 + joined.length;
+}
+
+/** Score asset name vs triggers: leading-word prefix, best look priority. */
 export function scoreAssetName(name: unknown, triggers: readonly string[]): AssetMatchScore | null {
   const display = cleanText(name, 400);
   if (!display) return null;
-  const base = assetBasenameCompact(display);
-  if (!base) return null;
+  const fileWords = assetNameWords(display);
+  if (!fileWords.length) return null;
   const hits: string[] = [];
+  let bestClaim = -1;
   for (const tr of triggers) {
     const folded = compactAssetKey(tr, 200);
-    if (folded && base.includes(folded)) hits.push(folded);
+    const trigWords = assetNameWords(folded || tr);
+    if (!trigWords.length || !wordsStartWith(fileWords, trigWords)) continue;
+    const claim = triggerClaimScore(folded || tr);
+    if (claim > bestClaim) {
+      bestClaim = claim;
+      hits.length = 0;
+      hits.push(folded || trigWords.join(''));
+    } else if (claim === bestClaim && folded && !hits.includes(folded)) {
+      hits.push(folded);
+    }
   }
   if (!hits.length) return null;
   const bestPri = Math.max(...hits.map((h) => assetPriorityForTrigger(display, h)));
@@ -247,6 +281,24 @@ export function scoreAssetName(name: unknown, triggers: readonly string[]): Asse
     score: bestPri,
     hits,
   };
+}
+
+/**
+ * From NAI plains, pick the identity tag for `original`.
+ * Stem `florian` + plains `florian (pokemon)`, `happy` → `florian (pokemon)`.
+ */
+export function originalTagFromPlains(plains: readonly string[], identity: unknown): string {
+  const stem = assetNameWords(identity);
+  if (!stem.length) return '';
+  let best = '';
+  for (const raw of plains) {
+    const display = cleanText(raw, 400);
+    if (!display) continue;
+    const words = assetNameWords(display);
+    if (!wordsStartWith(words, stem)) continue;
+    if (display.length > best.length) best = display;
+  }
+  return best;
 }
 
 export interface RankedAssetCandidate {

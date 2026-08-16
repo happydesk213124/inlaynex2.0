@@ -26,6 +26,7 @@ import {
   loreKeysByCompactTrigger,
   orderTriggersForAssetPick,
   pickAssetsPerTrigger,
+  originalTagFromPlains,
   scoreAssetName,
 } from '../domain/nai-meta/match.ts';
 import { characterHasAppearance } from '../domain/character/tags.ts';
@@ -71,6 +72,8 @@ export interface AssetTagCollectResult {
   previews: AssetLookPreview[];
   /** Highest-priority successful asset per trigger (raw bytes source for char refs). */
   previewTargets: Array<{ name: string; key: string }>;
+  /** Compact name/trigger → NAI identity tag for roster `original`. */
+  originalHints: Record<string, string>;
 }
 
 interface AssetPoolInfo {
@@ -444,7 +447,20 @@ export async function collectAssetNaiTags(
     unique: packed.groups.reduce((n, g) => n + g.assets.reduce((m, a) => m + a.unique.length, 0), 0),
     previews: previews.map((p) => p.name),
   });
-  return { block, packed, weightMap, previews, previewTargets };
+  const originalHints: Record<string, string> = {};
+  const addHint = (key: string, tag: string) => {
+    const ck = compactAssetKey(key, 200);
+    if (!ck || !tag) return;
+    const prev = originalHints[ck];
+    if (!prev || tag.length > prev.length) originalHints[ck] = tag;
+  };
+  for (const row of packedRows) {
+    const tag = originalTagFromPlains(row.plains, row.trigger);
+    if (!tag) continue;
+    addHint(row.trigger, tag);
+    for (const lk of loreKeysMap.get(row.trigger) || []) addHint(lk, tag);
+  }
+  return { block, packed, weightMap, previews, previewTargets, originalHints };
 }
 
 /**
@@ -536,7 +552,7 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
     roster_incomplete_names: rosterIncomplete,
     note:
       'lorefilter whitelist applied first when character_id set (same as job); '
-      + 'compact contains (drop space/-/_/.); per trigger ≤2; exact > default|normal|profile|smile > shorter; '
+      + 'leading filename words == trigger words; per trigger ≤2; exact > default|normal|profile|smile > shorter; '
       + 'common tags computed per trigger group; ALL keys of a lit lore entry become asset triggers (see lore_entries_fired.sibling_keys_not_in_message)',
   };
 

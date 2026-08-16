@@ -704,7 +704,7 @@ async function runJob(jobId: string): Promise<void> {
               );
               const refN = await applyCharRefsFromPreviewTargets(
                 newChars,
-                assetCollected.previewTargets || [],
+                assetCollected.refTargets || assetCollected.previewTargets || [],
                 lookRoster,
               );
               if (refN) dbg('job.char_looks.char_refs', { applied: refN });

@@ -612,7 +612,7 @@ async function runLoreAssetLooksChunk(
     );
     if (!chars.length) return;
     const after = await rosterForSession(sessionId, '', characterId, []);
-    await applyCharRefsFromPreviewTargets(chars, collected.previewTargets || [], after);
+    await applyCharRefsFromPreviewTargets(chars, collected.refTargets || collected.previewTargets || [], after);
   } catch (err) {
     dbg('char-import.lore.fail', { message: String((err as Error)?.message || err) }, 'warn');
   }

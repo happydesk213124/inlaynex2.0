@@ -39,7 +39,7 @@ import {
 } from '../domain/nai-meta/risu-asset-list.ts';
 import { asU8, bytesToBase64Async, u8ToArrayBuffer } from '../core/util/bytes.ts';
 import { prepareAutotagImage } from '../core/util/image.ts';
-import { resolveCharacter } from '../domain/character/roster';
+import { characterTriggers, resolveCharacter } from '../domain/character/roster';
 import { getConfig } from './context';
 import { applyLorefilter, ensureLorefilter } from './lorefilter';
 import { setCharRefImage } from './nai-assets';
@@ -69,8 +69,10 @@ export interface AssetTagCollectResult {
   weightMap: Map<string, string>;
   /** Representative asset images for vision (≤1 per character, ≤MAX_LOOK_PREVIEWS). */
   previews: AssetLookPreview[];
-  /** Highest-priority successful asset per trigger (raw bytes source for char refs). */
+  /** Vision only: first few name-matched files (≤MAX_LOOK_PREVIEWS). */
   previewTargets: Array<{ name: string; key: string }>;
+  /** Top name-ranked file per trigger — meta not required. */
+  refTargets: Array<{ name: string; key: string }>;
   /** Compact name/trigger → NAI identity tag for roster `original`. */
   originalHints: Record<string, string>;
 }
@@ -250,8 +252,8 @@ async function scoreAndReadAssets(
 ): Promise<{
   scored: ScoredAsset[];
   packedRows: Array<{ name: string; plains: string[]; weightMap: Map<string, string>; trigger: string }>;
-  /** Highest-priority successful asset per trigger (for vision previews). */
   previewTargets: Array<{ name: string; key: string }>;
+  refTargets: Array<{ name: string; key: string }>;
   attempts: number;
   attemptLog: Array<Record<string, unknown>>;
 }> {
@@ -263,7 +265,15 @@ async function scoreAndReadAssets(
     .filter(Boolean) as ScoredAsset[];
 
   const packedRows: Array<{ name: string; plains: string[]; weightMap: Map<string, string>; trigger: string }> = [];
-  const previewTargets: Array<{ name: string; key: string }> = [];
+  const refTargets: Array<{ name: string; key: string }> = [];
+  const seenRef = new Set<string>();
+  for (const tr of orderTriggersForAssetPick(triggers)) {
+    const top = rankPoolForTrigger(scored, tr).find((a) => !seenRef.has(a.key));
+    if (!top) continue;
+    seenRef.add(top.key);
+    refTargets.push({ name: tr, key: top.key });
+  }
+  const previewTargets = refTargets.slice(0, MAX_LOOK_PREVIEWS);
   const attemptLog: Array<Record<string, unknown>> = [];
   const claimed = new Set<string>();
   let attempts = 0;
@@ -338,20 +348,11 @@ async function scoreAndReadAssets(
     let got = 0;
     for (const asset of pool) {
       if (got >= ASSETS_PER_TRIGGER) break;
-      if (await tryRead(asset, tr)) {
-        // First success for this trigger = representative look preview.
-        // `name` is the lore/character trigger (not asset filename) so char_ref
-        // auto-seed can match new_characters by identity.
-        if (got === 0 && previewTargets.length < MAX_LOOK_PREVIEWS
-          && !previewTargets.some((p) => p.key === asset.key || normalizeAlias(p.name) === normalizeAlias(tr))) {
-          previewTargets.push({ name: tr, key: asset.key });
-        }
-        got += 1;
-      }
+      if (await tryRead(asset, tr)) got += 1;
     }
   }
 
-  return { scored, packedRows, previewTargets, attempts, attemptLog };
+  return { scored, packedRows, previewTargets, refTargets, attempts, attemptLog };
 }
 
 async function buildLookPreviews(
@@ -423,7 +424,7 @@ export async function collectAssetNaiTags(
     ? explainTriggeredLoreEntries(opts.lorebook, opts.message).map((e) => e.keys)
     : [];
   const loreKeysMap = loreKeysByCompactTrigger(triggerKeys, triggers, relatedGroups);
-  const { scored, packedRows, previewTargets, attempts } = await scoreAndReadAssets(pool.assets, triggers);
+  const { scored, packedRows, previewTargets, refTargets, attempts } = await scoreAndReadAssets(pool.assets, triggers);
 
   if (!packedRows.length) {
     dbg('asset-tags.skip', { reason: 'no_meta_hits', matched: scored.length, attempts });
@@ -461,7 +462,7 @@ export async function collectAssetNaiTags(
     addHint(row.trigger, tag);
     for (const lk of loreKeysMap.get(row.trigger) || []) addHint(lk, tag);
   }
-  return { block, packed, weightMap, previews, previewTargets, originalHints };
+  return { block, packed, weightMap, previews, previewTargets, refTargets, originalHints };
 }
 
 export interface BestLookAsset {
@@ -701,11 +702,31 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
   return { ok: true, report };
 }
 
+/** Prefer the longest matching trigger so `shiro` wins over a shared `여동생`. */
+export function pickCharRefTarget(
+  name: string,
+  stored: CharacterInput | null | undefined,
+  targets: Array<{ name: string; key: string }>,
+): { name: string; key: string } | null {
+  if (!targets.length) return null;
+  const aliases = new Set(
+    [name, stored?.name, ...(stored ? characterTriggers(stored) : [])]
+      .map((x) => compactAssetKey(x, 200))
+      .filter(Boolean),
+  );
+  const matches = targets.filter((t) => {
+    const tk = compactAssetKey(t.name, 200);
+    if (tk && aliases.has(tk)) return true;
+    if (normalizeAlias(t.name) === normalizeAlias(name)) return true;
+    return Boolean(stored && resolveCharacter(t.name, [stored]));
+  });
+  if (!matches.length) return null;
+  return [...matches].sort((a, b) => b.name.length - a.name.length || a.name.localeCompare(b.name))[0]!;
+}
+
 /**
- * After char_looks fills a roster row, seed its NAI reference from the
- * priority-1 asset for that trigger — original bytes only (no re-encode).
+ * Seed NAI reference from the top name-ranked asset (meta not required).
  * Skips characters that already have a reference image.
- * Targets use trigger names (unfilled-look lore keys), matching new_characters.
  */
 export async function applyCharRefsFromPreviewTargets(
   newCharacters: unknown[],
@@ -721,15 +742,7 @@ export async function applyCharRefsFromPreviewTargets(
     const stored = resolveCharacter(name, roster);
     const cid = cleanText(stored?.id || '', 80);
     if (!cid) continue;
-    // Match trigger→character: exact alias fold, or resolveCharacter against trigger.
-    const hit =
-      targets.find((t) => normalizeAlias(t.name) === normalizeAlias(name))
-      || targets.find((t) => normalizeAlias(t.name) === normalizeAlias(stored?.name || ''))
-      || targets.find((t) => {
-        const byTrigger = resolveCharacter(t.name, [stored || raw as CharacterInput].filter(Boolean));
-        return Boolean(byTrigger && cleanText(byTrigger.id || '', 80) === cid);
-      })
-      || targets.find((t) => Boolean(resolveCharacter(t.name, roster)?.id === cid));
+    const hit = pickCharRefTarget(name, stored, targets);
     if (!hit?.key) continue;
     const bytes = await readAssetBytes(hit.key);
     if (!bytes?.length) continue;

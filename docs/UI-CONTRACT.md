@@ -261,7 +261,7 @@ character_name, chat_name, folder_key`.
 | `POST /v1/characters/global-toggles` | `{character_id, disabled_globals[]}` |
 | `POST /v1/characters/unify` | `{target_session_id, source_session_ids[], include_target}` |
 | `GET /v1/characters/ref?character_id=` | `{ configured, preview_url }` |
-| `GET /v1/characters/import-picker?kind=persona|session&character_id=` | `{ items[{kind,id,name,preview,badge,has_image}], lore_empty }`. Lore `badge` = activation keys; CharInfo `badge` = `charinfo`. Picker checkboxes start unchecked. |
+| `GET /v1/characters/import-picker?kind=persona|session&character_id=` | `{ items[{kind,id,name,preview,keys[],text,badge,has_image}], lore_empty }`. Lore `badge` = activation keys; CharInfo `badge` = `charinfo`. Picker filters live on name/keys/text; select-all applies to visible rows only. Checkboxes start unchecked. |
 | `POST /v1/characters/import-fill` | `{scope, session_id, character_id, parallel, picks[{kind,id}]}` → `{filled, failed[], vision_to_text}` timeout 160s. Lore: asset meta + `char_looks`; if matching assets have no meta, one best-ranked file (default/normal/profile/smil*) via autotag; else lore body + `char_looks`. Persona/CharInfo with NAI meta: same looks messages + `mergeRosterFromTagged`. No meta + image → autotag then roster merge; else description + `char_looks`. |
 | `POST /v1/characters/lorefilter` | `{character_id, selected[]}` save, or `{character_id, rescan:true, lorebook?}` seed via `asset_char` |
 | `POST /v1/characters/ref` | `{character_id, image_b64}` or `{character_id, copy_from}` or `{character_id, clear:true}` — bytes as-is |

@@ -450,6 +450,8 @@ export async function listImportPicker(kind: string, characterId: string): Promi
         id,
         name: cleanText(p.name, 200) || `persona ${i + 1}`,
         preview: cleanText(p.note || p.personaPrompt, 240),
+        keys: [],
+        text: [cleanText(p.note, 12000), cleanText(p.personaPrompt, 12000)].filter(Boolean).join('\n').slice(0, 12000),
         badge: '페소',
         has_image: Boolean(cleanText(p.icon, 400)),
       };
@@ -469,6 +471,10 @@ export async function listImportPicker(kind: string, characterId: string): Promi
       id,
       name: cleanText(row?.title, 200) || id,
       preview: cleanText(row?.content, 240),
+      keys: (Array.isArray(row?.keys) ? row.keys : [])
+        .map((k) => cleanText(k, 80))
+        .filter(Boolean),
+      text: cleanText(row?.content, 12000),
       badge: (Array.isArray(row?.keys) ? row.keys : [])
         .map((k) => cleanText(k, 80))
         .filter(Boolean)
@@ -485,6 +491,8 @@ export async function listImportPicker(kind: string, characterId: string): Promi
     id: 'charinfo',
     name: charName,
     preview: desc.slice(0, 240),
+    keys: [],
+    text: desc,
     badge: 'charinfo',
     has_image: Boolean(cleanText(ch?.image, 400)),
   };

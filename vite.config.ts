@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.76';
+const PLUGIN_VERSION = '2.3.77';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -720,6 +720,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.77</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>가져오기/페소에서: 제목·키·내용 즉시 검색, ×로 비움, 전체선택은 검색된 줄만</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.76</strong>
@@ -6318,7 +6324,7 @@ const VENDOR_CHAR_IMPORT_EVT_PATCH =
           const nm = h(it.name || id);
           const bd = h(it.badge || "");
           const pv = h(it.preview || "");
-          return \`<label style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer"><input type="checkbox" data-imp-pick data-kind="\${h(it.kind)}" data-id="\${h(id)}"><span style="flex:1;min-width:0"><strong>\${nm}</strong> <span class="muted">\${bd}</span><div class="muted" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\${pv}</div></span></label>\`;
+          return \`<label data-imp-row style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer"><input type="checkbox" data-imp-pick data-kind="\${h(it.kind)}" data-id="\${h(id)}"><span style="flex:1;min-width:0"><strong>\${nm}</strong> <span class="muted">\${bd}</span><div class="muted" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\${pv}</div></span></label>\`;
         }).join("") || '<div class="muted">항목 없음</div>';
         veil.innerHTML = \`<div style="background:#1b2330;border-radius:14px 14px 0 0;width:min(560px,100%);max-height:86vh;display:flex;flex-direction:column;padding:14px">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>\${kind==="persona"?"페소에서 (글로벌)":"가져오기"}</strong>
@@ -6326,17 +6332,43 @@ const VENDOR_CHAR_IMPORT_EVT_PATCH =
             <button type="button" class="secondary" data-imp-none>전체해제</button>
             <button type="button" class="secondary" data-imp-close style="margin-left:auto">닫기</button></div>
           \${loreEmpty ? '<div class="notice info" style="margin-top:8px">캐릭터 로어북이 비어 있습니다. 탭에서 자동채우기를 먼저 하세요.</div>' : ""}
-          <div data-imp-list style="overflow:auto;flex:1;margin-top:10px">\${rows}</div>
+          <div style="position:relative;margin-top:10px">
+            <input type="text" data-imp-q placeholder="제목, 키, 내용" autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px 36px 8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#121821;color:#e8eef7">
+            <button type="button" data-imp-q-clear aria-label="검색 지우기" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);display:none;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:#c9d4e6;cursor:pointer;font-size:18px;line-height:1">×</button>
+          </div>
+          <div data-imp-list style="overflow:auto;flex:1;margin-top:10px">\${rows}<div data-imp-empty class="muted" style="display:none;padding:12px 0">검색 결과 없음</div></div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
             <label class="toggle-row" style="margin:0"><input type="checkbox" data-imp-parallel><span>동시 요청</span></label>
             <button type="button" data-imp-fill>채우기</button>
           </div></div>\`;
         (t.uiRoot || document.body).appendChild(veil);
         const boxes = () => [...veil.querySelectorAll("[data-imp-pick]")];
+        const visibleBoxes = () => boxes().filter((b) => {
+          const row = b.closest("[data-imp-row]");
+          return row && row.style.display !== "none";
+        });
+        const hay = items.map((it) => [it.name, it.badge, it.preview, Array.isArray(it.keys) ? it.keys.join(" ") : (it.keys || ""), it.text || ""].join(" ").toLowerCase());
+        const inp = veil.querySelector("[data-imp-q]");
+        const clr = veil.querySelector("[data-imp-q-clear]");
+        const emptyEl = veil.querySelector("[data-imp-empty]");
+        const applyQ = () => {
+          const raw = String(inp?.value || "").trim().toLowerCase();
+          const toks = raw.split(/\\s+/).filter(Boolean);
+          if (clr) clr.style.display = raw ? "" : "none";
+          let shown = 0;
+          veil.querySelectorAll("[data-imp-row]").forEach((el, i) => {
+            const ok = !toks.length || toks.every((w) => (hay[i] || "").includes(w));
+            el.style.display = ok ? "" : "none";
+            if (ok) shown += 1;
+          });
+          if (emptyEl) emptyEl.style.display = items.length && !shown ? "" : "none";
+        };
+        inp?.addEventListener("input", applyQ);
+        clr?.addEventListener("click", () => { if (inp) inp.value = ""; applyQ(); inp?.focus?.(); });
         veil.querySelector("[data-imp-close]")?.addEventListener("click", () => veil.remove());
         veil.addEventListener("click", (e) => { if (e.target === veil) veil.remove(); });
-        veil.querySelector("[data-imp-all]")?.addEventListener("click", () => boxes().forEach((b) => b.checked = !0));
-        veil.querySelector("[data-imp-none]")?.addEventListener("click", () => boxes().forEach((b) => b.checked = !1));
+        veil.querySelector("[data-imp-all]")?.addEventListener("click", () => visibleBoxes().forEach((b) => b.checked = !0));
+        veil.querySelector("[data-imp-none]")?.addEventListener("click", () => visibleBoxes().forEach((b) => b.checked = !1));
         veil.querySelector("[data-imp-fill]")?.addEventListener("click", async () => {
           const picks = boxes().filter((b) => b.checked).map((b) => ({ kind: b.getAttribute("data-kind"), id: b.getAttribute("data-id") }));
           if (!picks.length) return;
@@ -8582,8 +8614,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.76",
-    body: "가져오기는 에셋 태그만 보냄. 업데이트 내역 탭 참고."
+    title: "2.3.77",
+    body: "가져오기 검색창. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

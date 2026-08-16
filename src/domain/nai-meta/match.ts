@@ -11,7 +11,7 @@
  *
  * Per-trigger pick order (higher first), up to {@link ASSETS_PER_TRIGGER}:
  * 1. Exact word-list match (e.g. `Senoy.webp`)
- * 2. Prefix + look word: default > normal > profile > smil* (smile/smiling)
+ * 2. Prefix + look word: default > profile > (normal = smil*, shorter name wins)
  * 3. Prefix only; shorter name wins
  */
 import { cleanText } from '../../core/util/text.ts';
@@ -23,12 +23,11 @@ const MIN_LATIN_HANJA_LEN = 3;
 /** Hangul syllables + jamo (covers NFD names before NFC normalize). */
 const HANGUL_RE = /[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]/;
 
-/** Look-word bands after exact match (higher first). `smil` is a prefix. */
+/** Look-word bands after exact match (higher first). normal and smil* share a band. */
 const LOOK_BANDS: ReadonlyArray<{ rank: number; test: (word: string) => boolean }> = [
-  { rank: 4, test: (w) => w === 'default' },
-  { rank: 3, test: (w) => w === 'normal' },
+  { rank: 3, test: (w) => w === 'default' },
   { rank: 2, test: (w) => w === 'profile' },
-  { rank: 1, test: (w) => w.startsWith('smil') },
+  { rank: 1, test: (w) => w === 'normal' || w.startsWith('smil') },
 ];
 
 /** Split basename / trigger / tag on anything that is not a letter or number. */
@@ -239,7 +238,7 @@ function lookBand(words: readonly string[]): number {
 
 /**
  * Priority within one trigger's candidate pool (higher = better).
- * exact → default → normal → profile → smil* → other prefix (shorter wins).
+ * exact → default → profile → (normal = smil*, shorter wins) → other prefix.
  */
 export function assetPriorityForTrigger(name: unknown, trigger: string): number {
   const trigWords = assetNameWords(trigger);

@@ -200,13 +200,14 @@ test('filterAssetTriggersForUnfilledLooks drops filled character triggers only',
   assert.deepEqual([...out].sort(), ['성당', '세노이', 'senoy'].sort());
 });
 
-test('asset priority: exact > default > normal > profile > smil* > other', () => {
+test('asset priority: exact > default > profile > (normal = smil*, shorter wins)', () => {
   const tr = 'senoy';
   assert.ok(assetPriorityForTrigger('Senoy.webp', tr) > assetPriorityForTrigger('Senoy-normal.webp', tr));
-  assert.ok(assetPriorityForTrigger('Senoy-default.webp', tr) > assetPriorityForTrigger('Senoy-normal.webp', tr));
-  assert.ok(assetPriorityForTrigger('Senoy-normal.webp', tr) > assetPriorityForTrigger('Senoy-profile.webp', tr));
-  assert.ok(assetPriorityForTrigger('Senoy-profile.webp', tr) > assetPriorityForTrigger('Senoy-smile.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy-default.webp', tr) > assetPriorityForTrigger('Senoy-profile.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy-profile.webp', tr) > assetPriorityForTrigger('Senoy-normal.webp', tr));
+  assert.ok(assetPriorityForTrigger('Senoy-smile.webp', tr) > assetPriorityForTrigger('Senoy-normal.webp', tr));
   assert.ok(assetPriorityForTrigger('Senoy-smile.webp', tr) > assetPriorityForTrigger('Senoy-smiling.webp', tr));
+  assert.ok(assetPriorityForTrigger('shiro_smiling', 'shiro') > assetPriorityForTrigger('shiro_Dogeza_Normal', 'shiro'));
   assert.ok(assetPriorityForTrigger('Senoy-smiling.webp', tr) > assetPriorityForTrigger('Senoy-angry.webp', tr));
   assert.ok(assetPriorityForTrigger('Senoy-normal.webp', tr) > assetPriorityForTrigger('Senoy-angry.webp', tr));
   assert.ok(assetPriorityForTrigger('Senoy-default.webp', tr) > assetPriorityForTrigger('Senoy-angry-pregnant.webp', tr));
@@ -239,8 +240,8 @@ test('pickAssetsPerTrigger takes 4 per trigger preferring exact/normal/short', (
   assert.equal(picked[2].name, 'Juwon_normal.png');
   assert.deepEqual(picked.slice(4, 7).map((p) => p.name), [
     'naru_default.png',
-    'naru_normal.png',
     'naru_smile.png',
+    'naru_normal.png',
   ]);
 });
 

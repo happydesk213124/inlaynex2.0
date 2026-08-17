@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.79';
+const PLUGIN_VERSION = '2.3.90';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -720,6 +720,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.90</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 삽화는 있는 그림 유지. 새 장만 착착. 말풍선이 다시 그려져도 캐시로 바로 붙임</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.79</strong>
@@ -6885,6 +6891,15 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           return;
         }
       }
+      const patchShotSrc = async (wrap, src) => {
+        if (!wrap || !src || !/^data:image\\//i.test(src)) return;
+        try {
+          const imgs = await unwrapSafe(await wrap.querySelectorAll("img"));
+          const img = imgs[0];
+          if (img && typeof img.setAttribute == "function") await img.setAttribute("src", src);
+        } catch {
+        }
+      };
       const removeAllMarkers = async () => {
         for (const sel of ["[data-inlay-inline-shot]", "[data-inlay-inline-pending]"]) {
           let nodes = [];
@@ -6914,21 +6929,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         y("info", "inline.inject", "shots=0 stripped");
         return;
-      }
-      const wipeFirst = placements.length > 0;
-      if (wipeFirst) {
-        await removeAllMarkers();
-        await removeAllMarkers();
-        // Nuclear: leftover duplicate circles/images → rewrite bubble HTML without markers.
-        try {
-          const left = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
-          if (left.length && typeof msgEl.setInnerHTML == "function") {
-            let htmlLeft = String(await msgEl.getInnerHTML() || "");
-            if (typeof VC.stripInlayInlineHtml == "function") htmlLeft = VC.stripInlayInlineHtml(htmlLeft);
-            await msgEl.setInnerHTML(htmlLeft);
-          }
-        } catch {
-        }
       }
       const html = String(await msgEl.getInnerHTML() || "");
       const cleaned = typeof VC.stripInlayInlineHtml == "function" ? VC.stripInlayInlineHtml(html) : html;
@@ -7002,6 +7002,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             already = [];
           }
           if (already.length) {
+            if (shot.src && !shot.pending) await patchShotSrc(already[0], shot.src);
             placedIds.add(id);
             return !1;
           }
@@ -7016,6 +7017,27 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         try {
           const hostMarks = await unwrapSafe(await host.querySelectorAll("[data-inlay-inline-shot]"));
           if (hostMarks.length) {
+            const old = hostMarks[0];
+            let oldId = "";
+            try {
+              if (old && typeof old.getAttribute == "function") oldId = String(await old.getAttribute("data-inlay-inline-shot") || "");
+            } catch {
+              oldId = "";
+            }
+            if (old && id && oldId && oldId !== id && shot.src && !shot.pending) {
+              try {
+                if (typeof old.setAttribute == "function") {
+                  await old.setAttribute("data-inlay-inline-shot", id);
+                  await old.setAttribute("x-inlay-inline-shot", id);
+                }
+              } catch {
+              }
+              await patchShotSrc(old, shot.src);
+              placed += 1;
+              placedHosts.add(hit.elementIndex);
+              if (id) placedIds.add(id);
+              return !0;
+            }
             placedHosts.add(hit.elementIndex);
             return !1;
           }
@@ -7089,7 +7111,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     try {
       const doc = await ue().catch(() => t.hostDoc);
       if (!doc) return;
-      let fromCache = !!(t._msgElsCache?.doc === doc && Array.isArray(t._msgElsCache.els) && t._msgElsCache.els.length);
+      if (force) t._msgElsCache = null;
+      let fromCache = !force && !!(t._msgElsCache?.doc === doc && Array.isArray(t._msgElsCache.els) && t._msgElsCache.els.length);
       let els = fromCache ? t._msgElsCache.els : null;
       if (!Array.isArray(els) || !els.length) {
         try {
@@ -7308,13 +7331,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         } catch {
         }
       };
-      // Diff strip: only drop markers leaving the keep window (prev − keep).
-      // Full non-keep sweep only when the message DOM list remounts/resizes —
-      // otherwise every scroll would SafeDOM-scan the whole chat.
+      // Diff strip only: drop markers leaving the keep window. Never wipe the
+      // whole chat when els.length grows (new user msg remounts last 6 bodies).
       const prevKeep = Array.isArray(t._inlineKeepIdxs) ? t._inlineKeepIdxs : [];
       const nextKeepArr = [...keep].sort((a, b) => a - b);
-      const elsRemounted = !fromCache || t._inlineKeepDoc !== doc || Number(t._inlineKeepElsLen) !== els.length;
-      const sameKeep = !elsRemounted
+      const listChanged = !fromCache || t._inlineKeepDoc !== doc || Number(t._inlineKeepElsLen) !== els.length;
+      const sameKeep = !listChanged
         && Number(t._inlineKeepSelIdx) === selIdx
         && prevKeep.length === nextKeepArr.length
         && prevKeep.every((v, i) => Number(v) === Number(nextKeepArr[i]))
@@ -7324,12 +7346,16 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeepArr.join(",")}\`);
         return;
       }
-      if (elsRemounted) {
-        for (let i = 0; i < els.length; i += 1) await stripInlineMarkersAt(i);
-      } else {
-        for (const i of prevKeep) {
-          if (!keep.has(Number(i))) await stripInlineMarkersAt(i);
+      if (listChanged && fromCache || await inlineGoneFromSel()) {
+        t._msgElsCache = null;
+        try {
+          els = await getCachedMsgEls(doc);
+        } catch {
         }
+        fromCache = !1;
+      }
+      for (const i of prevKeep) {
+        if (!keep.has(Number(i))) await stripInlineMarkersAt(i);
       }
       t._inlineKeepIdxs = nextKeepArr;
       t._inlineKeepDoc = doc;
@@ -7338,7 +7364,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       t._inlineKeepPendingKey = pendingKey;
       t._inlineKeepLinkedKey = linkedKey;
       const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
-      y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=\${elsRemounted ? "full" : "diff"}\`);
+      y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=diff\`);
       const N = globalThis.__INLAY_NATIVE__;
       let selCards = [];
       try {
@@ -7952,8 +7978,8 @@ const VENDOR_AFTER_REPLY_FN_PATCH =
       }
       scheduleOverlayPlace(80);
       await onSelectionChanged("content");
-      // Mid-stream Risu rewrites bubble HTML — wait for reply end / job / click.
-      if (source !== "scriptOutput") await injectInline(!0);
+      // Risu remounts the streaming bubble each chunk — re-attach cached shots.
+      await injectInline(!0);
       y("info", "hashRelink.ok", \`src=\${source} cards=\${linked.length} hash=\${String(msg.hash || "").slice(0, 8)}\`);
     } finally {
       t._hashRelinkRunning = !1;
@@ -8626,8 +8652,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.79",
-    body: "참조는 찾은 에셋 파일. 업데이트 내역 탭 참고."
+    title: "2.3.90",
+    body: "말풍선 삽화는 있는 그림 유지, 새 장만 착착. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -12227,6 +12253,12 @@ const loadVendorUi = (): string => {
     if (!out.includes('shots=0 stripped')) {
       throw new Error('[build] scroll select must strip empty inline');
     }
+    if (out.includes('const wipeFirst = placements.length > 0')) {
+      throw new Error('[build] live inject must not wipe existing shots');
+    }
+    if (!out.includes('strip=diff')) {
+      throw new Error('[build] inline keep must diff-strip only (no full-chat wipe)');
+    }
     if (!out.includes('inlineGoneFromSel') || !out.includes('refreshSelectedInlineImages(!0)')) {
       throw new Error('[build] missing re-inject when inline markers vanished from live DOM');
     }
@@ -12239,8 +12271,8 @@ const loadVendorUi = (): string => {
     if (!out.includes('gallery.refresh') || !out.includes('if (!t.galleryUi?.root || !t.overlayUi?.root) await it();')) {
       throw new Error('[build] job done must skip it() when viewer roots exist');
     }
-    if (!out.includes('if (source !== "scriptOutput") await injectInline(!0)') || !out.includes('!force')) {
-      throw new Error('[build] missing forced inline inject after hash relink (not mid-stream)');
+    if (!out.includes('await injectInline(!0)') || !out.includes('Risu remounts the streaming bubble')) {
+      throw new Error('[build] missing forced inline re-attach after hash relink (incl. mid-stream)');
     }
     if (!out.includes('isSkipBodyAt') || !out.includes('isInlineSkipBody')) {
       throw new Error('[build] inline keep must skip LBDATA-short bodies');

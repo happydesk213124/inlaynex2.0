@@ -337,7 +337,15 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
   const resolvedSeed = resolveGenerationSeed(plan.seed, nai.seed);
   if (imageBackendKind(nai) === 'comfy') {
     const naiSized = { ...nai, width: dims.width, height: dims.height, seed: resolvedSeed };
-    const [comfyBytes, comfySeed] = await generateViaComfy(naiSized, plan.main, plan.neg, characters);
+    const wantsRef = /\[\[\s*ref\s*\]\]/i.test(String(nai.comfy_workflow_json || ''));
+    const refBytes = wantsRef ? await getReferenceImageBytes() : null;
+    const [comfyBytes, comfySeed] = await generateViaComfy(
+      naiSized,
+      plan.main,
+      plan.neg,
+      characters,
+      refBytes,
+    );
     return { bytes: comfyBytes, seed: comfySeed };
   }
   const token = cleanText(nai.api_key);

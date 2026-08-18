@@ -8,6 +8,8 @@
 import { dbg } from '../../core/debug.ts';
 import type { ImageBackend, NaiSettings, ShotCharacter } from '../../core/types.ts';
 import { Mutex, sleep } from '../../core/util/async.ts';
+import { naiToComfyEmphasis } from '../../domain/prompt/nai-to-comfy.ts';
+import { sniffImageMime } from '../../core/util/bytes.ts';
 import { cleanText } from '../../core/util/text.ts';
 import { networkFetch, readResponseBytes, type NetworkFetchOptions, type ReadBytesOptions } from '../nai/http.ts';
 
@@ -49,6 +51,8 @@ export interface ComfyPlaceholderInput {
   captions?: readonly ShotCharacter[] | null;
   nai: NaiSettings;
   seed: number;
+  /** LoadImage filename after `/upload/image`. Empty when no reference. */
+  ref?: string;
 }
 
 interface ComfyPromptResponse {
@@ -284,23 +288,55 @@ export function applyComfyRandomSeeds(wf: ComfyWorkflow, seed: unknown): void {
   }
 }
 
-/** Builds the placeholder table a workflow can reference: prompts, dimensions, `char1`…`char6`. */
+/** Builds the placeholder table a workflow can reference: prompts, dimensions, `char1`…`char6`, `ref`. */
 export function buildComfyPlaceholderValues(
-  { main, neg, captions, nai, seed }: ComfyPlaceholderInput,
+  { main, neg, captions, nai, seed, ref }: ComfyPlaceholderInput,
 ): ComfyPlaceholderValues {
   const values: ComfyPlaceholderValues = {
-    pos: String(main || ''),
-    neg: String(neg || ''),
+    pos: naiToComfyEmphasis(main),
+    neg: naiToComfyEmphasis(neg),
     width: Number(nai.width ?? 832) || 832,
     height: Number(nai.height ?? 1216) || 1216,
     seed: Number(seed) || 1,
     steps: Number(nai.steps ?? 28) || 28,
     cfg: Number(nai.cfg_scale ?? 7) || 7,
+    ref: cleanText(ref, 300),
   };
   for (let i = 0; i < 6; i += 1) {
-    values[`char${i + 1}`] = cleanText(captions?.[i]?.prompt, 2000);
+    values[`char${i + 1}`] = naiToComfyEmphasis(cleanText(captions?.[i]?.prompt, 2000));
   }
   return values;
+}
+
+function extForImageBytes(bytes: ArrayBuffer): string {
+  const mime = sniffImageMime(bytes);
+  if (mime === 'image/webp') return 'webp';
+  if (mime === 'image/jpeg') return 'jpg';
+  return 'png';
+}
+
+/** POST /upload/image — LoadImage `image` wants the returned name. */
+export async function comfyUploadImage(
+  baseUrl: string,
+  bytes: ArrayBuffer,
+  opts: ComfyRequestOptions = {},
+): Promise<string> {
+  const ext = extForImageBytes(bytes);
+  const filename = `inlay-ref-${Date.now()}.${ext}`;
+  const form = new FormData();
+  form.append('image', new Blob([new Uint8Array(bytes)], { type: sniffImageMime(bytes) || 'image/png' }), filename);
+  form.append('overwrite', 'true');
+  form.append('type', 'input');
+  const { status, data } = await fetchJsonCompat<{ name?: string; subfolder?: string }>(
+    `${trimBaseUrl(baseUrl)}/upload/image`,
+    { method: 'POST', body: form, signal: opts.signal },
+  );
+  const name = cleanText(data?.name, 300);
+  if (status >= 400 || !name) {
+    throw new Error(`ComfyUI 참조 이미지 업로드 실패 (HTTP ${status})`);
+  }
+  const sub = cleanText(data?.subfolder, 200);
+  return sub ? `${sub}/${name}` : name;
 }
 
 /**
@@ -351,16 +387,23 @@ export async function generateViaComfy(
   main: string,
   neg: string,
   captions: readonly ShotCharacter[],
+  refBytes?: ArrayBuffer | null,
 ): Promise<[ArrayBuffer, number]> {
   const baseUrl = comfyBaseUrl(nai);
   const timeoutMs = backendTimeoutMs(nai);
   const seed = Number(nai.seed ?? 0) || Math.floor(Math.random() * 4294967295) || 1;
-  const values = buildComfyPlaceholderValues({ main, neg, captions, nai, seed });
+  const wantsRef = /\[\[\s*ref\s*\]\]/i.test(String(nai.comfy_workflow_json || ''));
+  let refName = '';
+  if (wantsRef && refBytes && refBytes.byteLength > 0) {
+    refName = await comfyUploadImage(baseUrl, refBytes);
+  }
+  const values = buildComfyPlaceholderValues({ main, neg, captions, nai, seed, ref: refName });
   const wf = buildComfyWorkflowFromTemplate(nai.comfy_workflow_json, values);
   dbg('comfy.generate.start', {
     message: baseUrl,
     prompt_len: String(main || '').length,
     chars: (captions || []).length,
+    has_ref: Boolean(refName),
     nodes: Object.keys(wf).length,
     focus: true,
   });

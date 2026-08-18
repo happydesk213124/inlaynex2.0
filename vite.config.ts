@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.90';
+const PLUGIN_VERSION = '2.3.91';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -527,7 +527,7 @@ const VENDOR_ASSET_NAI_HELP_PATCH =
   `"nx-appearance": { title: "CharAppearance 누적", body: "한 번 잡힌 캐릭터 외형을 다음 생성에도 이어 씁니다. 옷·머리색이 장면마다 크게 바뀌는 걸 줄입니다." },
     "nx-asset-nai-tags": { title: "에셋 NAI 태그", body: "로어 트리거와 이름이 맞는 Risu 에셋 PNG/WebP의 NovelAI 메타 태그를 어떻게 태거에 넣을지 고릅니다. artist·year·품질·*background·straight-on은 제외.\\n\\n• 사용안함 — 에셋 태그를 쓰지 않습니다.\\n• 그냥 옛날버전 (통째로 보내기) — 로어북·에셋 태그를 메인 태거 한 번에 넣습니다. LLM 1회. 컨텍스트가 길어져 토큰을 많이 씁니다.\\n• LLM 따로 호출 — 에셋 태그로 캐릭터 룩만 먼저 채운 뒤 메인 태거를 돌립니다. LLM 2회.\\n• LLM 따로 호출 + 이미지 파일 보내기 — 룩 LLM에 캐릭터당 대표 이미지 1장(최대 5장)을 함께 보냅니다. 비전 입력만큼 토큰·비용이 큽니다." },
     "nx-costume": { title: "코스튬", body: "켜면 메인 태거가 캐릭터별 코스튬 목록을 보고 샷마다 복장을 고릅니다(이름·번호). 꺼도 에셋으로 캐릭을 만들 때는 복장이 코스튬으로 나뉘어 저장됩니다. 샷에 고른 값이 없으면 항상 index 0(기본)을 씁니다." },
-    "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(NovelAI 기본 사이즈). ComfyUI는 워크플로 Empty Latent 등에 [[width]]/[[height]]를 넣어야 반영됩니다. 끄면 NAI Width/Height 설정을 씁니다." },
+    "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(NovelAI 기본 사이즈). ComfyUI는 워크플로 Empty Latent 등에 [[width]]/[[height]]를 넣어야 반영됩니다. 참조 그림은 LoadImage에 [[ref]]. 끄면 NAI Width/Height 설정을 씁니다." },
     "nx-llm-json-retry": { title: "JSON 오류 시 재시도", body: "메인 태거 응답이 JSON으로 파싱되지 않으면, 오류 내용을 붙여 LLM에 한 번 더 요청합니다. 재시도도 실패하면 작업이 오류로 끝납니다." },
     "nx-stream-keywords": { title: "스트리밍 키워드", body: "AI 답이 나오는 동안 누적 글자에 이 단어가 들어가면(대소문자 무시, 부분 일치) 최신 말풍선으로 한 번 생성합니다. 쉼표로 여러 개. 3글자 미만은 무시. 비우면 꺼짐. 「응답 후 자동 생성」과 별개입니다. Power OFF·발동 수동·이미 생성 중이면 안 돕니다." },
     "nx-fixed-prompt-prefix": { title: "선행 고정 프롬프트", body: "값이 있으면 사람 태그 다음·스타일 프리셋/장면 앞에 항상 붙습니다. 프리셋이 바뀌어도 유지됩니다." },
@@ -599,7 +599,7 @@ const VENDOR_COMFY_MUTED_NEEDLE =
   `"로컬 ComfyUI API · [[pos]] / [[neg]] / [[char1]]… / [[seed]]"`;
 
 const VENDOR_COMFY_MUTED_PATCH =
-  `"로컬 ComfyUI API · [[pos]] / [[neg]] / [[char1]]… / [[width]] / [[height]] / [[seed]]"`;
+  `"로컬 ComfyUI API · [[pos]] / [[neg]] / [[char1]]… / [[width]] / [[height]] / [[seed]] / [[ref]]"`;
 
 const VENDOR_COMFY_HELP_NEEDLE =
   `              3) JSON 안에서 긍정 프롬프트를 넣는 칸에 <code>[[pos]]</code>, 부정에 <code>[[neg]]</code>, 캐릭터 태그를 넣고 싶은 칸에 <code>[[char1]]</code> / <code>[[char2]]</code> … 를 적어 둡니다.<br>
@@ -612,6 +612,8 @@ const VENDOR_COMFY_HELP_PATCH =
               4) Empty Latent Image 등 해상도 칸에는 <code>[[width]]</code> / <code>[[height]]</code>를 넣으세요. (자동 비율 조절·NAI Width/Height와 연동)<br>
               5) 저장 후 생성하면 Inlay가 만든 값으로 그 자리가 치환됩니다.<br><br>
               <strong>크기</strong> — <code>"width": "[[width]]"</code>, <code>"height": "[[height]]"</code>처럼 <strong>따옴표로 감싸서</strong> 넣으면 숫자로 치환됩니다. 자동 비율 조절이 켜져 있으면 샷 비율에 맞는 크기, 꺼져 있으면 Models의 NAI Width/Height가 들어갑니다. 같은 방식으로 <code>[[steps]]</code> / <code>[[cfg]]</code>도 쓸 수 있습니다.<br><br>
+              <strong>참조 이미지</strong> — LoadImage 노드의 image 칸에 <code>"[[ref]]"</code>를 넣으면, Models에 올린 참조 그림을 Comfy에 업로드한 뒤 파일 이름이 들어갑니다. 참조가 없으면 빈 칸. 노드 자체를 빼려면 <code>[[#ref]]</code>…<code>[[/ref]]</code>.<br><br>
+              <strong>강조</strong> — Inlay가 만든 <code>2::hard::</code> / <code>{{happy}}</code>는 Comfy로 보낼 때 <code>(hard:2)</code> / <code>((happy))</code>로 바꿉니다.<br><br>
               <strong>시드 (랜덤)</strong> — API Export의 숫자 seed는 요청마다 Inlay가 새 랜덤 시드로 덮어씁니다.<br>
               명시적으로 쓰려면 <code>"seed": "[[seed]]"</code>처럼 <strong>따옴표로 감싸서</strong> 넣으세요. (숫자만 남겨둬도 자동 랜덤)<br><br>`;
 
@@ -720,6 +722,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.91</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>ComfyUI: 강조를 (tag:n) / ((tag))로 보냄. LoadImage에 [[ref]]면 참조 그림 업로드</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.90</strong>
@@ -8652,8 +8660,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.90",
-    body: "말풍선 삽화는 있는 그림 유지, 새 장만 착착. 업데이트 내역 탭 참고."
+    title: "2.3.91",
+    body: "ComfyUI 강조 (tag:n). LoadImage에 [[ref]]. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.91';
+const PLUGIN_VERSION = '2.3.92';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -722,6 +722,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.92</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>재생성·태그 플로팅: 접으면 흐려지고, 가만히 있으면 더 흐려짐. 한 번 더 접은 막대는 더 투명</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.91</strong>
@@ -8660,8 +8666,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.91",
-    body: "ComfyUI 강조 (tag:n). LoadImage에 [[ref]]. 업데이트 내역 탭 참고."
+    title: "2.3.92",
+    body: "재생성·태그 플로팅 접으면 흐려짐. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -9787,7 +9793,7 @@ const VENDOR_RISU_SETTINGS_UNLOAD_PATCH =
 const VENDOR_ACTIONS_HELP_NEEDLE =
   `"nx-minimize-mode": { title: "접힘 표시 방식", body: "플로팅 아이콘: 접으면 작은 아이콘으로 따로 둔 자리로 갑니다. 상단 툴바 한 줄: 접어도 지금 창 자리 그대로 얇은 바로만 줄어듭니다." },`;
 const VENDOR_ACTIONS_HELP_PATCH =
-  `"nx-minimize-mode": { title: "접힘 표시 방식", body: "플로팅 아이콘: 작은 🖼️, 클릭하면 펼침. 상단 툴바 한 줄: 창 자리에서 얇은 바. 재생성·태그 플로팅: 큰 세로 버튼(태그/재생성/중단/프리셋), 접기면 여백+펼치기만, 길게 누르면 전체 뷰어." },`;
+  `"nx-minimize-mode": { title: "접힘 표시 방식", body: "플로팅 아이콘: 작은 🖼️, 클릭하면 펼침. 상단 툴바 한 줄: 창 자리에서 얇은 바. 재생성·태그 플로팅: 큰 세로 버튼(태그/재생성/중단/프리셋), 접으면 흐려지고 가만히 있으면 더 흐려짐. 한 번 더 접으면 여백+펼치기만. 길게 누르면 전체 뷰어." },`;
 
 const VENDOR_ACTIONS_SELECT_NEEDLE =
   `                <option value="icon" \${(i.viewer_minimize_mode || "icon") === "icon" ? "selected" : ""}>플로팅 아이콘</option>
@@ -10429,7 +10435,55 @@ const VENDOR_ACTIONS_OVERFLOW_NEEDLE =
       }
       await r.setStyleAttribute(panelStyle);`;
 const VENDOR_ACTIONS_OVERFLOW_PATCH =
-  `    }, f = async () => {
+  `    }, actionsFadeOpacity = () => {
+      if (!d.minimized || viewerMinimizeMode() !== "actions") return 1;
+      if (d._actionsHot) return 0.85;
+      if (d.actionsFolded) return 0.2;
+      return d._actionsIdle ? 0.18 : 0.3;
+    }, clearActionsIdleTimer = () => {
+      if (d._actionsIdleTimer) clearTimeout(d._actionsIdleTimer), d._actionsIdleTimer = null;
+    }, armActionsIdle = () => {
+      clearActionsIdleTimer();
+      if (!d.minimized || viewerMinimizeMode() !== "actions") {
+        d._actionsIdle = !1, d._actionsHot = !1;
+        return;
+      }
+      d._actionsIdleTimer = setTimeout(() => {
+        d._actionsIdleTimer = null;
+        if (!d.minimized || viewerMinimizeMode() !== "actions") return;
+        d._actionsHot = !1, d._actionsIdle = !0;
+        f().catch(() => {
+        });
+      }, 4000);
+    }, nudgeActionsFade = (armAfter) => {
+      if (!d.minimized || viewerMinimizeMode() !== "actions") return;
+      d._actionsHot = !0, d._actionsIdle = !1;
+      if (armAfter) armActionsIdle();
+      else clearActionsIdleTimer();
+      f().catch(() => {
+      });
+    }, onActionsFadeMove = async (A) => {
+      if (!d.minimized || viewerMinimizeMode() !== "actions" || d.drag) return;
+      const now = Date.now();
+      if (now - (d._actionsFadeLast || 0) < 80) return;
+      d._actionsFadeLast = now;
+      const x = Number(A?.clientX), y = Number(A?.clientY);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      let over = !1;
+      try {
+        over = await X(r, x, y);
+      } catch {
+      }
+      if (over) {
+        if (!d._actionsHot || d._actionsIdle) nudgeActionsFade(!1);
+        else clearActionsIdleTimer();
+      } else if (d._actionsHot) {
+        d._actionsHot = !1;
+        armActionsIdle();
+        f().catch(() => {
+        });
+      }
+    }, f = async () => {
       // Settings/Risu bury: keep geo, force 0×0 so applyChrome/resize cannot revive a hitbox.
       if (t._viewerHiddenForModal || t._viewerHiddenForRisuSettings || t.uiOpen || t._hostChromeBlocked) {
         try {
@@ -10444,6 +10498,15 @@ const VENDOR_ACTIONS_OVERFLOW_PATCH =
       // Toolbar-minimized keeps the same header controls; dropdown must escape the 40px bar.
       if (d.presetMenuOpen && (!d.minimized || viewerMinimizeMode() === "toolbar" || viewerMinimizeMode() === "actions")) {
         panelStyle = panelStyle.replace(/overflow:[^;]+/i, "overflow:visible");
+      }
+      if (d.drag && d.drag.moved) {
+        /* drag ghost owns opacity */
+      } else if (d.minimized && viewerMinimizeMode() === "actions") {
+        const op = actionsFadeOpacity();
+        panelStyle = /opacity:/i.test(panelStyle) ? panelStyle.replace(/opacity:[^;]+/i, "opacity:" + op) : panelStyle + ";opacity:" + op;
+        if (!/transition:/i.test(panelStyle)) panelStyle += ";transition:opacity .8s ease";
+      } else {
+        d._actionsIdle = !1, d._actionsHot = !1, clearActionsIdleTimer();
       }
       await r.setStyleAttribute(panelStyle);`;
 
@@ -10464,12 +10527,22 @@ const VENDOR_ACTIONS_CHROME_PATCH =
       try {
         if (actionsMin) {
           if (d.actionsFolded == null) d.actionsFolded = !1;
+          if (!d._actionsFadeMoveOn) {
+            d._actionsFadeMoveOn = !0;
+            try {
+              await e.addEventListener("pointermove", onActionsFadeMove);
+            } catch {
+            }
+          }
+          if (!d._actionsHot) armActionsIdle();
           const folded = !!d.actionsFolded;
           const btn = (act, bg, label) => \`<span data-nx-act="\${act}" style="cursor:pointer;background:\${bg};color:#fff;padding:14px 12px;border-radius:10px;font-size:15px;line-height:1.15;font-weight:700;width:100%;text-align:center;box-sizing:border-box;user-select:none">\${label}</span>\`;
           const pad = '<span data-nx-drag-pad style="display:flex;align-items:center;justify-content:center;width:100%;height:28px;flex:0 0 28px;cursor:move;touch-action:none" title="끌어서 이동"><span style="width:44px;height:4px;border-radius:999px;background:rgba(255,255,255,.38)"></span></span>';
           await s.setInnerHTML(folded ? pad : pad + btn("tag", "#0f766e", "태그") + btn("regen", "#7c6cff", "재생성") + btn("stop", "#b91c1c", "중단")), await i.setStyleAttribute(\`height:\${folded ? 88 : 328}px;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:8px;padding:10px;background:rgba(255,255,255,.04);border-bottom:0;cursor:move;user-select:none;flex-shrink:0;touch-action:none;box-sizing:border-box;\`), await s.setStyleAttribute("display:flex;flex-direction:column;gap:8px;align-items:stretch;width:100%;flex:0 0 auto;"), await viewerPresetBtn.setStyleAttribute(\`max-width:none;min-width:0;width:100%;height:auto;min-height:48px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:15px;font-weight:700;padding:14px 12px;cursor:pointer;pointer-events:auto;display:\${folded ? "none" : "inline-flex"};align-items:center;justify-content:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!folded && d.presetMenuOpen ? "block" : "none"};position:absolute;top:auto;bottom:56px;left:10px;right:10px;min-width:0;max-width:none;max-height:220px;overflow:auto;z-index:20;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML(btn(folded ? "expand" : "fold", "#1e293b", folded ? "펼침" : "접기")), await c.setStyleAttribute("display:flex;flex-direction:column;gap:8px;align-items:stretch;flex-shrink:0;width:100%;");
+          await f();
         } else {
           d.actionsFolded = !1;
+          d._actionsIdle = !1, d._actionsHot = !1, clearActionsIdleTimer();
           await s.setInnerHTML(iconMin ? "🖼️" : "Inlay Viewer"), await s.setStyleAttribute(iconMin ? "font-weight:600;font-size:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;" : "font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0;"), await i.setStyleAttribute(\`min-height:\${iconMin ? 48 : toolbarMin ? 56 : 52}px;height:\${iconMin ? "48px" : "auto"};display:flex;align-items:center;justify-content:\${iconMin ? "center" : "flex-start"};gap:8px;padding:\${iconMin ? "0" : "8px 10px"};background:rgba(255,255,255,.04);border-bottom:\${d.minimized && !toolbarMin ? "0" : "1px solid rgba(255,255,255,.06)"};cursor:move;user-select:none;flex-shrink:0;touch-action:none;flex-wrap:\${iconMin ? "nowrap" : "wrap"};\`), await viewerPresetBtn.setStyleAttribute(\`max-width:200px;min-width:72px;flex:0 1 160px;height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b0f18;color:#e8eef8;font-size:13px;font-weight:600;padding:0 12px;cursor:pointer;pointer-events:auto;display:\${iconMin ? "none" : "inline-flex"};align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;\`), await viewerPresetMenu.setStyleAttribute(\`display:\${!iconMin && d.presetMenuOpen ? "block" : "none"};position:absolute;top:52px;left:10px;min-width:200px;max-width:min(92vw,320px);max-height:min(50vh,360px);overflow:auto;z-index:5;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:auto;\`), await c.setInnerHTML([
             '<span style="cursor:pointer;background:#475569;color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">◀</span>',
             '<span style="cursor:pointer;background:#475569;color:#fff;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.2;min-height:40px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">▶</span>',
@@ -11126,6 +11199,7 @@ const VENDOR_ACTIONS_POINTER_PATCH =
       }
       if (d.minimized && viewerMinimizeMode() === "actions") {
         if (d.actionsFolded == null) d.actionsFolded = !1;
+        nudgeActionsFade(!0);
         if (!d.actionsFolded && d.presetMenuOpen && d.presetMenu) {
           if (await hitPresetItemAt(_, O) || await X(d.presetMenu, _, O)) {
             await startPresetMenuGesture(A, _, O);
@@ -11146,6 +11220,7 @@ const VENDOR_ACTIONS_POINTER_PATCH =
           }
           d.geo = clampViewerGeo(d.geo, !0);
           await applyViewerChrome();
+          await f();
           return;
         }
         if (!d.actionsFolded && await X(s, _, O)) {

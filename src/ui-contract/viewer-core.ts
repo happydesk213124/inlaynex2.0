@@ -2546,6 +2546,134 @@ export interface InlineImagePlacement {
   pending?: boolean;
 }
 
+export type InlineCardInput = {
+  id?: unknown;
+  line?: unknown;
+  shot_index?: unknown;
+};
+
+export type InlinePendingInput = {
+  line?: unknown;
+  shot_index?: unknown;
+};
+
+export type InlineLiveMarker = {
+  cardId: string;
+  pending?: boolean;
+};
+
+export type InlineReconcileAction =
+  | { op: 'keep' }
+  | { op: 'strip' }
+  | { op: 'prepend'; placement: InlineImagePlacement }
+  | { op: 'swap'; placement: InlineImagePlacement };
+
+/**
+ * Ready cards first (they claim line/shot). Pending only fills leftover lines.
+ * A linked card with no bytes goes to encodeLater and still blocks pending.
+ */
+export function desiredInlinePlacements(
+  cards: InlineCardInput[] | null | undefined,
+  pendingRows: InlinePendingInput[] | null | undefined,
+  resolveSrc: ((card: InlineCardInput) => string) | null | undefined = () => '',
+): { placements: InlineImagePlacement[]; encodeLater: InlineCardInput[] } {
+  const list = Array.isArray(cards) ? cards : [];
+  const pending = Array.isArray(pendingRows) ? pendingRows : [];
+  const getSrc = typeof resolveSrc === 'function' ? resolveSrc : () => '';
+  const placements: InlineImagePlacement[] = [];
+  const encodeLater: InlineCardInput[] = [];
+  const seenCard = new Set<string>();
+  const seenLine = new Set<number>();
+  const seenShot = new Set<number>();
+
+  for (const card of list) {
+    const line = Number(card?.line);
+    const shotIndex = Number(card?.shot_index);
+    const cardId = String(card?.id || '');
+    if (cardId && seenCard.has(cardId)) continue;
+    if (Number.isFinite(shotIndex) && shotIndex >= 0) seenShot.add(shotIndex);
+    if (Number.isFinite(line) && line >= 1) seenLine.add(line);
+    if (!Number.isFinite(line) || line < 1) continue;
+    const src = String(getSrc(card) || '');
+    if (!/^data:image\//i.test(src)) {
+      if (cardId) encodeLater.push(card);
+      continue;
+    }
+    if (cardId) seenCard.add(cardId);
+    placements.push({
+      line,
+      src,
+      shotIndex: Number.isFinite(shotIndex) ? shotIndex : undefined,
+      cardId,
+      pending: false,
+    });
+  }
+
+  for (const row of pending) {
+    const line = Number(row?.line);
+    const shotIndex = Number(row?.shot_index);
+    if (!Number.isFinite(line) || line < 1 || seenLine.has(line)) continue;
+    if (Number.isFinite(shotIndex) && seenShot.has(shotIndex)) continue;
+    const cardId = `pending-${Number.isFinite(shotIndex) ? shotIndex : line}`;
+    if (seenCard.has(cardId)) continue;
+    seenLine.add(line);
+    if (Number.isFinite(shotIndex)) seenShot.add(shotIndex);
+    seenCard.add(cardId);
+    placements.push({
+      line,
+      src: '',
+      shotIndex: Number.isFinite(shotIndex) ? shotIndex : undefined,
+      cardId,
+      pending: true,
+    });
+  }
+
+  return { placements, encodeLater };
+}
+
+/** Cheap skip key: line + pending/image + id. Bytes themselves stay out. */
+export function desiredInlinePaintKey(
+  placements: InlineImagePlacement[] | null | undefined,
+  encodeLaterIds: string[] = [],
+): string {
+  const ready = (Array.isArray(placements) ? placements : [])
+    .map((p) => `${Number(p.line) || 0}:${p.pending ? 'p' : 'i'}:${String(p.cardId || '')}`)
+    .sort()
+    .join('|');
+  const later = encodeLaterIds.filter(Boolean).sort().join(',');
+  return `${ready}#${later}`;
+}
+
+/**
+ * One host / one line. Pending can replace an old card; a ready card replaces a
+ * spinner; empty desired strips leftovers. No-src linked cards hold the host.
+ */
+export function reconcileInlineShot(
+  desired: InlineImagePlacement | null | undefined,
+  live: InlineLiveMarker | null | undefined,
+): InlineReconcileAction {
+  const hasLive = !!(live && String(live.cardId || ''));
+  const hasDesired = !!(desired && Number(desired.line) >= 1);
+
+  if (!hasDesired) return hasLive ? { op: 'strip' } : { op: 'keep' };
+
+  const hold = !desired.pending && !/^data:image\//i.test(String(desired.src || ''));
+  if (hold) return { op: 'keep' };
+  if (!hasLive) return { op: 'prepend', placement: desired };
+
+  const liveId = String(live.cardId || '');
+  const wantId = String(desired.cardId || '');
+  const livePending = live.pending === true;
+  const wantPending = desired.pending === true;
+
+  if (wantPending) {
+    if (livePending && liveId === wantId) return { op: 'keep' };
+    return { op: 'swap', placement: desired };
+  }
+  if (!livePending && liveId === wantId) return { op: 'keep' };
+  return { op: 'swap', placement: desired };
+}
+
 export interface InlineInjectOptions {
   /** Bubble client width — clamps img so intrinsic size cannot expand the parent. */
   maxWidthPx?: number;

@@ -81,6 +81,9 @@ import {
   isCharMessageRole,
   pickInlineKeepDomIndices,
   INLINE_KEEP_MAX_PER_SIDE,
+  desiredInlinePlacements,
+  desiredInlinePaintKey,
+  reconcileInlineShot,
   shouldSelectMessageByTextDrag,
   visibleGalleryImageIds,
   nearbyMessageImageIds,
@@ -712,6 +715,77 @@ test("pickInlineKeepDomIndices keeps selected char plus 1 each side (max 3)", ()
     pickInlineKeepDomIndices({ selIdx: 4, length: 9, allRoles: false, isCharAt }).sort((a, b) => a - b),
     [2, 4, 6],
   );
+});
+
+test("desiredInlinePlacements claims ready cards before pending on the same line", () => {
+  const src = (card) => String(card.id === "c1" ? "data:image/png;base64,xx" : "");
+  const got = desiredInlinePlacements(
+    [{ id: "c1", line: 2, shot_index: 0 }],
+    [{ line: 2, shot_index: 0 }, { line: 5, shot_index: 1 }],
+    src,
+  );
+  assert.deepEqual(
+    got.placements.map((p) => ({ line: p.line, cardId: p.cardId, pending: !!p.pending })),
+    [
+      { line: 2, cardId: "c1", pending: false },
+      { line: 5, cardId: "pending-1", pending: true },
+    ],
+  );
+  assert.equal(got.encodeLater.length, 0);
+});
+
+test("desiredInlinePlacements holds a linked card without bytes so pending cannot cover it", () => {
+  const got = desiredInlinePlacements(
+    [{ id: "c2", line: 3, shot_index: 1 }],
+    [{ line: 3, shot_index: 1 }, { line: 4, shot_index: 2 }],
+    () => "",
+  );
+  assert.deepEqual(got.encodeLater.map((c) => c.id), ["c2"]);
+  assert.deepEqual(
+    got.placements.map((p) => ({ line: p.line, cardId: p.cardId, pending: !!p.pending })),
+    [{ line: 4, cardId: "pending-2", pending: true }],
+  );
+});
+
+test("desiredInlinePaintKey changes when pending becomes a card", () => {
+  const pending = desiredInlinePaintKey([{ line: 1, src: "", cardId: "pending-0", pending: true }]);
+  const ready = desiredInlinePaintKey([{ line: 1, src: "data:image/png;base64,xx", cardId: "c9", pending: false }]);
+  assert.notEqual(pending, ready);
+});
+
+test("reconcileInlineShot pending replaces an old card marker", () => {
+  const pending = { line: 1, src: "", cardId: "pending-0", pending: true };
+  assert.deepEqual(reconcileInlineShot(pending, { cardId: "old-card", pending: false }), {
+    op: "swap",
+    placement: pending,
+  });
+});
+
+test("reconcileInlineShot ready card replaces a spinner", () => {
+  const ready = { line: 1, src: "data:image/png;base64,xx", cardId: "c3", pending: false };
+  assert.deepEqual(reconcileInlineShot(ready, { cardId: "pending-0", pending: true }), {
+    op: "swap",
+    placement: ready,
+  });
+});
+
+test("reconcileInlineShot same ready id stays put", () => {
+  const ready = { line: 1, src: "data:image/png;base64,xx", cardId: "c3", pending: false };
+  assert.equal(reconcileInlineShot(ready, { cardId: "c3", pending: false }).op, "keep");
+});
+
+test("reconcileInlineShot strips a live marker when nothing is desired", () => {
+  assert.deepEqual(reconcileInlineShot(null, { cardId: "old-card" }), { op: "strip" });
+});
+
+test("reconcileInlineShot prepends when the host is empty", () => {
+  const pending = { line: 2, src: "", cardId: "pending-1", pending: true };
+  assert.deepEqual(reconcileInlineShot(pending, null), { op: "prepend", placement: pending });
+});
+
+test("reconcileInlineShot holds a linked card that still has no bytes", () => {
+  const hold = { line: 3, src: "", cardId: "c2", pending: false };
+  assert.equal(reconcileInlineShot(hold, { cardId: "pending-1", pending: true }).op, "keep");
 });
 
 test("rawMessageRole reads API fields like Archive (never invents from body)", () => {

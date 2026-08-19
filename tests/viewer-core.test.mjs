@@ -84,6 +84,7 @@ import {
   desiredInlinePlacements,
   desiredInlinePaintKey,
   reconcileInlineShot,
+  shouldStripLeftoverInlineId,
   shouldSelectMessageByTextDrag,
   visibleGalleryImageIds,
   nearbyMessageImageIds,
@@ -786,6 +787,12 @@ test("reconcileInlineShot prepends when the host is empty", () => {
 test("reconcileInlineShot holds a linked card that still has no bytes", () => {
   const hold = { line: 3, src: "", cardId: "c2", pending: false };
   assert.equal(reconcileInlineShot(hold, { cardId: "pending-1", pending: true }).op, "keep");
+});
+
+test("leftover strip ignores unread ids so a just-placed shot is not deleted", () => {
+  assert.equal(shouldStripLeftoverInlineId("", ["c3"]), false);
+  assert.equal(shouldStripLeftoverInlineId("c3", ["c3"]), false);
+  assert.equal(shouldStripLeftoverInlineId("old-card", ["c3", "pending-0"]), true);
 });
 
 test("rawMessageRole reads API fields like Archive (never invents from body)", () => {

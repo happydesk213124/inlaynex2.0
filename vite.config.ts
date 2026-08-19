@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.94';
+const PLUGIN_VERSION = '2.3.95';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -722,6 +722,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.95</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 삽화: 방금 붙인 그림이 id를 못 읽어도 바로 지우지 않음</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.94</strong>
@@ -7096,6 +7102,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (laterId) keepIds.add(laterId);
       }
       try {
+        if (keepIds.size) {
         const leftovers = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
         for (const node of leftovers) {
           let leftId = "";
@@ -7106,8 +7113,11 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           } catch {
             leftId = "";
           }
-          if (leftId && keepIds.has(leftId)) continue;
+          if (typeof VC.shouldStripLeftoverInlineId == "function"
+            ? !VC.shouldStripLeftoverInlineId(leftId, keepIds)
+            : !leftId || keepIds.has(leftId)) continue;
           await removeNode(node);
+        }
         }
       } catch {
       }
@@ -8712,8 +8722,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.94",
-    body: "말풍선 삽화는 스피너에 그림을 착착. 태그 재생·모듈 응답도 같은 맞춤. 업데이트 내역 탭 참고."
+    title: "2.3.95",
+    body: "말풍선 삽화가 붙자마자 사라지던 것 수정. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -12386,6 +12396,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('reconcileInlineShot') || !out.includes('desiredInlinePlacements')) {
       throw new Error('[build] live inject must reconcile desired vs live markers');
+    }
+    if (!out.includes('shouldStripLeftoverInlineId')) {
+      throw new Error('[build] leftover strip must ignore unread marker ids');
     }
     if (!out.includes('strip=diff')) {
       throw new Error('[build] inline keep must diff-strip only (no full-chat wipe)');

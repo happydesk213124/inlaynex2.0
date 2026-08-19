@@ -2674,6 +2674,17 @@ export function reconcileInlineShot(
   return { op: 'swap', placement: desired };
 }
 
+/** Unreadable id stays; only a known stale id is leftover. */
+export function shouldStripLeftoverInlineId(
+  leftId: unknown,
+  keepIds: Iterable<string> | null | undefined,
+): boolean {
+  const id = String(leftId || '');
+  if (!id) return false;
+  const keep = keepIds instanceof Set ? keepIds : new Set(Array.isArray(keepIds) ? keepIds : [...(keepIds || [])]);
+  return !keep.has(id);
+}
+
 export interface InlineInjectOptions {
   /** Bubble client width — clamps img so intrinsic size cannot expand the parent. */
   maxWidthPx?: number;

@@ -2644,6 +2644,15 @@ export function desiredInlinePaintKey(
   return `${ready}#${later}`;
 }
 
+/** Job pending rows have shot_index/line, not cardId — empty cardId must not collapse to "". */
+export function pendingInlineKey(rows: InlinePendingInput[] | null | undefined): string {
+  if (!Array.isArray(rows) || !rows.length) return '';
+  return rows
+    .map((p) => `${Number(p?.shot_index)}:${Number(p?.line)}`)
+    .sort()
+    .join('|');
+}
+
 /**
  * One host / one line. Pending can replace an old card; a ready card replaces a
  * spinner; empty desired strips leftovers. No-src linked cards hold the host.
@@ -2667,21 +2676,21 @@ export function reconcileInlineShot(
   const wantPending = desired.pending === true;
 
   if (wantPending) {
-    if (livePending && liveId === wantId) return { op: 'keep' };
+    if (livePending) return { op: 'keep' };
     return { op: 'swap', placement: desired };
   }
   if (!livePending && liveId === wantId) return { op: 'keep' };
   return { op: 'swap', placement: desired };
 }
 
-/** Unreadable id stays unless pending is replacing the bubble (stripUnread). */
+/** Unreadable id stays. Only a known stale id is leftover. */
 export function shouldStripLeftoverInlineId(
   leftId: unknown,
   keepIds: Iterable<string> | null | undefined,
-  stripUnread = false,
+  _stripUnread = false,
 ): boolean {
   const id = String(leftId || '');
-  if (!id) return stripUnread === true;
+  if (!id) return false;
   const keep = keepIds instanceof Set ? keepIds : new Set(Array.isArray(keepIds) ? keepIds : [...(keepIds || [])]);
   return !keep.has(id);
 }

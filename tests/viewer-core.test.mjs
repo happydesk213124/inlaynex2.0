@@ -83,6 +83,7 @@ import {
   INLINE_KEEP_MAX_PER_SIDE,
   desiredInlinePlacements,
   desiredInlinePaintKey,
+  pendingInlineKey,
   reconcileInlineShot,
   shouldStripLeftoverInlineId,
   shouldSelectMessageByTextDrag,
@@ -754,6 +755,12 @@ test("desiredInlinePaintKey changes when pending becomes a card", () => {
   assert.notEqual(pending, ready);
 });
 
+test("pendingInlineKey uses shot and line so empty cardId still changes", () => {
+  assert.equal(pendingInlineKey(null), "");
+  assert.equal(pendingInlineKey([{ shot_index: 0, line: 2 }, { shot_index: 1, line: 5 }]), "0:2|1:5");
+  assert.notEqual(pendingInlineKey([{ shot_index: 0, line: 2 }]), "");
+});
+
 test("reconcileInlineShot pending replaces an old card marker", () => {
   const pending = { line: 1, src: "", cardId: "pending-0", pending: true };
   assert.deepEqual(reconcileInlineShot(pending, { cardId: "old-card", pending: false }), {
@@ -792,6 +799,12 @@ test("reconcileInlineShot swaps an unread live marker instead of stacking a seco
   });
 });
 
+test("reconcileInlineShot keeps an existing spinner even when ids do not match", () => {
+  const pending = { line: 1, src: "", cardId: "pending-0", pending: true };
+  assert.equal(reconcileInlineShot(pending, { cardId: "", pending: true }).op, "keep");
+  assert.equal(reconcileInlineShot(pending, { cardId: "pending-1", pending: true }).op, "keep");
+});
+
 test("reconcileInlineShot holds a linked card that still has no bytes", () => {
   const hold = { line: 3, src: "", cardId: "c2", pending: false };
   assert.equal(reconcileInlineShot(hold, { cardId: "pending-1", pending: true }).op, "keep");
@@ -803,8 +816,8 @@ test("leftover strip ignores unread ids so a just-placed shot is not deleted", (
   assert.equal(shouldStripLeftoverInlineId("old-card", ["c3", "pending-0"]), true);
 });
 
-test("leftover strip can drop unread markers while pending spinners are the desired set", () => {
-  assert.equal(shouldStripLeftoverInlineId("", ["pending-0"], true), true);
+test("leftover strip never deletes a just-placed marker with an unread id", () => {
+  assert.equal(shouldStripLeftoverInlineId("", ["pending-0"], true), false);
   assert.equal(shouldStripLeftoverInlineId("pending-0", ["pending-0"], true), false);
   assert.equal(shouldStripLeftoverInlineId("old-card", ["pending-0"], true), true);
 });

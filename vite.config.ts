@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.92';
+const PLUGIN_VERSION = '2.3.93';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -722,6 +722,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.93</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 삽화: 샷 끝날 때·리롤·태그 재생 후 바로 다시 착. 새 유저 말로 말풍선이 바뀌어도 캐시로 다시 붙임</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.92</strong>
@@ -7139,6 +7145,29 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       if (!Array.isArray(els) || !els.length) return;
       const selIdx = Number(sel.domIndex);
       if (!Number.isFinite(selIdx) || selIdx < 0 || selIdx >= els.length) return;
+      const elStillMounted = async (el) => {
+        if (!el) return !1;
+        try {
+          if (typeof el.parentNode == "function") {
+            const p = await el.parentNode();
+            if (!p) return !1;
+          }
+        } catch {
+          return !1;
+        }
+        return !0;
+      };
+      if (fromCache && !(await elStillMounted(els[selIdx]))) {
+        t._msgElsCache = null;
+        fromCache = !1;
+        try {
+          els = await getCachedMsgEls(doc);
+        } catch {
+          els = [];
+        }
+        if (!Array.isArray(els) || !els.length) return;
+        if (selIdx >= els.length) return;
+      }
       const pendingKey = Array.isArray(t._inlinePending)
         ? t._inlinePending.map((p) => String(p?.cardId || p?.id || "")).filter(Boolean).sort().join(",")
         : "";
@@ -7252,6 +7281,25 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       // Prefetch roles/text along walk so pickInlineKeepDomIndices can stay sync.
       await resolveAt(selIdx);
+      let paintIdx = selIdx;
+      if (!canKeepAt(selIdx)) {
+        for (let d = 1; d < els.length; d += 1) {
+          if (selIdx + d < els.length) {
+            await resolveAt(selIdx + d);
+            if (canKeepAt(selIdx + d)) {
+              paintIdx = selIdx + d;
+              break;
+            }
+          }
+          if (selIdx - d >= 0) {
+            await resolveAt(selIdx - d);
+            if (canKeepAt(selIdx - d)) {
+              paintIdx = selIdx - d;
+              break;
+            }
+          }
+        }
+      }
       let found = 0;
       for (let i = selIdx + 1; i < els.length && found < maxPerSide; i += 1) {
         await resolveAt(i);
@@ -7264,7 +7312,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       const keepIdxs = typeof VC?.pickInlineKeepDomIndices == "function"
         ? VC.pickInlineKeepDomIndices({
-          selIdx,
+          selIdx: paintIdx,
           length: els.length,
           allRoles,
           isCharAt: isCharAtSync,
@@ -7276,16 +7324,16 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           const add = (i) => {
             if (i >= 0 && i < els.length && !out.includes(i)) out.push(i);
           };
-          if (canKeepAt(selIdx)) add(selIdx);
+          if (canKeepAt(paintIdx)) add(paintIdx);
           let n = 0;
-          for (let i = selIdx + 1; i < els.length && n < maxPerSide; i += 1) {
+          for (let i = paintIdx + 1; i < els.length && n < maxPerSide; i += 1) {
             if (canKeepAt(i)) {
               add(i);
               n += 1;
             }
           }
           n = 0;
-          for (let i = selIdx - 1; i >= 0 && n < maxPerSide; i -= 1) {
+          for (let i = paintIdx - 1; i >= 0 && n < maxPerSide; i -= 1) {
             if (canKeepAt(i)) {
               add(i);
               n += 1;
@@ -7296,7 +7344,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const keep = new Set(keepIdxs);
       const neighborMsgs = [];
       for (const idx of keep) {
-        if (idx === selIdx) continue;
+        if (idx === paintIdx) continue;
         const row = msgCache.get(idx) || await resolveAt(idx);
         neighborMsgs.push(row || { idx, msg: null });
       }
@@ -7411,8 +7459,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (typeof N?.prioritizeWarmFocus == "function" && selIds.length) N.prioritizeWarmFocus(selIds);
       } catch {
       }
-      if (keep.has(selIdx) && els[selIdx]) {
-        await injectChatInlineImages(els[selIdx], selCards, t._inlinePending);
+      if (keep.has(paintIdx) && els[paintIdx]) {
+        await injectChatInlineImages(els[paintIdx], selCards, t._inlinePending);
       }
       try {
         if (typeof N?.prioritizeWarmFocus == "function" && neighborIds.length) {
@@ -7532,7 +7580,7 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
             await onSelectionChanged("content");
           } else if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
           else await onSelectionChanged("chrome");
-          // Inject only after hash-linked cards change (not bare shot_done).
+          // shot_done / leftover pending: paint even when linked ids did not change.
           if (t.backendSettings?.card?.inline_chat_images === !0) {
             let linkedChanged = !1;
             try {
@@ -7542,9 +7590,10 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
               if (linkedChanged) t._inlineLinkedIds = linkedIds;
             } catch {
             }
-            if (idsChanged || linkedChanged) {
+            const pendingLeft = Array.isArray(t._inlinePending) && t._inlinePending.length;
+            if (idsChanged || linkedChanged || c || pendingLeft || a.state === "done") {
               try {
-                await refreshSelectedInlineImages();
+                await refreshSelectedInlineImages(!0);
               } catch {
               }
             }
@@ -7552,14 +7601,10 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
         } else if (s || a.state === "generating" || a.state === "tagging" || a.state === "queued") {
           if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
           else await onSelectionChanged("chrome");
-          // Pending spinners only — before any card is hash-linked yet.
-          if (a.state === "generating" && t.backendSettings?.card?.inline_chat_images === !0 && Array.isArray(t._inlinePending) && t._inlinePending.length) {
-            const linkedN = t.selectedMessage ? linkedCards(t.selectedMessage).length : 0;
-            if (!linkedN) {
-              try {
-                await refreshSelectedInlineImages();
-              } catch {
-              }
+          if ((a.state === "generating" || a.state === "tagging") && t.backendSettings?.card?.inline_chat_images === !0) {
+            try {
+              await refreshSelectedInlineImages(!0);
+            } catch {
             }
           }
         }`;
@@ -8666,8 +8711,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.92",
-    body: "재생성·태그 플로팅 접으면 흐려짐. 업데이트 내역 탭 참고."
+    title: "2.3.93",
+    body: "말풍선 삽화 샷·리롤·새 유저 말 후에도 다시 착. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -9419,7 +9464,7 @@ const VENDOR_INSPECT_REROLL_INLINE_PATCH =
           } catch {
           }
           try {
-            await refreshSelectedInlineImages();
+            await refreshSelectedInlineImages(!0);
           } catch {
           }
         } catch (err) {
@@ -9455,7 +9500,7 @@ const VENDOR_INSPECT_REGEN_INLINE_PATCH =
               onShot: async () => {
                 if (t.galleryUi?.renderGal) await t.galleryUi.renderGal();
                 try {
-                  await refreshSelectedInlineImages();
+                  await refreshSelectedInlineImages(!0);
                 } catch {
                 }
               }
@@ -9466,7 +9511,7 @@ const VENDOR_INSPECT_REGEN_INLINE_PATCH =
             } catch {
             }
             try {
-              await refreshSelectedInlineImages();
+              await refreshSelectedInlineImages(!0);
             } catch {
             }
           } finally {
@@ -9483,7 +9528,7 @@ const VENDOR_REROLL_IMAGE_INLINE_NEEDLE =
 const VENDOR_REROLL_IMAGE_INLINE_PATCH =
   `        d.index = nn >= 0 ? nn : Math.max(0, Math.min(_, Math.max(0, J.length - 1))), await T();
         try {
-          await refreshSelectedInlineImages();
+          await refreshSelectedInlineImages(!0);
         } catch {
         }
         await C.setTextContent(\`이미지 리롤 완료 · \${String(B?.card?.id || A.id).slice(0, 8)}\`), y("info", "regen.image", \`P\${O} \${String(A.id).slice(0, 8)}→\${String(B?.card?.id || "").slice(0, 8)}\`);`;
@@ -9507,7 +9552,7 @@ const VENDOR_REROLL_ALL_INLINE_PATCH =
             d.index = i;
             await T();
             try {
-              await refreshSelectedInlineImages();
+              await refreshSelectedInlineImages(!0);
             } catch {
             }
             await C.setTextContent(\`\${i + 1}/\${targets0.length} 교체 완료\`);
@@ -9521,7 +9566,7 @@ const VENDOR_REROLL_ALL_INLINE_PATCH =
         const failCount = Array.isArray(B?.failed) ? B.failed.length : 0;
         d.index = 0, await T();
         try {
-          await refreshSelectedInlineImages();
+          await refreshSelectedInlineImages(!0);
         } catch {
         }
         await C.setTextContent(failCount ? \`전체 재생성 부분 실패 · 성공 \${Number(B?.count || 0)} / 실패 \${failCount}\` : \`전체 재생성 완료 · \${Number(B?.count || 0)}장\`), y("info", "regen.all", \`count=\${B?.count || 0} failed=\${failCount} hash=\${String(A.hash || "").slice(0, 8)}\`);`;
@@ -9544,7 +9589,7 @@ const VENDOR_FORCE_REGEN_INLINE_PATCH =
         t._inlineLinkedIds = "";
         t._inlineKeepLinkedKey = "";
         t._inlinePending = null;
-        await refreshSelectedInlineImages();
+        await refreshSelectedInlineImages(!0);
       } catch {
       }
     }
@@ -12344,6 +12389,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('inlineGoneFromSel') || !out.includes('refreshSelectedInlineImages(!0)')) {
       throw new Error('[build] missing re-inject when inline markers vanished from live DOM');
+    }
+    if (!out.includes('elStillMounted') || !out.includes('paintIdx')) {
+      throw new Error('[build] missing remount live-el check / nearest-char paintIdx');
     }
     if (out.includes('refreshSelectedInlineImages(source === "scroll")')) {
       throw new Error('[build] scroll inline must not force-refresh (cheap keep skip)');

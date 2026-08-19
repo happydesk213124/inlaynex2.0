@@ -2652,7 +2652,7 @@ export function reconcileInlineShot(
   desired: InlineImagePlacement | null | undefined,
   live: InlineLiveMarker | null | undefined,
 ): InlineReconcileAction {
-  const hasLive = !!(live && String(live.cardId || ''));
+  const hasLive = live != null;
   const hasDesired = !!(desired && Number(desired.line) >= 1);
 
   if (!hasDesired) return hasLive ? { op: 'strip' } : { op: 'keep' };
@@ -2674,13 +2674,14 @@ export function reconcileInlineShot(
   return { op: 'swap', placement: desired };
 }
 
-/** Unreadable id stays; only a known stale id is leftover. */
+/** Unreadable id stays unless pending is replacing the bubble (stripUnread). */
 export function shouldStripLeftoverInlineId(
   leftId: unknown,
   keepIds: Iterable<string> | null | undefined,
+  stripUnread = false,
 ): boolean {
   const id = String(leftId || '');
-  if (!id) return false;
+  if (!id) return stripUnread === true;
   const keep = keepIds instanceof Set ? keepIds : new Set(Array.isArray(keepIds) ? keepIds : [...(keepIds || [])]);
   return !keep.has(id);
 }

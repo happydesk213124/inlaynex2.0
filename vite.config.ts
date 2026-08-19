@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.95';
+const PLUGIN_VERSION = '2.3.96';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -722,6 +722,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.96</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>태그 재생: 옛 그림을 스피너로 바꾼 뒤 착착. 같은 칸에 그림이 두 장 겹치지 않음</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.95</strong>
@@ -6990,26 +6996,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       let placed = 0;
       const placedIds = new Set();
       const placedHosts = new Set();
-      const readLive = async (host) => {
-        let marks = [];
-        try {
-          marks = await unwrapSafe(await host.querySelectorAll("[data-inlay-inline-shot]"));
-        } catch {
-          marks = [];
-        }
-        const node = marks[0] || null;
-        const extras = marks.slice(1);
-        if (!node || typeof node.getAttribute != "function") return { live: null, node: null, extras };
-        let oldId = "";
-        let pendingMark = !1;
-        try {
-          oldId = String(await node.getAttribute("data-inlay-inline-shot") || "");
-          pendingMark = String(await node.getAttribute("data-inlay-inline-pending") || "") === "1";
-        } catch {
-          oldId = "";
-        }
-        return { live: oldId ? { cardId: oldId, pending: pendingMark } : null, node, extras };
-      };
       const removeNode = async (node) => {
         try {
           if (node && typeof node.remove == "function") await node.remove();
@@ -7038,11 +7024,51 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (!line || !Number.isFinite(line)) return !1;
         const hit = VC.findElementIndexForLineWithFallback(hostTexts, hostTags, messageLines, line, ["P"]);
         if (!hit || hit.elementIndex < 0 || hit.elementIndex >= hosts.length) return !1;
-        if (placedHosts.has(hit.elementIndex)) return !1;
         const host = hosts[hit.elementIndex];
         if (!host) return !1;
-        const { live, node, extras } = await readLive(host);
-        for (const extra of extras) await removeNode(extra);
+        let marks = [];
+        try {
+          marks = await unwrapSafe(await host.querySelectorAll("[data-inlay-inline-shot]"));
+        } catch {
+          marks = [];
+        }
+        let node = null;
+        let live = null;
+        for (const mark of marks) {
+          let markId = "";
+          let pendingMark = !1;
+          try {
+            if (mark && typeof mark.getAttribute == "function") {
+              markId = String(await mark.getAttribute("data-inlay-inline-shot") || "");
+              pendingMark = String(await mark.getAttribute("data-inlay-inline-pending") || "") === "1";
+            }
+          } catch {
+            markId = "";
+          }
+          if (id && markId === id) {
+            node = mark;
+            live = { cardId: markId, pending: pendingMark };
+            break;
+          }
+        }
+        if (!node) {
+          for (const mark of marks) {
+            let markId = "";
+            let pendingMark = !1;
+            try {
+              if (mark && typeof mark.getAttribute == "function") {
+                markId = String(await mark.getAttribute("data-inlay-inline-shot") || "");
+                pendingMark = String(await mark.getAttribute("data-inlay-inline-pending") || "") === "1";
+              }
+            } catch {
+              markId = "";
+            }
+            if (markId && placedIds.has(markId)) continue;
+            node = mark;
+            live = { cardId: markId, pending: pendingMark };
+            break;
+          }
+        }
         const action = typeof VC.reconcileInlineShot == "function"
           ? VC.reconcileInlineShot(shot, live)
           : live ? { op: "swap", placement: shot } : { op: "prepend", placement: shot };
@@ -7113,9 +7139,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           } catch {
             leftId = "";
           }
+          const stripUnread = placements.some((p) => p.pending);
           if (typeof VC.shouldStripLeftoverInlineId == "function"
-            ? !VC.shouldStripLeftoverInlineId(leftId, keepIds)
-            : !leftId || keepIds.has(leftId)) continue;
+            ? !VC.shouldStripLeftoverInlineId(leftId, keepIds, stripUnread)
+            : stripUnread ? keepIds.has(leftId) : !leftId || keepIds.has(leftId)) continue;
           await removeNode(node);
         }
         }
@@ -7560,7 +7587,8 @@ const VENDOR_INLINE_POLL_PATCH =
             // shot_done: force gallery so new cards appear; skip full Da-relink when already linked.
             if (await ce(e, !!(c || a.state === "done")), t.selectedMessage) {
               let l = linkedCards(t.selectedMessage);
-              if (a.state === "done" || !l.length) {
+              const pendingBusy = Array.isArray(t._inlinePending) && t._inlinePending.length;
+              if (a.state === "done" || (!l.length && !pendingBusy)) {
                 // Finalize hash / first link → full provisional relink.
                 try {
                   await relinkSelectedMessageHash(a.state === "done" ? "job.done" : "job.shot");
@@ -8722,8 +8750,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.95",
-    body: "말풍선 삽화가 붙자마자 사라지던 것 수정. 업데이트 내역 탭 참고."
+    title: "2.3.96",
+    body: "태그 재생은 스피너로 바꾼 뒤 착착. 겹침 수정. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -12399,6 +12427,12 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('shouldStripLeftoverInlineId')) {
       throw new Error('[build] leftover strip must ignore unread marker ids');
+    }
+    if (out.includes('if (placedHosts.has(hit.elementIndex)) return !1')) {
+      throw new Error('[build] retag must place more than one shot on the same host');
+    }
+    if (!out.includes('pendingBusy') || !out.includes('stripUnread')) {
+      throw new Error('[build] missing pending retag guards (no rebind / unread leftover strip)');
     }
     if (!out.includes('strip=diff')) {
       throw new Error('[build] inline keep must diff-strip only (no full-chat wipe)');

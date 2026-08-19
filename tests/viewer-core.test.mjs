@@ -784,6 +784,14 @@ test("reconcileInlineShot prepends when the host is empty", () => {
   assert.deepEqual(reconcileInlineShot(pending, null), { op: "prepend", placement: pending });
 });
 
+test("reconcileInlineShot swaps an unread live marker instead of stacking a second shot", () => {
+  const pending = { line: 1, src: "", cardId: "pending-0", pending: true };
+  assert.deepEqual(reconcileInlineShot(pending, { cardId: "", pending: false }), {
+    op: "swap",
+    placement: pending,
+  });
+});
+
 test("reconcileInlineShot holds a linked card that still has no bytes", () => {
   const hold = { line: 3, src: "", cardId: "c2", pending: false };
   assert.equal(reconcileInlineShot(hold, { cardId: "pending-1", pending: true }).op, "keep");
@@ -793,6 +801,12 @@ test("leftover strip ignores unread ids so a just-placed shot is not deleted", (
   assert.equal(shouldStripLeftoverInlineId("", ["c3"]), false);
   assert.equal(shouldStripLeftoverInlineId("c3", ["c3"]), false);
   assert.equal(shouldStripLeftoverInlineId("old-card", ["c3", "pending-0"]), true);
+});
+
+test("leftover strip can drop unread markers while pending spinners are the desired set", () => {
+  assert.equal(shouldStripLeftoverInlineId("", ["pending-0"], true), true);
+  assert.equal(shouldStripLeftoverInlineId("pending-0", ["pending-0"], true), false);
+  assert.equal(shouldStripLeftoverInlineId("old-card", ["pending-0"], true), true);
 });
 
 test("rawMessageRole reads API fields like Archive (never invents from body)", () => {

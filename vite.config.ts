@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.3.97';
+const PLUGIN_VERSION = '2.3.99';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -722,6 +722,19 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.99</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>NovelAI V5: 모델 칸에 nai-diffusion-5-full / nai-diffusion-5-curated 입력하면 생성됨</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.3.98</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>명령 수정: 넣을 태그/뺄 태그만 받고 칸은 여기서 합침</li>
+            <li>샷 태그 저장·리롤 후 말풍선 삽화도 다시 그림</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.3.97</strong>
@@ -4564,6 +4577,11 @@ const VENDOR_SAVE_REROLL_BG_PATCH =
           body: payload
         }, 15e3), y("info", "card.tags.save", \`\${String(cardId).slice(0, 8)} chars=\${payload.characters.length} autoPerson=\${!!autoEl?.checked}\`);
         const Yt = await withImageRerollToast("태그 저장 후 리롤 중…", async () => await K(\`/v1/cards/\${encodeURIComponent(cardId)}/reroll\`, {`;
+
+const VENDOR_SAVE_REROLL_INLINE_NEEDLE =
+  `        await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(\`저장·리롤 완료 · \${String(Gt || cardId).slice(0, 8)}\`), y("info", "card.tags.reroll", \`\${String(cardId).slice(0, 8)}→\${String(Gt).slice(0, 8)}\`);`;
+const VENDOR_SAVE_REROLL_INLINE_PATCH =
+  `        await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), await refreshSelectedInlineImages(!0), t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(\`저장·리롤 완료 · \${String(Gt || cardId).slice(0, 8)}\`), y("info", "card.tags.reroll", \`\${String(cardId).slice(0, 8)}→\${String(Gt).slice(0, 8)}\`);`;
 
 const VENDOR_CHAR_SAVE_BG_NEEDLE =
   `        if (t.charactersSession = v?.characters || t.charactersSession, t.charactersGlobal = v?.global || t.charactersGlobal, t.appearance = v?.appearance || t.appearance, y("info", "char.edit.save", \`\${I} → \${rosterMeta?.rosterUnified ? "roots" : x === "__global__" ? "global" : "session"} app=\${F.length} attire=\${T.length} acc=\${Acc.length}\`), t.galleryUi?.status?.setTextContent) try {
@@ -8767,8 +8785,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.3.97",
-    body: "태그 재생 깜박임 수정. 스피너는 한 번만 붙고 장이 끝날 때 바뀜. 업데이트 내역 탭 참고."
+    title: "2.3.99",
+    body: "NovelAI V5 사용 가능. 모델에 nai-diffusion-5-full 입력. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11807,6 +11825,7 @@ const loadVendorUi = (): string => {
     [VENDOR_CHIP_SKIP_ROSTER_NEEDLE, 'chip click skip roster await'],
     [VENDOR_SAVE_ONLY_BG_NEEDLE, 'shot saveOnly background'],
     [VENDOR_SAVE_REROLL_BG_NEEDLE, 'shot save reroll close first'],
+    [VENDOR_SAVE_REROLL_INLINE_NEEDLE, 'shot save reroll refresh inline'],
     [VENDOR_CHAR_SAVE_BG_NEEDLE, 'char save skip close after POST'],
     [VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, 'char save close before POST'],
     [VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, 'settings open sticky hide'],
@@ -12178,6 +12197,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHIP_SKIP_ROSTER_NEEDLE, VENDOR_CHIP_SKIP_ROSTER_PATCH)
     .replace(VENDOR_SAVE_ONLY_BG_NEEDLE, VENDOR_SAVE_ONLY_BG_PATCH)
     .replace(VENDOR_SAVE_REROLL_BG_NEEDLE, VENDOR_SAVE_REROLL_BG_PATCH)
+    .replace(VENDOR_SAVE_REROLL_INLINE_NEEDLE, VENDOR_SAVE_REROLL_INLINE_PATCH)
     .replace(VENDOR_CHAR_SAVE_BG_NEEDLE, VENDOR_CHAR_SAVE_BG_PATCH)
     .replace(VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, VENDOR_CHAR_SAVE_CLOSE_FIRST_PATCH)
     .replace(VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, VENDOR_SETTINGS_OPEN_STICKY_PATCH)
@@ -12468,6 +12488,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('_paintStatusKey') || !out.includes('_seFp') || !out.includes('_deTextCache')) {
       throw new Error('[build] missing same-feel skip caches (status/Se/De)');
+    }
+    if (!out.includes('await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), await refreshSelectedInlineImages(!0)')) {
+      throw new Error('[build] tag save-reroll must refresh inline images after gallery');
     }
     if (!out.includes('gallery.refresh') || !out.includes('if (!t.galleryUi?.root || !t.overlayUi?.root) await it();')) {
       throw new Error('[build] job done must skip it() when viewer roots exist');

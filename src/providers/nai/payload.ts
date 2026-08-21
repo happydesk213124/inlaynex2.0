@@ -12,6 +12,26 @@ import { cleanText } from '../../core/util/text.ts';
 
 const MODELS = models as Record<string, string>;
 
+/** Compact aliases → short `naid*` keys. Official V5 ids live in models.json. */
+const MODEL_ALIASES: Record<string, string> = {
+  naiv5: 'naid5f',
+  'nai-v5': 'naid5f',
+  v5: 'naid5f',
+  v5full: 'naid5f',
+  'v5-full': 'naid5f',
+  naiv5full: 'naid5f',
+  'nai-v5-full': 'naid5f',
+  v5curated: 'naid5c',
+  'v5-curated': 'naid5c',
+  naiv5curated: 'naid5c',
+  'nai-v5-curated': 'naid5c',
+  'nai-diffusion-5': 'naid5f',
+};
+
+function compactModelKey(model: unknown): string {
+  return cleanText(model).toLowerCase().replace(/\s+/g, '');
+}
+
 /** A vibe-transfer reference, already base64-encoded by `encodeVibe`. */
 export interface VibeReference {
   encoded: string;
@@ -75,11 +95,36 @@ export interface V4PromptFields {
   };
 }
 
-/** Maps a model key or full model name to the name NAI expects. */
+/** Maps a model key, alias, or full model name to the name NAI expects. */
 export function resolveModel(key: string, isInpaint = false): string {
-  let name = MODELS[String(key).toLowerCase()] || key;
-  if (isInpaint) name += '-inpainting';
+  const compact = compactModelKey(key);
+  const aliased = MODEL_ALIASES[compact];
+  let name =
+    (aliased && MODELS[aliased]) || MODELS[compact] || MODELS[String(key).toLowerCase()] || key;
+  if (isInpaint && !name.endsWith('-inpainting')) name += '-inpainting';
   return name;
+}
+
+export function isNaiV5(model: unknown): boolean {
+  return resolveModel(cleanText(model) || 'nai-diffusion-4-5-full').includes('nai-diffusion-5');
+}
+
+/** V4/V4.5/V5 all use the API `v4_prompt` character-caption block. */
+export function usesCharCaptions(model: unknown): boolean {
+  const name = resolveModel(cleanText(model) || 'nai-diffusion-4-5-full');
+  return name.includes('nai-diffusion-4') || name.includes('nai-diffusion-5');
+}
+
+/** Precise Reference is V4.5-only. V5 launch has no director reference. */
+export function supportsDirectorReference(model: unknown): boolean {
+  return resolveModel(cleanText(model) || 'nai-diffusion-4-5-full').includes('4-5');
+}
+
+/** Vibe Transfer is not in the V5 launch. */
+export function supportsVibeTransfer(model: unknown): boolean {
+  const name = resolveModel(cleanText(model) || 'nai-diffusion-4-5-full');
+  if (name.includes('nai-diffusion-5')) return false;
+  return name.includes('nai-diffusion-4') || name.includes('nai-diffusion-3');
 }
 
 /** Builds the v4 caption / negative-caption block from the per-character prompts. */
@@ -125,21 +170,26 @@ export function buildBaseParameters(req: T2iRequest): Record<string, unknown> {
     negative_prompt: req.negative_prompt,
     cfg_rescale: req.cfg_rescale,
     noise_schedule: req.scheduler,
-    params_version: 3,
+    params_version: modelName.includes('nai-diffusion-5') ? 4 : 3,
     legacy: false,
     legacy_v3_extend: false,
   };
-  if (req.var_plus) params.skip_cfg_above_sigma = modelName.includes('4-5') ? 58 : 19;
-  else params.skip_cfg_above_sigma = null;
-  if (modelName.includes('nai-diffusion-4')) Object.assign(params, buildV4Prompt(req));
-  if (req.vibes?.length) {
+  if (req.var_plus) {
+    params.skip_cfg_above_sigma =
+      modelName.includes('4-5') || modelName.includes('nai-diffusion-5') ? 58 : 19;
+  } else params.skip_cfg_above_sigma = null;
+  if (usesCharCaptions(modelName)) {
+    const v4 = buildV4Prompt(req);
+    if (modelName.includes('nai-diffusion-5')) v4.autoSmea = false;
+    Object.assign(params, v4);
+  }
+  if (req.vibes?.length && supportsVibeTransfer(modelName)) {
     params.reference_image_multiple = req.vibes.map((v) => v.encoded);
     params.reference_strength_multiple = req.vibes.map((v) => v.strength);
     params.reference_information_extracted_multiple = req.vibes.map((v) => v.information_extracted);
     params.normalize_reference_strength_multiple = true;
   }
-  if (req.character_refs?.length) {
-    if (!modelName.includes('4-5')) throw new Error('Character Reference는 NAID4.5 전용입니다');
+  if (req.character_refs?.length && supportsDirectorReference(modelName)) {
     // Precise Reference and Vibe Transfer are mutually exclusive — drop vibe fields.
     delete params.reference_image_multiple;
     delete params.reference_strength_multiple;
@@ -161,11 +211,17 @@ export function buildBaseParameters(req: T2iRequest): Record<string, unknown> {
   return params;
 }
 
-/** Normalises a model key or full model name to the short `naid*` key. */
+/** Normalises a model key, alias, or full model name to the short `naid*` key. */
 export function modelToNaia(model: unknown): string {
   const name = cleanText(model) || 'nai-diffusion-4-5-full';
+  const compact = compactModelKey(name);
+  if (MODEL_ALIASES[compact]) return MODEL_ALIASES[compact];
   const reverse = Object.fromEntries(Object.entries(MODELS).map(([k, v]) => [v, k])) as Record<string, string>;
   if (MODELS[name]) return name;
+  if (MODELS[compact]) return compact;
   if (reverse[name]) return reverse[name];
+  if (reverse[compact]) return reverse[compact];
+  if (compact.includes('nai-diffusion-5-curated')) return 'naid5c';
+  if (compact.includes('nai-diffusion-5')) return 'naid5f';
   return 'naid4.5f';
 }

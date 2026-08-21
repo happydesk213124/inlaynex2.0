@@ -47,7 +47,14 @@ import { resolveGenerationCfgParams } from '../domain/style-preset-overrides';
 import { prepareDirectorReferenceWebp } from '../core/util/image';
 import { generateViaComfy, imageBackendKind } from '../providers/comfy/client';
 import { generateT2i } from '../providers/nai/client';
-import { modelToNaia, type CharacterReference, type T2iRequest, type VibeReference } from '../providers/nai/payload';
+import {
+  modelToNaia,
+  supportsDirectorReference,
+  supportsVibeTransfer,
+  type CharacterReference,
+  type T2iRequest,
+  type VibeReference,
+} from '../providers/nai/payload';
 import { imageLocation, putImageLocation } from '../storage/stores';
 import { getConfig } from './context';
 import { loadCurationCatalog } from './curation';
@@ -474,6 +481,22 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
     vibes.length = 0;
   }
 
+  const naiModel = modelToNaia(nai.model || 'nai-diffusion-4-5-full');
+  if (characterRefs.length && !supportsDirectorReference(naiModel)) {
+    dbg('nai.ref.drop_director', {
+      message: `이 모델은 Precise Reference를 아직 안 받음 · ${characterRefs.length}개 제외`,
+      focus: true,
+    });
+    characterRefs.length = 0;
+  }
+  if (vibes.length && !supportsVibeTransfer(naiModel)) {
+    dbg('nai.ref.drop_vibes', {
+      message: `이 모델은 Vibe Transfer를 아직 안 받음 · ${vibes.length}개 제외`,
+      focus: true,
+    });
+    vibes.length = 0;
+  }
+
   const req: T2iRequest = {
     prompt: plan.main,
     negative_prompt: plan.neg,
@@ -485,7 +508,7 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
     cfg_rescale: cfgParams.cfg_rescale,
     sampler: cleanText(nai.sampler) || 'k_euler_ancestral',
     scheduler: cleanText(nai.scheduler) || 'karras',
-    model: modelToNaia(nai.model || 'nai-diffusion-4-5-full'),
+    model: naiModel,
     var_plus: Boolean(nai.variety_plus),
     characters,
     character_refs: characterRefs,

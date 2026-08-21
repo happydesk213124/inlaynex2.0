@@ -13,6 +13,6 @@
   "preset_1": "[Positive]\n, masterpiece, best quality\n\n[Negative]\nlowres, bad quality, watermark",
   "curation_refine": "Batch-refine ALL shots' scene tags from allowed curation option ids in ONE JSON response.",
   "curation_embed_hint": "Write detailed Danbooru scene tags for camera/situation/place/action.",
-  "command_reroll": "Rewrite one card's prompts from a user instruction. Return ONE JSON object only with setup, optional negative_prompt, and characters[{index,prompt,action,uc}].",
+  "command_reroll": "Rewrite one card's prompts from a user instruction. Return ONE JSON object only with main/negative/characters[].prompt|uc as {add,remove} deltas. Do not rewrite full setup or prompts.",
   "lorefilter_scan": "Extract distinct RP character names from lorebook entry titles. Return JSON array of strings only."
 }

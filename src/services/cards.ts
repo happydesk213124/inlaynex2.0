@@ -26,19 +26,22 @@ import type { ApiResult, CardRow, ShotCharacter, TaggedShot } from '../core/type
 import {
   ASSISTANT_PREVIEW_LIMIT,
   cleanText,
+  splitTagTokens,
   stripCbs,
   toInt,
   toOptionalFloat,
   unifiedSessionIdForCharacter,
   uuid,
 } from '../core/util/text';
-import { characterMaxLimit, normalizeCharacterCaptionTags } from '../domain/character/tags';
+import { characterMaxLimit, normalizeCharacterCaptionTags, stripPersonCountTags } from '../domain/character/tags';
 import {
   collectStylePositives,
   resolveRerollLockedSetup,
 } from '../domain/prompt/reroll-setup';
 import {
+  commandRewriteHasDeltas,
   mergeCommandRewriteCharacters,
+  mergeCommandRewriteDeltas,
   mergeCommandRewriteMain,
 } from '../domain/prompt/command-rewrite';
 import { QUALITY_TAGS } from '../config/defaults';
@@ -651,13 +654,29 @@ export async function commandRewriteCard(cardId: string, body: CommandRewriteBod
   if (QUALITY_TAGS[naiaModel]) qualitySuffixes.unshift(QUALITY_TAGS[naiaModel]);
   const stylePositives = collectStylePositives(cardCfg);
   const meta = parseJsonOr(row.meta_json || '{}', {}) as Record<string, unknown>;
+  const person = cleanText(meta.person || '', 400);
+  const presetId = cleanText((chosenPreset?.id as string) || wantPreset || activeId, 120);
+
+  if (commandRewriteHasDeltas(parsed)) {
+    const sceneKeys = new Set(splitTagTokens(stripPersonCountTags(currentMain)).map((t) => t.toLowerCase()));
+    const personFromMain = splitTagTokens(currentMain).filter((t) => !sceneKeys.has(t.toLowerCase()));
+    const merged = mergeCommandRewriteDeltas({
+      currentMain,
+      currentNeg,
+      currentChars,
+      lookLocked,
+      parsed,
+      protectMain: [...stylePositives, ...qualitySuffixes, person, ...personFromMain],
+    });
+    return { ok: true, ...merged, preset_id: presetId };
+  }
 
   const main_prompt = mergeCommandRewriteMain({
     currentMain,
     setup: parsed.setup,
     mainPrompt: parsed.main_prompt,
     stylePositive,
-    person: cleanText(meta.person || '', 400),
+    person,
     stylePositives,
     qualitySuffixes,
   });
@@ -670,7 +689,7 @@ export async function commandRewriteCard(cardId: string, body: CommandRewriteBod
     main_prompt,
     negative_prompt,
     characters,
-    preset_id: cleanText((chosenPreset?.id as string) || wantPreset || activeId, 120),
+    preset_id: presetId,
   };
 }
 

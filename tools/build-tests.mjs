@@ -34,6 +34,7 @@ const MODULES = {
   'settings-schema': 'src/config/schema.ts',
   'reroll-setup': 'src/domain/prompt/reroll-setup.ts',
   'command-rewrite': 'src/domain/prompt/command-rewrite.ts',
+  'nai-payload': 'src/providers/nai/payload.ts',
   'nai-to-comfy': 'src/domain/prompt/nai-to-comfy.ts',
   'comfy-client': 'src/providers/comfy/client.ts',
   'stream-keywords': 'src/domain/prompt/stream-keywords.ts',

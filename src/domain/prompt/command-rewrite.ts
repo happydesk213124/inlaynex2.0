@@ -3,8 +3,100 @@
  * form fields the UI shows (textareas only; no image generation here).
  */
 
-import { cleanText, joinTags } from '../../core/util/text.ts';
+import { cleanText, joinTags, splitTagTokens } from '../../core/util/text.ts';
 import { recoverSceneFromMain } from './reroll-setup.ts';
+
+export type TagDelta = {
+  add?: unknown;
+  remove?: unknown;
+};
+
+function deltaTokenList(value: unknown): string[] {
+  if (value == null) return [];
+  if (Array.isArray(value)) return splitTagTokens(value.map((v) => cleanText(v, 800)).join(', '));
+  return splitTagTokens(value);
+}
+
+function isDeltaObject(value: unknown): value is TagDelta {
+  return !!value && typeof value === 'object' && !Array.isArray(value) && ('add' in value || 'remove' in value);
+}
+
+/** Token-wise remove (case-insensitive), then joinTags-add. Protected tokens stay. */
+export function applyTagDelta(
+  current: unknown,
+  delta: TagDelta | null | undefined,
+  opts: { protect?: readonly string[] } = {},
+): string {
+  const protect = new Set(
+    (opts.protect || []).flatMap((p) => splitTagTokens(p).map((t) => t.toLowerCase())),
+  );
+  const remove = new Set(deltaTokenList(delta?.remove).map((t) => t.toLowerCase()));
+  const kept = splitTagTokens(current).filter((t) => {
+    const key = t.toLowerCase();
+    if (protect.has(key)) return true;
+    return !remove.has(key);
+  });
+  return joinTags(...kept, ...deltaTokenList(delta?.add));
+}
+
+export function commandRewriteHasDeltas(parsed: unknown): boolean {
+  if (!parsed || typeof parsed !== 'object') return false;
+  const rec = parsed as Record<string, unknown>;
+  if (isDeltaObject(rec.main) || isDeltaObject(rec.negative)) return true;
+  const chars = rec.characters;
+  if (!Array.isArray(chars)) return false;
+  return chars.some((ch) => {
+    if (!ch || typeof ch !== 'object') return false;
+    const row = ch as Record<string, unknown>;
+    return isDeltaObject(row.prompt) || isDeltaObject(row.uc);
+  });
+}
+
+export function mergeCommandRewriteDeltas(args: {
+  currentMain: string;
+  currentNeg: string;
+  currentChars: CommandRewriteCharIn[];
+  lookLocked: boolean[];
+  parsed: Record<string, unknown>;
+  protectMain?: readonly string[];
+}): { main_prompt: string; negative_prompt: string; characters: CommandRewriteCharOut[] } {
+  const parsed = args.parsed || {};
+  const main_prompt = isDeltaObject(parsed.main)
+    ? applyTagDelta(args.currentMain, parsed.main, { protect: args.protectMain })
+    : cleanText(args.currentMain, 8000);
+  const negative_prompt = isDeltaObject(parsed.negative)
+    ? applyTagDelta(args.currentNeg, parsed.negative)
+    : cleanText(args.currentNeg, 8000);
+  const llmList = Array.isArray(parsed.characters) ? parsed.characters : [];
+  const byIndex = new Map<number, Record<string, unknown>>();
+  for (const raw of llmList) {
+    if (!raw || typeof raw !== 'object') continue;
+    const idx = Math.floor(Number((raw as { index?: unknown }).index));
+    if (!Number.isFinite(idx) || idx < 0) continue;
+    byIndex.set(idx, raw as Record<string, unknown>);
+  }
+  const characters = args.currentChars.map((ch, i) => {
+    const llm = byIndex.get(i);
+    const locked = args.lookLocked[i] === true;
+    const prevPrompt = cleanText(ch.prompt, 4000);
+    let prompt = prevPrompt;
+    if (isDeltaObject(llm?.prompt)) {
+      prompt = applyTagDelta(prevPrompt, locked ? { add: llm.prompt.add } : llm.prompt);
+    }
+    let uc = cleanText(ch.uc, 2000);
+    if (isDeltaObject(llm?.uc)) uc = applyTagDelta(uc, llm.uc);
+    const nameRaw = llm && typeof llm.name === 'string' ? llm.name : ch.name;
+    return {
+      name: cleanText(nameRaw, 200),
+      prompt: prompt || 'girl',
+      action: cleanText(ch.action, 800),
+      uc,
+      center_x: Number(ch.center_x ?? 0.5),
+      center_y: Number(ch.center_y ?? 0.5),
+    };
+  });
+  return { main_prompt, negative_prompt, characters };
+}
 
 export type CommandRewriteCharIn = {
   name?: unknown;

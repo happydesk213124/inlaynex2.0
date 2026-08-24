@@ -953,6 +953,12 @@ async function runJob(jobId: string): Promise<void> {
       dbg('job.shot.prepare', {
         shot: idx,
         card_id: cardId,
+        model: route.model,
+        family: route.family,
+        complexity: cleanText(shot.complexity, 20),
+        nai5_first: cardFlagOn(card.nai5_first, false),
+        nai4_fallback: cardFlagOn(card.nai4_fallback, false),
+        nai_model: cleanText(getConfig().nai?.model, 80),
         prompt_len: String(main || '').length,
         captions: (captions || []).length,
       });
@@ -1041,6 +1047,12 @@ async function runJob(jobId: string): Promise<void> {
           && route.family === 'v5'
           && sawQuota;
         if (lastErr && canFallback) {
+          dbg('job.shot.nai4_fallback', {
+            shot: idx,
+            from: route.model,
+            to: modelForFamily(getConfig().nai, 'v4'),
+            message: String((lastErr as Error)?.message || lastErr),
+          }, 'warn');
           const v4Route: ShotNaiRoute = {
             family: 'v4',
             model: modelForFamily(getConfig().nai, 'v4'),

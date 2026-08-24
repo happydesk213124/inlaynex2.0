@@ -63,6 +63,7 @@ import { generateT2i } from '../providers/nai/client';
 import {
   isNaiV5,
   modelToNaia,
+  resolveModel,
   supportsDirectorReference,
   supportsVibeTransfer,
   type CharacterReference,
@@ -569,7 +570,10 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
     vibes,
   };
   dbg('nai.generate.dims', {
-    message: `${req.width}x${req.height}`,
+    message: `${req.width}x${req.height} · ${resolveModel(routeModel)}`,
+    model: resolveModel(routeModel),
+    family: routeFamily,
+    char_ref: charRefMode,
     aspect: dims.aspect,
     auto_aspect: autoAspect,
     steps: req.steps,

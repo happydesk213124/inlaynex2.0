@@ -1,0 +1,18 @@
+{
+  "author_note": "",
+  "asset_author_note": "",
+  "tagger": "Tag the chat message into Danbooru-style English image prompts. Output ONE JSON object only.",
+  "format": "{\"scenes\":[{\"place\":\"...\",\"shots\":[{\"paragraph\":0,\"y_percent\":50,\"line\":7,\"aspect\":\"portrait|square|landscape\",\"camera\":\"...\",\"situation\":\"...\",\"characters\":[{\"name\":\"...\",\"action\":\"...\"}]}]}],\"new_characters\":[]}",
+  "appearance_inject": "Registered: {registered_block}\nIncomplete: {incomplete_block}\nDetected: {detected_block}",
+  "asset_tags_inject": "NovelAI asset tags for new_characters:\n{asset_tags_block}\nSORT verbatim Danbooru tags into appearance/attire/accessories. Use lore_keys for name/aliases. Never paraphrase or invent outfit names.",
+  "char_looks": "Fill new_characters by COPYING asset/lore Danbooru tags. Use lore_keys for name/aliases (Korean preferred). No prose paraphrase. JSON only.",
+  "lore_inject": "Use matched lorebook context:",
+  "char_inject": "Character info:",
+  "preprocess": "Summarize visual details from the message.",
+  "prefill": "",
+  "preset_1": "[Positive]\n, masterpiece, best quality\n\n[Negative]\nlowres, bad quality, watermark",
+  "curation_refine": "Batch-refine ALL shots' scene tags from allowed curation option ids in ONE JSON response.",
+  "curation_embed_hint": "Write detailed Danbooru scene tags for camera/situation/place/action.",
+  "command_reroll": "Rewrite one card's prompts from a user instruction. Return ONE JSON object only with main/negative/characters[].prompt|uc as {add,remove} deltas. Do not rewrite full setup or prompts.",
+  "lorefilter_scan": "Extract distinct RP character names from lorebook entry titles. Return JSON array of strings only."
+}

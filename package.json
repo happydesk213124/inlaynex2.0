@@ -1,0 +1,46 @@
+{
+  "name": "inlaynex2-0",
+  "displayName": "Inlay Nexus 2.0",
+  "version": "2.4.2",
+  "description": "Inlay Nexus LLM tagging + NovelAI overlay",
+  "type": "module",
+  "private": true,
+  "main": "dist/inlaynexus2.0.js",
+  "browser": "dist/inlaynexus2.0.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "build:dev": "vite build --mode development",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "unit": "node tools/build-tests.mjs && node --test tests/*.test.mjs",
+    "audit": "node tools/audit.mjs && node tools/check-docs.mjs",
+    "smoke": "node tools/smoke.mjs",
+    "bench": "node tools/bench-gallery.mjs --route=gallery && node tools/bench-gallery.mjs --route=explore",
+    "parity:old": "node tools/parity/run.mjs --target=old --out=.parity/old.json",
+    "parity:new": "node tools/parity/run.mjs --target=new --out=.parity/new.json",
+    "parity": "npm run parity:old && npm run parity:new && node tools/parity/compare.mjs .parity/old.json .parity/new.json",
+    "perf": "node tools/parity/perf-report.mjs",
+    "test": "npm run typecheck && npm run unit && npm run build && npm run audit && npm run smoke && npm run bench && npm run parity"
+  },
+  "keywords": [
+    "risuai",
+    "risu-ai",
+    "plugin",
+    "inlay-nexus"
+  ],
+  "author": "Chaebboong",
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^8.0.10",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.9.3",
+    "@types/node": "^22.12.0"
+  },
+  "engines": {
+    "node": ">=20.19.0",
+    "npm": ">=10.0.0"
+  }
+}

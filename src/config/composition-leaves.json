@@ -1,0 +1,100 @@
+{
+  "leaves": [
+    {
+      "id": "1girl_solo_portrait",
+      "composition": "1girl_solo",
+      "when": "여성 1명만 보이는 장면. 초상·상반신·시청자 응시.",
+      "avoid": "남성이 손이라도 보이면 쓰지 말 것. 둘이 상호작용하면 facing_each_other 등.",
+      "global": "cowboy shot, looking at viewer",
+      "actors": { "primary": "" },
+      "variants": [
+        { "id": "default", "global": "" },
+        { "id": "from_side", "global": "from side" },
+        { "id": "upper_body", "global": "upper body" }
+      ],
+      "modifiers": [
+        { "id": "smile", "tags": "smile", "slot": "primary" },
+        { "id": "blush", "tags": "blush", "slot": "primary" },
+        { "id": "hand_on_own_chest", "tags": "hand on own chest", "slot": "primary" }
+      ]
+    },
+    {
+      "id": "1boy_solo_portrait",
+      "composition": "1boy_solo",
+      "when": "남성 1명만 보이는 장면. 초상·상반신·시청자 응시.",
+      "avoid": "여성이 보이면 쓰지 말 것.",
+      "global": "cowboy shot, looking at viewer",
+      "actors": { "primary": "" },
+      "variants": [
+        { "id": "default", "global": "" },
+        { "id": "from_side", "global": "from side" },
+        { "id": "upper_body", "global": "upper body" }
+      ],
+      "modifiers": [
+        { "id": "smile", "tags": "smile", "slot": "primary" },
+        { "id": "serious", "tags": "serious", "slot": "primary" }
+      ]
+    },
+    {
+      "id": "facing_each_other",
+      "composition": "1girl_1boy",
+      "when": "여성과 남성이 서로를 향하는 2인 구도. 전신이 보이거나, 남성 POV로 손·팔만 보여도 마주봄이 성립할 때.",
+      "avoid": "혼자만 보이면 solo leaf. 뒤에서 안으면 male_behind_female.",
+      "global": "",
+      "actors": {
+        "primary": "2::facing another::",
+        "secondary": "2::facing another::"
+      },
+      "variants": [
+        { "id": "from_side", "global": "2::from side::, 2::side-by-side::" },
+        { "id": "pov_hands", "global": "2::pov::, 2::pov hands::" }
+      ],
+      "modifiers": [
+        { "id": "hug", "tags": "hug", "slot": "both" },
+        { "id": "holding_hands", "tags": "holding hands", "slot": "both" },
+        { "id": "kissing_cheek", "tags": "kissing cheek", "slot": "both" },
+        { "id": "arm_around_waist", "tags": "arm around waist", "slot": "both" },
+        { "id": "talking", "tags": "talking", "slot": "both" }
+      ]
+    },
+    {
+      "id": "male_behind_female",
+      "composition": "1girl_1boy",
+      "when": "남성이 여성 뒤에 있는 2인 구도(뒤에서 안기, 어깨 잡기 등).",
+      "avoid": "마주보면 facing_each_other.",
+      "global": "2::from side::, 2::side-by-side::",
+      "actors": {
+        "primary": "-1::behind another::",
+        "secondary": "2::behind another::"
+      },
+      "variants": [
+        { "id": "from_side", "global": "" }
+      ],
+      "modifiers": [
+        { "id": "hug_from_behind", "tags": "hug from behind", "slot": "both" },
+        { "id": "arm_around_waist", "tags": "arm around waist", "slot": "both" },
+        { "id": "whispering", "tags": "whispering", "slot": "secondary" }
+      ]
+    },
+    {
+      "id": "2girls_facing",
+      "composition": "2girls",
+      "when": "여성 2명이 서로를 향하거나 나란히 상호작용.",
+      "avoid": "남성이 보이면 1girl_1boy leaf.",
+      "global": "2::from side::, 2::side-by-side::",
+      "actors": {
+        "primary": "2::facing another::",
+        "secondary": "2::facing another::"
+      },
+      "variants": [
+        { "id": "from_side", "global": "" },
+        { "id": "default", "global": "" }
+      ],
+      "modifiers": [
+        { "id": "hug", "tags": "hug", "slot": "both" },
+        { "id": "holding_hands", "tags": "holding hands", "slot": "both" },
+        { "id": "talking", "tags": "talking", "slot": "both" }
+      ]
+    }
+  ]
+}

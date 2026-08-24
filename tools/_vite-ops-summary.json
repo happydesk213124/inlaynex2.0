@@ -1,0 +1,410 @@
+[
+  {
+    "i": 34,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 2188,
+    "new_len": 2916,
+    "preview": "      const unwrapSafe = async (arr) => {         if (!arr) return [];         i"
+  },
+  {
+    "i": 35,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 311,
+    "new_len": 438,
+    "preview": "      const doc = await ue().catch(() => t.hostDoc);       if (!doc) return;    "
+  },
+  {
+    "i": 35,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 180,
+    "new_len": 194,
+    "preview": "      const prevKeep = Array.isArray(t._inlineKeepIdxs) ? t._inlineKeepIdxs : []"
+  },
+  {
+    "i": 47,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 2376,
+    "new_len": 3193,
+    "preview": "/**  * \"응답 후 자동 생성\": 0.5s → DOM#0 선택 → 태그 재생성 버튼과 동일(Be force).  * Gates: power "
+  },
+  {
+    "i": 74,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 3575,
+    "new_len": 8331,
+    "preview": "/**  * \"응답 후 자동 생성\":  * Primary = addRisuChatListener('output') (streaming + non"
+  },
+  {
+    "i": 75,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 3036,
+    "new_len": 1735,
+    "preview": "const VENDOR_AFTER_REQUEST_HELP_NEEDLE =   `\"nx-auto-gen-reply\": { title: \"응답 후 "
+  },
+  {
+    "i": 75,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 459,
+    "new_len": 332,
+    "preview": "    [VENDOR_STREAM_SETTLE_KA_NEEDLE, 'stream settle Ka 0.5s'],     [VENDOR_AFTER"
+  },
+  {
+    "i": 77,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 349,
+    "new_len": 414,
+    "preview": "    [VENDOR_SELECT_UNBIND_NEEDLE, 'select gesture unbind contextmenu'],     [VEN"
+  },
+  {
+    "i": 79,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 389,
+    "new_len": 451,
+    "preview": "    .replace(VENDOR_SELECT_UNBIND_NEEDLE, VENDOR_SELECT_UNBIND_PATCH)     .repla"
+  },
+  {
+    "i": 84,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 709,
+    "new_len": 1199,
+    "preview": "        y(\"info\", \"afterReply.select\", \\`src=\\${source} DOM#0 of \\${els.length}\\"
+  },
+  {
+    "i": 84,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 413,
+    "new_len": 581,
+    "preview": "      const idx = Number(arg?.messageIndex);       const msgs = arg?.chat?.messa"
+  },
+  {
+    "i": 84,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 252,
+    "new_len": 277,
+    "preview": "const VENDOR_AFTER_REQUEST_HELP_PATCH =   `\"nx-auto-gen-reply\": { title: \"응답 후 자"
+  },
+  {
+    "i": 99,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 165,
+    "new_len": 165,
+    "preview": "    y(\"info\", \"afterReply.schedule\", \\`src=\\${source} delay=\\${AFTER_GEN_DELAY_M"
+  },
+  {
+    "i": 100,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 4145,
+    "new_len": 4884,
+    "preview": "    t._afterGenGen = (t._afterGenGen || 0) + 1;     const gen = t._afterGenGen; "
+  },
+  {
+    "i": 100,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 1560,
+    "new_len": 2147,
+    "preview": "const VENDOR_AFTER_REQUEST_HELP_PATCH =   `\"nx-auto-gen-reply\": { title: \"응답 후 자"
+  },
+  {
+    "i": 124,
+    "name": "StrReplace",
+    "path": "c:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 5281,
+    "new_len": 6793,
+    "preview": "const VENDOR_AFTER_REPLY_FN_PATCH =   `  function normAfterReplyText(s) {     re"
+  },
+  {
+    "i": 127,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 271,
+    "new_len": 284,
+    "preview": "const VENDOR_AFTER_REQUEST_HELP_PATCH =   `\"nx-auto-gen-reply\": { title: \"응답 후 자"
+  },
+  {
+    "i": 136,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 7279,
+    "new_len": 8453,
+    "preview": "const VENDOR_AFTER_REPLY_FN_PATCH =   `  function normAfterReplyText(s) {     re"
+  },
+  {
+    "i": 143,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 31,
+    "new_len": 31,
+    "preview": "const PLUGIN_VERSION = '2.2.4';"
+  },
+  {
+    "i": 143,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 504,
+    "new_len": 988,
+    "preview": "        <div class=\"card\" style=\"margin-top:14px\">           <strong>2.2.4</stro"
+  },
+  {
+    "i": 143,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 187,
+    "new_len": 193,
+    "preview": "const VENDOR_HEAD_HELP_DEFAULT_PATCH =   `  const HEAD_HELP_DEFAULT = {     titl"
+  },
+  {
+    "i": 183,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 168,
+    "new_len": 2632,
+    "preview": "const VENDOR_SCOPE_POLL_NEEDLE = `n._scopeTick % 24 === 0 && !(t.jobsInFlight.si"
+  },
+  {
+    "i": 184,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 1332,
+    "new_len": 2097,
+    "preview": "      // Diff strip: only drop markers leaving the keep window (prev − keep).   "
+  },
+  {
+    "i": 184,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 116,
+    "new_len": 289,
+    "preview": "    [VENDOR_SCOPE_POLL_NEEDLE, 'scope poll cadence'],     [VENDOR_SEGMENT_CE_NEE"
+  },
+  {
+    "i": 185,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 137,
+    "new_len": 323,
+    "preview": "    .replace(VENDOR_SCOPE_POLL_NEEDLE, VENDOR_SCOPE_POLL_PATCH)     .replace(VEN"
+  },
+  {
+    "i": 224,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 401,
+    "new_len": 688,
+    "preview": "const VENDOR_CHAR_CREATE_GENDER_AUTOTAG_PATCH =   `        appearanceEl && (appe"
+  },
+  {
+    "i": 224,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 354,
+    "new_len": 620,
+    "preview": "const VENDOR_CHAR_EDIT_GENDER_AUTOTAG_PATCH =   `          p && (p.value = x.app"
+  },
+  {
+    "i": 238,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 4936,
+    "new_len": 8062,
+    "preview": "  async function scheduleAutoGenOnReply(source, textHint) {     const hint = w(t"
+  },
+  {
+    "i": 243,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 31,
+    "new_len": 31,
+    "preview": "const PLUGIN_VERSION = '2.2.5';"
+  },
+  {
+    "i": 243,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 483,
+    "new_len": 1016,
+    "preview": "        <div class=\"card\" style=\"margin-top:14px\">           <strong>2.2.5</stro"
+  },
+  {
+    "i": 243,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 193,
+    "new_len": 172,
+    "preview": "const VENDOR_HEAD_HELP_DEFAULT_PATCH =   `  const HEAD_HELP_DEFAULT = {     titl"
+  },
+  {
+    "i": 259,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 2341,
+    "new_len": 2776,
+    "preview": "/** Progressive bubble inline: store pending_inline; force gallery reload on sho"
+  },
+  {
+    "i": 260,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 2062,
+    "new_len": 2437,
+    "preview": "  async function relinkSelectedMessageHash(source) {     if (t._hashRelinkRunnin"
+  },
+  {
+    "i": 264,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 202,
+    "new_len": 311,
+    "preview": "  \"await ce(e, !!c)\",   // Capture prev shot_done before lastShotDone is overwri"
+  },
+  {
+    "i": 302,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 1195,
+    "new_len": 7498,
+    "preview": "/** Hover pin hit-test: prefer layout-time _hitRect (no SafeDOM on every move). "
+  },
+  {
+    "i": 304,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 1051,
+    "new_len": 1171,
+    "preview": "const VENDOR_STICKY_ARROW_ROW_PATCH = `    const miniStep = b + 2, aboveTop = Ma"
+  },
+  {
+    "i": 304,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 68,
+    "new_len": 188,
+    "preview": "    [VENDOR_HOVER_HIT_CACHE_NEEDLE, 'hover hit rect cache'],     [VENDOR_INLINE_"
+  },
+  {
+    "i": 304,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 77,
+    "new_len": 223,
+    "preview": "    .replace(VENDOR_HOVER_HIT_CACHE_NEEDLE, VENDOR_HOVER_HIT_CACHE_PATCH)     .r"
+  },
+  {
+    "i": 314,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 7498,
+    "new_len": 6484,
+    "preview": "/**  * pointermove hot path:  * - inline sticky: resync only when nearest shot s"
+  },
+  {
+    "i": 315,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 189,
+    "new_len": 69,
+    "preview": "    [VENDOR_INLINE_PTR_STICKY_NEEDLE, 'inline pointer sticky sync'], "
+  },
+  {
+    "i": 315,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 224,
+    "new_len": 78,
+    "preview": "    .replace(VENDOR_INLINE_PTR_STICKY_NEEDLE, VENDOR_INLINE_PTR_STICKY_PATCH) "
+  },
+  {
+    "i": 315,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 1171,
+    "new_len": 1051,
+    "preview": "const VENDOR_STICKY_ARROW_ROW_PATCH = `    const miniStep = b + 2, aboveTop = Ma"
+  },
+  {
+    "i": 325,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 6484,
+    "new_len": 6289,
+    "preview": "/**  * pointermove hot path (hover preview removed):  * - store pointer XY  * - "
+  },
+  {
+    "i": 327,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 69,
+    "new_len": 273,
+    "preview": "    [VENDOR_INLINE_PTR_STICKY_NEEDLE, 'inline pointer sticky sync'],     [VENDOR"
+  },
+  {
+    "i": 327,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 78,
+    "new_len": 308,
+    "preview": "    .replace(VENDOR_INLINE_PTR_STICKY_NEEDLE, VENDOR_INLINE_PTR_STICKY_PATCH)   "
+  },
+  {
+    "i": 422,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 5323,
+    "new_len": 9712,
+    "preview": "/**  * pointermove: XY only + (inline) flash when shot index changes.  * Never H"
+  },
+  {
+    "i": 423,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 4019,
+    "new_len": 3687,
+    "preview": "const VENDOR_INLINE_PTR_STICKY_PATCH = `    }, l = async (f) => {       if (type"
+  },
+  {
+    "i": 424,
+    "name": "StrReplace",
+    "path": "C:\\inraynexus\\inlaynex2.0\\vite.config.ts",
+    "old_len": 1058,
+    "new_len": 1026,
+    "preview": "              const changed = typeof VC?.stickySegChanged == \"function\" ? VC.sti"
+  },
+  {
+    "i": 426,
+    "name": "Write",
+    "path": "C:\\inraynexus\\inlaynex2.0\\tools\\_patch-scroll-tmp.mjs",
+    "old_len": 0,
+    "new_len": 6951,
+    "preview": "import { readFileSync, writeFileSync } from 'node:fs';  const p = new URL('../vi"
+  },
+  {
+    "i": 430,
+    "name": "Write",
+    "path": "C:\\inraynexus\\inlaynex2.0\\tools\\_patch-scroll-tmp.mjs",
+    "old_len": 0,
+    "new_len": 6436,
+    "preview": "import { readFileSync, writeFileSync } from 'node:fs';  const p = new URL('../vi"
+  },
+  {
+    "i": 433,
+    "name": "Write",
+    "path": "C:\\inraynexus\\inlaynex2.0\\tools\\_patch-scroll-tmp.mjs",
+    "old_len": 0,
+    "new_len": 7379,
+    "preview": "import { readFileSync, writeFileSync } from 'node:fs';  const p = new URL('../vi"
+  }
+]

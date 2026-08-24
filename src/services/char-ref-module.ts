@@ -1,0 +1,314 @@
+/**
+ * Risu module that holds compressed character reference images.
+ * The roster stores only a hash; the module asset tuple owns the exact path
+ * returned by saveAsset.
+ */
+import type { ApiResult } from '../core/types';
+import { dbg } from '../core/debug';
+import { hostHas, risuHost } from '../core/host';
+import { asU8, sniffImageMime, u8ToArrayBuffer, sha256Hex, type BytesLike } from '../core/util/bytes';
+import { encodeCharRefWebp } from '../core/util/image';
+import { cleanText } from '../core/util/text';
+import {
+  CHAR_REF_MODULE_ID,
+  CHAR_REF_MODULE_NAME,
+  CHAR_REF_MODULE_NS,
+  asUnknownArray,
+  charRefAssetName,
+  hashFromCharRefAssetName,
+  isCharRefAssetName,
+  parseCharRefModuleAssets,
+  sanitizeHash,
+} from '../domain/character/char-ref-store';
+
+type ModuleRow = {
+  id?: string;
+  name?: string;
+  description?: string;
+  namespace?: string;
+  hideIcon?: boolean;
+  lorebook?: unknown[];
+  assets?: Array<[string, string, string] | unknown>;
+};
+
+const MIN_IMAGE_BYTES = 32;
+let assetIndex = new Map<string, string>();
+
+function hostOrThrow(): NonNullable<ReturnType<typeof risuHost>> {
+  const host = risuHost();
+  if (!host) throw new Error('Risu 호스트가 없습니다');
+  return host;
+}
+
+async function ensureDbAccess(): Promise<void> {
+  const host = hostOrThrow();
+  if (typeof host.requestPluginPermission === 'function') {
+    try {
+      await host.requestPluginPermission('db');
+    } catch {
+      // Already granted or older host.
+    }
+  }
+}
+
+function storeExtFromBytes(bytes: BytesLike): string {
+  const mime = sniffImageMime(bytes);
+  if (mime === 'image/jpeg') return 'jpg';
+  if (mime === 'image/png') return 'png';
+  return 'webp';
+}
+
+function rebuildIndex(assets: Array<[string, string, string]>): void {
+  assetIndex = new Map();
+  for (const [name, path] of assets) {
+    const hash = hashFromCharRefAssetName(name);
+    if (hash && path) assetIndex.set(hash, path);
+  }
+}
+
+function readModules(db: { modules?: unknown } | null | undefined): ModuleRow[] {
+  return asUnknownArray(db?.modules).filter((row): row is ModuleRow => Boolean(row && typeof row === 'object'));
+}
+
+function findModuleIndex(modules: ModuleRow[]): number {
+  return modules.findIndex(
+    (m) => cleanText(m?.id, 80) === CHAR_REF_MODULE_ID || cleanText(m?.namespace, 80) === CHAR_REF_MODULE_NS,
+  );
+}
+
+export async function refreshCharRefAssetIndex(): Promise<Map<string, string>> {
+  const mod = await ensureCharRefModule();
+  rebuildIndex(parseCharRefModuleAssets(mod.assets));
+  return assetIndex;
+}
+
+export async function ensureCharRefModule(): Promise<ModuleRow> {
+  if (!hostHas('getDatabase') || !hostHas('setDatabase')) {
+    throw new Error('모듈을 쓰려면 getDatabase / setDatabase가 필요합니다');
+  }
+  await ensureDbAccess();
+  const host = hostOrThrow();
+  const db = await host.getDatabase!(['modules', 'enabledModules']);
+  if (!db) throw new Error('Risu 데이터베이스를 열 수 없습니다');
+  const modules = readModules(db);
+  let idx = findModuleIndex(modules);
+  let changed = false;
+  if (idx < 0) {
+    modules.push({
+      id: CHAR_REF_MODULE_ID,
+      name: CHAR_REF_MODULE_NAME,
+      description: '캐릭터 참고이미지. Inlay가 관리합니다.',
+      namespace: CHAR_REF_MODULE_NS,
+      hideIcon: true,
+      lorebook: [],
+      assets: [],
+    });
+    idx = modules.length - 1;
+    changed = true;
+  }
+  const enabled = asUnknownArray(db.enabledModules).map((id) => cleanText(id, 200)).filter(Boolean);
+  const enabledSet = new Set(enabled);
+  if (!enabledSet.has(CHAR_REF_MODULE_ID) && !enabledSet.has(CHAR_REF_MODULE_NS)) {
+    enabled.push(CHAR_REF_MODULE_ID);
+    changed = true;
+  }
+  if (changed) {
+    await host.setDatabase!({ modules: modules as never, enabledModules: enabled as string[] });
+  }
+  const mod = modules[idx] || modules[modules.length - 1]!;
+  rebuildIndex(parseCharRefModuleAssets(mod.assets));
+  return mod;
+}
+
+function copyBytes(buf: BytesLike): Uint8Array {
+  const src = asU8(buf);
+  const out = new Uint8Array(src.byteLength);
+  out.set(src);
+  return out;
+}
+
+function normalizeAssetPath(path: string): string {
+  return path.replace(/\\/g, '/').trim();
+}
+
+function coerceImageBytes(data: unknown): ArrayBuffer | null {
+  if (!data) return null;
+  if (data instanceof ArrayBuffer) return data.byteLength >= MIN_IMAGE_BYTES ? data : null;
+  if (data instanceof Uint8Array) {
+    return data.byteLength >= MIN_IMAGE_BYTES ? u8ToArrayBuffer(data) : null;
+  }
+  if (typeof Blob !== 'undefined' && data instanceof Blob) {
+    return null;
+  }
+  if (typeof data === 'string') {
+    const m = data.match(/^data:[^;]+;base64,(.+)$/i);
+    const payload = m?.[1] || (data.startsWith('data:') ? '' : data.replace(/\s+/g, ''));
+    if (!payload) return null;
+    try {
+      const bin = atob(payload);
+      if (bin.length < MIN_IMAGE_BYTES) return null;
+      const u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) u8[i] = bin.charCodeAt(i);
+      return u8ToArrayBuffer(u8);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof data === 'object') {
+    const rec = data as Record<string, unknown>;
+    if (rec.data instanceof ArrayBuffer || rec.data instanceof Uint8Array || typeof rec.data === 'string') {
+      return coerceImageBytes(rec.data);
+    }
+    if (Array.isArray(rec.data) && rec.data.every((n) => typeof n === 'number')) {
+      const u8 = Uint8Array.from(rec.data as number[]);
+      return u8.byteLength >= MIN_IMAGE_BYTES ? u8ToArrayBuffer(u8) : null;
+    }
+    if (typeof rec.length === 'number' && rec.length >= MIN_IMAGE_BYTES) {
+      try {
+        const u8 = Uint8Array.from(rec as unknown as ArrayLike<number>);
+        return u8.byteLength >= MIN_IMAGE_BYTES ? u8ToArrayBuffer(u8) : null;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+async function readAssetBytes(path: string): Promise<ArrayBuffer | null> {
+  const host = risuHost();
+  if (!host || typeof host.readImage !== 'function') return null;
+  try {
+    const data = await host.readImage(path);
+    if (typeof Blob !== 'undefined' && data instanceof Blob) {
+      const buf = await data.arrayBuffer();
+      return buf.byteLength >= MIN_IMAGE_BYTES ? buf : null;
+    }
+    return coerceImageBytes(data);
+  } catch (err) {
+    dbg('char_ref.module.read.fail', {
+      path: cleanText(path, 220),
+      message: cleanText((err as Error)?.message ?? err, 220),
+      background: true,
+    }, 'warn');
+    return null;
+  }
+}
+
+export async function putCharRefAsset(bytes: BytesLike): Promise<{ hash: string; bytes: ArrayBuffer; path: string }> {
+  const stored = await encodeCharRefWebp(bytes);
+  if (stored.byteLength < MIN_IMAGE_BYTES) throw new Error('참고 이미지가 비어 있습니다');
+  const hash = sanitizeHash(await sha256Hex(stored));
+  if (!hash) throw new Error('참고 이미지 해시를 만들지 못했습니다');
+  if (!hostHas('getDatabase') || !hostHas('setDatabase')) {
+    throw new Error('모듈을 쓰려면 getDatabase / setDatabase가 필요합니다');
+  }
+  await ensureDbAccess();
+  const host = hostOrThrow();
+  if (typeof host.saveAsset !== 'function') throw new Error('saveAsset을 쓸 수 없습니다');
+  const db = await host.getDatabase!(['modules', 'enabledModules']);
+  if (!db) throw new Error('Risu 데이터베이스를 열 수 없습니다');
+  const modules = readModules(db);
+  let idx = findModuleIndex(modules);
+  rebuildIndex(idx >= 0 ? parseCharRefModuleAssets(modules[idx]!.assets) : []);
+  const enabled = asUnknownArray(db.enabledModules).map((id) => cleanText(id, 200)).filter(Boolean);
+  const moduleEnabled = enabled.includes(CHAR_REF_MODULE_ID) || enabled.includes(CHAR_REF_MODULE_NS);
+  const existing = assetIndex.get(hash) || '';
+  if (existing) {
+    const check = await readAssetBytes(existing);
+    if (check && check.byteLength >= MIN_IMAGE_BYTES) {
+      if (!moduleEnabled) {
+        enabled.push(CHAR_REF_MODULE_ID);
+        await host.setDatabase!({ modules: modules as never, enabledModules: enabled as string[] });
+      }
+      return { hash, bytes: stored, path: existing };
+    }
+  }
+
+  const ext = storeExtFromBytes(stored);
+  const name = charRefAssetName(hash, ext);
+  const payload = copyBytes(stored);
+  const path = normalizeAssetPath(cleanText(await host.saveAsset(payload), 800));
+  if (!path) throw new Error('모듈 에셋 저장에 실패했습니다');
+  const readBack = await readAssetBytes(path);
+  if (!readBack || readBack.byteLength < MIN_IMAGE_BYTES) {
+    throw new Error('저장한 참고 이미지를 다시 읽지 못했습니다');
+  }
+
+  if (idx < 0) {
+    modules.push({
+      id: CHAR_REF_MODULE_ID,
+      name: CHAR_REF_MODULE_NAME,
+      description: '캐릭터 참고이미지. Inlay가 관리합니다.',
+      namespace: CHAR_REF_MODULE_NS,
+      hideIcon: true,
+      lorebook: [],
+      assets: [],
+    });
+    idx = modules.length - 1;
+  }
+  const assets = parseCharRefModuleAssets(modules[idx]!.assets);
+  const sameHashIndex = assets.findIndex((row) => hashFromCharRefAssetName(row[0]) === hash);
+  if (sameHashIndex >= 0) {
+    assets[sameHashIndex] = [name, path, name];
+  } else {
+    assets.push([name, path, name]);
+  }
+  modules[idx] = {
+    ...modules[idx],
+    id: CHAR_REF_MODULE_ID,
+    name: modules[idx]?.name || CHAR_REF_MODULE_NAME,
+    namespace: CHAR_REF_MODULE_NS,
+    hideIcon: true,
+    lorebook: Array.isArray(modules[idx]?.lorebook) ? modules[idx]!.lorebook : [],
+    assets,
+  };
+  if (!moduleEnabled) {
+    enabled.push(CHAR_REF_MODULE_ID);
+  }
+  await host.setDatabase!({ modules: modules as never, enabledModules: enabled as string[] });
+  rebuildIndex(assets);
+  dbg('char_ref.module.put', { hash: hash.slice(0, 12), bytes: stored.byteLength, ext, path });
+  return { hash, bytes: stored, path };
+}
+
+export async function getCharRefAssetBytes(hash: unknown): Promise<ArrayBuffer | null> {
+  const h = sanitizeHash(hash);
+  if (!h) return null;
+  if (!assetIndex.size) await refreshCharRefAssetIndex().catch(() => assetIndex);
+  let path = assetIndex.get(h) || '';
+  if (!path) {
+    await refreshCharRefAssetIndex().catch(() => assetIndex);
+    path = assetIndex.get(h) || '';
+  }
+  if (!path) return null;
+  return readAssetBytes(path);
+}
+
+export async function clearAllCharRefModuleAssets(): Promise<number> {
+  await ensureDbAccess();
+  const host = hostOrThrow();
+  if (!hostHas('getDatabase') || !hostHas('setDatabase')) return 0;
+  const db = await host.getDatabase!(['modules', 'enabledModules']);
+  const modules = readModules(db);
+  const idx = findModuleIndex(modules);
+  if (idx < 0) {
+    assetIndex = new Map();
+    return 0;
+  }
+  const assets = parseCharRefModuleAssets(modules[idx]!.assets);
+  const kept = assets.filter((row) => !isCharRefAssetName(row[0]));
+  const removed = assets.length - kept.length;
+  modules[idx] = { ...modules[idx], assets: kept };
+  await host.setDatabase!({
+    modules: modules as never,
+    enabledModules: asUnknownArray(db?.enabledModules).map((id) => cleanText(id, 200)).filter(Boolean) as string[],
+  });
+  assetIndex = new Map();
+  return removed;
+}
+
+export async function resetCharRefLibrary(): Promise<ApiResult> {
+  const removed = await clearAllCharRefModuleAssets();
+  return { ok: true, removed };
+}

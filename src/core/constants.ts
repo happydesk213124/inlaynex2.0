@@ -1,0 +1,163 @@
+/**
+ * Frozen identifiers and storage keys.
+ *
+ * WARNING: every key in this file is load-bearing for existing installs. Risu
+ * namespaces plugin storage by the plugin id, and these keys address rows inside
+ * that namespace. Renaming any of them orphans user data with no way back.
+ */
+
+declare const __PLUGIN_VERSION__: string;
+
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.4.2';
+
+/**
+ * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
+ * Only bump it when a prompt change is mandatory for correctness.
+ */
+export const PROMPT_PACK = '2026-08-24-v24-action';
+
+export const PROMPT_KEYS = [
+  'author_note', 'asset_author_note', 'tagger', 'format', 'prefill', 'preprocess',
+  'preset_1', 'lore_inject', 'char_inject', 'appearance_inject', 'asset_tags_inject', 'char_looks', 'autotag',
+  'curation_refine', 'curation_embed_hint', 'command_reroll', 'lorefilter_scan',
+] as const;
+
+export type PromptKey = (typeof PROMPT_KEYS)[number];
+
+/** Prompts that must track the shipped pack even if the user edited them. */
+export const FORCE_PROMPT_KEYS: readonly PromptKey[] = [
+  'tagger', 'format', 'appearance_inject', 'lore_inject', 'asset_tags_inject', 'char_looks', 'autotag',
+  'curation_refine', 'curation_embed_hint', 'command_reroll',
+];
+
+export const GLOBAL_SCOPE = '__global__';
+
+// --- device-store keys (IndexedDB via risuai.getLocalPluginStorage) ---
+// Settings also mirror to risuai.pluginStorage (account save). Images do not.
+export const SETTINGS_KEY = 'inx_native_settings';
+export const STORE_KEY = (name: string): string => `inx_nxstore_${name}`;
+export const IMAGE_KEY = (id: string): string => `inx_nximg_${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+export const REF_IMAGE_KEY = 'inx_nxref_image';
+export const VIBE_IMAGE_KEY = 'inx_nxvibe_image';
+export const VIBE_DATA_KEY = 'inx_nxvibe_data';
+/** User/default curation catalog JSON (device-local). */
+export const CURATION_CATALOG_KEY = 'inx_nx_curation_catalog';
+/** Precomputed embedding vectors for the curation catalog. */
+export const CURATION_EMBEDDINGS_KEY = 'inx_nx_curation_embeddings';
+/** Per-style-preset vibe PNG (device store). */
+export const VIBE_PRESET_IMAGE_KEY = (presetId: string): string =>
+  `inx_nxvibe_p_${String(presetId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}`;
+/** Per-style-preset vibe encode sidecar. */
+export const VIBE_PRESET_DATA_KEY = (presetId: string): string =>
+  `inx_nxvibe_pd_${String(presetId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}`;
+/** Meta row key for a preset's vibe blob. */
+export const vibePresetMetaKey = (presetId: string): string => `vibe_preset_${String(presetId)}`;
+export const isVibePresetMetaKey = (key: unknown): boolean =>
+  typeof key === 'string' && key.startsWith('vibe_preset_');
+export const presetIdFromVibeMetaKey = (key: string): string => key.slice('vibe_preset_'.length);
+
+/** Per-character reference image (webp/png/jpeg bytes as-is — no re-encode). */
+const CHAR_REF_SCOPED_PREFIX = 'char_ref::';
+const CHAR_REF_LEGACY_PREFIX = 'char_ref_';
+
+function sanitizeCharRefPart(raw: unknown): string {
+  return String(raw || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+}
+
+/** UI sends `global`/`session`; storage uses `__global__` or the chat session id. */
+export function normalizeCharRefScope(scope: unknown, sessionId: unknown = ''): string {
+  const raw = String(scope || '').trim();
+  if (raw === 'global' || raw === GLOBAL_SCOPE) return GLOBAL_SCOPE;
+  if (raw === 'session') return String(sessionId || '').trim().slice(0, 200);
+  return raw.slice(0, 200);
+}
+
+/**
+ * Storage scope for a character's reference image.
+ * The roster row's `scope` wins — unified view lists root-chat rows while
+ * `lastScope.sessionId` is the unified id, and writing to that id made every
+ * card show "없음" after reload.
+ */
+export function charRefScopeForCharacter(
+  recordScope: unknown,
+  uiScope: unknown = '',
+  sessionId: unknown = '',
+): string {
+  const rec = String(recordScope || '').trim();
+  if (rec && rec !== 'session') return normalizeCharRefScope(rec, sessionId);
+  const ui = String(uiScope || '').trim() || (sessionId ? 'session' : '');
+  return normalizeCharRefScope(ui, sessionId);
+}
+
+export function charRefMetaKey(scope: unknown, characterId: string): string {
+  const id = String(characterId || '');
+  return `${CHAR_REF_SCOPED_PREFIX}${normalizeCharRefScope(scope)}::${id}`;
+}
+
+export const isCharRefMetaKey = (key: unknown): boolean => {
+  const k = String(key || '');
+  return k.startsWith(CHAR_REF_SCOPED_PREFIX) || k.startsWith(CHAR_REF_LEGACY_PREFIX);
+};
+
+export function parseCharRefMetaKey(key: string): { scope: string; characterId: string; legacy: boolean } {
+  const k = String(key || '');
+  if (k.startsWith(CHAR_REF_SCOPED_PREFIX)) {
+    const rest = k.slice(CHAR_REF_SCOPED_PREFIX.length);
+    const sep = rest.indexOf('::');
+    if (sep >= 0) {
+      return { scope: rest.slice(0, sep), characterId: rest.slice(sep + 2), legacy: false };
+    }
+    return { scope: GLOBAL_SCOPE, characterId: rest, legacy: false };
+  }
+  // Old `char_ref_<id>` rows were effectively global (id-only).
+  if (k.startsWith(CHAR_REF_LEGACY_PREFIX)) {
+    return { scope: GLOBAL_SCOPE, characterId: k.slice(CHAR_REF_LEGACY_PREFIX.length), legacy: true };
+  }
+  return { scope: GLOBAL_SCOPE, characterId: '', legacy: false };
+}
+
+export const characterIdFromCharRefMetaKey = (key: string): string =>
+  parseCharRefMetaKey(key).characterId;
+
+export function charRefDiskImageKey(metaKey: string): string {
+  const p = parseCharRefMetaKey(metaKey);
+  if (p.legacy) return `inx_nxcref_${sanitizeCharRefPart(p.characterId)}`;
+  return `inx_nxcref_${sanitizeCharRefPart(p.scope)}_${sanitizeCharRefPart(p.characterId)}`;
+}
+
+export function charRefDiskDataKey(metaKey: string): string {
+  const p = parseCharRefMetaKey(metaKey);
+  if (p.legacy) return `inx_nxcrefd_${sanitizeCharRefPart(p.characterId)}`;
+  return `inx_nxcrefd_${sanitizeCharRefPart(p.scope)}_${sanitizeCharRefPart(p.characterId)}`;
+}
+
+/** @deprecated Use charRefDiskImageKey(metaKey). Legacy id-only disk key. */
+export const CHAR_REF_IMAGE_KEY = (characterId: string): string =>
+  `inx_nxcref_${sanitizeCharRefPart(characterId)}`;
+/** @deprecated Use charRefDiskDataKey(metaKey). */
+export const CHAR_REF_DATA_KEY = (characterId: string): string =>
+  `inx_nxcrefd_${sanitizeCharRefPart(characterId)}`;
+
+// --- legacy save-file keys (one-time migration source) ---
+export const LEGACY_SETTINGS_KEY = 'native_settings';
+export const LEGACY_STORE_KEY = (name: string): string => `nxstore_${name}`;
+export const LEGACY_IMAGE_KEY = (id: string): string => `nximg_${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+export const LEGACY_REF_IMAGE_KEY = 'nxref_image';
+
+// --- external endpoints ---
+export const API_URL = 'https://image.novelai.net/ai/generate-image';
+export const ENCODE_URL = 'https://image.novelai.net/ai/encode-vibe';
+export const ANLAS_URL = 'https://api.novelai.net/user/subscription';
+export const USER_DATA_URL = 'https://api.novelai.net/user/data';
+
+export const STORE_NAMES = ['meta', 'cards', 'characters', 'jobs', 'images'] as const;
+export type StoreName = (typeof STORE_NAMES)[number];
+
+export const DEBUG_MAX = 240;
+
+/**
+ * How much assistant text a card stores for display and for message rematching.
+ * Long enough that the prefix-similarity matcher stays reliable, short enough
+ * that a folder of cards does not carry a copy of the whole chat.
+ */
+export const ASSISTANT_PREVIEW_LIMIT = 4000;

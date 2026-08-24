@@ -1,0 +1,20 @@
+---
+description: Think in English; speak to the user only in Korean
+alwaysApply: true
+---
+
+# Korean replies, English thinking
+
+Internal reasoning stays English. **Everything the user reads must be Korean** —
+answers, questions, status, commit summaries in chat, error explanations.
+
+## Do
+
+- User-facing sentences in Korean (plain, complete)
+- Code, identifiers, logs, JSON, and file paths stay as-is
+- Quotes from English source/docs can stay English, with a Korean gloss if needed
+
+## Do not
+
+- Reply in English (except unavoidable proper nouns / code)
+- Mix a Korean paragraph with an English recap “for clarity”

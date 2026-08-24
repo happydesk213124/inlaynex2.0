@@ -1,0 +1,68 @@
+/** Collect / mask NovelAI API tokens. Mutex lanes key off the raw token string. */
+import type { NaiSettings } from '../../core/types.ts';
+import { cleanText } from '../../core/util/text.ts';
+import type { NaiFamily } from './routing.ts';
+
+export function normalizeTokenList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    const t = cleanText(item, 4000);
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
+}
+
+export function maskNaiToken(token: string): string {
+  const t = cleanText(token, 4000);
+  if (!t) return '';
+  return t.slice(-4);
+}
+
+/** Tokens for one family. Empty list → fall back to legacy `api_key`. */
+export function tokensForFamily(nai: NaiSettings, family: NaiFamily): string[] {
+  const extra = family === 'v5' ? nai.api_keys_v5 : nai.api_keys_v4;
+  const listed = normalizeTokenList(extra);
+  if (listed.length) return listed;
+  const legacy = cleanText(nai.api_key, 4000);
+  return legacy ? [legacy] : [];
+}
+
+/** Unique tokens that can run in parallel (union of both tabs + legacy). */
+export function allUniqueNaiTokens(nai: NaiSettings): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of [
+    ...normalizeTokenList(nai.api_keys_v5),
+    ...normalizeTokenList(nai.api_keys_v4),
+    cleanText(nai.api_key, 4000),
+  ]) {
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
+}
+
+export function naiHasAnyToken(nai: NaiSettings): boolean {
+  return allUniqueNaiTokens(nai).length > 0;
+}
+
+export interface KeyQuotaRow {
+  family: NaiFamily;
+  suffix: string;
+  configured: boolean;
+}
+
+export function publicKeyRows(nai: NaiSettings): { v5: KeyQuotaRow[]; v4: KeyQuotaRow[] } {
+  const toRows = (family: NaiFamily): KeyQuotaRow[] =>
+    tokensForFamily(nai, family).map((t) => ({
+      family,
+      suffix: maskNaiToken(t),
+      configured: true,
+    }));
+  return { v5: toRows('v5'), v4: toRows('v4') };
+}

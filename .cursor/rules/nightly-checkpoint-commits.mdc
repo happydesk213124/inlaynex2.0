@@ -1,0 +1,24 @@
+---
+description: On nightly, checkpoint-commit often so work cannot be wiped by checkout/encoding mistakes
+alwaysApply: true
+---
+
+# Nightly: checkpoint commits (never lose WIP)
+
+When the current branch is `nightly` (check with `git branch --show-current`):
+
+## Commit early, commit often
+
+- After any meaningful chunk of work lands (feature slice, vendor patch set, version bump + `npm run build`, or a fix that already passes tests), **create a git commit without waiting for the user to ask**.
+- Prefer small checkpoint commits over one giant commit. Message style: short why, e.g. `checkpoint: explorer folder toggle + 900px 2-col`.
+- Always include regenerated `dist/inlaynexus2.0.js` when the build output changed (project convention).
+- Follow the normal commit protocol (status / diff / log, HEREDOC message, no `--no-verify`, no force push, no amend unless the usual amend rules allow it).
+
+## Before destructive git
+
+- **Never** run `git checkout -- <file>`, `git restore`, `git reset --hard`, or similar discard commands on WIP without an explicit user request **and** a commit (or stash) of the current tree first.
+- If a file looks encoding-corrupted, **do not** checkout from HEAD to “fix” it. Copy the file aside, or commit/stash first, then recover.
+
+## Why
+
+Uncommitted `vite.config.ts` / vendor patches were wiped once by a recovery `git checkout`. Nightly exists so frequent commits are the safety net — use it.

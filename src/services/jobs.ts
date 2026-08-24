@@ -58,7 +58,7 @@ import {
 } from '../domain/nai/routing';
 import { callLlm } from '../providers/llm/client';
 import { resolveLlmRole } from '../domain/llm/roles';
-import { characterHasAppearance, characterMaxLimit, applyWearContinuityToShots, applyCostumeContinuityToShots, ensureCostumes } from '../domain/character/tags';
+import { characterHasAppearance, characterMaxLimit, applyWearContinuityToShots, applyCostumeContinuityToShots, applyCreatedCostumesToShots, collectCostumePairs, createdCostumeWearByName, ensureCostumes } from '../domain/character/tags';
 import { dedupeShotCharacters, matchCharactersInText, resolveCharacter } from '../domain/character/roster';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
 import { flushPersist, idbGet, idbPut } from '../storage/stores';
@@ -880,6 +880,14 @@ async function runJob(jobId: string): Promise<void> {
     }
     const wearByName = applyWearContinuityToShots(shots, (name) => resolveCharacter(name, roster)?.wear_state);
     await persistChatWearStates(sessionId, roster, wearByName);
+    applyCreatedCostumesToShots(
+      shots,
+      createdCostumeWearByName(collectCostumePairs({
+        new_costumes: (tagged as { new_costumes?: unknown }).new_costumes,
+        new_characters: tagged.new_characters,
+        shots,
+      })),
+    );
     applyCostumeContinuityToShots(shots, (name) => {
       const rec = resolveCharacter(name, roster);
       if (!rec) return undefined;

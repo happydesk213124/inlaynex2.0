@@ -98,6 +98,11 @@ export function resolveCostumeIndex(
   if (!list) return -1;
   if (pick == null || pick === '') return -1;
 
+  if (pick && typeof pick === 'object' && !Array.isArray(pick)) {
+    const row = normalizeCostume(pick, 0);
+    return row ? resolveCostumeIndex(list, row.name) : -1;
+  }
+
   if (typeof pick === 'number' && Number.isFinite(pick)) {
     const i = Math.floor(pick);
     return i >= 0 && i < list.length ? i : -1;
@@ -156,7 +161,111 @@ type ShotCostumeLike = { characters?: Array<{ name?: unknown; costume?: unknown 
 function costumePickReadable(pick: unknown): boolean {
   if (pick == null || pick === '') return false;
   if (typeof pick === 'number') return Number.isFinite(pick);
+  if (typeof pick === 'object' && !Array.isArray(pick)) return Boolean(normalizeCostume(pick, 0));
   return Boolean(cleanText(pick, 120));
+}
+
+export interface CostumePair {
+  name: string;
+  costumes: CharacterCostume[];
+}
+
+function pushCostumeRows(buckets: Map<string, CostumePair>, charName: unknown, rows: unknown): void {
+  const name = cleanText(charName, 200);
+  if (!name) return;
+  const list = Array.isArray(rows) ? rows : rows ? [rows] : [];
+  const normalized: CharacterCostume[] = [];
+  for (let i = 0; i < list.length; i += 1) {
+    const row = normalizeCostume(list[i], i);
+    if (row) normalized.push(row);
+  }
+  if (!normalized.length) return;
+  const key = name.toLowerCase();
+  const existing = buckets.get(key);
+  if (existing) existing.costumes.push(...normalized);
+  else buckets.set(key, { name, costumes: normalized });
+}
+
+/** Character + wardrobe rows from new_costumes, new_characters, and shot picks. */
+export function collectCostumePairs(input: {
+  new_costumes?: unknown;
+  new_characters?: unknown;
+  shots?: readonly { characters?: unknown[] | null }[] | null;
+} = {}): CostumePair[] {
+  const buckets = new Map<string, CostumePair>();
+  for (const raw of Array.isArray(input.new_costumes) ? input.new_costumes : []) {
+    if (!raw || typeof raw !== 'object') continue;
+    const row = raw as { name?: unknown; costumes?: unknown };
+    pushCostumeRows(buckets, row.name, row.costumes);
+  }
+  for (const raw of Array.isArray(input.new_characters) ? input.new_characters : []) {
+    if (!raw || typeof raw !== 'object') continue;
+    const row = raw as { name?: unknown; costumes?: unknown; costume?: unknown; attire?: unknown; accessories?: unknown };
+    if (Array.isArray(row.costumes) && row.costumes.length) pushCostumeRows(buckets, row.name, row.costumes);
+    if (row.costume && typeof row.costume === 'object' && !Array.isArray(row.costume)) {
+      pushCostumeRows(buckets, row.name, row.costume);
+    } else if (costumePickReadable(row.costume) && (cleanText(row.attire, 80) || cleanText(row.accessories, 80))) {
+      pushCostumeRows(buckets, row.name, {
+        name: row.costume,
+        attire: row.attire,
+        accessories: row.accessories,
+      });
+    }
+  }
+  for (const shot of input.shots || []) {
+    for (const raw of Array.isArray(shot?.characters) ? shot.characters! : []) {
+      if (!raw || typeof raw !== 'object') continue;
+      const row = raw as { name?: unknown; costume?: unknown; attire?: unknown; accessories?: unknown };
+      if (row.costume && typeof row.costume === 'object' && !Array.isArray(row.costume)) {
+        pushCostumeRows(buckets, row.name, row.costume);
+        continue;
+      }
+      if (costumePickReadable(row.costume) && (cleanText(row.attire, 80) || cleanText(row.accessories, 80))) {
+        pushCostumeRows(buckets, row.name, {
+          name: row.costume,
+          attire: row.attire,
+          accessories: row.accessories,
+        });
+      }
+    }
+  }
+  return [...buckets.values()];
+}
+
+/** Last created costume name per character (lowercased key). */
+export function createdCostumeWearByName(pairs: readonly CostumePair[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const pair of pairs || []) {
+    const last = pair.costumes[pair.costumes.length - 1];
+    const name = cleanText(pair.name, 200);
+    const wear = cleanText(last?.name, 80);
+    if (name && wear) out.set(name.toLowerCase(), wear);
+  }
+  return out;
+}
+
+/** Wear newly paired costumes on shots that omitted a pick. Explicit picks win. */
+export function applyCreatedCostumesToShots<T extends ShotCostumeLike>(
+  shots: T[],
+  wearByName: ReadonlyMap<string, string>,
+): void {
+  if (!wearByName?.size) return;
+  for (const shot of shots || []) {
+    const chars = Array.isArray(shot.characters) ? shot.characters : [];
+    for (const ch of chars) {
+      if (!ch || typeof ch !== 'object') continue;
+      const name = cleanText(ch.name, 200);
+      if (!name) continue;
+      const wear = wearByName.get(name.toLowerCase());
+      if (!wear) continue;
+      if (ch.costume && typeof ch.costume === 'object' && !Array.isArray(ch.costume)) {
+        const row = normalizeCostume(ch.costume, 0);
+        ch.costume = row?.name || wear;
+        continue;
+      }
+      if (!costumePickReadable(ch.costume)) ch.costume = wear;
+    }
+  }
 }
 
 /**
@@ -189,13 +298,14 @@ export function applyCostumeContinuityToShots<T extends ShotCostumeLike>(
   return last;
 }
 
-/** Compact catalog line for LLM inject: `default[0] casual; swimsuit[1] beach`. */
+/** Compact catalog line for LLM inject: `default[0] casual school uniform; swimsuit[1] bikini`. */
 export function formatCostumeCatalog(costumes: CharacterCostume[] | null | undefined): string {
   const { costumes: list } = ensureCostumes({ costumes: costumes || [] });
   return list
     .map((c, i) => {
-      const note = cleanText(c.note, 80);
-      return note ? `${c.name}[${i}] ${note}` : `${c.name}[${i}]`;
+      const note = cleanText(c.note, 60);
+      const clothes = cleanText(c.attire, 48);
+      return [ `${c.name}[${i}]`, note, clothes].filter(Boolean).join(' ');
     })
     .join('; ');
 }

@@ -10,6 +10,9 @@ import {
   resolveCostumeWear,
   syncActiveCostumeFromWear,
   applyCostumeContinuityToShots,
+  applyCreatedCostumesToShots,
+  collectCostumePairs,
+  createdCostumeWearByName,
 } from "../.test-build/character-costume.mjs";
 
 import { composeCharacterCaptionTags } from "../.test-build/character-tags.mjs";
@@ -38,6 +41,7 @@ test("resolveCostumeIndex accepts name, index, name[index]", () => {
   assert.equal(resolveCostumeIndex(list, "swimsuit[1]"), 1);
   assert.equal(resolveCostumeIndex(list, "missing"), -1);
   assert.equal(resolveCostumeIndex(list, ""), -1);
+  assert.equal(resolveCostumeIndex(list, { name: "swimsuit", attire: "bikini" }), 1);
 });
 
 test("resolveCostumeWear uses active_costume, not silent index 0", () => {
@@ -111,6 +115,38 @@ test("syncActiveCostumeFromWear updates only active slot", () => {
   assert.equal(next[0].attire, "a");
   assert.equal(next[1].attire, "new bikini");
   assert.equal(next[1].accessories, "towel");
+});
+
+test("collectCostumePairs reads new_costumes, new_characters, and shot object picks", () => {
+  const pairs = collectCostumePairs({
+    new_costumes: [{ name: "세나", costumes: [{ name: "raincoat", attire: "yellow raincoat" }] }],
+    new_characters: [{ name: "한진우", costumes: [{ name: "suit", attire: "black suit" }] }],
+    shots: [{
+      characters: [
+        { name: "세나", costume: { name: "hoodie", attire: "gray hoodie" } },
+        { name: "미나", costume: "apron", attire: "white apron" },
+      ],
+    }],
+  });
+  const byName = Object.fromEntries(pairs.map((row) => [row.name, row.costumes.map((c) => c.name)]));
+  assert.deepEqual(byName["세나"], ["raincoat", "hoodie"]);
+  assert.deepEqual(byName["한진우"], ["suit"]);
+  assert.deepEqual(byName["미나"], ["apron"]);
+});
+
+test("created costume pairs wear on shots that omit a pick", () => {
+  const pairs = collectCostumePairs({
+    new_costumes: [{ name: "세나", costumes: [{ name: "swimsuit", attire: "bikini" }] }],
+  });
+  const wear = createdCostumeWearByName(pairs);
+  const shots = [
+    { characters: [{ name: "세나" }, { name: "한진우" }] },
+    { characters: [{ name: "세나", costume: "default" }] },
+  ];
+  applyCreatedCostumesToShots(shots, wear);
+  assert.equal(shots[0].characters[0].costume, "swimsuit");
+  assert.equal(shots[0].characters[1].costume, undefined);
+  assert.equal(shots[1].characters[0].costume, "default");
 });
 
 test("formatCostumeCatalog is compact for LLM", () => {

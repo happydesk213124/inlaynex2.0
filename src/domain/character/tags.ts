@@ -39,6 +39,9 @@ export {
   resolveCostumeWear,
   syncActiveCostumeFromWear,
   applyCostumeContinuityToShots,
+  applyCreatedCostumesToShots,
+  collectCostumePairs,
+  createdCostumeWearByName,
 } from './costume.ts';
 export {
   applyWearContinuityToShots,

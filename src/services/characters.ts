@@ -51,9 +51,11 @@ import {
   type WearState,
 } from '../domain/character/tags';
 import {
+  collectCostumePairs,
   ensureCostumes,
   mergeCostumeLists,
   promoteCostumeToDefault,
+  resolveCostumeIndex,
   syncActiveCostumeFromWear,
 } from '../domain/character/costume';
 import { sanitizeHash } from '../domain/character/char-ref-store';
@@ -939,24 +941,27 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     roster = await readRoster();
   }
 
-  // new_costumes: append wardrobe sets onto existing roster rows by character name.
-  const newCostumes = Array.isArray(tagged.new_costumes) ? tagged.new_costumes : [];
-  for (const row of newCostumes) {
-    if (!row || typeof row !== 'object') continue;
-    const name = cleanText((row as { name?: unknown }).name, 200);
-    if (!name) continue;
+  const costumePairs = collectCostumePairs({
+    new_costumes: (tagged as { new_costumes?: unknown }).new_costumes,
+    new_characters: tagged.new_characters,
+    shots: [{ characters: shotChars }],
+  });
+  for (const pair of costumePairs) {
+    const name = pair.name;
+    const incoming = pair.costumes;
+    if (!incoming.length) continue;
     const existing = resolveCharacter(name, roster);
     if (!existing) continue;
-    const incoming = (row as { costumes?: unknown }).costumes;
-    if (!Array.isArray(incoming) || !incoming.length) continue;
     const writeScope = existing.scope === GLOBAL_SCOPE ? GLOBAL_SCOPE : (existing.scope || writeSessionId);
     const protectDefault = characterHasAppearance(existing);
     const merged = mergeCostumeLists(existing.costumes, incoming, { protectDefault });
+    const wearName = incoming[incoming.length - 1]?.name;
+    const wearIndex = wearName ? resolveCostumeIndex(merged, wearName) : -1;
     await upsertCharacter(writeScope, {
       id: existing.id,
       name: existing.name,
       costumes: merged,
-      active_costume: existing.active_costume,
+      active_costume: wearIndex >= 0 ? wearIndex : existing.active_costume,
     });
     roster = await readRoster();
   }

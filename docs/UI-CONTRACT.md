@@ -157,8 +157,11 @@ Also applies when `person_tag_mode` is `off`. UI replaces the unused Preprocessi
 checkbox (asserted vendor patch); `card.preprocessing` remains a silent dummy.
 
 `card.costume` (boolean, default `false`): when on, the main tagger receives each
-character's `costumes[]` catalog and may set shot `characters[].costume` /
-`new_costumes`. When off, generation still resolves missing picks to index 0.
+character's `costumes[]` catalog (name[index], note, short attire). A character
++ wardrobe pair (`new_costumes`, `new_characters[].costumes`, or a shot
+`costume` object / name+attire) is registered and worn on shots that omit a
+pick; an explicit `characters[].costume` still wins. When off, generation still
+resolves missing picks to the roster current costume.
 Asset `char_looks` always may populate `costumes[]` regardless of this toggle.
 Card-settings checkbox sits in a `checks-grid` of `toggle-row`s with
 person_tag_solo (same UX as dashboard toggles). Character tab and chip edit

@@ -380,10 +380,13 @@ function appearancePayload(
 function costumeHowTo(): string {
   return [
     '## Costumes (enabled)',
-    'Registered lines list costumes as name[index] with a short note.',
-    'Set characters[].costume to the name, index, or name[index] for this shot.',
-    'Write costume ONLY when the outfit changes. Omit / empty = keep previous shot, else roster active_costume.',
-    'To add a new wardrobe set: new_costumes: [{ "name": "<exact char name>", "costumes": [{ "name", "note", "attire", "accessories" }] }].',
+    'Registered lines list costumes as name[index] plus a short note and clothes tags.',
+    'NEW outfit (not already in that catalog): pair the character with a wardrobe set, same idea as new_characters.',
+    'new_costumes: [{ "name": "<exact char name>", "costumes": [{ "name", "note", "attire", "accessories" }] }].',
+    'Or put {name,attire,accessories} on that shot characters[].costume / new_characters[].costumes.',
+    'The pair is registered AND worn on shots that omit costume. Still set characters[].costume to the new name when you can.',
+    'Catalog already has the outfit: set characters[].costume to that name, index, or name[index]. Do not omit when clothes changed.',
+    'Omit / empty costume only when this shot keeps the same set as the previous shot.',
     'attire = detailed clothes (colors, top/bottom/skirt/dress…). accessories = weapons/held props for that set.',
   ].join('\n');
 }

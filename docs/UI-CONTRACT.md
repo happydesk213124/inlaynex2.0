@@ -180,9 +180,8 @@ frame the same way as other shot fields.
 `char_ref_strength` / `char_ref_fidelity` in `0.01`–`1` (defaults `0.6` / `1`).
 When mode is `image`, `char_ref_image_type` is `character` | `style` |
 `character&style` (default `character&style`).
-The legacy `off` value is labeled `자동 (V4.5 Image Reference · Anlas)` because
-it remains backward-compatible storage for automatic V4.5 image reference, not
-a hard off. Dashboard controls sit beside 이미지 모서리 (asserted vendor patch). Per-character
+`off` is labeled `안함` and is a hard off: no per-character reference is sent.
+Dashboard controls sit beside 이미지 모서리 (asserted vendor patch). Per-character
 bytes live in a Risu module (`inlay.char_ref`, asset names `inxref_<hash>.webp`)
 via `POST /v1/characters/ref`. Uploads are resized (max width 400, aspect kept)
 and stored as webp quality 0.8 when the host can encode it; otherwise PNG or the
@@ -194,8 +193,8 @@ readable tuple, but replaces a stale tuple after the new path passes readback.
 boot. `POST /v1/characters/ref/reset` clears every hash, leftover IDB
 `char_ref_*` rows, and module `inxref_*` assets.
 Character list rows may include `ref_hash` / `ref_configured` / `ref_preview_url`.
-For V4.5 shots, a stored ref is the enable signal: explicit `vibe` keeps vibe
-mode, while saved `off`, `image`, or an unknown value uses Precise Reference.
+For V4.5 shots, only explicit `vibe` or `image` attach a stored ref. `off`
+and unknown values send none.
 Every available shot-character ref is collected; there is no fixed count cap.
 V5 and other models skip per-character ref/vibe preparation. Generation loads
 each shot character's ref by that row's scope+id (session and global tabs do not

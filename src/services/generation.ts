@@ -485,7 +485,7 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
   }
 
   // Precise Reference and Vibe Transfer cannot be combined. Decide only after
-  // collecting actual refs so an empty automatic-image cast keeps shared vibes.
+  // collecting actual refs so an empty image-mode cast keeps shared vibes.
   if (shouldPrepareSharedVibe(characterRefs.length)) {
     let vibeRow = presetId ? await ensurePresetVibeEncoded(presetId) : null;
     if (!vibeRow) {

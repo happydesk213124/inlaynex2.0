@@ -53,11 +53,12 @@ test('tagger V5 rules when first/selected/preset is V5', () => {
   assert.equal(taggerShouldUseV5Rules(emptyCard, { model: 'nai-diffusion-5-full' }), true);
 });
 
-test('character refs are automatic on V4.5 and disabled on V5/other models', () => {
-  assert.equal(effectiveCharacterReferenceMode('nai-diffusion-4-5-full', 'off'), 'image');
+test('character refs stay off unless vibe/image is explicit on V4.5', () => {
+  assert.equal(effectiveCharacterReferenceMode('nai-diffusion-4-5-full', 'off'), 'off');
+  assert.equal(effectiveCharacterReferenceMode('nai-diffusion-4-5-full', ''), 'off');
   assert.equal(effectiveCharacterReferenceMode('nai-diffusion-4-5-full', 'image'), 'image');
   assert.equal(effectiveCharacterReferenceMode('nai-diffusion-4-5-full', 'vibe'), 'vibe');
-  assert.equal(effectiveCharacterReferenceMode('nai-diffusion-4-5-full', 'unknown'), 'image');
+  assert.equal(effectiveCharacterReferenceMode('nai-diffusion-4-5-full', 'unknown'), 'off');
   assert.equal(effectiveCharacterReferenceMode('nai-diffusion-5-full', 'image'), 'off');
   assert.equal(effectiveCharacterReferenceMode('nai-diffusion-4-full', 'image'), 'off');
 });

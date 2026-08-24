@@ -146,7 +146,7 @@ test('new chat/reply schedules a 1s pointer-near message select', () => {
   assert.match(source, /source: "provisional"/);
 });
 
-test('legacy char reference off value is labeled as automatic V4.5 reference', () => {
+test('legacy char reference off value is labeled as 안함', () => {
   const source = read('vite.config.ts');
   assert.match(source, /const VENDOR_CHAR_REF_MODE_OFF_LABEL_NEEDLE/);
   assert.match(source, /const VENDOR_CHAR_REF_MODE_OFF_LABEL_PATCH/);
@@ -156,8 +156,9 @@ test('legacy char reference off value is labeled as automatic V4.5 reference', (
   const end = bundle.indexOf('</select>', start);
   assert.ok(start >= 0 && end > start, 'built char reference selector not found');
   const selector = bundle.slice(start, end);
-  assert.match(selector, /자동 \(V4\.5 Image Reference · Anlas\)/);
+  assert.match(selector, />안함</);
   assert.doesNotMatch(selector, />끄기</);
+  assert.doesNotMatch(selector, /자동 \(V4\.5 Image Reference · Anlas\)/);
 });
 
 test('bind pointer repaint keeps boot scheduling and queues a delayed fallback', async () => {

@@ -740,7 +740,7 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card" style="margin-top:14px">
           <strong>2.4.2</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>캐릭터 참고이미지를 모듈에 저장하고 V4.5 샷에만 자동 첨부</li>
+            <li>캐릭터 참고이미지를 모듈에 저장하고, V4.5에서 vibe/image일 때만 첨부(안함=미전송)</li>
             <li>메시지 칩으로 그 말풍선에 나온 캐릭터만 골라 편집</li>
             <li>편집 헤더는 슬롯 번호가 있을 때만 charN 표시</li>
           </ul>
@@ -6376,7 +6376,7 @@ const VENDOR_CHAR_REF_DASH_HTML_PATCH =
 const VENDOR_CHAR_REF_MODE_OFF_LABEL_NEEDLE =
   `<option value="off" \${(i.char_ref_mode || "off") === "off" ? "selected" : ""}>끄기</option>`;
 const VENDOR_CHAR_REF_MODE_OFF_LABEL_PATCH =
-  `<option value="off" \${(i.char_ref_mode || "off") === "off" ? "selected" : ""}>자동 (V4.5 Image Reference · Anlas)</option>`;
+  `<option value="off" \${(i.char_ref_mode || "off") === "off" ? "selected" : ""}>안함</option>`;
 
 const VENDOR_CHAR_REF_DASH_SAVE_NEEDLE =
   `      hover_preview_corner: Ut(N("nx-hover-corner")),
@@ -6403,7 +6403,7 @@ const VENDOR_CHAR_REF_HELP_NEEDLE =
   `    "nx-hover-corner": { title: "이미지 모서리", body: "모바일 모서리 고정이 켜져 있을 때 상시 이미지를 붙일 모서리(우상·우하·좌상·좌하)를 고릅니다. 스티키 핀은 그 이미지 상단 중앙에 따라갑니다." },`;
 const VENDOR_CHAR_REF_HELP_PATCH =
   `    "nx-hover-corner": { title: "이미지 모서리", body: "모바일 모서리 고정이 켜져 있을 때 상시 이미지를 붙일 모서리(우상·우하·좌상·좌하)를 고릅니다. 스티키 핀은 그 이미지 상단 중앙에 따라갑니다." },
-    "nx-char-ref-mode": { title: "캐릭터 참고이미지", body: "V4.5에서 자동은 Image Reference로 전송되어 Anlas를 사용합니다. vibe/image를 명시할 수도 있으며, V5와 그 외 모델에는 캐릭터 참고이미지를 보내지 않습니다." },
+    "nx-char-ref-mode": { title: "캐릭터 참고이미지", body: "안함은 참고이미지를 보내지 않습니다. V4.5에서만 vibe 또는 image를 고르면 첨부됩니다. V5와 그 외 모델에는 보내지 않습니다." },
     "nx-char-ref-strength": { title: "참고 Strength", body: "캐릭터 참고이미지 영향 강도(0.01~1)." },
     "nx-char-ref-fidelity": { title: "참고 Fidelity", body: "vibe면 information_extracted, image면 Reference Fidelity(0.01~1)." },
     "nx-char-ref-image-type": { title: "참고 Image 종류", body: "image reference 모드일 때만 사용. character / character & style / style." },`;
@@ -9958,7 +9958,7 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
     title: "2.4.2",
-    body: "참고이미지는 V4.5 샷에만 자동 첨부. 메시지 칩으로 그 말풍선 캐릭터만 편집. 업데이트 내역 탭 참고."
+    body: "참고이미지는 안함이면 미전송. V4.5에서 vibe/image만 첨부. 메시지 칩으로 그 말풍선 캐릭터만 편집."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

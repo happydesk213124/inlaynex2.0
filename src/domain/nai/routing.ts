@@ -38,7 +38,10 @@ export function effectiveCharacterReferenceMode(
 ): 'off' | 'vibe' | 'image' {
   const resolved = resolveModel(cleanText(model) || V4_DEFAULT_MODEL);
   if (!resolved.includes('nai-diffusion-4-5')) return 'off';
-  return cleanText(configuredMode).toLowerCase() === 'vibe' ? 'vibe' : 'image';
+  const mode = cleanText(configuredMode).toLowerCase();
+  if (mode === 'vibe') return 'vibe';
+  if (mode === 'image') return 'image';
+  return 'off';
 }
 
 export function shouldPrepareSharedVibe(collectedDirectorReferenceCount: number): boolean {

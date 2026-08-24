@@ -25,6 +25,7 @@
  */
 
 import { GLOBAL_SCOPE, charRefScopeForCharacter } from '../core/constants';
+import { dbg } from '../core/debug';
 import { compactAssetKey } from '../domain/nai-meta/match.ts';
 import type { ApiResult, CharacterRecord, ShotCharacter, TaggerResult } from '../core/types';
 import { cleanText, joinTags, normalizeAlias, parseAliasList } from '../core/util/text';
@@ -60,6 +61,7 @@ import { restoreAssetTagWeights } from '../domain/nai-meta/prompt-tags.ts';
 import { idbDelete, idbGet, idbGetAll, idbPut } from '../storage/stores';
 import { getLastAssetWeightMap } from './asset-tags';
 import { getCharRefPreviewUrl, getConfig } from './context';
+import { seedCharRefsFromLooks } from './nai-assets';
 
 export interface ReplaceOptions {
   prune?: boolean;
@@ -988,6 +990,10 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     unifiedSessionId,
     characterId,
     sourceSessionIds,
+  });
+  const seededRoster = await readRoster();
+  await seedCharRefsFromLooks(seededRoster).catch((err) => {
+    dbg('char_ref.seed.merge.fail', { message: String((err as Error)?.message || err) }, 'warn');
   });
   return readRoster();
 }

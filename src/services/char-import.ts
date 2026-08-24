@@ -42,6 +42,7 @@ import {
   upsertCharacter,
 } from './characters';
 import { fetchHostLorebookEntries, getLorefilterPayload } from './lorefilter';
+import { seedCharRefsFromLooks } from './nai-assets';
 import { getPrompt } from './settings';
 import { buildCharacterLooksMessages } from './tagger';
 
@@ -700,6 +701,9 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
 
   const leftover = await stillMissing(writeScope, characterId, work);
   const filled = work.length - leftover.length;
+  await seedCharRefsFromLooks(await listCharacters(writeScope)).catch((err) => {
+    dbg('char_ref.seed.import.fail', { message: String((err as Error)?.message || err) }, 'warn');
+  });
 
   dbg('char-import.done', {
     scope: writeScope,

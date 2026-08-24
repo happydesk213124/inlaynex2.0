@@ -12,7 +12,9 @@
  * configured model or extraction level, so an unchanged image costs nothing.
  */
 
+import { dbg } from '../core/debug';
 import type { ApiResult, MetaRow } from '../core/types';
+import { u8ToArrayBuffer } from '../core/util/bytes';
 import {
   GLOBAL_SCOPE,
   isCharRefMetaKey,
@@ -22,7 +24,9 @@ import {
   vibePresetMetaKey,
 } from '../core/constants';
 import { cleanText } from '../core/util/text';
+import { lookBytesForTarget, refSeedTargets } from '../domain/character/char-ref-seed';
 import { sanitizeHash } from '../domain/character/char-ref-store';
+import { collectBestLookAssets } from './asset-tags';
 import { modelToNaia, resolveModel } from '../providers/nai/payload';
 import { encodeVibe } from '../providers/nai/vibe';
 import { pngToDataUrl } from '../storage/image-urls';
@@ -393,6 +397,39 @@ export async function getCharRefImageBytes(scope: unknown, characterId: string):
   return hash ? getCharRefAssetBytes(hash) : null;
 }
 
+/** Fill empty ref slots from name-triggered Risu assets. Never overwrites a hash. */
+export async function seedCharRefsFromLooks(characters: readonly unknown[]): Promise<number> {
+  const targets = refSeedTargets(characters);
+  if (!targets.length) return 0;
+  const triggers = [...new Set(targets.flatMap((row) => row.names))];
+  let looks: Awaited<ReturnType<typeof collectBestLookAssets>> = [];
+  try {
+    looks = await collectBestLookAssets(triggers);
+  } catch (err) {
+    dbg('char_ref.seed.looks.fail', { message: String((err as Error)?.message || err) }, 'warn');
+    return 0;
+  }
+  if (!looks.length) return 0;
+  let seeded = 0;
+  for (const target of targets) {
+    const bytes = lookBytesForTarget(target, looks);
+    if (!bytes?.byteLength) continue;
+    try {
+      const saved = await setCharRefImage(target.scope, target.id, u8ToArrayBuffer(bytes), {
+        overwrite: false,
+      }) as { ok?: unknown; skipped?: unknown };
+      if (saved?.ok && !saved.skipped) seeded += 1;
+    } catch (err) {
+      dbg('char_ref.seed.put.fail', {
+        character_id: target.id,
+        message: String((err as Error)?.message || err),
+      }, 'warn');
+    }
+  }
+  if (seeded) dbg('char_ref.seed', { seeded, targets: targets.length, looks: looks.length });
+  return seeded;
+}
+
 export async function setCharRefImage(
   scope: unknown,
   characterId: string,
@@ -504,7 +541,20 @@ export async function hydrateCharRefs(opts: {
   const wantId = cleanText(opts.characterId || '', 200);
   const wantScope = normalizeCharRefScope(opts.scope || '');
   const sessionId = cleanText(opts.sessionId || '', 200);
-  const rows = await idbGetAll('characters');
+  let rows = await idbGetAll('characters');
+  const seedRows = rows.filter((row) => {
+    const id = cleanText(row.id, 200);
+    const scope = normalizeCharRefScope(row.scope);
+    if (!id || !scope) return false;
+    if (wantId && id !== wantId) return false;
+    if (wantScope && scope !== wantScope) return false;
+    if (!wantId && !wantScope && sessionId && scope !== sessionId && scope !== GLOBAL_SCOPE) return false;
+    return true;
+  });
+  await seedCharRefsFromLooks(seedRows).catch((err) => {
+    dbg('char_ref.seed.hydrate.fail', { message: String((err as Error)?.message || err) }, 'warn');
+  });
+  rows = await idbGetAll('characters');
   const session: CharRefHydrateRow[] = [];
   const global: CharRefHydrateRow[] = [];
   for (const row of rows) {

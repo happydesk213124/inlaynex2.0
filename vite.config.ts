@@ -4875,6 +4875,14 @@ const VENDOR_STICKY_OPEN_CHAR_PATCH = `  async function Ua(e) {
     await hideFloatingViewerForModal();
     if (typeof requestAnimationFrame == "function") await new Promise((res) => requestAnimationFrame(res));
     if (openGen !== t._editOpenGen) return;
+    try {
+      const hid = String(e.id || "").trim();
+      if (hid) {
+        const res = await K("/v1/characters/ref/hydrate", { method: "POST", body: { character_id: hid, scope: String(e.scope || ""), session_id: String(t.lastScope?.sessionId || "") } }, 3e4);
+        const hit = [...(res?.session || []), ...(res?.global || [])].find((c) => String(c.id || "") === hid);
+        if (hit) e.ref_configured = !!hit.configured, e.ref_preview_url = hit.preview_url || "", e.ref_hash = hit.hash || "";
+      }
+    } catch {}
     const rosterResolved = t._viewerRoster || null;
     if (!rosterResolved) void ensureViewerRosterLoaded().catch(() => null);`;
 

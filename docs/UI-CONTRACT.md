@@ -188,9 +188,12 @@ and stored as webp quality 0.8 when the host can encode it; otherwise PNG or the
 original bytes. The roster row keeps only `ref_hash`; the Risu module asset tuple
 keeps the exact path returned by `saveAsset`. A same-hash upload reuses a
 readable tuple, but replaces a stale tuple after the new path passes readback.
-`POST /v1/characters/ref/hydrate` refreshes the module list and fills
-`ref_preview_url` when the character tab, edit popup, or 새로고침 runs — not at
-boot. `POST /v1/characters/ref/reset` clears every hash, leftover IDB
+`POST /v1/characters/ref/hydrate` refreshes the module list, seeds any empty
+ref slot from a name-triggered Risu asset (WebP into the module, roster
+`ref_hash` only), and fills `ref_preview_url` when the character tab, edit
+popup, or 새로고침 runs — not at boot. Lorebook import-fill, asset looks
+prepass, and tagged roster merges call the same seed. Generation reseeds the
+shot cast when mode is `vibe` or `image`. Existing hashes are never overwritten. `POST /v1/characters/ref/reset` clears every hash, leftover IDB
 `char_ref_*` rows, and module `inxref_*` assets.
 Character list rows may include `ref_hash` / `ref_configured` / `ref_preview_url`.
 For V4.5 shots, only explicit `vibe` or `image` attach a stored ref. `off`
@@ -198,7 +201,8 @@ and unknown values send none.
 Every available shot-character ref is collected; there is no fixed count cap.
 V5 and other models skip per-character ref/vibe preparation. Generation loads
 each shot character's ref by that row's scope+id (session and global tabs do not
-share hashes; no name auto-seed).
+share hashes). Empty slots seed from a name/alias-triggered Risu asset first;
+an existing hash is never overwritten.
 The tagger skips `inxref_` assets so stored refs are not reused as look files.
 
 `card.fixed_prompt_prefix` / `card.fixed_prompt_suffix` (strings, default `""`,

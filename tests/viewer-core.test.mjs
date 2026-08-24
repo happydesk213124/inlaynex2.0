@@ -20,6 +20,7 @@ import {
   gallerySelectedCount,
   linkCardsForMessage,
   stripInlayInlineHtml,
+  keepMsgActionBarIndexes,
   splitMessageLines,
   clampShotLine,
   htmlToPlainLn,
@@ -183,9 +184,22 @@ test("stripInlayInlineHtml removes marker blocks", () => {
     stripInlayInlineHtml('<div data-inlay-msg-actions="1"><span>생성</span></div><p>본문</p>'),
     "<p>본문</p>",
   );
+  assert.equal(
+    stripInlayInlineHtml('<p><div x-inlay-msg-actions="1"><span>태그</span></div>본문</p>'),
+    "<p>본문</p>",
+  );
   assert.deepEqual(splitMessageLines("a\n\nb\nc"), ["a", "b", "c"]);
   assert.equal(clampShotLine(9, 3), 3);
   assert.equal(clampShotLine(0, 3), null);
+});
+
+test("keepMsgActionBarIndexes keeps one top and one bottom", () => {
+  assert.deepEqual(keepMsgActionBarIndexes(["top", "top", "bot", "bot"], true), [0, 2]);
+  assert.deepEqual(keepMsgActionBarIndexes(["top", "bot", "top", "bot"], true), [0, 1]);
+  assert.deepEqual(keepMsgActionBarIndexes(["", "", "", ""], true), [0, 1]);
+  assert.deepEqual(keepMsgActionBarIndexes(["top", "top", "top"], false), [0]);
+  assert.deepEqual(keepMsgActionBarIndexes(["bot", "top"], true), [0, 1]);
+  assert.deepEqual(keepMsgActionBarIndexes([], true), []);
 });
 
 test("findElementIndexForLine matches text + occurrence order", () => {

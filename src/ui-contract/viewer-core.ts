@@ -2552,7 +2552,31 @@ export function stripInlayInlineHtml(html: unknown): string {
   return raw
     .replace(/<div[^>]*\bdata-inlay-inline-shot\b[^>]*>[\s\S]*?<\/div>/gi, '')
     .replace(/<(?:span|p)[^>]*\bdata-inlay-inline-shot\b[^>]*>[\s\S]*?<\/(?:span|p)>/gi, '')
-    .replace(/<(div|span)[^>]*\bdata-inlay-msg-actions\b[^>]*>[\s\S]*?<\/\1>/gi, '');
+    .replace(/<(div|span)[^>]*\b(?:data-inlay-msg-actions|x-inlay-msg-actions)\b[^>]*>[\s\S]*?<\/\1>/gi, '');
+}
+
+/**
+ * One top bar and, when the bubble has two hosts, one bottom bar.
+ * Document-order indexes to keep; extras are duplicates from overlapping paints.
+ */
+export function keepMsgActionBarIndexes(ends: readonly unknown[], wantBottom: boolean): number[] {
+  const list = Array.isArray(ends) ? ends.map((e) => String(e ?? '')) : [];
+  const want = new Set(wantBottom ? ['top', 'bot'] : ['top']);
+  const kept: number[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < list.length; i += 1) {
+    const raw = list[i]!;
+    const end = raw === 'bot' ? 'bot' : raw === 'top' ? 'top' : '';
+    if (!end || !want.has(end) || seen.has(end)) continue;
+    seen.add(end);
+    kept.push(i);
+  }
+  if (kept.length < want.size) {
+    for (let i = 0; i < list.length && kept.length < want.size; i += 1) {
+      if (!kept.includes(i)) kept.push(i);
+    }
+  }
+  return kept.sort((a, b) => a - b);
 }
 
 /** First and last `<p>` indices. Same index when the bubble has only one. */

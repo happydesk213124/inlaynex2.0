@@ -233,6 +233,13 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(body, /H\(doc, "div"/);
   assert.match(body, /host\.prepend\(wrap\)/);
   assert.match(body, /prependBar/);
+  assert.match(body, /x-inlay-msg-end/);
+  assert.match(body, /keepMsgActionBarIndexes/);
+  assert.match(body, /wantBottom/);
+  assert.doesNotMatch(body, /existing\.length >= 1 && !knownDifferent/);
+  assert.match(source, /\[x-inlay-msg-actions\],\[data-inlay-inline-pending\]|\[data-inlay-inline-shot\],\[data-inlay-inline-pending\],\[x-inlay-msg-actions\]/);
+  assert.match(source, /unwrapGone\("\[x-inlay-msg-actions\]/);
+  assert.doesNotMatch(source, /unwrapGone\("\[data-inlay-msg-actions\]"\)/);
   assert.doesNotMatch(body, /insertAdjacentHTML/);
   assert.doesNotMatch(body, /msgEl\.prepend/);
   assert.match(body, /chipLabels = \{ tag: "태그", regen: "재생성", stop: "중단", char: "캐릭터", preset: "프리셋" \}/);

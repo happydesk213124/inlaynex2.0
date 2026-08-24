@@ -7984,7 +7984,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         };
         try {
           if ((linkedKey || pendingKey) && !(await unwrapGone("[data-inlay-inline-shot],[data-inlay-inline-pending]")).length) return !0;
-          if (wantActions && !(await unwrapGone("[data-inlay-msg-actions]")).length) return !0;
+          if (wantActions && !(await unwrapGone("[x-inlay-msg-actions]")).length) return !0;
           return !1;
         } catch {
           return !1;
@@ -8165,7 +8165,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         try {
           let nodes = [];
           try {
-            nodes = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-shot],[data-inlay-inline-pending]"));
+            nodes = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-shot],[data-inlay-inline-pending],[x-inlay-msg-actions]"));
           } catch {
             nodes = [];
           }
@@ -8570,48 +8570,29 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       return Array.isArray(arr) ? arr : [arr];
     };
-    const removeBars = async () => {
-      let bars = [];
+    const readBars = async () => {
       try {
-        bars = await unwrapSafe(await msgEl.querySelectorAll("[x-inlay-msg-actions]"));
+        return await unwrapSafe(await msgEl.querySelectorAll("[x-inlay-msg-actions]"));
       } catch {
-        bars = [];
-      }
-      for (const bar of bars) {
-        try {
-          if (bar && typeof bar.remove == "function") await bar.remove();
-        } catch {
-        }
+        return [];
       }
     };
+    const removeNode = async (bar) => {
+      try {
+        if (bar && typeof bar.remove == "function") await bar.remove();
+      } catch {
+      }
+    };
+    const removeBars = async (bars) => {
+      for (const bar of bars || []) await removeNode(bar);
+    };
     if (!on) {
-      await removeBars();
+      await removeBars(await readBars());
       return;
     }
     const doc = t.hostDoc;
     if (!doc || typeof H != "function") return;
     const wantSig = "tag|regen|stop|char|preset";
-    let existing = [];
-    try {
-      existing = await unwrapSafe(await msgEl.querySelectorAll("[x-inlay-msg-actions]"));
-    } catch {
-      existing = [];
-    }
-    let knownDifferent = !1;
-    for (const bar of existing) {
-      let sig = "";
-      try {
-        sig = typeof bar.getAttribute == "function" ? String(await bar.getAttribute("x-inlay-msg-sig") || "") : "";
-      } catch {
-        sig = "";
-      }
-      if (sig && sig !== wantSig) {
-        knownDifferent = !0;
-        break;
-      }
-    }
-    if (existing.length >= 1 && !knownDifferent) return;
-    await removeBars();
     const hostsRaw = await unwrapSafe(await msgEl.querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"));
     const hosts = [];
     for (const el of hostsRaw) {
@@ -8635,8 +8616,75 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       hosts.push(el);
     }
-    if (!hosts.length) return;
+    if (!hosts.length) {
+      await removeBars(await readBars());
+      return;
+    }
     const targets = hosts.length === 1 ? [hosts[0]] : [hosts[0], hosts[hosts.length - 1]];
+    const wantBottom = targets.length > 1;
+    const pruneBars = async () => {
+      const bars = await readBars();
+      const ends = [];
+      for (const bar of bars) {
+        let end = "";
+        try {
+          end = typeof bar.getAttribute == "function" ? String(await bar.getAttribute("x-inlay-msg-end") || "") : "";
+        } catch {
+          end = "";
+        }
+        ends.push(end);
+      }
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      const keepIdx = typeof VC?.keepMsgActionBarIndexes == "function"
+        ? VC.keepMsgActionBarIndexes(ends, wantBottom)
+        : (() => {
+          const out = [];
+          const seenEnds = new Set();
+          const want = wantBottom ? ["top", "bot"] : ["top"];
+          for (let i = 0; i < ends.length; i += 1) {
+            const end = ends[i] === "bot" ? "bot" : ends[i] === "top" ? "top" : "";
+            if (!end || !want.includes(end) || seenEnds.has(end)) continue;
+            seenEnds.add(end);
+            out.push(i);
+          }
+          if (out.length < want.length) {
+            for (let i = 0; i < ends.length && out.length < want.length; i += 1) {
+              if (!out.includes(i)) out.push(i);
+            }
+          }
+          return out;
+        })();
+      const keep = new Set((Array.isArray(keepIdx) ? keepIdx : []).map((n) => Number(n)).filter((n) => Number.isInteger(n) && n >= 0));
+      const kept = [];
+      for (let i = 0; i < bars.length; i += 1) {
+        if (keep.has(i)) kept.push(bars[i]);
+        else await removeNode(bars[i]);
+      }
+      return kept;
+    };
+    let existing = await pruneBars();
+    let knownDifferent = !1;
+    const haveEnds = new Set();
+    for (const bar of existing) {
+      let sig = "";
+      let end = "";
+      try {
+        sig = typeof bar.getAttribute == "function" ? String(await bar.getAttribute("x-inlay-msg-sig") || "") : "";
+        end = typeof bar.getAttribute == "function" ? String(await bar.getAttribute("x-inlay-msg-end") || "") : "";
+      } catch {
+        sig = "";
+        end = "";
+      }
+      if (sig && sig !== wantSig) {
+        knownDifferent = !0;
+        break;
+      }
+      if (end) haveEnds.add(end);
+    }
+    const wantCount = wantBottom ? 2 : 1;
+    const haveAll = wantBottom ? haveEnds.has("top") && haveEnds.has("bot") : (haveEnds.has("top") || existing.length === 1);
+    if (existing.length === wantCount && !knownDifferent && haveAll) return;
+    await removeBars(existing);
     const chipCss = (kind) => kind === "char" || kind === "preset"
       ? "cursor:pointer;border:1px solid rgba(196,181,253,.45);background:rgba(124,108,255,.16);color:#e8eef8;padding:7px 14px;border-radius:10px;font:700 14px Segoe UI,sans-serif;pointer-events:auto;user-select:none;line-height:1.2"
       : kind === "tag"
@@ -8651,7 +8699,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     ).join("");
     const msgIdx = Number.isInteger(Number(msgIndex)) && Number(msgIndex) >= 0 ? Number(msgIndex) : -1;
     const barHtml = '<div contenteditable="false" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-start;margin:10px 0;text-align:left;pointer-events:auto;line-height:1.2">' + chipsHtml + "</div>";
-    const prependBar = async (host) => {
+    const prependBar = async (host, end) => {
       if (!host || typeof host.prepend != "function") return null;
       try {
         const tmp = await H(doc, "div", { html: barHtml });
@@ -8660,6 +8708,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (!wrap) return null;
         await wrap.setAttribute("x-inlay-msg-actions", "1");
         await wrap.setAttribute("x-inlay-msg-sig", wantSig);
+        await wrap.setAttribute("x-inlay-msg-end", end);
         await wrap.setAttribute("x-inlay-msg-index", String(msgIdx));
         await wrap.setAttribute("x-inlay-ignore", "true");
         const chipNodes = await unwrapSafe(typeof wrap.getChildren == "function" ? await wrap.getChildren() : null);
@@ -8674,11 +8723,14 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       return null;
     };
     const seen = new Set();
-    for (const host of targets) {
+    const ends = wantBottom ? ["top", "bot"] : ["top"];
+    for (let i = 0; i < targets.length; i += 1) {
+      const host = targets[i];
       if (!host || seen.has(host)) continue;
       seen.add(host);
-      await prependBar(host);
+      await prependBar(host, ends[i] || "top");
     }
+    await pruneBars();
   }
   async function ensureMessageInView(el) {`;
 

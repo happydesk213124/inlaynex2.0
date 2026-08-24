@@ -110,7 +110,9 @@ and `card.inline_msg_actions` (tag / regenerate / stop / character / preset chip
 Same neighbor rule as `inline_chat_images`. Chips use the same SafeDOM
 `H()` + `host.prepend` path as inline shot/spinner markers on the first
 and last bubble hosts — not `insertAdjacentHTML` into `<p>`, and not
-`prepend` on the bubble root. The character chip matches the selected
+`prepend` on the bubble root. Each bubble keeps at most one top bar and
+one bottom bar (`x-inlay-msg-end`); overlapping paints drop extras.
+The character chip matches the selected
 message against the loaded session plus enabled-global roster, opens a
 plugin-document fullscreen picker for only those hits, then hands the selected
 row to the existing character editor. Duplicate names carry a 글로벌/채팅 suffix.

@@ -306,7 +306,8 @@ const VENDOR_NATURAL_BASE_CT_PATCH =
       natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",
       v5_natural_lang: document.getElementById("nx-v5-natural-lang") ? (N("nx-v5-natural-lang") === "ja" ? "ja" : "en") : (e.v5_natural_lang === "ja" ? "ja" : "en"),
       nai_use_coords: document.getElementById("nx-nai-coords") ? ee("nx-nai-coords") : e.nai_use_coords !== !1,
-      nai5_first: document.getElementById("nx-nai5-first") ? ee("nx-nai5-first") : !!e.nai5_first,`;
+      nai5_first: document.getElementById("nx-nai5-first") ? ee("nx-nai5-first") : !!e.nai5_first,
+      nai5_only: document.getElementById("nx-nai5-only") ? ee("nx-nai5-only") : !!e.nai5_only,`;
 
 /** Removed from original wide rows — re-homed next to Include Max (see PERSON_TAG_WEIGHT). */
 const VENDOR_NATURAL_BASE_CARD_NEEDLE =
@@ -339,7 +340,19 @@ const VENDOR_NATURAL_BASE_HELP_PATCH =
   "nx-curation-embedding-provider": { title: "임베딩 모델", body: "모델 설정 탭과 같은 UX입니다. Provider를 바꾸면 Endpoint·Model 기본값이 따라갑니다. OpenAI / Voyage / OpenRouter / LM Studio / Ollama / Custom. networkFetch로 호출합니다." },
   "nx-v5-natural-lang": { title: "V5 자연어 태그", body: "V5로 뽑는 샷에만 씁니다. 언어만 고릅니다(English / 日本語). V4 샷은 왼쪽 자연어 base를 따릅니다." },
   "nx-nai-coords": { title: "NAI 위치 좌표 사용하기", body: "캐릭터가 2명 이상이고 전원에 0~1 좌표가 있을 때만 NovelAI에 좌표를 보냅니다. 한 명이라도 빠지면 켜지 않습니다. 혼자면 쓰지 않습니다." },
-  "nx-nai5-first": { title: "LLM한테 NAI V4, V5 선택권주기", body: "켜면 샷마다 simple은 V4, dynamic은 V5로 나눕니다. LLM이 복잡도를 고른 대로 모델이 갈립니다. 꺼 두면 모델 탭에서 고른 모델로 전 샷을 뽑습니다." }`;
+  "nx-nai5-first": { title: "LLM한테 NAI V4, V5 선택권주기", body: "켜면 샷마다 simple은 V4, dynamic은 V5로 나눕니다. LLM이 복잡도를 고른 대로 모델이 갈립니다. 꺼 두면 모델 탭에서 고른 모델로 전 샷을 뽑습니다." },
+  "nx-nai5-only": { title: "무조건 NAI V5한테만 요청하기", body: "켜면 모든 샷을 V5로만 뽑습니다. 모델 탭에서 V4를 고르거나 왼쪽 선택권을 켜도 V5가 이깁니다." }`;
+
+/** One 2×3 grid for the six gen-option toggles (coords / V4·V5 / V5-only / solo / costume / no humans). */
+const GEN_OPTION_TOGGLES_HTML =
+  `<div class="checks-grid nx-gen-toggles" style="grid-column:1/-1;margin-top:8px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px 16px">
+            <label class="toggle-row" data-nx-help-id="nx-nai-coords"><input type="checkbox" id="nx-nai-coords" \${i.nai_use_coords !== !1 ? "checked" : ""}><span>NAI 위치 좌표 사용하기</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-nai5-first"><input type="checkbox" id="nx-nai5-first" \${i.nai5_first ? "checked" : ""}><span>LLM한테 NAI V4, V5 선택권주기</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-nai5-only"><input type="checkbox" id="nx-nai5-only" \${i.nai5_only ? "checked" : ""}><span>무조건 NAI V5한테만 요청하기</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-person-tag-solo"><input type="checkbox" id="nx-person-tag-solo" \${i.person_tag_solo ? "checked" : ""}><span>캐릭 1명일 때 solo 태그</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-costume"><input type="checkbox" id="nx-costume" \${i.costume === !0 || i.costume === "true" || i.costume === 1 || i.costume === "1" || i.costume === "on" ? "checked" : ""}><span>코스튬 (샷에서 복장 고르기)</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-no-humans"><input type="checkbox" id="nx-no-humans" \${i.no_humans_when_no_char ? "checked" : ""}><span>캐릭 없을 때 no humans</span></label>
+            </div>`;
 
 /**
  * Card settings: person_tag_weight number next to Include Max.
@@ -373,10 +386,7 @@ const VENDOR_PERSON_TAG_WEIGHT_HTML_PATCH =
               <option value="en" \${i.v5_natural_lang === "ja" ? "" : "selected"}>English</option>
               <option value="ja" \${i.v5_natural_lang === "ja" ? "selected" : ""}>日本語</option>
             </select></label>
-            <div style="display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;grid-column:1/-1">
-            <label class="toggle-row" data-nx-help-id="nx-nai-coords" style="justify-content:flex-start;white-space:nowrap;margin:0"><input type="checkbox" id="nx-nai-coords" \${i.nai_use_coords !== !1 ? "checked" : ""}><span>NAI 위치 좌표 사용하기</span></label>
-            <label class="toggle-row" data-nx-help-id="nx-nai5-first" style="justify-content:flex-start;white-space:nowrap;margin:0"><input type="checkbox" id="nx-nai5-first" \${i.nai5_first ? "checked" : ""}><span>LLM한테 NAI V4, V5 선택권주기</span></label>
-            </div>
+            ${GEN_OPTION_TOGGLES_HTML}
 `;
 
 const VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE =
@@ -395,12 +405,7 @@ const VENDOR_PERSON_TAG_WEIGHT_CT_PATCH =
 const VENDOR_PERSON_TAG_SOLO_HTML_NEEDLE =
   `<label class="check wide"><input id="nx-preprocess" type="checkbox" \${i.preprocessing ? "checked" : ""}> Preprocessing (토큰 추가 소모)</label>
 `;
-const VENDOR_PERSON_TAG_SOLO_HTML_PATCH =
-  `<div class="checks-grid" style="grid-column:1/-1;margin-top:4px">
-            <label class="toggle-row" data-nx-help-id="nx-person-tag-solo" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-person-tag-solo" \${i.person_tag_solo ? "checked" : ""} style="flex-shrink:0;margin:0"><span>캐릭 1명일 때 solo 태그</span></label>
-            <label class="toggle-row" data-nx-help-id="nx-costume" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-costume" \${i.costume === !0 || i.costume === "true" || i.costume === 1 || i.costume === "1" || i.costume === "on" ? "checked" : ""} style="flex-shrink:0;margin:0"><span>코스튬 (샷에서 복장 고르기)</span></label>
-            </div>
-`;
+const VENDOR_PERSON_TAG_SOLO_HTML_PATCH = ``;
 
 const VENDOR_PERSON_TAG_SOLO_CT_NEEDLE =
   `      preprocessing: document.getElementById("nx-preprocess") ? ee("nx-preprocess") : !!e.preprocessing,
@@ -496,18 +501,10 @@ const VENDOR_ASSET_NAI_SAVE_PATCH =
 `;
 
 /** Card options: asset NAI select after solo+costume checks-grid. */
-const VENDOR_ASSET_NAI_CARD_NEEDLE =
-  `<div class="checks-grid" style="grid-column:1/-1;margin-top:4px">
-            <label class="toggle-row" data-nx-help-id="nx-person-tag-solo" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-person-tag-solo" \${i.person_tag_solo ? "checked" : ""} style="flex-shrink:0;margin:0"><span>캐릭 1명일 때 solo 태그</span></label>
-            <label class="toggle-row" data-nx-help-id="nx-costume" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-costume" \${i.costume === !0 || i.costume === "true" || i.costume === 1 || i.costume === "1" || i.costume === "on" ? "checked" : ""} style="flex-shrink:0;margin:0"><span>코스튬 (샷에서 복장 고르기)</span></label>
-            </div>`;
+const VENDOR_ASSET_NAI_CARD_NEEDLE = GEN_OPTION_TOGGLES_HTML;
 
 const VENDOR_ASSET_NAI_CARD_PATCH =
-  `<div class="checks-grid" style="grid-column:1/-1;margin-top:4px">
-            <label class="toggle-row" data-nx-help-id="nx-person-tag-solo" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-person-tag-solo" \${i.person_tag_solo ? "checked" : ""} style="flex-shrink:0;margin:0"><span>캐릭 1명일 때 solo 태그</span></label>
-            <label class="toggle-row" data-nx-help-id="nx-costume" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-costume" \${i.costume === !0 || i.costume === "true" || i.costume === 1 || i.costume === "1" || i.costume === "on" ? "checked" : ""} style="flex-shrink:0;margin:0"><span>코스튬 (샷에서 복장 고르기)</span></label>
-            <label class="toggle-row" data-nx-help-id="nx-no-humans" style="justify-content:flex-start;white-space:nowrap"><input type="checkbox" id="nx-no-humans" \${i.no_humans_when_no_char ? "checked" : ""} style="flex-shrink:0;margin:0"><span>캐릭 없을 때 no humans</span></label>
-            </div>
+  `${GEN_OPTION_TOGGLES_HTML}
             <label class="wide" data-nx-help-id="nx-asset-nai-tags"><span>에셋 NAI 태그</span><select id="nx-asset-nai-tags">
               <option value="off" \${i.asset_nai_tags === !1 || i.asset_nai_tags === "off" || !i.asset_nai_tags ? "selected" : ""}>사용안함</option>
               <option value="inline" \${i.asset_nai_tags === "inline" ? "selected" : ""}>그냥 옛날버전 (통째로 보내기)</option>

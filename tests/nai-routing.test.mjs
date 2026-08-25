@@ -29,6 +29,24 @@ test('NAI5 first off uses selected model for every shot', () => {
   );
 });
 
+test('NAI5 only wins over first and the selected model', () => {
+  assert.equal(
+    resolveShotFamily(
+      { nai5_only: true, nai5_first: true },
+      { model: 'nai-diffusion-4-5-full' },
+      { complexity: 'simple' },
+    ),
+    'v5',
+  );
+  assert.equal(
+    taggerShouldUseV5Rules(
+      { nai5_only: true, nai5_first: false, presets: [], active_preset_id: '', secondary_preset_id: '' },
+      { model: 'nai-diffusion-4-5-full' },
+    ),
+    true,
+  );
+});
+
 test('NAI5 first on routes simple→V4 and dynamic/missing→V5', () => {
   const card = { nai5_first: true };
   const nai = { model: 'nai-diffusion-4-5-full' };

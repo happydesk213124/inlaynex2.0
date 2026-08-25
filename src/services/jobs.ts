@@ -965,6 +965,7 @@ async function runJob(jobId: string): Promise<void> {
         family: route.family,
         complexity: cleanText(shot.complexity, 20),
         nai5_first: cardFlagOn(card.nai5_first, false),
+        nai5_only: cardFlagOn(card.nai5_only, false),
         nai4_fallback: cardFlagOn(card.nai4_fallback, false),
         nai_model: cleanText(getConfig().nai?.model, 80),
         prompt_len: String(main || '').length,

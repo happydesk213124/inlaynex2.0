@@ -334,6 +334,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     return raw === true || raw === 'true' || raw === 1 || raw === '1' || raw === 'on';
   };
   card.nai5_first = flagOn(card.nai5_first, false);
+  card.nai5_only = flagOn(card.nai5_only, false);
   card.nai4_fallback = flagOn(card.nai4_fallback, false);
   card.nai5_speech = flagOn(card.nai5_speech, false);
   {

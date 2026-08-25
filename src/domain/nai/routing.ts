@@ -97,10 +97,11 @@ export function presetFamily(preset: StylePreset | null | undefined): NaiFamily 
 
 /** Which model family this shot should generate with (before quota fallback). */
 export function resolveShotFamily(
-  card: Pick<CardSettings, 'nai5_first'> & Record<string, unknown>,
+  card: Pick<CardSettings, 'nai5_first' | 'nai5_only'> & Record<string, unknown>,
   nai: Pick<NaiSettings, 'model'>,
   shot: Pick<TaggedShot, 'complexity'> & Record<string, unknown>,
 ): NaiFamily {
+  if (cardFlagOn(card.nai5_only, false)) return 'v5';
   if (!cardFlagOn(card.nai5_first, false)) {
     return naiFamilyOfModel(nai.model);
   }
@@ -169,6 +170,7 @@ export function taggerShouldUseV5Rules(
   card: CardSettings,
   nai: NaiSettings,
 ): boolean {
+  if (cardFlagOn(card.nai5_only, false)) return true;
   if (cardFlagOn(card.nai5_first, false)) return true;
   if (naiFamilyOfModel(nai.model) === 'v5') return true;
   const first = findPresetById(card.presets || [], cleanText(card.active_preset_id, 120));

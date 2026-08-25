@@ -116,6 +116,7 @@ test("asset_nai_tags migrates prepass_vision to prepass", () => {
 test("nai5 / coords / key lists migrate with safe defaults", () => {
   const empty = migrateSettings({ card: {}, nai: {} });
   assert.equal(empty.card.nai5_first, false);
+  assert.equal(empty.card.nai5_only, false);
   assert.equal(empty.card.nai4_fallback, false);
   assert.equal(empty.card.nai5_speech, false);
   assert.equal(empty.card.v5_natural_lang, "en");

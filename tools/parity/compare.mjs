@@ -226,6 +226,7 @@ const normalize = (root) => {
         // Legacy `api_key` / `api_key_configured` still compared.
         if (
           k === 'nai5_first'
+          || k === 'nai5_only'
           || k === 'nai4_fallback'
           || k === 'nai5_speech'
           || k === 'nai_use_coords'

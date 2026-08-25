@@ -9,7 +9,7 @@ import {
   splitNaiPromptTokens,
 } from '../.test-build/nai-meta-prompt-tags.mjs';
 import { assetMatchTriggers, assetNameTokens, scoreAssetName, assetPriorityForTrigger, pickAssetsPerTrigger, filterAssetTriggersForUnfilledLooks, loreKeysByCompactTrigger, originalTagFromPlains, matchFoundLooksToRoster } from '../.test-build/nai-meta-match.mjs';
-import { naiMetaHasPrompt, promptFromNaiMetadata } from '../.test-build/nai-meta-from-metadata.mjs';
+import { naiMetaHasPrompt, pickNaiMeta, promptFromNaiMetadata } from '../.test-build/nai-meta-from-metadata.mjs';
 import { dimsForAspect, normalizeShotAspect } from '../.test-build/nai-meta-aspect.mjs';
 import { filterStylePresetPositive, styleFieldsFromNaiMetadata } from '../.test-build/nai-meta-style-preset.mjs';
 import {
@@ -344,6 +344,19 @@ test('filterStylePresetPositive keeps artist and quality with emphasis', () => {
   assert.equal(pos.includes('dark green hair'), false);
   assert.equal(pos.includes('witch hat'), false);
   assert.equal(pos.includes('1girl'), false);
+});
+
+test('pickNaiMeta prefers stealth when text chunks have prompt but no uc', () => {
+  const textOnly = { Description: '0.5::artist:freng::, best quality, dark green hair', Source: 'NovelAI' };
+  const stealth = {
+    Comment: {
+      prompt: '0.5::artist:freng::, best quality',
+      uc: 'lowres, bad hands',
+    },
+  };
+  assert.equal(pickNaiMeta(textOnly, stealth), stealth);
+  assert.equal(pickNaiMeta(stealth, textOnly), stealth);
+  assert.equal(pickNaiMeta(textOnly, null), textOnly);
 });
 
 test('styleFieldsFromNaiMetadata reads neg and cfg', () => {

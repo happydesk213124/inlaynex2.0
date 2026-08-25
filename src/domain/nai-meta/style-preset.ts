@@ -4,6 +4,7 @@
  * tokens (with emphasis), drop everything else. Negative is kept separately as-is.
  */
 import { cleanText, joinTags } from '../../core/util/text.ts';
+import { negativeFromNaiMetadata } from './from-metadata.ts';
 import { expandTokenPlains, splitNaiPromptTokens } from './prompt-tags.ts';
 
 /** Exact plains kept for style presets (lowercase). */
@@ -80,15 +81,7 @@ export function styleFieldsFromNaiMetadata(
   let comment = rootObj ? parseMaybeJson(rootObj.Comment ?? rootObj.comment) : null;
   const commentObj = asRecord(comment) || rootObj;
 
-  const neg = cleanText(
-    commentObj?.uc
-    ?? commentObj?.negative_prompt
-    ?? commentObj?.negativePrompt
-    ?? commentObj?.Negative
-    ?? rootObj?.uc
-    ?? '',
-    20000,
-  );
+  const neg = negativeFromNaiMetadata(meta);
 
   // NovelAI Comment uses `scale` for Prompt Guidance; also accept cfg_scale.
   const cfg_scale = numOrNull(

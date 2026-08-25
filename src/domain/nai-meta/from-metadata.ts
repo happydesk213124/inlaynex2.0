@@ -95,3 +95,39 @@ export function naiMetaHasPrompt(meta: unknown): boolean {
   const prompt = promptFromNaiMetadata(meta).trim();
   return Boolean(prompt) && !isNaiSoftwareLabel(prompt);
 }
+
+/** UC / negative from Comment JSON. Description-only exports often omit this. */
+export function negativeFromNaiMetadata(meta: unknown): string {
+  let root = parseMaybeJson(meta);
+  const rootObj = asRecord(root);
+  if (!rootObj) return '';
+  const comment = parseMaybeJson(rootObj.Comment ?? rootObj.comment);
+  const commentObj = asRecord(comment) || rootObj;
+  return cleanText(
+    commentObj?.uc
+    ?? commentObj?.negative_prompt
+    ?? commentObj?.negativePrompt
+    ?? commentObj?.Negative
+    ?? rootObj?.uc
+    ?? '',
+    20000,
+  );
+}
+
+export function naiMetaHasNegative(meta: unknown): boolean {
+  return Boolean(negativeFromNaiMetadata(meta));
+}
+
+/**
+ * Prefer the blob that actually has `uc`. Description-only text chunks can
+ * look complete (positive fills) while the negative still lives in stealth.
+ */
+export function pickNaiMeta(textMeta: unknown | null, stealthMeta: unknown | null): unknown | null {
+  const textOk = Boolean(textMeta && naiMetaHasPrompt(textMeta));
+  const stealthOk = Boolean(stealthMeta && naiMetaHasPrompt(stealthMeta));
+  if (textOk && naiMetaHasNegative(textMeta)) return textMeta;
+  if (stealthOk && naiMetaHasNegative(stealthMeta)) return stealthMeta;
+  if (textOk) return textMeta;
+  if (stealthOk) return stealthMeta;
+  return null;
+}

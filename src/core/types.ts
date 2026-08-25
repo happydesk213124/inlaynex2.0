@@ -151,6 +151,8 @@ export interface CardSettings {
   secondary_preset_id: string;
   /** When true, simple→V4 and dynamic→V5. Off → selected model for every shot. */
   nai5_first: boolean;
+  /** When true, every shot uses V5. Wins over nai5_first and the model-tab pick. */
+  nai5_only: boolean;
   /** Per-shot: V5 quota gone → that shot only uses V4.5 + NAI4 preset. */
   nai4_fallback: boolean;
   /** V5 shots: speech → main tags. */

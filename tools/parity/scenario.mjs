@@ -139,6 +139,7 @@ export async function runScenario(N, handles) {
       viewer_minimize_mode: String(card.viewer_minimize_mode || 'icon'),
       llm_json_retry: card.llm_json_retry === true,
       nai5_first: card.nai5_first === true,
+      nai5_only: card.nai5_only === true,
       nai4_fallback: card.nai4_fallback === true,
       nai5_speech: card.nai5_speech === true,
       nai_use_coords: card.nai_use_coords !== false,

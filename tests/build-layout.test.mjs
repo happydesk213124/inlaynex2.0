@@ -113,7 +113,7 @@ test('wear-state persistence does not resend roster look fields', () => {
 test('nai5_first toggle lives in gen options next to coords, not dashboard', () => {
   const source = read('vite.config.ts');
   const cardHtml = source.slice(
-    source.indexOf('VENDOR_PERSON_TAG_WEIGHT_HTML_PATCH'),
+    source.indexOf('GEN_OPTION_TOGGLES_HTML'),
     source.indexOf('VENDOR_PERSON_TAG_WEIGHT_CT_NEEDLE'),
   );
   const dashHtml = source.slice(
@@ -121,8 +121,10 @@ test('nai5_first toggle lives in gen options next to coords, not dashboard', () 
     source.indexOf('VENDOR_INLINE_SAVE_NEEDLE'),
   );
   assert.match(cardHtml, /LLM한테 NAI V4, V5 선택권주기/);
+  assert.match(cardHtml, /무조건 NAI V5한테만 요청하기/);
   assert.match(cardHtml, /id="nx-nai5-first"/);
-  assert.match(cardHtml, /nx-nai-coords[\s\S]*nx-nai5-first/);
+  assert.match(cardHtml, /id="nx-nai5-only"/);
+  assert.match(cardHtml, /nx-nai-coords[\s\S]*nx-nai5-first[\s\S]*nx-nai5-only/);
   assert.doesNotMatch(dashHtml, /nx-nai5-first/);
   assert.doesNotMatch(source, /NAI5 우선/);
   // Mt() (dashboard collector) has no `e`. nai5_first lives on the card

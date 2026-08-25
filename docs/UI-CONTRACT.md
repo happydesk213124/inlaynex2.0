@@ -100,10 +100,12 @@ patched in at build time (was a checkbox). Beside it: `card.v5_natural_lang`
 (`en` | `ja`) for V5 shots only, and `card.nai_use_coords` (default on).
 Coords apply only with 2+ complete 0–1 pairs; if any two characters share a
 spot, `use_coords` stays off for that shot.
-Card settings → 생성 옵션 places `card.nai5_first` to the right of the
-coords toggle (label: LLM한테 NAI V4, V5 선택권주기). On: simple→V4,
-dynamic→V5. Off: model-tab model for every shot. Dashboard save keeps the
-stored flag when that checkbox is absent.
+Card settings → 생성 옵션 puts six toggles in one grid: coords,
+`card.nai5_first` (LLM한테 NAI V4, V5 선택권주기; simple→V4, dynamic→V5),
+`card.nai5_only` (무조건 NAI V5한테만 요청하기; wins over first + model tab),
+solo, costume, no humans. Off `nai5_first` uses the model-tab model for
+every shot. Dashboard save keeps the stored flags when those checkboxes
+are absent.
 
 Dashboard also has `card.nai4_fallback`, `card.nai5_speech`,
 and `card.inline_msg_actions` (tag / regenerate / stop / character / preset chips).
@@ -377,7 +379,10 @@ then persisted.
 `POST /v1/nai/vibe` `{image_b64, information_extracted, strength}` ·
 `POST /v1/nai/vibe/clear` · `/v1/nai/reference` · `/v1/nai/vibe` ·
 `POST /v1/autotag` `{image_b64, threshold}` → `{ok, appearance, attire, accessories, tags, text}`
-`POST /v1/presets/from-image` `{image_b64}` → `{ok, positive, negative, cfg_scale, cfg_rescale, name}`
+`POST /v1/presets/from-image` `{image_b64}` → `{ok, positive, negative, cfg_scale, cfg_rescale, name}`.
+Text-chunk Description can fill positive without `uc`; extractor then keeps
+looking in stealth so file-open and paste both get the negative when it is
+still in the pixels.
 
 ### Debug
 `/v1/debug`, `POST /v1/debug/clear` → `{ events[], by_stage{}, env{} }`

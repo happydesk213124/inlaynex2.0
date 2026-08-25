@@ -2,7 +2,7 @@
  * NovelAI image metadata → filtered tag plains for asset injection.
  */
 import { asU8, isPngBytes, isWebpBytes, type BytesLike } from '../../core/util/bytes.ts';
-import { naiMetaHasPrompt, promptFromNaiMetadata } from './from-metadata.ts';
+import { naiMetaHasNegative, naiMetaHasPrompt, pickNaiMeta, promptFromNaiMetadata } from './from-metadata.ts';
 import { readPngTextChunks } from './png-text.ts';
 import {
   filterAssetPromptTags,
@@ -24,7 +24,7 @@ export {
   type PackedAssetTags,
   type PackedAssetTriggerGroup,
 } from './prompt-tags.ts';
-export { promptFromNaiMetadata } from './from-metadata.ts';
+export { naiMetaHasNegative, pickNaiMeta, promptFromNaiMetadata } from './from-metadata.ts';
 export { dimsForAspect, normalizeShotAspect, ASPECT_SIZES, type ShotAspect } from './aspect.ts';
 export {
   filterStylePresetPositive,
@@ -49,14 +49,15 @@ export async function extractNaiMetadata(bytes: BytesLike): Promise<unknown | nu
   const u8 = asU8(bytes);
   if (!u8.length) return null;
 
-  // Text chunks first only when they actually hold a prompt.
-  // NAI files almost always have Source=NovelAI; that is not the prompt.
-  // Stopping here skipped stealth — the path the NAI site uses on paste.
+  // Text chunks first when they hold both prompt and uc. Description-only
+  // (common after a file-picker re-encode) still needs stealth for `uc`.
+  let textMeta: unknown | null = null;
   if (isPngBytes(u8)) {
     const texts = await readPngTextChunks(u8);
     if (texts.Comment || texts.Description || texts.Source) {
       const fromText = metaFromTextMap(texts);
-      if (naiMetaHasPrompt(fromText)) return fromText;
+      if (naiMetaHasPrompt(fromText) && naiMetaHasNegative(fromText)) return fromText;
+      if (naiMetaHasPrompt(fromText)) textMeta = fromText;
     }
   } else if (isWebpBytes(u8)) {
     const texts = webpExifTextMap(u8);
@@ -65,7 +66,8 @@ export async function extractNaiMetadata(bytes: BytesLike): Promise<unknown | nu
       if (texts.UserComment) map.Comment = texts.UserComment;
       if (texts.ImageDescription) map.Description = texts.ImageDescription;
       const fromText = metaFromTextMap(map);
-      if (naiMetaHasPrompt(fromText)) return fromText;
+      if (naiMetaHasPrompt(fromText) && naiMetaHasNegative(fromText)) return fromText;
+      if (naiMetaHasPrompt(fromText)) textMeta = fromText;
     }
   }
 
@@ -74,14 +76,15 @@ export async function extractNaiMetadata(bytes: BytesLike): Promise<unknown | nu
     const raw = await decodePngToRgba(u8);
     if (raw) {
       const stealth = await extractStealthFromRgba(raw.rgba, raw.width, raw.height);
-      if (stealth && naiMetaHasPrompt(stealth)) return stealth;
+      const picked = pickNaiMeta(textMeta, stealth);
+      if (picked) return picked;
     }
   }
 
   const decoded = await decodeImageToRgba(u8);
-  if (!decoded) return null;
+  if (!decoded) return textMeta;
   const fromCanvas = await extractStealthFromRgba(decoded.rgba, decoded.width, decoded.height);
-  return fromCanvas && naiMetaHasPrompt(fromCanvas) ? fromCanvas : null;
+  return pickNaiMeta(textMeta, fromCanvas);
 }
 
 function peekKind(u8: Uint8Array): string {

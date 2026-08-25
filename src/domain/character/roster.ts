@@ -244,6 +244,7 @@ export type CharacterUpsertProvided = {
   age: boolean;
   penis_size: boolean;
   gender: boolean;
+  priority: boolean;
 };
 
 /**
@@ -266,7 +267,7 @@ export function foldCharacterUpsert(
     ...base,
     ...incoming,
     id: base.id,
-    name: base.name || incoming.name,
+    name: incoming.name || base.name,
     aliases: parseAliasList([
       ...(base.aliases || []),
       ...(incoming.aliases || []),
@@ -297,7 +298,9 @@ export function foldCharacterUpsert(
         ]),
     attire_locked: provided.attire_locked ? incoming.attire_locked : base.attire_locked,
     accessories_locked: provided.accessories_locked ? incoming.accessories_locked : base.accessories_locked,
-    priority: Math.max(Number(base.priority || 0), Number(incoming.priority || 0)),
+    priority: provided.priority
+      ? (Number.isFinite(Number(incoming.priority)) ? Number(incoming.priority) : Number(base.priority || 0))
+      : Number(base.priority || 0),
     costumes: provided.costumes ? incoming.costumes : base.costumes,
     active_costume: provided.active_costume ? incoming.active_costume : base.active_costume,
     wear_state: provided.wear_state ? incoming.wear_state : (base.wear_state || incoming.wear_state),

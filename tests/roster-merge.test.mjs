@@ -105,6 +105,7 @@ function omittedLooks() {
     wear_state: true,
     attire_locked: false,
     accessories_locked: false,
+    priority: false,
   };
 }
 
@@ -124,6 +125,40 @@ test("foldCharacterUpsert keeps appearance when payload omits it", () => {
   assert.equal(folded.appearance, "black hair, brown eyes");
   assert.equal(folded.attire, "coat");
   assert.equal(folded.wear_state, "topless");
+});
+
+test("foldCharacterUpsert keeps the typed name and priority", () => {
+  const base = normalizeCharacterRecord({
+    id: "han",
+    name: "Han",
+    priority: 5,
+    appearance: "black hair",
+  });
+  const incoming = normalizeCharacterRecord({
+    id: "han",
+    name: "한결",
+    priority: 0,
+    appearance: "black hair",
+  });
+  const folded = foldCharacterUpsert(base, incoming, { ...omittedLooks(), appearance: true, wear_state: false, priority: true });
+  assert.equal(folded.name, "한결");
+  assert.equal(folded.priority, 0);
+});
+
+test("foldCharacterUpsert does not zero priority when the key is omitted", () => {
+  const base = normalizeCharacterRecord({
+    id: "han",
+    name: "Han",
+    priority: 5,
+    appearance: "black hair",
+  });
+  const incoming = normalizeCharacterRecord({
+    id: "han",
+    name: "Han",
+    wear_state: "topless",
+  });
+  const folded = foldCharacterUpsert(base, incoming, omittedLooks());
+  assert.equal(folded.priority, 5);
 });
 
 test("foldCharacterUpsert still clears appearance when the key is present", () => {

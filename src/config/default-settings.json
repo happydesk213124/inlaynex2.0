@@ -237,7 +237,7 @@
     "vibe_transfer": "none",
     "vibe_transfer_strength": 0.6,
     "vibe_transfer_information_extracted": 1,
-    "uc_preset": "human_focus",
+    "uc_preset": "none",
     "apply_quality_tags": false,
     "comfy_url": "http://localhost:8188",
     "comfy_workflow_json": "",

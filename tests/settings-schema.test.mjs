@@ -150,6 +150,12 @@ test("nai5 / coords / key lists migrate with safe defaults", () => {
   assert.equal(split.nai.steps_v4, 23);
 });
 
+test("uc_preset is always none (no leftover human_focus UC block)", () => {
+  assert.equal(migrateSettings({ nai: {} }).nai.uc_preset, "none");
+  assert.equal(migrateSettings({ nai: { uc_preset: "human_focus" } }).nai.uc_preset, "none");
+  assert.equal(migrateSettings({ nai: { uc_preset: "heavy" } }).nai.uc_preset, "none");
+});
+
 test("overlay_markers is canonical for left-line overlay + inline previews", () => {
   const on = migrateSettings({ card: { overlay_markers: true, inline_previews: false } });
   assert.equal(on.card.overlay_markers, true);

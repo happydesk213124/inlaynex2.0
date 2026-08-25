@@ -306,7 +306,8 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   const naiaModel = modelToNaia(route.model || nai.model || 'nai-diffusion-4-5-full');
   if (nai.apply_quality_tags !== false) main += QUALITY_TAGS[naiaModel] || '';
   main = appendNoHumansWhenNoCast(main, chars.length, card.no_humans_when_no_char);
-  const ucPreset = cleanText(nai.uc_preset) || 'human_focus';
+  // Frozen UI has no UC preset control; leftover human_focus appended a long UC block on every gen.
+  const ucPreset = 'none';
   const neg = joinTags(styleNeg, fixedNeg, (UC_PRESETS[naiaModel] || {})[ucPreset] || '');
 
   const captions: NaiCaption[] = [];

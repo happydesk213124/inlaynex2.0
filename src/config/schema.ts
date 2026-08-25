@@ -383,6 +383,8 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     };
     nai.api_keys_v5 = list(nai.api_keys_v5);
     nai.api_keys_v4 = list(nai.api_keys_v4);
+    // Frozen UI has no UC preset control; leftover human_focus appended a long UC block.
+    nai.uc_preset = 'none';
     const sharedSteps = naiStepsForFamily({ steps: nai.steps }, 'v4');
     const sharedSampler = normalizeNaiSampler(nai.sampler);
     nai.sampler = sharedSampler;

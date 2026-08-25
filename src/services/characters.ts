@@ -425,6 +425,7 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
     age: hasOwn(raw, 'age'),
     penis_size: hasOwn(raw, 'penis_size'),
     gender: hasOwn(raw, 'gender'),
+    priority: hasOwn(raw, 'priority'),
   };
   const sameRow = selfId
     ? existingList.find((c) => cleanText(c.id, 80) === selfId)

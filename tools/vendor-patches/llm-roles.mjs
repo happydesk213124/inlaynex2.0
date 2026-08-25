@@ -194,22 +194,21 @@ export const VENDOR_LLM_SAVE_TEST_PATCH = `document.getElementById("nx-save-mode
         const llmSource = a.source === "main" || a.source === "aux" ? a.source : "custom";
         a.source = llmSource;
         const LH = globalThis.__INLAY_LLM__ || {}, provider = LH.normalizeLlmProvider?.(a.provider) || a.provider;
+        let llmErr = "";
         if (llmSource === "custom") {
-          if (!w(a.model)) {
-            t.uiMessage = { type: "error", text: "메인 태깅 LLM Model이 비어 있습니다." }, await P();
-            return;
-          }
-          const hasKey = !!(a.api_key || t.backendSettings?.llm?.api_key_configured);
-          const hasSa = !!(a.service_account_json || t.backendSettings?.llm?.service_account_configured) && !a.clearServiceAccount;
-          if (provider === "vertex" ? !hasKey && !hasSa : !hasKey) {
-            t.uiMessage = { type: "error", text: provider === "vertex" ? "Vertex AI Service Account JSON(또는 access token)을 입력하세요." : "메인 태깅 LLM API key를 입력하세요. (NovelAI 키와 별개)" }, await P();
-            return;
+          if (!w(a.model)) llmErr = "메인 태깅 LLM Model이 비어 있습니다.";
+          else {
+            const hasKey = !!(a.api_key || t.backendSettings?.llm?.api_key_configured);
+            const hasSa = !!(a.service_account_json || t.backendSettings?.llm?.service_account_configured) && !a.clearServiceAccount;
+            if (provider === "vertex" ? !hasKey && !hasSa : !hasKey) llmErr = provider === "vertex" ? "Vertex AI Service Account JSON(또는 access token)을 입력하세요." : "메인 태깅 LLM API key를 입력하세요. (NovelAI 키와 별개)";
           }
         }
-        await flushSettingsSave(), await pe({ llm: a, llm_roles: roles, nai: r }), t.uiMessage = {
-          type: "success",
-          text: "모델 설정 저장됨"
-        };
+        await flushSettingsSave();
+        if (llmErr) {
+          await pe({ nai: r }), t.uiMessage = { type: "error", text: "NAI 키는 저장됨. " + llmErr };
+        } else {
+          await pe({ llm: a, llm_roles: roles, nai: r }), t.uiMessage = { type: "success", text: "모델 설정 저장됨" };
+        }
       } catch (a) {
         t.uiMessage = { type: "error", text: z(a.message || a) };
       }

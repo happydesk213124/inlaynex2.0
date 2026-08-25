@@ -13241,15 +13241,10 @@ ${Ye(250)}`;
       };
       // Nothing to paint: strip leftover shots (scroll onto a no-image bubble).
       if (!placements.length && !encodeLater.length) {
+        // Marker nodes only. Never setInnerHTML the bubble root — PocketRisu
+        // Standard keeps name + icon + persona in that same card, and a smashed
+        // tree is reused until the tab remounts.
         await removeAllMarkers();
-        try {
-          const left = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
-          if (left.length && typeof msgEl.setInnerHTML == "function" && typeof VC.stripInlayInlineHtml == "function") {
-            let html = String(await msgEl.getInnerHTML() || "");
-            await msgEl.setInnerHTML(VC.stripInlayInlineHtml(html));
-          }
-        } catch {
-        }
         y("info", "inline.inject", "shots=0 stripped");
         return;
       }
@@ -13759,18 +13754,6 @@ ${Ye(250)}`;
             try {
               if (node && typeof node.remove == "function") await node.remove();
             } catch {
-            }
-          }
-          if (typeof el.setInnerHTML == "function" && typeof VC?.stripInlayInlineHtml == "function") {
-            let left = [];
-            try {
-              left = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-shot]"));
-            } catch {
-              left = [];
-            }
-            if (left.length) {
-              let html = String(await el.getInnerHTML() || "");
-              await el.setInnerHTML(VC.stripInlayInlineHtml(html));
             }
           }
         } catch {

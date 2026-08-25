@@ -7605,15 +7605,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       // Nothing to paint: strip leftover shots (scroll onto a no-image bubble).
       if (!placements.length && !encodeLater.length) {
+        // Marker nodes only. Never setInnerHTML the bubble root — PocketRisu
+        // Standard keeps name + icon + persona in that same card, and a smashed
+        // tree is reused until the tab remounts.
         await removeAllMarkers();
-        try {
-          const left = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
-          if (left.length && typeof msgEl.setInnerHTML == "function" && typeof VC.stripInlayInlineHtml == "function") {
-            let html = String(await msgEl.getInnerHTML() || "");
-            await msgEl.setInnerHTML(VC.stripInlayInlineHtml(html));
-          }
-        } catch {
-        }
         y("info", "inline.inject", "shots=0 stripped");
         return;
       }
@@ -8123,18 +8118,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             try {
               if (node && typeof node.remove == "function") await node.remove();
             } catch {
-            }
-          }
-          if (typeof el.setInnerHTML == "function" && typeof VC?.stripInlayInlineHtml == "function") {
-            let left = [];
-            try {
-              left = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-shot]"));
-            } catch {
-              left = [];
-            }
-            if (left.length) {
-              let html = String(await el.getInnerHTML() || "");
-              await el.setInnerHTML(VC.stripInlayInlineHtml(html));
             }
           }
         } catch {
@@ -13839,6 +13822,9 @@ const loadVendorUi = (): string => {
     }
     if (out.includes('if (keepIds.size)')) {
       throw new Error('[build] leftover strip must not skip when keepIds is empty');
+    }
+    if (out.includes('setInnerHTML(VC.stripInlayInlineHtml') || out.includes('setInnerHTML(VC?.stripInlayInlineHtml')) {
+      throw new Error('[build] leftover strip must not rewrite the bubble root');
     }
     if (!out.includes('t._galleryCache = null') || !out.includes('await ce(e.sessionId, !0)')) {
       throw new Error('[build] force retag must reload gallery after unlink');

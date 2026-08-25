@@ -223,6 +223,7 @@ export async function runScenario(N, handles) {
     character_id: 'char_parity',
     source_session_ids: [],
   }));
+  await rec('chars.restore_chrome', () => post('/v1/characters/ref/restore-chrome', {}));
 
   // ── unified roster patching across root chats ─────────────────────────
   for (const [sessionId, id, appearance] of [

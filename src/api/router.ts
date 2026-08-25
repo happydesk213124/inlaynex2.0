@@ -503,6 +503,10 @@ const WRITE_ROUTES: readonly Route[] = [
     match: exact('/v1/characters/ref/reset'),
     handler: async () => ok(await naiAssets.resetAllCharacterRefs()),
   },
+  {
+    match: exact('/v1/characters/ref/restore-chrome'),
+    handler: async () => ok(await naiAssets.restoreChatCardChrome()),
+  },
   { match: exact('/v1/characters', '/v1/characters/update'), handler: ({ body }) => updateCharacters(body) },
   {
     match: under('/v1/appearance/'),

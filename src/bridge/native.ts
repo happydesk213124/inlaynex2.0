@@ -29,6 +29,7 @@ import {
 } from '../services/context';
 import { migrateAppearanceToCharacters, migrateCharacterIdentity } from '../services/characters';
 import { hydratePresetVibePreviews } from '../services/nai-assets';
+import { restoreChatCardChrome } from '../services/char-ref-module';
 import { seedPrompts } from '../services/settings';
 
 let readyPromise: Promise<void> | null = null;
@@ -54,6 +55,9 @@ async function boot(): Promise<void> {
   const vibe = await idbGet('meta', 'vibe_transfer');
   if (vibe?.png) setVibePreviewUrl(pngToDataUrl(vibe.png));
   await hydratePresetVibePreviews();
+  await restoreChatCardChrome().catch((err: unknown) => {
+    dbg('boot.chat_chrome', { message: String((err as Error)?.message || err) }, 'warn');
+  });
 
   dbg('boot.ready.done', {
     message: VERSION,

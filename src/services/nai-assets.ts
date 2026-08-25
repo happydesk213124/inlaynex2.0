@@ -48,6 +48,7 @@ import {
   putCharRefAsset,
   refreshCharRefAssetIndex,
   resetCharRefLibrary,
+  restoreChatCardChrome,
 } from './char-ref-module';
 import { saveConfig } from './settings';
 
@@ -583,6 +584,8 @@ export async function hydrateCharRefs(opts: {
 export async function hydrateCharRefPreviews(): Promise<void> {
   return;
 }
+
+export { restoreChatCardChrome };
 
 export async function resetAllCharacterRefs(): Promise<ApiResult> {
   const rows = await idbGetAll('characters');

@@ -431,6 +431,12 @@ const NEW_ONLY_STEPS = new Map([
     },
   ],
   [
+    'chars.restore_chrome',
+    (v) => (v?.ok === true && Number.isFinite(Number(v?.repaired))
+      ? null
+      : `restore-chrome must return ok+repaired, got ${JSON.stringify(v)}`),
+  ],
+  [
     'nai.quota',
     (v) => (v?.ok === true && Array.isArray(v?.keys)
       ? null

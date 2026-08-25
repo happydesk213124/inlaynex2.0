@@ -432,6 +432,10 @@ const WRITE_ROUTES: readonly Route[] = [
       ),
   },
   {
+    match: exact('/v1/characters/triggered'),
+    handler: async ({ body }) => ok(await characters.matchTriggeredCharactersPayload(body)),
+  },
+  {
     match: exact('/v1/characters/unify', '/v1/characters/merge'),
     handler: async ({ body }) =>
       ok(

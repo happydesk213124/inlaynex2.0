@@ -119,6 +119,9 @@ export async function globalEnabledMap(characterId: string): Promise<Record<stri
 export function rosterStoreSessionId(sessionId: string): string; // 3949
 export async function listMergedSessionCharacters(sessionId: string): Promise<CharacterRecord[]>; // 3953
 export async function rosterForSession(sessionId: string, characterId?: string): Promise<CharacterRecord[]>; // 3965
+export async function loadTaggerRoster(args?: TaggerRosterArgs): Promise<CharacterRecord[]>;
+export async function matchTriggeredCharacters(args: TaggerRosterArgs & { message?: unknown }): Promise<CharacterRecord[]>;
+export async function matchTriggeredCharactersPayload(body: Record<string, unknown> | null | undefined): Promise<Record<string, unknown>>;
 export async function upsertCharacter(scope: string, raw: unknown): Promise<ApiResult>; // 4047
 export async function deleteCharacter(scope: string, ref: unknown): Promise<ApiResult>; // 4182
 export async function deleteMatchingInSessions(sessionIds: string[], refs: unknown[], characterId: string): Promise<void>; // 4213

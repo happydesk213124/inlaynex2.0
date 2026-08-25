@@ -35,6 +35,7 @@ import {
   characterAliasKeys,
   characterTriggers,
   foldCharacterUpsert,
+  matchCharactersInText,
   mergeCharactersByAlias,
   mergeSessionAndGlobalRoster,
   normalizeCharacterRecord,
@@ -332,6 +333,51 @@ export async function rosterForSession(
     clean: cleanText,
     globalScope: GLOBAL_SCOPE,
   }));
+}
+
+/** Same arguments `buildTaggerMessages` threads into `rosterForSession`. */
+export interface TaggerRosterArgs {
+  sessionId?: string;
+  unifiedSessionId?: string;
+  characterId?: string;
+  sourceSessionIds?: unknown[];
+}
+
+/**
+ * Roster the main tagger injects (merged session/unified + enabled globals,
+ * then latin-peer alias absorb). The message-chip picker must call this —
+ * not the raw GET session+global lists.
+ */
+export async function loadTaggerRoster(args: TaggerRosterArgs = {}): Promise<CharacterRecord[]> {
+  const sessionId = cleanText(args.sessionId || '', 200);
+  const unifiedSessionId = cleanText(args.unifiedSessionId || '', 200);
+  const characterId = cleanText(args.characterId || '', 200);
+  const sourceSessionIds = args.sourceSessionIds ?? [];
+  const roster = await rosterForSession(sessionId, unifiedSessionId, characterId, sourceSessionIds);
+  if (!roster.length) return roster;
+  return absorbAliasesOntoLatinPeers({ sessionId, unifiedSessionId, characterId, sourceSessionIds });
+}
+
+/** Characters the tagger would list as "Characters in this message". */
+export async function matchTriggeredCharacters(
+  args: TaggerRosterArgs & { message?: unknown },
+): Promise<CharacterRecord[]> {
+  const roster = await loadTaggerRoster(args);
+  return matchCharactersInText(cleanText(args.message, 20000), roster) as CharacterRecord[];
+}
+
+export async function matchTriggeredCharactersPayload(
+  body: Record<string, unknown> | null | undefined,
+): Promise<Record<string, unknown>> {
+  const rec = body && typeof body === 'object' ? body : {};
+  const characters = await matchTriggeredCharacters({
+    message: rec.message ?? rec.text ?? rec.assistant_text ?? '',
+    sessionId: String(rec.session_id || rec.sessionId || ''),
+    unifiedSessionId: String(rec.unified_session_id || rec.unifiedSessionId || ''),
+    characterId: String(rec.character_id || rec.characterId || ''),
+    sourceSessionIds: (rec.source_session_ids || rec.sourceSessionIds || []) as unknown[],
+  });
+  return { ok: true, characters };
 }
 
 // ── writes ─────────────────────────────────────────────────────────────────

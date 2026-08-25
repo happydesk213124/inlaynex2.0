@@ -112,10 +112,13 @@ Same neighbor rule as `inline_chat_images`. Chips use the same SafeDOM
 and last bubble hosts — not `insertAdjacentHTML` into `<p>`, and not
 `prepend` on the bubble root. Each bubble keeps at most one top bar and
 one bottom bar (`x-inlay-msg-end`); overlapping paints drop extras.
-The character chip matches the selected
-message against the loaded session plus enabled-global roster, opens a
-plugin-document fullscreen picker for only those hits, then hands the selected
-row to the existing character editor. Duplicate names carry a 글로벌/채팅 suffix.
+The character chip POSTs the selected DOM message to
+`/v1/characters/triggered` with the same session / unified / source ids as
+`/v1/jobs/create`. That route uses the tagger roster (`rosterForSession` +
+alias absorb) then `matchCharactersInText`, so the picker lists exactly the
+rows the main tagger would inject as "Characters in this message". Duplicate
+names carry a 글로벌/채팅 suffix. The chosen row opens the existing character
+editor.
 On listener rebind, stale action bars from the previous plugin instance are
 removed before new listeners attach. The preset chip opens the settings shell
 (`At()`) on `style_presets`.
@@ -330,6 +333,7 @@ character_name, chat_name, folder_key`.
 | `POST /v1/characters` | 6 body shapes: bulk save, single `character`, unified patch (`root_session_ids`), move-to-global, delete (`root_delete[]`), create |
 | `POST /v1/characters/global-toggles` | `{character_id, disabled_globals[]}` |
 | `POST /v1/characters/unify` | `{target_session_id, source_session_ids[], include_target}` |
+| `POST /v1/characters/triggered` | `{message, session_id, character_id, unified_session_id?, source_session_ids[]}` → `{ characters[] }` — same roster + alias match as the main tagger's "Characters in this message" |
 | `GET /v1/characters/ref?character_id=&scope=` | `{ configured, preview_url, scope }` — `scope` is `global`/`__global__` or the chat session id (`session` + `session_id` also works) |
 | `GET /v1/characters/import-picker?kind=persona|session&character_id=` | `{ items[{kind,id,name,preview,keys[],text,badge,has_image}], lore_empty }`. Lore `badge` = activation keys; CharInfo `badge` = `charinfo`. Picker filters live on name/keys/text; select-all applies to visible rows only. Checkboxes start unchecked. |
 | `POST /v1/characters/import-fill` | `{scope, session_id, character_id, parallel, picks[{kind,id}]}` → `{filled, failed[], vision_to_text}` timeout 160s. Lore and persona/CharInfo meta looks are chunked 8 per LLM call; `parallel` fires up to 10 chunks at once. Lore: asset meta + `char_looks`; if matching assets have no meta, one best-ranked file (default/normal/profile/smil*) via autotag; else lore body + `char_looks`. Persona/CharInfo with NAI meta: same looks messages + `mergeRosterFromTagged`. No meta + image → autotag then roster merge; else description + `char_looks`. A name-matched asset file (meta or not) is also stored as that character's reference image when the slot is empty. |

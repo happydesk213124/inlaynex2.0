@@ -399,6 +399,15 @@ const NEW_ONLY_STEPS = new Map([
       : `import-fill with no picks must be ok:false, got ${JSON.stringify(v)}`),
   ],
   [
+    'chars.triggered',
+    (v) => {
+      const names = (Array.isArray(v?.characters) ? v.characters : []).map((c) => c?.name).filter(Boolean);
+      return v?.ok === true && names.includes('아리아') && names.includes('HAN JINWOO')
+        ? null
+        : `triggered list must be tagger roster matches (아리아 + HAN JINWOO), got ${JSON.stringify(names)}`;
+    },
+  ],
+  [
     'nai.quota',
     (v) => (v?.ok === true && Array.isArray(v?.keys)
       ? null

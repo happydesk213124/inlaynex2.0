@@ -8162,25 +8162,28 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
   async function openMsgCharPicker(message) {
     if (typeof document > "u" || !document.body) throw new Error("plugin document unavailable");
     if (t.msgCharPickerUi?.close) await t.msgCharPickerUi.close();
-    await ensureViewerRosterLoaded();
-    const rosterSessionId = t._viewerRoster?.rosterSessionId || t.lastScope?.sessionId || "session";
-    const withScope = (character, scope) => {
-      const rosterRow = { ...character, scope };
+    const text = String(message?.text || "");
+    const scope = await Z({ useOverride: !1 }).catch(() => t.lastScope || null);
+    const res = await K("/v1/characters/triggered", {
+      method: "POST",
+      body: {
+        message: text,
+        session_id: scope?.sessionId || "",
+        character_id: scope?.characterId || "",
+        unified_session_id: scope?.unifiedSessionId || \`risu_\${ye(\`\${scope?.characterId || ""}|__unified__\`)}\`,
+        source_session_ids: typeof rootChatSessionIds == "function" ? rootChatSessionIds(scope) : []
+      }
+    }, 2e4);
+    void ensureViewerRosterLoaded().catch(() => null);
+    const withScope = (character) => {
+      const scopeId = character.scope || scope?.sessionId || "session";
+      const rosterRow = { ...character, scope: scopeId };
       return { ...rosterRow, roster: rosterRow };
     };
-    // DOM bubble text only — same haystack tagging uses for alias triggers.
-    const text = String(message?.text || "");
-    const VC = globalThis.__INLAY_VIEWER_CORE__;
-    if (typeof VC?.matchCharactersInText != "function") throw new Error("character matcher unavailable");
-    const sessionRoster = (t.charactersSession || []).map((character) => withScope(character, rosterSessionId));
-    const globalRoster = enabledGlobalsForCharacter().map((character) => withScope(character, "__global__"));
-    // Match each scope alone. One combined list dedupes by id/name, so a
-    // global row would hide the chat row that actually belongs to this bubble.
-    const matched = [
-      ...VC.matchCharactersInText(text, sessionRoster),
-      ...VC.matchCharactersInText(text, globalRoster)
-    ].filter((character) => character?.name);
-    y("info", "msg.char_picker", \`dom=\${text.length} session=\${sessionRoster.length} global=\${globalRoster.length} hitS=\${matched.filter((c) => c.scope !== "__global__").length} hitG=\${matched.filter((c) => c.scope === "__global__").length}\`);
+    const matched = (Array.isArray(res?.characters) ? res.characters : [])
+      .filter((character) => character?.name)
+      .map(withScope);
+    y("info", "msg.char_picker", \`dom=\${text.length} hit=\${matched.length}\`);
     if (!matched.length) {
       if (typeof nxHostToast == "function") await nxHostToast("이 메시지에서 트리거된 캐릭터가 없습니다.", { ms: 1800 });
       return;

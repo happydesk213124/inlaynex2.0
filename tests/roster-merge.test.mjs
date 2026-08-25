@@ -179,16 +179,18 @@ test("matchCharactersInText returns roster rows whose aliases appear in the mess
   assert.deepEqual(hits.map((c) => c.name), ["유나", "하루"]);
 });
 
-test("matchCharactersInText keeps the first row when session and global share an id", () => {
-  const text = "오늘 유나가 카페에 왔다";
-  const session = [{ id: "yuna", name: "유나", aliases: ["유나"], scope: "chat" }];
-  const global = [{ id: "yuna", name: "유나", aliases: ["유나"], scope: "__global__" }];
-  const combinedFirstGlobal = matchCharactersInText(text, [...global, ...session]);
-  assert.deepEqual(combinedFirstGlobal.map((c) => c.scope), ["__global__"]);
-  const perScope = [
-    ...matchCharactersInText(text, session),
-    ...matchCharactersInText(text, global),
-  ];
-  assert.deepEqual(perScope.map((c) => c.scope), ["chat", "__global__"]);
+test("tagger trigger list is one merged roster match, not separate global+session lists", () => {
+  const session = [{ id: "yuna-chat", name: "유나", aliases: ["유나"], appearance: "1girl, black hair" }];
+  const global = [{ id: "yuna-g", name: "유나", aliases: ["유나"], appearance: "1girl, blonde hair" }];
+  const roster = mergeSessionAndGlobalRoster(session, global, {
+    hasAppearance: (c) => !!String(c?.appearance || "").trim(),
+    resolve: (name, list) => list.find((c) => c.name === name) || null,
+    aliasKeys: (c) => new Set((c.aliases || [c.name]).map((a) => String(a).toLowerCase())),
+    normalizeName: (n) => String(n || "").trim().toLowerCase(),
+    clean: (v) => String(v || "").trim(),
+  });
+  const hits = matchCharactersInText("오늘 유나가 카페에 왔다", roster);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].id, roster[0].id);
 });
 

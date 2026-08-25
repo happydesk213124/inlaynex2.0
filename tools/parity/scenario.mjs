@@ -211,6 +211,12 @@ export async function runScenario(N, handles) {
   await rec('chars.global_toggles_clear', () => post('/v1/characters/global-toggles', {
     character_id: 'char_parity', disabled_globals: [],
   }));
+  await rec('chars.triggered', () => post('/v1/characters/triggered', {
+    message: '카페에서 아리아가 HAN JINWOO를 불렀다',
+    session_id: 'sess_identity',
+    character_id: 'char_parity',
+    source_session_ids: [],
+  }));
 
   // ── unified roster patching across root chats ─────────────────────────
   for (const [sessionId, id, appearance] of [

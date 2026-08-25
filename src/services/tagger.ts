@@ -37,7 +37,7 @@ import { isCharacterImageExtraLore } from '../domain/lore/extra';
 import type { LlmContentPart, LlmMessage } from '../providers/llm/transform';
 import { numberMessageLinesForTagger, repairLazyShotLines } from '../domain/tagging/shot-line';
 import { collectAssetNaiTags, setLastAssetWeightMap, type AssetLookPreview } from './asset-tags';
-import { absorbAliasesOntoLatinPeers, rosterForSession } from './characters';
+import { loadTaggerRoster, rosterForSession } from './characters';
 import { cardFlagOn, taggerShouldUseV5Rules, normalizeV5NaturalLang } from '../domain/nai/routing';
 import { getConfig } from './context';
 import { curationTaggerSystemMessage } from './curation';
@@ -483,22 +483,14 @@ export async function buildTaggerMessages(
     : [];
   const unifiedSessionId = cleanText(request.unified_session_id || '', 200);
   const characterId = cleanText(request.character_id || '', 200);
-  let rosterEarly: CharacterRecord[] = card.lorebook || card.char_appearance !== false || assetMode !== 'off'
-    ? await rosterForSession(
+  const rosterEarly: CharacterRecord[] = card.lorebook || card.char_appearance !== false || assetMode !== 'off'
+    ? await loadTaggerRoster({
       sessionId,
       unifiedSessionId,
       characterId,
       sourceSessionIds,
-    )
+    })
     : [];
-  if (rosterEarly.length) {
-    rosterEarly = await absorbAliasesOntoLatinPeers({
-      sessionId,
-      unifiedSessionId,
-      characterId,
-      sourceSessionIds,
-    });
-  }
 
   pushReferenceUser(messages, 'Lorebook', collectLorePayload(request, card, assistant, rosterEarly));
   pushReferenceUser(messages, 'Characters in this message', appearancePayload(card, assistant, sessionId, rosterEarly));

@@ -147,6 +147,11 @@ export async function runScenario(N, handles) {
       secondary_preset_id: String(card.secondary_preset_id || ''),
     };
   });
+  // 2.4.7: leftover human_focus is forced to none (1.x kept human_focus).
+  await rec('settings.uc_preset_none', async () => {
+    const s = await get('/v1/settings');
+    return { none: s?.settings?.nai?.uc_preset === 'none' };
+  });
   await rec('settings.export', () => get('/v1/settings/export'));
 
   // ── curation.strict_ids (2.0-only surface; 1.x has no curation panel at
@@ -304,6 +309,12 @@ export async function runScenario(N, handles) {
     return {
       emphasized: /^3::1boy::/.test(main) || /^3::1girl/.test(main),
       prefix: main.slice(0, 24),
+    };
+  });
+  await rec('job.uc_preset_none', () => {
+    const neg = String(jobResult?.result?.cards?.[0]?.negative_prompt || '');
+    return {
+      clean: !/(?:^|,)\s*(?:@_@|mismatched pupils|glowing eyes)\s*(?:,|$)/i.test(neg),
     };
   });
   const busyDup = await rec('job.busy_duplicate', () => post('/v1/jobs/create', {

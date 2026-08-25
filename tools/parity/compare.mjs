@@ -11,6 +11,14 @@
 import fs from 'node:fs';
 import { FIXED_EPOCH } from './host.mjs';
 
+/** 1.x defaulted nai.uc_preset to human_focus; 2.4.7 always uses none. */
+const UC_HUMAN_FOCUS_TOKENS = new Set(
+  Object.values(JSON.parse(fs.readFileSync(new URL('../../src/config/uc-presets.json', import.meta.url), 'utf8')))
+    .flatMap((m) => String(m?.human_focus || '').split(','))
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean),
+);
+
 const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 const TS_LOW = FIXED_EPOCH - 60_000;
 const TS_HIGH = FIXED_EPOCH + 86_400_000;
@@ -87,6 +95,9 @@ const normalize = (root) => {
   const walk = (node, key) => {
     // natural_base: 1.x boolean ↔ 2.0 off|short|detailed|supplement (same semantics).
     // Collapse the wire type so parity compares intent, not storage shape.
+    // 2.4.7 always none (frozen UI has no UC preset control). 1.x defaulted
+    // human_focus and appended that block on every gen. Schema + scenario assert none.
+    if (key === 'uc_preset') return 'none';
     if (key === 'natural_base') {
       if (node === false || node === 'false' || node === 'off' || node === 'none') return 'off';
       if (node === true || node === 'true' || node === 'on' || node === 'short') return 'short';
@@ -123,6 +134,14 @@ const normalize = (root) => {
           /\b\d+(?:\.\d+)?::((?:\d+\+?(?:girls?|boys?|people|person)|1girl|1boy)(?:,\s*(?:\d+\+?(?:girls?|boys?|people|person)|1girl|1boy))*)::/gi,
           '$1',
         );
+      }
+      // Drop 1.x human_focus UC leftovers so style/fixed negatives still compare.
+      if (key === 'negative_prompt') {
+        out = out
+          .split(',')
+          .map((t) => t.trim())
+          .filter((t) => t && !UC_HUMAN_FOCUS_TOKENS.has(t.toLowerCase()))
+          .join(', ');
       }
       // Long opaque payloads: keep the shape, drop the bytes.
       const dataUrl = /^data:([\w/+.-]+);base64,([A-Za-z0-9+/=]+)$/.exec(out);
@@ -325,6 +344,9 @@ const INTENTIONAL_DIFF_STEPS = new Set([
   'presets.reroll_swaps_style',
   // 2.0 wraps person tags (default weight 3); 1.x emits plain 1boy.
   'job.person_tag_emphasis',
+  // 2.4.7 forces nai.uc_preset=none; 1.x defaulted human_focus.
+  'settings.uc_preset_none',
+  'job.uc_preset_none',
   // Short clothing hints use word boundaries ("hat" ≠ inside "chat"), so seed
   // markers stay in appearance instead of spilling into attire via "chat"⊃"hat".
   'chars.seed_sess_chat_a',
@@ -449,6 +471,22 @@ for (const name of oldSteps.keys()) {
         old: String(oldStep.value?.emphasized),
         new: String(newStep.value?.emphasized),
         note: '2.0 must wrap person tags with default weight 3',
+      });
+    }
+    if (name === 'settings.uc_preset_none' && newStep.value?.none !== true) {
+      findings.push({
+        at: name,
+        old: String(oldStep.value?.none),
+        new: String(newStep.value?.none),
+        note: '2.4.7 must persist nai.uc_preset=none',
+      });
+    }
+    if (name === 'job.uc_preset_none' && newStep.value?.clean !== true) {
+      findings.push({
+        at: name,
+        old: String(oldStep.value?.clean),
+        new: String(newStep.value?.clean),
+        note: '2.4.7 must not append human_focus UC leftovers on generate',
       });
     }
     if (

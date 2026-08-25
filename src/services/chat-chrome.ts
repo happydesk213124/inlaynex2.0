@@ -2,8 +2,15 @@
  * PocketRisu Standard keeps avatar + name on the same card as the message.
  * Reused Chat instances keep a smashed header until the mount hash changes.
  * largePortrait is in that hash; flip then restore remounts without keeping the flip.
+ *
+ * setChar is sync. Flip+restore in one tick is batched — hash never changes.
+ * Yield so Chats $effect remounts on the flipped hash before we restore.
  */
 import { hostHas, risuHost } from '../core/host';
+import { sleep } from '../core/util/async';
+
+/** Longer than a Svelte flush / one frame so mount() finishes before the next write. */
+const REMOUNT_FLUSH_MS = 50;
 
 async function ensureDbAccess(): Promise<void> {
   const host = risuHost();
@@ -29,7 +36,10 @@ async function remountCharacterCards(): Promise<boolean> {
   if (!char) return false;
   const prev = Boolean(char.largePortrait);
   await setChar({ ...char, largePortrait: !prev });
-  await setChar({ ...char, largePortrait: prev });
+  await sleep(REMOUNT_FLUSH_MS);
+  const live = asRecord(await getChar()) || char;
+  await setChar({ ...live, largePortrait: prev });
+  await sleep(REMOUNT_FLUSH_MS);
   return true;
 }
 
@@ -48,9 +58,16 @@ async function remountPersonaCards(): Promise<boolean> {
   if (!persona) return false;
   const prev = Boolean(persona.largePortrait);
   const flip = personas.map((row, i) => (i === idx ? { ...row, largePortrait: !prev } : row));
-  const restore = personas.map((row, i) => (i === idx ? { ...row, largePortrait: prev } : row));
   await host.setDatabase!({ personas: flip as never });
+  await sleep(REMOUNT_FLUSH_MS);
+  const after = asRecord(await host.getDatabase!(['personas', 'selectedPersona']));
+  const live = (Array.isArray(after?.personas) ? after.personas : [])
+    .map((row) => asRecord(row))
+    .filter((row): row is Record<string, unknown> => Boolean(row));
+  const rows = live.length === personas.length ? live : personas;
+  const restore = rows.map((row, i) => (i === idx ? { ...row, largePortrait: prev } : row));
   await host.setDatabase!({ personas: restore as never });
+  await sleep(REMOUNT_FLUSH_MS);
   return true;
 }
 

@@ -3743,6 +3743,33 @@ button[data-char-autotag].armed{background:rgba(255,196,72,.24);border-color:rgb
     };
     for (const k of Object.keys(o)) if (o[k] === void 0) delete o[k];
     const a = hasEl("nx-nai-key") ? N("nx-nai-key") : "";
+    const fam = document.querySelector("#nx-nai-family-bar [data-nai-family].active")?.getAttribute("data-nai-family") || (String(o.model || "").includes("nai-diffusion-5") ? "v5" : "v4");
+    const mv5 = hasEl("nx-nai-model-v5") ? N("nx-nai-model-v5") : "";
+    const mv4 = hasEl("nx-nai-model-v4") ? N("nx-nai-model-v4") : "";
+    o.model = fam === "v5" ? (mv5 || "nai-diffusion-5-full") : (mv4 || "nai-diffusion-4-5-full");
+    const hid = document.getElementById("nx-nai-model");
+    if (hid) hid.value = o.model;
+    const sv5 = hasEl("nx-nai-sampler-v5") ? N("nx-nai-sampler-v5") : "";
+    const sv4 = hasEl("nx-nai-sampler-v4") ? N("nx-nai-sampler-v4") : "";
+    const st5 = hasEl("nx-nai-steps-v5") ? Number(N("nx-nai-steps-v5") || 28) : NaN;
+    const st4 = hasEl("nx-nai-steps-v4") ? Number(N("nx-nai-steps-v4") || 28) : NaN;
+    if (sv5) o.sampler_v5 = sv5;
+    if (sv4) o.sampler_v4 = sv4;
+    if (Number.isFinite(st5)) o.steps_v5 = st5;
+    if (Number.isFinite(st4)) o.steps_v4 = st4;
+    o.sampler = fam === "v5" ? (sv5 || o.sampler) : (sv4 || o.sampler);
+    o.steps = fam === "v5" ? (Number.isFinite(st5) ? st5 : o.steps) : (Number.isFinite(st4) ? st4 : o.steps);
+    const hidSamp = document.getElementById("nx-nai-sampler");
+    const hidSteps = document.getElementById("nx-nai-steps");
+    if (hidSamp && o.sampler) hidSamp.value = o.sampler;
+    if (hidSteps && o.steps != null) hidSteps.value = String(o.steps);
+    const lines = (id) => String(N(id) || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+    const k5 = lines("nx-nai-keys-v5");
+    const k4 = lines("nx-nai-keys-v4");
+    if (k5.length) o.api_keys_v5 = k5;
+    if (k4.length) o.api_keys_v4 = k4;
+    if (ee("nx-nai-keys-v5-clear")) o.clearApiKeysV5 = !0;
+    if (ee("nx-nai-keys-v4-clear")) o.clearApiKeysV4 = !0;
     return a && (o.api_key = a), {
       llm: e,
       llm_roles,

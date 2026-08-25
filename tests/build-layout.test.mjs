@@ -138,6 +138,22 @@ test('nai5_first toggle lives in gen options next to coords, not dashboard', () 
   assert.doesNotMatch(mtSave, /\be\./);
 });
 
+test('Oe() collect writes per-family NAI sampler and steps', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  const start = bundle.indexOf('function Oe()');
+  const end = bundle.indexOf('function ba()', start);
+  assert.ok(start >= 0 && end > start, 'built Oe() not found');
+  const body = bundle.slice(start, end);
+  assert.match(body, /nx-nai-steps-v5/);
+  assert.match(body, /nx-nai-steps-v4/);
+  assert.match(body, /nx-nai-sampler-v5/);
+  assert.match(body, /nx-nai-sampler-v4/);
+  assert.match(body, /steps_v5/);
+  assert.match(body, /steps_v4/);
+  assert.match(body, /sampler_v5/);
+  assert.match(body, /sampler_v4/);
+});
+
 test('new chat/reply schedules a 1s pointer-near message select', () => {
   const source = read('vite.config.ts');
   assert.match(source, /function schedulePointerSelect/);

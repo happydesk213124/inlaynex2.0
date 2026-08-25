@@ -1078,10 +1078,12 @@ const VENDOR_NAI_MODEL_KEY_PATCH =
             </label>
             <input id="nx-nai-key" type="password" autocomplete="new-password" style="display:none">`;
 
+/** After VENDOR_OE_RETURN adds llm_roles — assert on patched vendor, not raw. */
 const VENDOR_NAI_OE_KEYS_NEEDLE =
   `    const a = hasEl("nx-nai-key") ? N("nx-nai-key") : "";
     return a && (o.api_key = a), {
       llm: e,
+      llm_roles,
       nai: o
     };`;
 
@@ -1116,6 +1118,7 @@ const VENDOR_NAI_OE_KEYS_PATCH =
     if (ee("nx-nai-keys-v4-clear")) o.clearApiKeysV4 = !0;
     return a && (o.api_key = a), {
       llm: e,
+      llm_roles,
       nai: o
     };`;
 
@@ -13009,7 +13012,6 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_PRESET_PASTE_DETECT_NEEDLE, 'preset paste detect');
   assertOnce(raw, VENDOR_PRESET_NEW_NEEDLE, 'preset new');
   assertOnce(raw, VENDOR_NAI_MODEL_KEY_NEEDLE, 'nai model+key tabs');
-  assertOnce(raw, VENDOR_NAI_OE_KEYS_NEEDLE, 'Oe() nai extra keys');
   assertOnce(raw, VENDOR_NAI_SAMPLER_NEEDLE, 'nai sampler per family');
   assertOnce(raw, VENDOR_PRESET_SECOND_NEEDLE, 'preset 2nd button');
   assertOnce(raw, VENDOR_PRESET_SECOND_EVT_NEEDLE, 'preset 2nd click');
@@ -13848,7 +13850,9 @@ const loadVendorUi = (): string => {
     if (!out.includes('nxActivateStickyNearestToCursor().catch')) {
       throw new Error('[build] pointer path must call nxActivateStickyNearestToCursor');
     }
-    return out
+    // llm_roles return is already patched; family collect must land on that shape.
+    assertOnce(out, VENDOR_NAI_OE_KEYS_NEEDLE, 'Oe() nai extra keys (after llm_roles return)');
+    out = out
       .replace(VENDOR_NAI_MODEL_KEY_NEEDLE, VENDOR_NAI_MODEL_KEY_PATCH)
       .replace(VENDOR_NAI_OE_KEYS_NEEDLE, VENDOR_NAI_OE_KEYS_PATCH)
       .replace(VENDOR_NAI_SAMPLER_NEEDLE, VENDOR_NAI_SAMPLER_PATCH)
@@ -13858,6 +13862,10 @@ const loadVendorUi = (): string => {
       .replace(VENDOR_PRESET_CHIP_CSS_NEEDLE, VENDOR_PRESET_CHIP_CSS_PATCH)
       .replace(VENDOR_PRESET_HELP_MUTED_NEEDLE, VENDOR_PRESET_HELP_MUTED_PATCH)
       ;
+    if (!out.includes('N("nx-nai-steps-v5")') || !out.includes('N("nx-nai-steps-v4")')) {
+      throw new Error('[build] Oe() must collect per-family NAI steps');
+    }
+    return out;
   })();
 };
 

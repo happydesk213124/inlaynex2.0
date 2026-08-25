@@ -141,6 +141,13 @@ test("nai5 / coords / key lists migrate with safe defaults", () => {
   assert.equal(copied.nai.sampler_v4, "k_euler");
   assert.equal(copied.nai.steps_v5, 23);
   assert.equal(copied.nai.steps_v4, 23);
+  const split = migrateSettings({
+    nai: { sampler: "k_euler_ancestral", sampler_v5: "k_euler", sampler_v4: "k_dpmpp_2m", steps: 28, steps_v5: 20, steps_v4: 23 },
+  });
+  assert.equal(split.nai.sampler_v5, "k_euler");
+  assert.equal(split.nai.sampler_v4, "k_dpmpp_2m");
+  assert.equal(split.nai.steps_v5, 20);
+  assert.equal(split.nai.steps_v4, 23);
 });
 
 test("overlay_markers is canonical for left-line overlay + inline previews", () => {

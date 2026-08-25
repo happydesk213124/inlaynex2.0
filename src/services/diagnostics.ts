@@ -37,8 +37,9 @@ import { normalizeLlmProvider } from '../providers/llm/providers';
 import { llmConfigured, normalizeLlmSource } from '../providers/llm/transform';
 import { generateT2i, getAnlas, getNaiQuotaDetail } from '../providers/nai/client';
 import { modelToNaia, type T2iRequest } from '../providers/nai/payload';
+import { allUniqueNaiTokens, maskNaiToken } from '../domain/nai/keys';
 import { getConfig } from './context';
-import { saveConfig } from './settings';
+import { saveConfig, updateSettings } from './settings';
 import { runVisionAutotagLook } from './vision-autotag';
 
 /** The fields of ComfyUI's `/system_stats` the connection test reports back. */
@@ -111,7 +112,10 @@ export async function testLlm(llmOverride: unknown): Promise<ApiResult> {
  * the balance endpoint is flaky and blocked by some proxies, and refusing to
  * generate on that basis would be wrong.
  */
-export async function testNai(): Promise<ApiResult> {
+export async function testNai(naiOverride: unknown = null): Promise<ApiResult> {
+  if (naiOverride && typeof naiOverride === 'object' && !Array.isArray(naiOverride)) {
+    await updateSettings({ nai: naiOverride as Record<string, unknown> });
+  }
   const nai = getConfig().nai;
   if (imageBackendKind(nai) === 'comfy') {
     try {
@@ -147,23 +151,45 @@ export async function testNai(): Promise<ApiResult> {
       return { ok: false, message: String((exc as Error)?.message || exc), debug: debugSnapshot() };
     }
   }
-  if (!cleanText(nai.api_key)) return { ok: false, message: 'NAI api_key missing', debug: debugSnapshot() };
+  const tokens = allUniqueNaiTokens(nai);
+  if (!tokens.length) return { ok: false, message: 'NAI api_key missing', debug: debugSnapshot() };
   try {
-    const token = cleanText(nai.api_key);
-    try {
-      const span = dbgSpan('nai.test.anlas');
-      const anlas = await getAnlas(token);
-      span.end({ message: 'anlas ok' });
-      return { ok: true, message: `NAI token ok · Anlas=${JSON.stringify(anlas)}`, debug: debugTail() };
-    } catch (exc) {
+    const parts: string[] = [];
+    let firstAnlas: unknown = null;
+    let firstSkip: unknown = null;
+    for (const token of tokens) {
+      try {
+        const span = dbgSpan('nai.test.anlas');
+        const anlas = await getAnlas(token);
+        span.end({ message: 'anlas ok' });
+        if (!firstAnlas) firstAnlas = anlas;
+        parts.push(`…${maskNaiToken(token)}=${JSON.stringify(anlas)}`);
+      } catch (exc) {
+        if (!firstSkip) firstSkip = exc;
+        dbg('nai.test.anlas', { message: String((exc as Error)?.message || exc) }, 'warn');
+        parts.push(`…${maskNaiToken(token)} skip`);
+      }
+    }
+    if (tokens.length === 1 && firstAnlas) {
+      return { ok: true, message: `NAI token ok · Anlas=${JSON.stringify(firstAnlas)}`, debug: debugTail() };
+    }
+    if (tokens.length === 1 && firstSkip) {
       const model = modelToNaia(nai.model || 'nai-diffusion-4-5-full');
-      dbg('nai.test.anlas', { message: String((exc as Error)?.message || exc) }, 'warn');
       return {
         ok: true,
-        message: `NAI config present · model=${model} · anlas_skip=${(exc as Error)?.message || exc}`,
+        message: `NAI config present · model=${model} · anlas_skip=${(firstSkip as Error)?.message || firstSkip}`,
         debug: debugTail(),
       };
     }
+    if (firstAnlas) {
+      return { ok: true, message: `NAI token ok · ${parts.join(' · ')}`, debug: debugTail() };
+    }
+    const model = modelToNaia(nai.model || 'nai-diffusion-4-5-full');
+    return {
+      ok: true,
+      message: `NAI config present · model=${model} · anlas_skip=${(firstSkip as Error)?.message || firstSkip}`,
+      debug: debugTail(),
+    };
   } catch (exc) {
     // Unreachable in practice: the inner catch already absorbs every failure.
     dbg('nai.test', { message: String((exc as Error)?.message || exc) }, 'error');

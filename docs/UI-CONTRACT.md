@@ -259,8 +259,10 @@ Export still redacts `api_key` recursively (including under `llm_roles`).
 Models tab UI (asserted vendor patches): four LLM subtabs
 (메인 태깅 / 오토태그 / 에셋캐릭 / 큐레이터); NovelAI/Comfy stays **one shared**
 block below. Secondary source selects include 「태깅 LLM 따라가기」
-(`follow_main`). Save PUT sends `{ llm, llm_roles, nai }`; connection test uses
+(`follow_main`). Save PUT sends `{ llm, llm_roles, nai }`; LLM connection test uses
 the active tab's resolved profile in `POST /v1/models/test`.
+NAI 「연결 테스트」 saves `{ nai }` (including `api_keys_v5` / `api_keys_v4`) then
+`POST /v1/nai/test` with the same draft so a just-typed key is stored before Anlas.
 
 `curation.mode` (`off` | `two_stage` | `embed_snap`) lives on the **큐레이팅**
 settings tab (asserted vendor patch). **Pipelines are locked to `off`:** load /

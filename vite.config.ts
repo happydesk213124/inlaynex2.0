@@ -1132,6 +1132,47 @@ const VENDOR_NAI_OE_KEYS_PATCH =
       nai: o
     };`;
 
+const VENDOR_NAI_TEST_NEEDLE =
+  `    }), document.getElementById("nx-test-nai")?.addEventListener("click", async () => {
+      const a = document.getElementById("nx-test-nai"), r = document.getElementById("nx-test-result-nai");
+      a && (a.disabled = !0), r && (r.className = "test-result pending", r.textContent = "저장 후 테스트 중…");
+      try {
+        const { llm: i, nai: s } = Oe();
+        const backend = s.backend || t.backendSettings?.nai?.backend || "nai";
+        if (backend === "comfy") {
+          if (!w(s.comfy_workflow_json) && !w(t.backendSettings?.nai?.comfy_workflow_json)) throw new Error("ComfyUI 워크플로 JSON이 없습니다.");
+        } else if (!s.api_key && !t.backendSettings?.nai?.api_key_configured) {
+          throw new Error("Novel AI API key가 없습니다.");
+        }
+        await flushSettingsSave(), await pe({
+          llm: i,
+          nai: s
+        });
+        const c = await K("/v1/nai/test", {
+          method: "POST",
+          body: {}
+        });`;
+
+const VENDOR_NAI_TEST_PATCH =
+  `    }), document.getElementById("nx-test-nai")?.addEventListener("click", async () => {
+      const a = document.getElementById("nx-test-nai"), r = document.getElementById("nx-test-result-nai");
+      a && (a.disabled = !0), r && (r.className = "test-result pending", r.textContent = "저장 후 테스트 중…");
+      try {
+        const draft = Oe(), s = draft.nai, n = t.backendSettings?.nai || {};
+        const backend = s.backend || n.backend || "nai";
+        const hasDraftKeys = !!(w(s.api_key) || (s.api_keys_v5 && s.api_keys_v5.length) || (s.api_keys_v4 && s.api_keys_v4.length));
+        const hasStoredKeys = !!(n.api_key_configured || n.api_keys_v5_configured || n.api_keys_v4_configured);
+        if (backend === "comfy") {
+          if (!w(s.comfy_workflow_json) && !w(n.comfy_workflow_json)) throw new Error("ComfyUI 워크플로 JSON이 없습니다.");
+        } else if (!hasDraftKeys && !hasStoredKeys) {
+          throw new Error("Novel AI API key가 없습니다.");
+        }
+        await flushSettingsSave(), await pe({ nai: s });
+        const c = await K("/v1/nai/test", {
+          method: "POST",
+          body: { nai: s }
+        });`;
+
 const VENDOR_NAI_SAMPLER_NEEDLE =
   `            <label><span>Sampler</span>
               <select id="nx-nai-sampler">
@@ -13062,6 +13103,7 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_PRESET_PASTE_DETECT_NEEDLE, 'preset paste detect');
   assertOnce(raw, VENDOR_PRESET_NEW_NEEDLE, 'preset new');
   assertOnce(raw, VENDOR_NAI_MODEL_KEY_NEEDLE, 'nai model+key tabs');
+  assertOnce(raw, VENDOR_NAI_TEST_NEEDLE, 'nai test save-then-probe');
   assertOnce(raw, VENDOR_NAI_SAMPLER_NEEDLE, 'nai sampler per family');
   assertOnce(raw, VENDOR_PRESET_SECOND_NEEDLE, 'preset 2nd button');
   assertOnce(raw, VENDOR_PRESET_SECOND_EVT_NEEDLE, 'preset 2nd click');
@@ -13908,6 +13950,7 @@ const loadVendorUi = (): string => {
     out = out
       .replace(VENDOR_NAI_MODEL_KEY_NEEDLE, VENDOR_NAI_MODEL_KEY_PATCH)
       .replace(VENDOR_NAI_OE_KEYS_NEEDLE, VENDOR_NAI_OE_KEYS_PATCH)
+      .replace(VENDOR_NAI_TEST_NEEDLE, VENDOR_NAI_TEST_PATCH)
       .replace(VENDOR_NAI_SAMPLER_NEEDLE, VENDOR_NAI_SAMPLER_PATCH)
       .replace(VENDOR_PRESET_SECOND_NEEDLE, VENDOR_PRESET_SECOND_PATCH)
       .replace(VENDOR_PRESET_SECOND_EVT_NEEDLE, VENDOR_PRESET_SECOND_EVT_PATCH)

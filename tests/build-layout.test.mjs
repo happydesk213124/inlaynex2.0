@@ -138,6 +138,33 @@ test('nai5_first toggle lives in gen options next to coords, not dashboard', () 
   assert.doesNotMatch(mtSave, /\be\./);
 });
 
+test('NAI connection test saves family keys then tests', () => {
+  const source = read('vite.config.ts');
+  assert.match(source, /const VENDOR_NAI_TEST_NEEDLE/);
+  assert.match(source, /const VENDOR_NAI_TEST_PATCH/);
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  const start = bundle.indexOf('getElementById("nx-test-nai")?.addEventListener');
+  const mid = bundle.indexOf('/v1/nai/test', start);
+  assert.ok(start >= 0 && mid > start, 'built NAI test handler not found');
+  const body = bundle.slice(start, mid + 80);
+  assert.match(body, /저장 후 테스트 중/);
+  assert.match(body, /api_keys_v5/);
+  assert.match(body, /api_keys_v4/);
+  assert.match(body, /pe\(\{ nai: s \}\)/);
+  assert.match(body, /\/v1\/nai\/test/);
+  assert.doesNotMatch(body, /!s\.api_key && !t\.backendSettings\?\.nai\?\.api_key_configured/);
+});
+
+test('testNai persists posted nai keys and checks every stored token', () => {
+  const source = read('src', 'services', 'diagnostics.ts');
+  const start = source.indexOf('export async function testNai');
+  const end = source.indexOf('export async function probeNaiGenerate');
+  assert.ok(start >= 0 && end > start, 'testNai not found');
+  const body = source.slice(start, end);
+  assert.match(body, /allUniqueNaiTokens/);
+  assert.match(body, /updateSettings/);
+});
+
 test('Oe() collect writes per-family NAI sampler and steps', () => {
   const bundle = read('dist', 'inlaynexus2.0.js');
   const start = bundle.indexOf('function Oe()');

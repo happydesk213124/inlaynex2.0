@@ -523,7 +523,12 @@ const WRITE_ROUTES: readonly Route[] = [
     match: exact('/v1/models/test'),
     handler: async ({ body }) => ok(await diagnostics.testLlm(body.llm && typeof body.llm === 'object' ? body.llm : null)),
   },
-  { match: exact('/v1/nai/test'), handler: async () => ok(await diagnostics.testNai()) },
+  {
+    match: exact('/v1/nai/test'),
+    handler: async ({ body }) => ok(await diagnostics.testNai(
+      body.nai && typeof body.nai === 'object' ? body.nai : null,
+    )),
+  },
   {
     match: exact('/v1/nai/probe', '/v1/debug/probe-nai'),
     handler: async () => ok(await diagnostics.probeNaiGenerate()),

@@ -431,6 +431,12 @@ const NEW_ONLY_STEPS = new Map([
     },
   ],
   [
+    'chat.restore_chrome',
+    (v) => (v?.ok === true && typeof v?.remounted === 'boolean'
+      ? null
+      : `restore-chrome must return ok+remounted, got ${JSON.stringify(v)}`),
+  ],
+  [
     'nai.quota',
     (v) => (v?.ok === true && Array.isArray(v?.keys)
       ? null

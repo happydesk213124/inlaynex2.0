@@ -83,8 +83,10 @@ test('character ref UI has refresh and library reset', () => {
   assert.match(source, /data-char-ref-refresh/);
   assert.match(source, /data-ce-ref-refresh/);
   assert.match(source, /id="nx-reset-char-refs"/);
+  assert.match(source, /id="nx-restore-chat-chrome"/);
   assert.match(source, /\/v1\/characters\/ref\/hydrate/);
   assert.match(source, /\/v1\/characters\/ref\/reset/);
+  assert.match(source, /\/v1\/chat\/restore-chrome/);
 });
 
 test('manual character save and read never rewrite the appearance bucket', () => {

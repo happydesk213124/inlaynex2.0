@@ -31,6 +31,7 @@ import * as gallery from '../services/gallery';
 import * as generation from '../services/generation';
 import * as jobs from '../services/jobs';
 import * as naiAssets from '../services/nai-assets';
+import * as chatChrome from '../services/chat-chrome';
 import * as lorefilter from '../services/lorefilter';
 import * as charImport from '../services/char-import';
 import * as settings from '../services/settings';
@@ -502,6 +503,10 @@ const WRITE_ROUTES: readonly Route[] = [
   {
     match: exact('/v1/characters/ref/reset'),
     handler: async () => ok(await naiAssets.resetAllCharacterRefs()),
+  },
+  {
+    match: exact('/v1/chat/restore-chrome'),
+    handler: async () => ok(await chatChrome.remountChatCardChrome()),
   },
   { match: exact('/v1/characters', '/v1/characters/update'), handler: ({ body }) => updateCharacters(body) },
   {

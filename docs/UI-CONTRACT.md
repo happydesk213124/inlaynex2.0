@@ -213,6 +213,9 @@ popup, or 새로고침 runs — not at boot. Lorebook import-fill, asset looks
 prepass, and tagged roster merges call the same seed. Generation reseeds the
 shot cast when mode is `vibe` or `image`. Existing hashes are never overwritten. `POST /v1/characters/ref/reset` clears every hash, leftover IDB
 `char_ref_*` rows, and module `inxref_*` assets.
+`POST /v1/chat/restore-chrome` remounts PocketRisu chat cards so the
+header name and avatar HTML are painted again. It does not delete or
+replace stored image files.
 Character list rows may include `ref_hash` / `ref_configured` / `ref_preview_url`.
 For V4.5 shots, only explicit `vibe` or `image` attach a stored ref. `off`
 and unknown values send none.

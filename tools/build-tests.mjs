@@ -64,6 +64,7 @@ const MODULES = {
   'char-ref-store': 'src/domain/character/char-ref-store.ts',
   'char-ref-seed': 'src/domain/character/char-ref-seed.ts',
   'char-ref-module': 'src/services/char-ref-module.ts',
+  'chat-chrome': 'src/services/chat-chrome.ts',
   'style-preset-io': 'src/domain/style-presets/io.ts',
   'composition-leaves': 'src/domain/composition/leaves.ts',
   'curation-catalog': 'src/domain/curation/catalog.ts',

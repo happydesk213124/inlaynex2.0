@@ -251,6 +251,10 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(body, /H\(doc, "div"/);
   assert.match(body, /host\.prepend\(wrap\)/);
   assert.match(body, /prependBar/);
+  assert.match(body, /msgActionMountKind/);
+  assert.match(body, /canMountMsgActionOnParent/);
+  assert.match(body, /isInlayPaintHost/);
+  assert.match(body, /getParent/);
   assert.match(body, /x-inlay-msg-end/);
   assert.match(body, /keepMsgActionBarIndexes/);
   assert.match(body, /wantBottom/);

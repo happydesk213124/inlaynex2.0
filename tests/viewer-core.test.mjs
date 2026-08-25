@@ -21,6 +21,9 @@ import {
   linkCardsForMessage,
   stripInlayInlineHtml,
   keepMsgActionBarIndexes,
+  isInlayPaintHost,
+  msgActionMountKind,
+  canMountMsgActionOnParent,
   splitMessageLines,
   clampShotLine,
   htmlToPlainLn,
@@ -200,6 +203,28 @@ test("keepMsgActionBarIndexes keeps one top and one bottom", () => {
   assert.deepEqual(keepMsgActionBarIndexes(["top", "top", "top"], false), [0]);
   assert.deepEqual(keepMsgActionBarIndexes(["bot", "top"], true), [0, 1]);
   assert.deepEqual(keepMsgActionBarIndexes([], true), []);
+});
+
+test("isInlayPaintHost skips our chip rows and shot wraps", () => {
+  assert.equal(isInlayPaintHost({ isActionBar: true }), true);
+  assert.equal(isInlayPaintHost({ isInlineShot: true }), true);
+  assert.equal(isInlayPaintHost({ isActionBar: "", isInlineShot: "" }), false);
+  assert.equal(isInlayPaintHost({}), false);
+  assert.equal(isInlayPaintHost(null), false);
+});
+
+test("msgActionMountKind puts top on the content parent, bottom on the host", () => {
+  assert.equal(msgActionMountKind("top"), "parent");
+  assert.equal(msgActionMountKind("bot"), "host");
+  assert.equal(msgActionMountKind(""), "host");
+});
+
+test("canMountMsgActionOnParent refuses the bubble root", () => {
+  const bubble = { id: "msg" };
+  const content = { id: "box" };
+  assert.equal(canMountMsgActionOnParent(content, bubble), true);
+  assert.equal(canMountMsgActionOnParent(bubble, bubble), false);
+  assert.equal(canMountMsgActionOnParent(null, bubble), false);
 });
 
 test("findElementIndexForLine matches text + occurrence order", () => {

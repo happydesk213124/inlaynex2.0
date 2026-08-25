@@ -109,10 +109,13 @@ are absent.
 
 Dashboard also has `card.nai4_fallback`, `card.nai5_speech`,
 and `card.inline_msg_actions` (tag / regenerate / stop / character / preset chips).
-Same neighbor rule as `inline_chat_images`. Chips use the same SafeDOM
-`H()` + `host.prepend` path as inline shot/spinner markers on the first
-and last bubble hosts — not `insertAdjacentHTML` into `<p>`, and not
-`prepend` on the bubble root. Each bubble keeps at most one top bar and
+Same neighbor rule as `inline_chat_images`. Chips still use SafeDOM
+`H()` (not `insertAdjacentHTML`, not bubble-root `prepend`). The top bar
+prepends onto the first host's parent when that parent is not the
+bubble root, so it sits at the front of the content box, outside a
+custom-card leaf `div`. The bottom bar still `prepend`s the last host.
+Chip rows and shot wraps are skipped when collecting hosts
+(`isInlayPaintHost`). Each bubble keeps at most one top bar and
 one bottom bar (`x-inlay-msg-end`); overlapping paints drop extras.
 The character chip POSTs the selected DOM message to
 `/v1/characters/triggered` with the same session / unified / source ids as

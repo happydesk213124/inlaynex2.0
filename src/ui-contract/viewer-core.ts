@@ -2579,6 +2579,24 @@ export function keepMsgActionBarIndexes(ends: readonly unknown[], wantBottom: bo
   return kept.sort((a, b) => a - b);
 }
 
+/** Chip rows and shot/spinner wraps must not become leaf hosts. */
+export function isInlayPaintHost(attrs: {
+  isActionBar?: unknown;
+  isInlineShot?: unknown;
+} | null | undefined): boolean {
+  return Boolean(attrs?.isActionBar) || Boolean(attrs?.isInlineShot);
+}
+
+/** Top chips sit on the first host's parent. Bottom stays on the last host. */
+export function msgActionMountKind(end: unknown): 'parent' | 'host' {
+  return String(end || '') === 'top' ? 'parent' : 'host';
+}
+
+/** Bubble-root prepend remounts avatar/chrome. Only an inner content parent is safe. */
+export function canMountMsgActionOnParent(parent: unknown, bubbleRoot: unknown): boolean {
+  return parent != null && parent !== bubbleRoot;
+}
+
 /** First and last `<p>` indices. Same index when the bubble has only one. */
 export function firstLastParagraphIndices(tagNames: unknown[] | null | undefined): number[] {
   const tags = (Array.isArray(tagNames) ? tagNames : []).map((t) => String(t || '').toUpperCase());

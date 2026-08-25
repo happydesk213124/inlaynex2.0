@@ -7601,6 +7601,16 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           text = "";
         }
         if (!(typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(text) : []).length) continue;
+        let isActionBar = !1;
+        let isInlineShot = !1;
+        try {
+          if (typeof el.getAttribute == "function") {
+            isActionBar = String(await el.getAttribute("x-inlay-msg-actions") || "") !== "";
+            isInlineShot = String(await el.getAttribute("x-inlay-inline-shot") || "") !== "";
+          }
+        } catch {
+        }
+        if (typeof VC.isInlayPaintHost == "function" ? VC.isInlayPaintHost({ isActionBar, isInlineShot }) : (isActionBar || isInlineShot)) continue;
         hosts.push(el);
         hostTags.push(name || "DIV");
       }
@@ -8510,6 +8520,19 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         if (nested) continue;
       }
+      let isActionBar = !1;
+      let isInlineShot = !1;
+      try {
+        if (typeof el.getAttribute == "function") {
+          isActionBar = String(await el.getAttribute("x-inlay-msg-actions") || "") !== "";
+          isInlineShot = String(await el.getAttribute("x-inlay-inline-shot") || "") !== "";
+        }
+      } catch {
+      }
+      const skipPaint = typeof globalThis.__INLAY_VIEWER_CORE__?.isInlayPaintHost == "function"
+        ? globalThis.__INLAY_VIEWER_CORE__.isInlayPaintHost({ isActionBar, isInlineShot })
+        : (isActionBar || isInlineShot);
+      if (skipPaint) continue;
       hosts.push(el);
     }
     if (!hosts.length) {
@@ -8596,7 +8619,23 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const msgIdx = Number.isInteger(Number(msgIndex)) && Number(msgIndex) >= 0 ? Number(msgIndex) : -1;
     const barHtml = '<div contenteditable="false" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-start;margin:10px 0;text-align:left;pointer-events:auto;line-height:1.2">' + chipsHtml + "</div>";
     const prependBar = async (host, end) => {
-      if (!host || typeof host.prepend != "function") return null;
+      if (!host) return null;
+      const VCMount = globalThis.__INLAY_VIEWER_CORE__;
+      const kind = typeof VCMount?.msgActionMountKind == "function"
+        ? VCMount.msgActionMountKind(end)
+        : (end === "top" ? "parent" : "host");
+      let mount = host;
+      if (kind === "parent") {
+        try {
+          const parent = typeof host.getParent == "function" ? await host.getParent() : (host.parentElement || host.parentNode || null);
+          const okParent = typeof VCMount?.canMountMsgActionOnParent == "function"
+            ? VCMount.canMountMsgActionOnParent(parent, msgEl)
+            : (parent != null && parent !== msgEl);
+          if (okParent && parent && typeof parent.prepend == "function") mount = parent;
+        } catch {
+        }
+      }
+      if (!mount || typeof mount.prepend != "function") return null;
       try {
         const tmp = await H(doc, "div", { html: barHtml });
         const kids = await unwrapSafe(typeof tmp?.getChildren == "function" ? await tmp.getChildren() : null);
@@ -8612,7 +8651,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         for (let i = 0; i < chipKinds.length; i += 1) {
           await chipNodes[i].setAttribute("x-inlay-msg-chip", chipKinds[i]);
         }
-        await host.prepend(wrap);
+        if (mount === host) await host.prepend(wrap);
+        else await mount.prepend(wrap);
         return wrap;
       } catch {
       }
@@ -13783,6 +13823,9 @@ const loadVendorUi = (): string => {
     }
     if (out.includes('await msgEl.prepend(wrap)')) {
       throw new Error('[build] msg-action chips must not prepend onto the bubble root');
+    }
+    if (!out.includes('isInlayPaintHost') || !out.includes('canMountMsgActionOnParent') || !out.includes('msgActionMountKind')) {
+      throw new Error('[build] msg-action top bar must mount on the content parent and skip paint hosts');
     }
     if (!out.includes('elStillMounted') || !out.includes('paintIdx')) {
       throw new Error('[build] missing remount live-el check / nearest-char paintIdx');

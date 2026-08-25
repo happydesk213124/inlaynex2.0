@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.12';
+const PLUGIN_VERSION = '2.4.13';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -733,6 +733,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.4.13</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>가져오기/페소 팝업을 화면 중앙에 고정</li>
+            <li>동시 요청 옆 lb-xnai.lb.extra 토글: 로어 본문 채우기에만 작가의 노트처럼 넣음</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.4.12</strong>
@@ -7051,7 +7058,7 @@ const VENDOR_CHAR_IMPORT_EVT_PATCH =
         document.getElementById("nx-char-import-modal")?.remove?.();
         const veil = document.createElement("div");
         veil.id = "nx-char-import-modal";
-        veil.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;padding:12px";
+        veil.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px";
         const loreEmpty = data.lore_empty && kind !== "persona";
         const rows = items.map((it) => {
           const id = String(it.id || "");
@@ -7060,7 +7067,7 @@ const VENDOR_CHAR_IMPORT_EVT_PATCH =
           const pv = h(it.preview || "");
           return \`<label data-imp-row style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer"><input type="checkbox" data-imp-pick data-kind="\${h(it.kind)}" data-id="\${h(id)}"><span style="flex:1;min-width:0"><strong>\${nm}</strong> <span class="muted">\${bd}</span><div class="muted" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\${pv}</div></span></label>\`;
         }).join("") || '<div class="muted">항목 없음</div>';
-        veil.innerHTML = \`<div style="background:#1b2330;border-radius:14px 14px 0 0;width:min(560px,100%);max-height:86vh;display:flex;flex-direction:column;padding:14px">
+        veil.innerHTML = \`<div style="background:#1b2330;border-radius:14px;width:min(560px,100%);height:min(86vh,720px);display:flex;flex-direction:column;padding:14px;box-sizing:border-box">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>\${kind==="persona"?"페소에서 (글로벌)":"가져오기"}</strong>
             <button type="button" class="secondary" data-imp-all>전체선택</button>
             <button type="button" class="secondary" data-imp-none>전체해제</button>
@@ -7073,6 +7080,7 @@ const VENDOR_CHAR_IMPORT_EVT_PATCH =
           <div data-imp-list style="overflow:auto;flex:1;margin-top:10px">\${rows}<div data-imp-empty class="muted" style="display:none;padding:12px 0">검색 결과 없음</div></div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
             <label class="toggle-row" style="margin:0"><input type="checkbox" data-imp-parallel><span>동시 요청</span></label>
+            <label class="toggle-row" style="margin:0"><input type="checkbox" data-imp-xnai><span>lb-xnai.lb.extra</span></label>
             <button type="button" data-imp-fill>채우기</button>
           </div></div>\`;
         (t.uiRoot || document.body).appendChild(veil);
@@ -7108,6 +7116,7 @@ const VENDOR_CHAR_IMPORT_EVT_PATCH =
           if (!picks.length) return;
           const btn = veil.querySelector("[data-imp-fill]");
           const par = !!veil.querySelector("[data-imp-parallel]")?.checked;
+          const xnai = !!veil.querySelector("[data-imp-xnai]")?.checked;
           if (btn) { btn.disabled = !0; btn.textContent = "채우는 중…"; }
           try {
             const res = await K("/v1/characters/import-fill", { method: "POST", body: {
@@ -7116,6 +7125,7 @@ const VENDOR_CHAR_IMPORT_EVT_PATCH =
               character_id: cid,
               global: kind === "persona",
               parallel: par,
+              xnai,
               picks
             } }, 16e4);
             const msg = [res?.filled != null ? (res.filled + " 채움") : "", (res?.failed||[]).length ? (res.failed.length + " 실패") : "", res?.message || ""].filter(Boolean).join(" · ");
@@ -10063,8 +10073,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.4.12",
-    body: "채팅 카드 복구가 헤더를 다시 그립니다. 업데이트 내역 탭 참고."
+    title: "2.4.13",
+    body: "가져오기 팝업이 중앙에 있습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

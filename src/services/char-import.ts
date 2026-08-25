@@ -13,6 +13,7 @@ import { parseJsonLoose } from '../core/util/object';
 import { cleanText, parseAliasList, stripCbs } from '../core/util/text';
 import { resolveCharacter } from '../domain/character/roster';
 import { characterHasAppearance } from '../domain/character/tags';
+import { formatLoreExtraAuthorNote, isCharacterImageExtraLore, loreExtraInstructionBody } from '../domain/lore/extra';
 import { resolveLlmRole } from '../domain/llm/roles';
 import {
   formatAssetTagsInjectBlock,
@@ -333,23 +334,35 @@ async function runVisionBatch(scope: string, characterId: string, rows: Resolved
   }
 }
 
-async function runTextBatch(scope: string, characterId: string, rows: ResolvedRow[]): Promise<boolean> {
+async function runTextBatch(
+  scope: string,
+  characterId: string,
+  rows: ResolvedRow[],
+  xnai = false,
+): Promise<boolean> {
   try {
     const sys = await looksSystem();
+    const messages: LlmMessage[] = [{ role: 'system', content: sys }];
+    if (xnai) {
+      const hostLore = await fetchHostLorebookEntries();
+      const extra = hostLore.find((e) => isCharacterImageExtraLore(e));
+      const raw = cleanText(extra?.content || String(extra?.data || ''), 50000);
+      const names = rows.flatMap((r) => [r.name, ...r.aliases]);
+      const note = formatLoreExtraAuthorNote(loreExtraInstructionBody(raw, names));
+      if (note) messages.push({ role: 'system', content: note });
+    }
     const body = rows.map((r) => {
       const keys = parseAliasList([r.name, ...r.aliases]).join(', ');
       return `### ${r.name}\nlore_keys: ${keys || r.name}\n${r.text || '(no description)'}`;
     }).join('\n\n');
-    const chars = stampIdentity(await parseLooks([
-      { role: 'system', content: sys },
-      {
-        role: 'user',
-        content:
-          '# Reference: descriptions\n'
-          + body
-          + '\n\nFill `new_characters` for each heading. Use lore_keys for name/aliases. JSON only.',
-      },
-    ]), rows);
+    messages.push({
+      role: 'user',
+      content:
+        '# Reference: descriptions\n'
+        + body
+        + '\n\nFill `new_characters` for each heading. Use lore_keys for name/aliases. JSON only.',
+    });
+    const chars = stampIdentity(await parseLooks(messages), rows);
     if (!chars.length) return false;
     await saveLooks(scope, characterId, chars, originalHintsFrom(rows));
     await foldPickAliases(scope, rows);
@@ -631,6 +644,7 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
     ? GLOBAL_SCOPE
     : (sessionId || scope || GLOBAL_SCOPE);
   const parallel = body.parallel === true || body.parallel === 'true';
+  const xnai = body.xnai === true || body.xnai === 'true';
   const rawPicks = Array.isArray(body.picks) ? body.picks : [];
   const picks: ImportPick[] = rawPicks
     .map((p) => {
@@ -696,7 +710,7 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
   });
   const textChunks = chunkText(textRows);
   await mapPool(textChunks, parallel, async (rows) => {
-    await runTextBatch(writeScope, characterId, rows);
+    await runTextBatch(writeScope, characterId, rows, xnai);
   });
 
   const leftover = await stillMissing(writeScope, characterId, work);
@@ -712,6 +726,7 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
     failed: leftover.length,
     vision_to_text: visionToText,
     parallel,
+    xnai,
   });
   return {
     ok: true,

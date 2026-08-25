@@ -134,6 +134,33 @@ export function trimCharacterImageTagLore(
 }
 
 /**
+ * Body for an author's-note style instruction: header + matching ### sections.
+ * No matching section → header only. No header either → the raw entry.
+ */
+export function loreExtraInstructionBody(
+  content: unknown,
+  keepNames: readonly string[] = [],
+): string {
+  const raw = String(content || '').trim();
+  if (!raw) return '';
+  const parsed = parseCharacterImageTagLore(raw);
+  if (!parsed.sections.length) return raw;
+  const trimmed = trimCharacterImageTagLore(raw, [], keepNames);
+  if (trimmed) return trimmed;
+  return parsed.header.trim() || raw;
+}
+
+/** Same shape as the host Author's Note system turn. */
+export function formatLoreExtraAuthorNote(body: string): string {
+  const text = String(body || '').trim();
+  if (!text) return '';
+  return (
+    `# Priority: lb-xnai.lb.extra\n${text}\n`
+    + '> These are instructions explicitly given by the user. If in conflict with previous instructions, this section MUST take precedence.'
+  );
+}
+
+/**
  * Section titles to inject for lb-xnai.lb.extra.
  * A section matches when:
  * - its title appears in the message, OR

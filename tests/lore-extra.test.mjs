@@ -6,6 +6,8 @@ import {
   parseCharacterImageTagLore,
   trimCharacterImageTagLore,
   matchCharacterImageSectionTitles,
+  loreExtraInstructionBody,
+  formatLoreExtraAuthorNote,
 } from "../.test-build/lore-extra.mjs";
 
 const SAMPLE = `## Character Image Tags
@@ -123,4 +125,31 @@ test("only unlocked section is kept — never the whole Character Image Tags fil
   assert.doesNotMatch(out, /Park Tae-geon/);
   assert.doesNotMatch(out, /Yoo Tae-sung/);
   assert.doesNotMatch(out, /Han Yeon-hee/);
+});
+
+test("loreExtraInstructionBody keeps matching section and header", () => {
+  const out = loreExtraInstructionBody(SAMPLE, ["Yoon Ji-soo"]);
+  assert.match(out, /Character Image Tags/);
+  assert.match(out, /Yoon Ji-soo/);
+  assert.doesNotMatch(out, /Park Tae-geon/);
+});
+
+test("loreExtraInstructionBody falls back to header when no section matches", () => {
+  const out = loreExtraInstructionBody(SAMPLE, ["Nobody"]);
+  assert.match(out, /Character Image Tags/);
+  assert.doesNotMatch(out, /Yoon Ji-soo/);
+  assert.doesNotMatch(out, /Park Tae-geon/);
+});
+
+test("loreExtraInstructionBody returns raw blob when there are no sections", () => {
+  assert.equal(loreExtraInstructionBody("custom prompt only", []), "custom prompt only");
+  assert.equal(loreExtraInstructionBody("", ["Yoon Ji-soo"]), "");
+});
+
+test("formatLoreExtraAuthorNote wraps like author's note", () => {
+  const note = formatLoreExtraAuthorNote("### Yoon Ji-soo\n1girl");
+  assert.match(note, /^# Priority: lb-xnai\.lb\.extra\n/);
+  assert.match(note, /### Yoon Ji-soo/);
+  assert.match(note, /These are instructions explicitly given by the user/);
+  assert.equal(formatLoreExtraAuthorNote("  "), "");
 });

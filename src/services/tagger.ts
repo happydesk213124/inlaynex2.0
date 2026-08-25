@@ -242,8 +242,8 @@ function incompleteTargetsForLooks(
 }
 
 /**
- * Looks-only pre-pass: asset tags + Character Image lore (+ optional images).
- * No chat message, no filled-roster dump, no story lore, no char/user info.
+ * Looks-only pre-pass: asset tags (+ optional images).
+ * No chat message, no filled-roster dump, no story lore, no lb-xnai pack.
  * Optional asset_author_note sits in the instruction prefix (not after the fill turn).
  */
 export async function buildCharacterLooksMessages(
@@ -252,7 +252,6 @@ export async function buildCharacterLooksMessages(
   assetNames: string[] = [],
   previews: AssetLookPreview[] = [],
 ): Promise<LlmMessage[]> {
-  const card = deepMerge(getConfig().card, (request.card as Record<string, unknown>) || {});
   const sessionId = cleanText(request.session_id, 200);
   const looks = stripCbs(await getPrompt('char_looks'));
   const messages: LlmMessage[] = [{ role: 'system', content: looks.trim() }];
@@ -281,12 +280,6 @@ export async function buildCharacterLooksMessages(
     sourceSessionIds,
   );
 
-  // Character Image / lb-xnai only — not general reference lore.
-  pushReferenceUser(
-    messages,
-    'Lorebook',
-    collectLorePayload(request, card, assistant, rosterEarly, { extraOnly: true }),
-  );
   pushReferenceUser(messages, 'NovelAI asset tags', assetBlock);
 
   const incomplete = incompleteTargetsForLooks(rosterEarly, assetNames, assistant);

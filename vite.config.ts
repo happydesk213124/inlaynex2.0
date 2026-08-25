@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.5';
+const PLUGIN_VERSION = '2.4.6';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -733,6 +733,15 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.4.6</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>할당량: Anlas 아래 V5 막대, 같은 키는 V5/V4 한 장</li>
+            <li>머리·눈 칸의 색만 있으면 blue hair / white eyes로 채우고, 외형에 있으면 샷 태그에 중복하지 않음</li>
+            <li>이미지 프리셋 파일 열기에서도 네거티브를 채움</li>
+            <li>생성 옵션에 V5 전용 토글, 여섯 토글을 한 그리드로 정리</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.4.5</strong>
@@ -9907,8 +9916,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.4.5",
-    body: "메시지 캐릭터 칩이 태거와 같은 별칭 트리거 목록을 씀. 업데이트 내역 탭 참고."
+    title: "2.4.6",
+    body: "V5 할당량 막대 · 머리/눈 색 자동 확장 · 이미지 프리셋 네거티브 · V5 전용 토글. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

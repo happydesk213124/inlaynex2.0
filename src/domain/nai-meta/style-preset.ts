@@ -3,7 +3,7 @@
  * keep artist:* (with emphasis), quality / illustration / collaboration / bad anatomy
  * tokens (with emphasis), drop everything else. Negative is kept separately as-is.
  */
-import { cleanText, joinTags } from '../../core/util/text.ts';
+import { joinTags } from '../../core/util/text.ts';
 import { negativeFromNaiMetadata } from './from-metadata.ts';
 import { expandTokenPlains, splitNaiPromptTokens } from './prompt-tags.ts';
 

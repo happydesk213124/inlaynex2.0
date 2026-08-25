@@ -225,6 +225,10 @@ export function installHost({ promptsDir, seed = 0x5eed }) {
     if (u.includes('/user/data')) {
       return jsonResponse(200, {});
     }
+    if (u.includes('/user/priority')) {
+      // 2.4.6: when /user/data has no account-shaped body, quota falls back here.
+      return jsonResponse(200, {});
+    }
     if (u.includes('/prompt')) { // ComfyUI submit
       comfyRequests.push({ kind: 'prompt', body: readBody() });
       return jsonResponse(200, { prompt_id: 'parity-comfy-1' });

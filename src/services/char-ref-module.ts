@@ -99,11 +99,17 @@ export async function ensureCharRefModule(): Promise<ModuleRow> {
       name: CHAR_REF_MODULE_NAME,
       description: '캐릭터 참고이미지. Inlay가 관리합니다.',
       namespace: CHAR_REF_MODULE_NS,
-      hideIcon: true,
+      hideIcon: false,
       lorebook: [],
       assets: [],
     });
     idx = modules.length - 1;
+    changed = true;
+  } else if (modules[idx]!.hideIcon) {
+    // hideIcon on any enabled module makes the host stop rendering the chat
+    // header (sender icon + name) for every card. Older builds set it here, so
+    // repair the stored row instead of leaving the header hidden forever.
+    modules[idx] = { ...modules[idx], hideIcon: false };
     changed = true;
   }
   const enabled = asUnknownArray(db.enabledModules).map((id) => cleanText(id, 200)).filter(Boolean);
@@ -118,6 +124,37 @@ export async function ensureCharRefModule(): Promise<ModuleRow> {
   const mod = modules[idx] || modules[modules.length - 1]!;
   rebuildIndex(parseCharRefModuleAssets(mod.assets));
   return mod;
+}
+
+/**
+ * Clears `hideIcon` on our module without creating one. Any enabled module with
+ * `hideIcon` makes the host skip the chat header for every card, and the flag
+ * lives in the host database — so it outlives a reload, a character switch and
+ * even uninstalling the plugin. Returns the names of foreign modules that still
+ * hide the header, since we must not touch those.
+ */
+export async function clearCharRefHideIcon(): Promise<{ cleared: boolean; blockedBy: string[] }> {
+  if (!hostHas('getDatabase') || !hostHas('setDatabase')) return { cleared: false, blockedBy: [] };
+  await ensureDbAccess();
+  const host = hostOrThrow();
+  const db = await host.getDatabase!(['modules', 'enabledModules']);
+  const modules = readModules(db);
+  const enabled = asUnknownArray(db?.enabledModules).map((id) => cleanText(id, 200)).filter(Boolean);
+  const idx = findModuleIndex(modules);
+  let cleared = false;
+  if (idx >= 0 && modules[idx]!.hideIcon) {
+    modules[idx] = { ...modules[idx], hideIcon: false };
+    await host.setDatabase!({ modules: modules as never, enabledModules: enabled as string[] });
+    cleared = true;
+  }
+  const enabledSet = new Set(enabled);
+  const blockedBy = modules
+    .filter((m, i) => i !== idx && m.hideIcon)
+    .filter((m) => enabledSet.has(cleanText(m.id, 80)) || enabledSet.has(cleanText(m.namespace, 80)))
+    .map((m) => cleanText(m.name, 80) || cleanText(m.id, 80))
+    .filter(Boolean);
+  if (cleared || blockedBy.length) dbg('char_ref.module.hide_icon', { cleared, blockedBy });
+  return { cleared, blockedBy };
 }
 
 function copyBytes(buf: BytesLike): Uint8Array {
@@ -241,7 +278,7 @@ export async function putCharRefAsset(bytes: BytesLike): Promise<{ hash: string;
       name: CHAR_REF_MODULE_NAME,
       description: '캐릭터 참고이미지. Inlay가 관리합니다.',
       namespace: CHAR_REF_MODULE_NS,
-      hideIcon: true,
+      hideIcon: false,
       lorebook: [],
       assets: [],
     });
@@ -259,7 +296,7 @@ export async function putCharRefAsset(bytes: BytesLike): Promise<{ hash: string;
     id: CHAR_REF_MODULE_ID,
     name: modules[idx]?.name || CHAR_REF_MODULE_NAME,
     namespace: CHAR_REF_MODULE_NS,
-    hideIcon: true,
+    hideIcon: false,
     lorebook: Array.isArray(modules[idx]?.lorebook) ? modules[idx]!.lorebook : [],
     assets,
   };

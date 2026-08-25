@@ -5,9 +5,14 @@
  *
  * setChar is sync. Flip+restore in one tick is batched — hash never changes.
  * Yield so Chats $effect remounts on the flipped hash before we restore.
+ *
+ * A remount is not enough on its own: an enabled module carrying `hideIcon`
+ * makes the host skip the header entirely, which is why the header used to stay
+ * gone across reloads and even after uninstalling the plugin.
  */
 import { hostHas, risuHost } from '../core/host';
 import { sleep } from '../core/util/async';
+import { clearCharRefHideIcon } from './char-ref-module';
 
 /** Longer than a Svelte flush / one frame so mount() finishes before the next write. */
 const REMOUNT_FLUSH_MS = 50;
@@ -72,6 +77,9 @@ async function remountPersonaCards(): Promise<boolean> {
 }
 
 export async function remountChatCardChrome(): Promise<{ ok: true; remounted: boolean }> {
+  // A remount cannot bring the header back while the host is told to hide it,
+  // so drop that flag first — otherwise the card re-renders headerless.
+  await clearCharRefHideIcon().catch(() => ({ cleared: false, blockedBy: [] }));
   const charOk = await remountCharacterCards().catch(() => false);
   const personaOk = await remountPersonaCards().catch(() => false);
   return { ok: true, remounted: Boolean(charOk || personaOk) };

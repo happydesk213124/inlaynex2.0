@@ -264,6 +264,12 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(picker, /ev\.target === backdrop[\s\S]*closePicker\(\)/);
   assert.match(picker, /ev\.key === "Escape"[\s\S]*closePicker\(\)/);
   assert.match(picker, /closePicker\(\{ handoff: !0 \}\)[\s\S]*await Ua\(picked\)/);
+  assert.match(picker, /const text = String\(message\?\.text \|\| ""\)/);
+  assert.match(picker, /const sessionRoster = \(t\.charactersSession \|\| \[\]\)\.map/);
+  assert.match(picker, /const globalRoster = enabledGlobalsForCharacter\(\)\.map/);
+  assert.match(picker, /matchCharactersInText\(text, sessionRoster\)/);
+  assert.match(picker, /matchCharactersInText\(text, globalRoster\)/);
+  assert.doesNotMatch(picker, /matchCharactersInText\(message\?\.text \|\| "", roster\)/);
   assert.match(picker, /const duplicateNames = new Set/);
   assert.match(picker, /picked\.scope === "__global__" \? "글로벌" : "채팅"/);
   assert.match(picker, /button\.textContent = duplicateNames\.has\(String\(picked\.name\)\)/);

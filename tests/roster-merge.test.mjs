@@ -179,3 +179,16 @@ test("matchCharactersInText returns roster rows whose aliases appear in the mess
   assert.deepEqual(hits.map((c) => c.name), ["유나", "하루"]);
 });
 
+test("matchCharactersInText keeps the first row when session and global share an id", () => {
+  const text = "오늘 유나가 카페에 왔다";
+  const session = [{ id: "yuna", name: "유나", aliases: ["유나"], scope: "chat" }];
+  const global = [{ id: "yuna", name: "유나", aliases: ["유나"], scope: "__global__" }];
+  const combinedFirstGlobal = matchCharactersInText(text, [...global, ...session]);
+  assert.deepEqual(combinedFirstGlobal.map((c) => c.scope), ["__global__"]);
+  const perScope = [
+    ...matchCharactersInText(text, session),
+    ...matchCharactersInText(text, global),
+  ];
+  assert.deepEqual(perScope.map((c) => c.scope), ["chat", "__global__"]);
+});
+

@@ -13819,14 +13819,19 @@ ${Ye(250)}`;
       const rosterRow = { ...character, scope };
       return { ...rosterRow, roster: rosterRow };
     };
-    const roster = [
-      ...enabledGlobalsForCharacter().map((character) => withScope(character, "__global__")),
-      ...(t.charactersSession || []).map((character) => withScope(character, rosterSessionId))
-    ];
+    // DOM bubble text only — same haystack tagging uses for alias triggers.
+    const text = String(message?.text || "");
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     if (typeof VC?.matchCharactersInText != "function") throw new Error("character matcher unavailable");
-    const matched = VC.matchCharactersInText(message?.text || "", roster)
-      .filter((character) => character?.name);
+    const sessionRoster = (t.charactersSession || []).map((character) => withScope(character, rosterSessionId));
+    const globalRoster = enabledGlobalsForCharacter().map((character) => withScope(character, "__global__"));
+    // Match each scope alone. One combined list dedupes by id/name, so a
+    // global row would hide the chat row that actually belongs to this bubble.
+    const matched = [
+      ...VC.matchCharactersInText(text, sessionRoster),
+      ...VC.matchCharactersInText(text, globalRoster)
+    ].filter((character) => character?.name);
+    y("info", "msg.char_picker", `dom=${text.length} session=${sessionRoster.length} global=${globalRoster.length} hitS=${matched.filter((c) => c.scope !== "__global__").length} hitG=${matched.filter((c) => c.scope === "__global__").length}`);
     if (!matched.length) {
       if (typeof nxHostToast == "function") await nxHostToast("이 메시지에서 트리거된 캐릭터가 없습니다.", { ms: 1800 });
       return;

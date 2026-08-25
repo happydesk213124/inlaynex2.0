@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.9';
+const PLUGIN_VERSION = '2.4.8';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -733,12 +733,6 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.4.9</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>채팅 카드 이름·대표이미지가 안 보이면 설정에서 복구. 참고이미지 모듈이 아이콘 UI를 숨기지 않음</li>
-          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.4.8</strong>
@@ -7008,7 +7002,7 @@ const VENDOR_DASH_ACTIONS_HTML_NEEDLE =
   `          <div class="row" style="margin-top:12px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-run-now" class="secondary" data-nx-help-id="nx-run-now">지금 생성 (수동)</button><button id="nx-open-viewer" class="secondary" data-nx-help-id="nx-open-viewer">뷰어 앞으로</button></div>
           <div class="row" style="margin-top:8px"><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">모든 창 위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">모든 설정 초기화</button></div>`;
 const VENDOR_DASH_ACTIONS_HTML_PATCH =
-  `          <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">창위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">전체 초기화</button><button id="nx-reset-char-refs" class="secondary" type="button" data-nx-help-id="nx-reset-char-refs">레퍼런스 이미지 초기화</button><button id="nx-restore-chat-chrome" class="secondary" type="button" data-nx-help-id="nx-restore-chat-chrome">채팅 카드 복구</button></div>`;
+  `          <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">창위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">전체 초기화</button><button id="nx-reset-char-refs" class="secondary" type="button" data-nx-help-id="nx-reset-char-refs">레퍼런스 이미지 초기화</button></div>`;
 
 const VENDOR_CHAR_IMPORT_EVT_NEEDLE =
   `    }), document.getElementById("nx-char-add-global")?.addEventListener("click", async () => {`;
@@ -7222,8 +7216,7 @@ const VENDOR_RESET_HELP_NEEDLE =
 const VENDOR_RESET_HELP_PATCH =
   `    "nx-reset-windows": { title: "창위치 초기화", body: "뷰어·접힘 아이콘·핀이 화면 밖으로 나가 안 보일 때 기본 위치로 되돌립니다." },
     "nx-reset-settings": { title: "전체 초기화", body: "카드·LLM·NAI 등 설정을 기본값으로 되돌립니다. API 키·창 위치·카드 프리셋은 유지됩니다." },
-    "nx-reset-char-refs": { title: "레퍼런스 이미지 초기화", body: "모든 캐릭터 참고이미지 해시를 지우고, 기기 IDB와 Inlay 모듈 에셋을 삭제합니다. 설정은 유지됩니다." },
-    "nx-restore-chat-chrome": { title: "채팅 카드 복구", body: "채팅 카드의 이름·대표이미지가 안 보일 때 다시 켭니다. Inlay 참고이미지 모듈이 아이콘 UI를 숨긴 상태를 풉니다." },`;
+    "nx-reset-char-refs": { title: "레퍼런스 이미지 초기화", body: "모든 캐릭터 참고이미지 해시를 지우고, 기기 IDB와 Inlay 모듈 에셋을 삭제합니다. 설정은 유지됩니다." },`;
 
 const VENDOR_RESET_CHAR_REF_EVT_NEEDLE =
   `    }), document.getElementById("nx-reset-settings")?.addEventListener("click", async () => {
@@ -7239,16 +7232,6 @@ const VENDOR_RESET_CHAR_REF_EVT_PATCH =
         }
         t.uiMessage = { type: "success", text: "레퍼런스 이미지를 모두 지웠습니다" };
         $e("레퍼런스 초기화");
-      } catch (a) {
-        t.uiMessage = { type: "error", text: z(a?.message || a) };
-      }
-      await P();
-    }), document.getElementById("nx-restore-chat-chrome")?.addEventListener("click", async () => {
-      try {
-        const a = await K("/v1/characters/ref/restore-chrome", { method: "POST", body: {} }, 15e3);
-        const n = Number(a?.repaired || 0);
-        t.uiMessage = { type: "success", text: n ? "채팅 카드 이름·이미지를 다시 켰습니다" : "숨긴 모듈이 없습니다. 이미 켜진 상태입니다" };
-        $e("채팅 카드 복구");
       } catch (a) {
         t.uiMessage = { type: "error", text: z(a?.message || a) };
       }
@@ -10024,8 +10007,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.4.9",
-    body: "채팅 카드 복구 버튼. 참고이미지 모듈이 이름·아이콘을 숨기지 않음. 업데이트 내역 탭 참고."
+    title: "2.4.8",
+    body: "메시지 칩은 본문만. 카드 이름·대표이미지는 그대로. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

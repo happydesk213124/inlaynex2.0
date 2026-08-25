@@ -99,15 +99,11 @@ export async function ensureCharRefModule(): Promise<ModuleRow> {
       name: CHAR_REF_MODULE_NAME,
       description: '캐릭터 참고이미지. Inlay가 관리합니다.',
       namespace: CHAR_REF_MODULE_NS,
-      hideIcon: false,
+      hideIcon: true,
       lorebook: [],
       assets: [],
     });
     idx = modules.length - 1;
-    changed = true;
-  } else if (modules[idx]?.hideIcon === true) {
-    // PocketRisu treats module.hideIcon as "hide chat name + avatar".
-    modules[idx] = { ...modules[idx], hideIcon: false };
     changed = true;
   }
   const enabled = asUnknownArray(db.enabledModules).map((id) => cleanText(id, 200)).filter(Boolean);
@@ -245,7 +241,7 @@ export async function putCharRefAsset(bytes: BytesLike): Promise<{ hash: string;
       name: CHAR_REF_MODULE_NAME,
       description: '캐릭터 참고이미지. Inlay가 관리합니다.',
       namespace: CHAR_REF_MODULE_NS,
-      hideIcon: false,
+      hideIcon: true,
       lorebook: [],
       assets: [],
     });
@@ -263,7 +259,7 @@ export async function putCharRefAsset(bytes: BytesLike): Promise<{ hash: string;
     id: CHAR_REF_MODULE_ID,
     name: modules[idx]?.name || CHAR_REF_MODULE_NAME,
     namespace: CHAR_REF_MODULE_NS,
-    hideIcon: false,
+    hideIcon: true,
     lorebook: Array.isArray(modules[idx]?.lorebook) ? modules[idx]!.lorebook : [],
     assets,
   };
@@ -303,7 +299,7 @@ export async function clearAllCharRefModuleAssets(): Promise<number> {
   const assets = parseCharRefModuleAssets(modules[idx]!.assets);
   const kept = assets.filter((row) => !isCharRefAssetName(row[0]));
   const removed = assets.length - kept.length;
-  modules[idx] = { ...modules[idx], assets: kept, hideIcon: false };
+  modules[idx] = { ...modules[idx], assets: kept };
   await host.setDatabase!({
     modules: modules as never,
     enabledModules: asUnknownArray(db?.enabledModules).map((id) => cleanText(id, 200)).filter(Boolean) as string[],
@@ -315,31 +311,4 @@ export async function clearAllCharRefModuleAssets(): Promise<number> {
 export async function resetCharRefLibrary(): Promise<ApiResult> {
   const removed = await clearAllCharRefModuleAssets();
   return { ok: true, removed };
-}
-
-/** PocketRisu hideIcon on an enabled module hides chat name + avatar. */
-export async function restoreChatCardChrome(): Promise<{ ok: true; repaired: number }> {
-  if (!hostHas('getDatabase') || !hostHas('setDatabase')) {
-    return { ok: true, repaired: 0 };
-  }
-  await ensureDbAccess();
-  const host = hostOrThrow();
-  const db = await host.getDatabase!(['modules', 'enabledModules']);
-  const modules = readModules(db);
-  let repaired = 0;
-  const next = modules.map((row) => {
-    const ours =
-      cleanText(row?.id, 80) === CHAR_REF_MODULE_ID
-      || cleanText(row?.namespace, 80) === CHAR_REF_MODULE_NS;
-    if (!ours || row.hideIcon !== true) return row;
-    repaired += 1;
-    return { ...row, hideIcon: false };
-  });
-  if (repaired) {
-    await host.setDatabase!({
-      modules: next as never,
-      enabledModules: asUnknownArray(db?.enabledModules).map((id) => cleanText(id, 200)).filter(Boolean) as string[],
-    });
-  }
-  return { ok: true, repaired };
 }

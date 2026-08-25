@@ -4,7 +4,6 @@ import test from 'node:test';
 import {
   getCharRefAssetBytes,
   putCharRefAsset,
-  restoreChatCardChrome,
 } from '../.test-build/char-ref-module.mjs';
 
 const webpBytes = Uint8Array.from([
@@ -86,21 +85,6 @@ test('char ref module re-enables an existing asset without saving it again', asy
   assert.equal(existing.path, first.path);
   assert.equal(host.saveAssetCalls, saveCalls);
   assert.deepEqual(host.db.enabledModules, ['inlay-char-ref']);
-  assert.equal(host.setDatabaseCalls.length, 1);
-  assert.equal(host.db.modules[0].hideIcon, false);
-});
-
-test('restoreChatCardChrome clears hideIcon on the Inlay module', async () => {
-  const host = createHost();
-  globalThis.risuai = host;
-  host.db.modules[0].hideIcon = true;
-  host.setDatabaseCalls = [];
-
-  const out = await restoreChatCardChrome();
-
-  assert.equal(out.ok, true);
-  assert.equal(out.repaired, 1);
-  assert.equal(host.db.modules[0].hideIcon, false);
   assert.equal(host.setDatabaseCalls.length, 1);
 });
 

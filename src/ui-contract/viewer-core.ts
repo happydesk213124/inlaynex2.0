@@ -2587,14 +2587,20 @@ export function isInlayPaintHost(attrs: {
   return Boolean(attrs?.isActionBar) || Boolean(attrs?.isInlineShot);
 }
 
-/** Top chips sit on the first host's parent. Bottom stays on the last host. */
-export function msgActionMountKind(end: unknown): 'parent' | 'host' {
-  return String(end || '') === 'top' ? 'parent' : 'host';
+/** PocketRisu Standard keeps avatar + name in DIV chrome on the same card. */
+export function isMessageBodyHostTag(tag: unknown): boolean {
+  const name = String(tag || '').toUpperCase();
+  return name === 'P' || name === 'LI' || name === 'BLOCKQUOTE' || /^H[1-6]$/.test(name);
 }
 
-/** Bubble-root prepend remounts avatar/chrome. Only an inner content parent is safe. */
-export function canMountMsgActionOnParent(parent: unknown, bubbleRoot: unknown): boolean {
-  return parent != null && parent !== bubbleRoot;
+/** Always the paragraph itself. Parent prepend sits on the name/icon column. */
+export function msgActionMountKind(_end: unknown): 'parent' | 'host' {
+  return 'host';
+}
+
+/** Parent of the first body host is still the chrome column (name + icon). */
+export function canMountMsgActionOnParent(_parent: unknown, _bubbleRoot: unknown): boolean {
+  return false;
 }
 
 /** First and last `<p>` indices. Same index when the bubble has only one. */

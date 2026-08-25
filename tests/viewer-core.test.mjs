@@ -24,6 +24,7 @@ import {
   isInlayPaintHost,
   msgActionMountKind,
   canMountMsgActionOnParent,
+  isMessageBodyHostTag,
   splitMessageLines,
   clampShotLine,
   htmlToPlainLn,
@@ -213,16 +214,26 @@ test("isInlayPaintHost skips our chip rows and shot wraps", () => {
   assert.equal(isInlayPaintHost(null), false);
 });
 
-test("msgActionMountKind puts top on the content parent, bottom on the host", () => {
-  assert.equal(msgActionMountKind("top"), "parent");
+test("isMessageBodyHostTag ignores card chrome DIVs", () => {
+  assert.equal(isMessageBodyHostTag("P"), true);
+  assert.equal(isMessageBodyHostTag("li"), true);
+  assert.equal(isMessageBodyHostTag("H2"), true);
+  assert.equal(isMessageBodyHostTag("blockquote"), true);
+  assert.equal(isMessageBodyHostTag("DIV"), false);
+  assert.equal(isMessageBodyHostTag("SPAN"), false);
+  assert.equal(isMessageBodyHostTag(""), false);
+});
+
+test("msgActionMountKind always paints on the body host", () => {
+  assert.equal(msgActionMountKind("top"), "host");
   assert.equal(msgActionMountKind("bot"), "host");
   assert.equal(msgActionMountKind(""), "host");
 });
 
-test("canMountMsgActionOnParent refuses the bubble root", () => {
+test("canMountMsgActionOnParent never uses a parent (chrome column)", () => {
   const bubble = { id: "msg" };
   const content = { id: "box" };
-  assert.equal(canMountMsgActionOnParent(content, bubble), true);
+  assert.equal(canMountMsgActionOnParent(content, bubble), false);
   assert.equal(canMountMsgActionOnParent(bubble, bubble), false);
   assert.equal(canMountMsgActionOnParent(null, bubble), false);
 });

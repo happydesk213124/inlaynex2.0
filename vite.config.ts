@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.7';
+const PLUGIN_VERSION = '2.4.8';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -733,6 +733,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.4.8</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>메시지 안 칩·샷은 본문 문단에만 붙임. 같은 카드의 이름·대표이미지는 건드리지 않음</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.4.7</strong>
@@ -7657,6 +7663,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         } catch {
         }
         if (typeof VC.isInlayPaintHost == "function" ? VC.isInlayPaintHost({ isActionBar, isInlineShot }) : (isActionBar || isInlineShot)) continue;
+        const bodyHost = typeof VC.isMessageBodyHostTag == "function"
+          ? VC.isMessageBodyHostTag(name)
+          : /^(P|H[1-6]|LI|BLOCKQUOTE)$/.test(name);
+        if (!bodyHost) continue;
         hosts.push(el);
         hostTags.push(name || "DIV");
       }
@@ -8567,6 +8577,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         ? globalThis.__INLAY_VIEWER_CORE__.isInlayPaintHost({ isActionBar, isInlineShot })
         : (isActionBar || isInlineShot);
       if (skipPaint) continue;
+      const bodyHost = typeof globalThis.__INLAY_VIEWER_CORE__?.isMessageBodyHostTag == "function"
+        ? globalThis.__INLAY_VIEWER_CORE__.isMessageBodyHostTag(name)
+        : /^(P|H[1-6]|LI|BLOCKQUOTE)$/.test(name);
+      if (!bodyHost) continue;
       hosts.push(el);
     }
     if (!hosts.length) {
@@ -9993,8 +10007,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.4.7",
-    body: "UC 프리셋 없음 · 이름/우선 저장 · LLM 없어도 NAI 키 저장. 업데이트 내역 탭 참고."
+    title: "2.4.8",
+    body: "메시지 칩은 본문만. 카드 이름·대표이미지는 그대로. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -13862,8 +13876,8 @@ const loadVendorUi = (): string => {
     if (out.includes('await msgEl.prepend(wrap)')) {
       throw new Error('[build] msg-action chips must not prepend onto the bubble root');
     }
-    if (!out.includes('isInlayPaintHost') || !out.includes('canMountMsgActionOnParent') || !out.includes('msgActionMountKind')) {
-      throw new Error('[build] msg-action top bar must mount on the content parent and skip paint hosts');
+    if (!out.includes('isInlayPaintHost') || !out.includes('canMountMsgActionOnParent') || !out.includes('msgActionMountKind') || !out.includes('isMessageBodyHostTag')) {
+      throw new Error('[build] msg-action chips must stay on body hosts and skip card chrome');
     }
     if (!out.includes('elStillMounted') || !out.includes('paintIdx')) {
       throw new Error('[build] missing remount live-el check / nearest-char paintIdx');

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.3';
+const PLUGIN_VERSION = '2.4.4';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -735,7 +735,15 @@ const VENDOR_CURATION_PANEL_PATCH =
     } else t.uiTab === "explorer" ? u = ma() : t.uiTab === "changelog" ? (u = \`
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
-          <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 10단위로 묶었습니다.</div>
+          <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.4.4</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>새 옷: 캐릭터와 코스튬을 짝으로 받으면 옷장에 넣고 그 샷에 바로 입힘</li>
+            <li>참고이미지: 로어북 가져오기·LLM 에셋 룩·hydrate에서 빈 슬롯만 모듈에 시드</li>
+            <li>메시지 안 칩은 말풍선마다 상단·하단 하나씩만 유지</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.4.3</strong>
@@ -770,156 +778,19 @@ const VENDOR_CURATION_PANEL_PATCH =
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
-          <strong>2.3.101</strong>
+          <strong>2.3.90 ~ 2.3.101</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>응답 후 자동 생성·스트리밍 키워드는 발동과 별개. Power+토글이면 동작</li>
+            <li>말풍선 삽화: 있는 그림 유지·스피너→착착·태그 재생 겹침 수정. 말풍선이 다시 그려져도 캐시로 붙임</li>
+            <li>재생성·태그 플로팅은 접으면 흐려짐. ComfyUI 강조·[[ref]] 업로드</li>
+            <li>명령 수정은 넣을/뺄 태그만. V5 모델명, 갤러리 2000장, 응답 후 자동생성은 발동과 별개</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
-          <strong>2.3.100</strong>
+          <strong>2.3.67 ~ 2.3.79</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>세션 갤러리를 최신 2000장까지 잡아 옛 로그 말풍선도 링크됨</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.99</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>NovelAI V5: 모델 칸에 nai-diffusion-5-full / nai-diffusion-5-curated 입력하면 생성됨</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.98</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>명령 수정: 넣을 태그/뺄 태그만 받고 칸은 여기서 합침</li>
-            <li>샷 태그 저장·리롤 후 말풍선 삽화도 다시 그림</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.97</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>태그 재생: 스피너가 이미 있으면 폴링마다 다시 안 붙임. 깜박임 수정</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.96</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>태그 재생: 옛 그림을 스피너로 바꾼 뒤 착착. 같은 칸에 그림이 두 장 겹치지 않음</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.95</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>말풍선 삽화: 방금 붙인 그림이 id를 못 읽어도 바로 지우지 않음</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.94</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>말풍선 삽화: 원하는 샷과 지금 마커를 맞춰 스피너→그림 착착. 태그 재생은 옛 그림을 끊고 새로 붙임</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.93</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>말풍선 삽화: 샷 끝날 때·리롤·태그 재생 후 바로 다시 착. 새 유저 말로 말풍선이 바뀌어도 캐시로 다시 붙임</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.92</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>재생성·태그 플로팅: 접으면 흐려지고, 가만히 있으면 더 흐려짐. 한 번 더 접은 막대는 더 투명</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.91</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>ComfyUI: 강조를 (tag:n) / ((tag))로 보냄. LoadImage에 [[ref]]면 참조 그림 업로드</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.90</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>말풍선 삽화는 있는 그림 유지. 새 장만 착착. 말풍선이 다시 그려져도 캐시로 바로 붙임</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.79</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>참조 이미지: 이름 맞는 최우선 에셋 (메타 없어도). 태그용 미리보기 5칸과 분리</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.78</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>가져오기 로어도 8명씩 룩 호출. 동시 요청이면 그 배치를 같이 보냄</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.77</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>가져오기/페소에서: 제목·키·내용 즉시 검색, ×로 비움, 전체선택은 검색된 줄만</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.76</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>가져오기: 에셋 메타가 있으면 룩 LLM에 이미지 안 보냄 (태그만)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.75</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>에셋 태그 필터: artist가 같은 중괄호에 있어도 외형 태그는 남김 (filtered_empty 수정)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.74</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>에셋 메타 실패 로그에 kind/color_type/stealth_head. Comment가 문자열 프롬프트여도 읽음</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.73</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>NAI stealth를 캔버스가 아니라 PNG 픽셀 그대로 읽음. 사이트 붙여넣기와 같은 알파 LSB</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.72</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>에셋 픽: normal과 smil*는 같은 순위, 더 짧은 파일명 우선 (shiro_smiling &gt; shiro_Dogeza_Normal)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.71</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>NAI 메타: Source=NovelAI만 보고 stealth를 건너뛰던 경로 수정. 사이트 붙여넣기와 같이 알파 LSB를 읽음</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.70</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>에셋 픽: 이름 상위만 연다 (정확일치 → default → normal → profile → smil*). 무메타 표정 덤프가 읽기 예산을 먹지 않음</li>
-            <li>가져오기: 기본 전체해제. 로어 옆은 키, CharInfo는 charinfo. 메타 없으면 최우선 1장 비전 → 로어 본문</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.69</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>가져오기 로어 = 에셋 스캔 + 룩 프리패스(레퍼 이미지 포함). 페소/CharInfo 메타도 같은 char_looks·로스터 저장</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.68</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>캐릭터 탭: 페소에서 / 가져오기 — 메타·이미지·설명을 묶어서 룩 채우기 (동시 요청 토글)</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.3.67</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>프롬프트 캐싱을 위해 태거 지침을 앞에 모으고, 로어·외형·에셋·원문은 뒤로 정리</li>
-            <li>프롬프트 탭에서 <b>기본값으로 초기화</b>하세요. 이번 정리분이 기본 프롬프트에 들어 있습니다.</li>
+            <li>페소/가져오기: 검색·배치 룩·메타 있으면 이미지 생략. 없으면 최우선 1장 비전 후 로어 본문</li>
+            <li>에셋 픽·NAI stealth/메타 읽기, artist 필터, 참조 이미지는 이름 맞는 최우선 에셋</li>
+            <li>태거 지침을 앞에 모아 프롬프트 캐시. 기본값으로 초기화하면 그 정리분이 들어감</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">
@@ -10023,8 +9894,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.4.3",
-    body: "캐릭터 참고이미지 기본은 안함. vibe/image만 V4.5에 첨부. 업데이트 내역 탭 참고."
+    title: "2.4.4",
+    body: "새 옷은 캐릭터와 짝으로 만들고 그 샷에 입힘. 참고이미지는 빈 슬롯만 에셋에서 시드. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

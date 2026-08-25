@@ -2,7 +2,7 @@
  * V5 speech → main tags. Default presets suppress bubbles (`-3::spoken bubble, text::`);
  * strip that on speech shots or the bubble never shows.
  */
-import { cleanLookSlot } from '../character/looks-fields.ts';
+import { normalizeHairColorSlot } from '../character/looks-fields.ts';
 import { cleanText } from '../../core/util/text.ts';
 
 const SPEECH_SUPPRESS_RE = /spoken\s*bubble|speech\s*bubble|speechbubble|\btext\b/i;
@@ -46,7 +46,7 @@ function personChunk(stored: {
   sex?: unknown;
   original?: unknown;
 } | null | undefined): string {
-  const hair = cleanLookSlot(stored?.hair_color, 80);
+  const hair = normalizeHairColorSlot(stored?.hair_color, 80);
   const genderRaw = cleanText(stored?.gender ?? stored?.sex, 20).toLowerCase();
   const girl = genderRaw === 'boy' || genderRaw === 'm' || genderRaw === 'male' || genderRaw === '1boy'
     ? 'boy'

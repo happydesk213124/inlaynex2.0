@@ -37,6 +37,21 @@ test('parseNaiQuota reads V5 remaining from /user/priority + perks cap', () => {
   assert.equal(parsed.v5_usage.pct, 50);
 });
 
+test('parseNaiQuota uses usage.percent as the V5 bar even above 100', () => {
+  const parsed = parseNaiQuota(
+    {
+      trainingStepsLeft: { fixedTrainingStepsLeft: 10, purchasedTrainingSteps: 0 },
+      perks: { unlimitedMaxPriority: false, maxPriorityActions: 80 },
+    },
+    { usage: { percent: 151 }, priority: { maxPriorityActions: 40 } },
+  );
+  assert.ok(parsed.v5_usage);
+  assert.equal(parsed.v5_usage.pct, 151);
+  assert.equal(parsed.v5_usage.label, '151%');
+  assert.equal(parsed.extra?.['usage.percent'], undefined);
+  assert.equal(parsed.extra?.['data.usage.percent'], undefined);
+});
+
 test('parseNaiQuota surfaces V5-like remaining/max as a usage bar', () => {
   const parsed = parseNaiQuota({
     trainingStepsLeft: { fixedTrainingStepsLeft: 10, purchasedTrainingSteps: 0 },

@@ -300,40 +300,36 @@ export async function evaluatePresetFromImage(bytes: ArrayBuffer): Promise<ApiRe
   };
 }
 
-/** Per-key Anlas. Same-account tokens share one number. */
+/** Per-token Anlas. Same key on V5 and V4 is one `v5/v4` row. */
 export async function listNaiQuota(): Promise<ApiResult> {
   const nai = getConfig().nai;
-  const { tokensForFamily, maskNaiToken } = await import('../domain/nai/keys');
+  const { quotaTokenGroups } = await import('../domain/nai/keys');
   const rows: Array<Record<string, unknown>> = [];
-  const seen = new Set<string>();
-  for (const family of ['v5', 'v4'] as const) {
-    for (const token of tokensForFamily(nai, family)) {
-      if (seen.has(`${family}:${token}`)) continue;
-      seen.add(`${family}:${token}`);
-      const suffix = maskNaiToken(token);
-      try {
-        const anlas = await getNaiQuotaDetail(token);
-        const row: Record<string, unknown> = {
-          family,
-          suffix,
-          ok: true,
-          fixed: anlas.fixed,
-          purchased: anlas.purchased,
-          total: anlas.total,
-          opus: anlas.opus,
-        };
-        if (anlas.unlimitedImageGeneration) row.unlimitedImageGeneration = true;
-        if (anlas.v5_usage) row.v5_usage = anlas.v5_usage;
-        if (anlas.extra && Object.keys(anlas.extra).length) row.extra = anlas.extra;
-        rows.push(row);
-      } catch (err) {
-        rows.push({
-          family,
-          suffix,
-          ok: false,
-          error: String((err as Error)?.message || err),
-        });
-      }
+  for (const group of quotaTokenGroups(nai)) {
+    const family = group.families.join('/');
+    const suffix = group.suffix;
+    try {
+      const anlas = await getNaiQuotaDetail(group.token);
+      const row: Record<string, unknown> = {
+        family,
+        suffix,
+        ok: true,
+        fixed: anlas.fixed,
+        purchased: anlas.purchased,
+        total: anlas.total,
+        opus: anlas.opus,
+      };
+      if (anlas.unlimitedImageGeneration) row.unlimitedImageGeneration = true;
+      if (anlas.v5_usage) row.v5_usage = anlas.v5_usage;
+      if (anlas.extra && Object.keys(anlas.extra).length) row.extra = anlas.extra;
+      rows.push(row);
+    } catch (err) {
+      rows.push({
+        family,
+        suffix,
+        ok: false,
+        error: String((err as Error)?.message || err),
+      });
     }
   }
   return { ok: true, keys: rows };

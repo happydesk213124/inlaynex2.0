@@ -19,6 +19,9 @@ import {
   cleanLookSlot,
   formatAgeCaption,
   formatHeightCaption,
+  lookSlotMissingFromAppearance,
+  normalizeEyeColorSlot,
+  normalizeHairColorSlot,
   normalizePenisSize,
 } from './looks-fields.ts';
 import {
@@ -687,9 +690,7 @@ export function composeCharacterCaptionTags(
     explicitGender,
   );
   const ageCap = formatAgeCaption(shot?.age ?? stored?.age);
-  const hairColor = cleanLookSlot(stored?.hair_color, 120);
   const hairStyle = cleanLookSlot(stored?.hair_style, 400);
-  const eyeColor = cleanLookSlot(stored?.eye_color, 120);
   const faceTags = joinTags(
     shot?.eye_expression,
     shot?.mouth_expression,
@@ -703,6 +704,17 @@ export function composeCharacterCaptionTags(
     : '';
   const storedAppearance = syncGenderIntoAppearance(stored?.appearance, explicitGender);
   const shotAppearance = syncGenderIntoAppearance(shot?.appearance, explicitGender);
+  const captionAppearance = hasLooks ? storedAppearance : shotAppearance;
+  const hairColor = lookSlotMissingFromAppearance(
+    normalizeHairColorSlot(stored?.hair_color, 120),
+    captionAppearance,
+    120,
+  );
+  const eyeColor = lookSlotMissingFromAppearance(
+    normalizeEyeColorSlot(stored?.eye_color, 120),
+    captionAppearance,
+    120,
+  );
 
   if (hasLooks) {
     return normalizeCharacterCaptionTags(

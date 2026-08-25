@@ -11,6 +11,7 @@ import type { ShotCharacter } from '../../core/types.ts';
 import { cleanText, compactText, hashCode, joinTags, normalizeAlias, parseAliasList } from '../../core/util/text.ts';
 import type { CharacterInput, MigratedCharacter } from './identity.ts';
 import { mergeCharacterView, migrateCharacter, resolveCharacterIdentity, normalizeGender, characterMatchesIdentity } from './identity.ts';
+import { normalizeEyeColorSlot, normalizeHairColorSlot } from './looks-fields.ts';
 
 /** Injected helpers for `mergeSessionAndGlobalRoster`; every one has a no-op default. */
 export interface RosterMergeHelpers {
@@ -212,9 +213,9 @@ export function normalizeCharacterRecord(
     gender: normalizeGender(rec.gender ?? rec.sex),
     costumes: Array.isArray(rec.costumes) ? rec.costumes : undefined,
     active_costume: rec.active_costume,
-    hair_color: cleanText(rec.hair_color || '', 120),
+    hair_color: normalizeHairColorSlot(rec.hair_color || '', 120),
     hair_style: cleanText(rec.hair_style || '', 400),
-    eye_color: cleanText(rec.eye_color || '', 120),
+    eye_color: normalizeEyeColorSlot(rec.eye_color || '', 120),
     height: cleanText(rec.height || '', 80),
     age: rec.age,
     penis_size: cleanText(rec.penis_size || '', 40),

@@ -66,9 +66,9 @@ test('character list returns look slots so the settings tab can show them', () =
   const end = source.indexOf('// ── per-character global toggles', start);
   const body = source.slice(start, end);
   assert.ok(start >= 0 && end > start, 'listCharacters section not found');
-  assert.match(body, /cleanText\(row\.hair_color/);
+  assert.match(body, /normalizeHairColorSlot\(row\.hair_color/);
   assert.match(body, /cleanText\(row\.hair_style/);
-  assert.match(body, /cleanText\(row\.eye_color/);
+  assert.match(body, /normalizeEyeColorSlot\(row\.eye_color/);
   assert.match(body, /cleanText\(row\.height/);
   assert.match(body, /cleanText\(row\.penis_size/);
   assert.match(body, /rec\.hair_color\s*=/);

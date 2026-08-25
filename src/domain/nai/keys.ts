@@ -51,6 +51,29 @@ export function naiHasAnyToken(nai: NaiSettings): boolean {
   return allUniqueNaiTokens(nai).length > 0;
 }
 
+/** Same token on V5 and V4 → one quota fetch, family label `v5/v4`. */
+export function quotaTokenGroups(nai: NaiSettings): Array<{
+  token: string;
+  families: NaiFamily[];
+  suffix: string;
+}> {
+  const order: Array<{ token: string; families: NaiFamily[]; suffix: string }> = [];
+  const index = new Map<string, { token: string; families: NaiFamily[]; suffix: string }>();
+  for (const family of ['v5', 'v4'] as const) {
+    for (const token of tokensForFamily(nai, family)) {
+      const existing = index.get(token);
+      if (existing) {
+        if (!existing.families.includes(family)) existing.families.push(family);
+        continue;
+      }
+      const row = { token, families: [family] as NaiFamily[], suffix: maskNaiToken(token) };
+      index.set(token, row);
+      order.push(row);
+    }
+  }
+  return order;
+}
+
 export interface KeyQuotaRow {
   family: NaiFamily;
   suffix: string;

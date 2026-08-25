@@ -132,7 +132,10 @@ Empty `sampler` uses the Models-tab sampler for that family. The preset
 sampler list matches Models (Euler Ancestral … DPM++ SDE).
 `card.secondary_preset_id` is the green 2nd-priority preset.
 `GET /v1/nai/quota` returns `{ keys: [{ family, suffix, ok, fixed, purchased, total, opus,
-v5_usage?, extra?, error? }] }`. `v5_usage` / `extra` are omitted when empty.
+v5_usage?, extra?, error? }] }`. Same token on V5 and V4 is one row with
+`family` `v5/v4`. `v5_usage.pct` is NovelAI `usage.percent` when present
+(can exceed 100); otherwise remaining/max. `usage.percent` is not also in
+`extra`. `v5_usage` / `extra` are omitted when empty.
 Anlas comes from `GET https://image.novelai.net/user/subscription`
 (`trainingStepsLeft`). Optional `GET …/user/data` (or `…/user/priority` if data
 fails) fills V5 usage from `maxPriorityActions`. The old `api.novelai.net`

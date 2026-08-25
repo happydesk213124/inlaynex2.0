@@ -26,6 +26,7 @@ import { normalizeAssetNaiTagsMode, normalizeFocusCharacterMode, normalizeFocusP
 import type { FocusCharacterMode, FocusPromptMode } from '../core/types';
 import { characterTriggers, dedupeShotCharacters, matchCharactersInText } from '../domain/character/roster';
 import { characterHasAppearance, characterMaxLimit, formatWearStateForPrompt } from '../domain/character/tags';
+import { normalizeEyeColorSlot, normalizeHairColorSlot } from '../domain/character/looks-fields';
 import { ensureCostumes, formatCostumeCatalog } from '../domain/character/costume';
 import {
   assembleLorebookForTagger,
@@ -123,9 +124,9 @@ function formatAppearanceInjectLine(
   const parts = [
     appearance ? `appearance=${appearance}` : '',
   ];
-  const hair = cleanText(c.hair_color, 80);
+  const hair = normalizeHairColorSlot(c.hair_color, 80);
   const style = cleanText(c.hair_style, 160);
-  const eyes = cleanText(c.eye_color, 80);
+  const eyes = normalizeEyeColorSlot(c.eye_color, 80);
   const height = cleanText(c.height, 40);
   const age = c.age != null && c.age !== '' ? String(c.age) : '';
   if (hair) parts.push(`hair_color=${hair}`);

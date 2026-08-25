@@ -63,6 +63,38 @@ function walkLeaves(
   }
 }
 
+function usagePercentFromRecord(raw: unknown): number | null {
+  const rec = asRecord(raw);
+  if (!rec) return null;
+  return toNum(asRecord(rec.usage)?.percent);
+}
+
+function readUsagePercent(
+  sub: Record<string, unknown>,
+  accountData: unknown,
+  extra: Record<string, string | number | boolean>,
+): number | null {
+  const nested = usagePercentFromRecord(accountData)
+    ?? usagePercentFromRecord(asRecord(accountData)?.data)
+    ?? usagePercentFromRecord(sub);
+  if (nested != null) return nested;
+  for (const [key, val] of Object.entries(extra)) {
+    if (/(^|\.)usage\.percent$/i.test(key) && typeof val === 'number') return val;
+  }
+  return null;
+}
+
+function omitUsagePercent(
+  extra: Record<string, string | number | boolean>,
+): Record<string, string | number | boolean> {
+  const next: Record<string, string | number | boolean> = {};
+  for (const [key, val] of Object.entries(extra)) {
+    if (/(^|\.)usage\.percent$/i.test(key)) continue;
+    next[key] = val;
+  }
+  return next;
+}
+
 function pickV5Usage(extra: Record<string, string | number | boolean>): NaiV5Usage | undefined {
   const remainingKeys = Object.keys(extra).filter((k) =>
     /remaining|left|current|available|charge/i.test(k) && typeof extra[k] === 'number',
@@ -137,6 +169,16 @@ export function parseNaiQuota(subscription: unknown, accountData?: unknown): Nai
       label: `${priorityLeft} / ${priorityCap}`,
     };
   }
+  const usagePercent = readUsagePercent(sub, accountData, extra);
+  if (usagePercent != null) {
+    v5_usage = {
+      remaining: v5_usage?.remaining ?? usagePercent,
+      max: v5_usage?.max ?? 100,
+      pct: usagePercent,
+      label: `${usagePercent}%`,
+    };
+  }
+  const extraOut = omitUsagePercent(extra);
   const out: NaiQuotaParsed = {
     fixed,
     purchased,
@@ -145,6 +187,6 @@ export function parseNaiQuota(subscription: unknown, accountData?: unknown): Nai
   };
   if (unlimitedImageGeneration) out.unlimitedImageGeneration = true;
   if (v5_usage) out.v5_usage = v5_usage;
-  if (Object.keys(extra).length) out.extra = extra;
+  if (Object.keys(extraOut).length) out.extra = extraOut;
   return out;
 }

@@ -15,7 +15,7 @@ import {
   normalizeNaiSampler,
 } from '../.test-build/nai-samplers.mjs';
 import { shouldUseNaiCoords } from '../.test-build/nai-coords.mjs';
-import { allUniqueNaiTokens, tokensForFamily } from '../.test-build/nai-keys.mjs';
+import { allUniqueNaiTokens, quotaTokenGroups, tokensForFamily } from '../.test-build/nai-keys.mjs';
 import { speechMainTag, speechTagsForShot, stripSpokenBubbleSuppression } from '../.test-build/nai-speech.mjs';
 
 test('NAI5 first off uses selected model for every shot', () => {
@@ -139,6 +139,22 @@ test('legacy api_key fills both families when lists are empty', () => {
   const nai = { api_key: 'pst-legacy', api_keys_v5: [], api_keys_v4: [] };
   assert.deepEqual(tokensForFamily(nai, 'v5'), ['pst-legacy']);
   assert.deepEqual(allUniqueNaiTokens({ ...nai, api_keys_v5: ['pst-a', 'pst-a'] }), ['pst-a', 'pst-legacy']);
+});
+
+test('same API key on V5 and V4 is one quota group', () => {
+  const shared = quotaTokenGroups({
+    api_key: '',
+    api_keys_v5: ['pst-same'],
+    api_keys_v4: ['pst-same'],
+  });
+  assert.equal(shared.length, 1);
+  assert.deepEqual(shared[0].families, ['v5', 'v4']);
+  const split = quotaTokenGroups({
+    api_keys_v5: ['pst-a'],
+    api_keys_v4: ['pst-b'],
+  });
+  assert.equal(split.length, 2);
+  assert.deepEqual(split.map((g) => g.families.join('/')), ['v5', 'v4']);
 });
 
 test('speech tag is one chunk; suppression groups are stripped', () => {

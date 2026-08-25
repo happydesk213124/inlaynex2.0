@@ -2,8 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  appearanceHasLookTag,
   formatAgeCaption,
   formatHeightCaption,
+  normalizeEyeColorSlot,
+  normalizeHairColorSlot,
   normalizePenisSize,
   parseAgeYears,
   parseHeight,
@@ -85,4 +88,48 @@ test("caption joins look slots and sized penis only when bottomless+", () => {
   const nude = composeCharacterCaptionTags(stored, { wear_state: "bottomless" });
   assert.match(nude, /huge penis/);
   assert.equal((nude.match(/\bpenis\b/g) || []).length, 1);
+});
+
+test("bare color slots expand to hair/eyes tags", () => {
+  assert.equal(normalizeHairColorSlot("blue"), "blue hair");
+  assert.equal(normalizeHairColorSlot("blue hair"), "blue hair");
+  assert.equal(normalizeHairColorSlot("dark blue"), "dark blue hair");
+  assert.equal(normalizeHairColorSlot("blue, green"), "blue hair, green hair");
+  assert.equal(normalizeHairColorSlot("messy"), "messy");
+  assert.equal(normalizeEyeColorSlot("white"), "white eyes");
+  assert.equal(normalizeEyeColorSlot("white eyes"), "white eyes");
+  assert.equal(normalizeEyeColorSlot("heterochromia"), "heterochromia");
+});
+
+test("appearance already holding a look tag counts weighted groups", () => {
+  const appearance = "tall girl, 2::blue hair::, straight hair";
+  assert.equal(appearanceHasLookTag(appearance, "blue hair"), true);
+  assert.equal(appearanceHasLookTag(appearance, "white eyes"), false);
+});
+
+test("caption expands bare colors and skips ones already in appearance", () => {
+  const expanded = composeCharacterCaptionTags({
+    name: "리사",
+    appearance: "girl, tall girl, straight hair",
+    hair_color: "blue",
+    eye_color: "white",
+    gender: "girl",
+    attire: "school uniform",
+    costumes: [{ name: "default", attire: "school uniform", accessories: "" }],
+  }, { wear_state: "clothed" });
+  assert.match(expanded, /blue hair/);
+  assert.match(expanded, /white eyes/);
+
+  const skipped = composeCharacterCaptionTags({
+    name: "리사",
+    appearance: "girl, tall girl, 2::blue hair::, straight hair",
+    hair_color: "blue hair",
+    eye_color: "white",
+    gender: "girl",
+    attire: "school uniform",
+    costumes: [{ name: "default", attire: "school uniform", accessories: "" }],
+  }, { wear_state: "clothed" });
+  assert.equal((skipped.match(/blue hair/g) || []).length, 1);
+  assert.match(skipped, /2::blue hair::/);
+  assert.match(skipped, /white eyes/);
 });

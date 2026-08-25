@@ -60,6 +60,7 @@ import {
   syncActiveCostumeFromWear,
 } from '../domain/character/costume';
 import { sanitizeHash } from '../domain/character/char-ref-store';
+import { normalizeEyeColorSlot, normalizeHairColorSlot } from '../domain/character/looks-fields';
 import { restoreAssetTagWeights } from '../domain/nai-meta/prompt-tags.ts';
 import { idbDelete, idbGet, idbGetAll, idbPut } from '../storage/stores';
 import { getLastAssetWeightMap } from './asset-tags';
@@ -172,9 +173,9 @@ export async function listCharacters(scope: string): Promise<CharacterRecord[]> 
       updated_at: row.updated_at,
       scope: row.scope,
     };
-    const hairColor = cleanText(row.hair_color || '', 120);
+    const hairColor = normalizeHairColorSlot(row.hair_color || '', 120);
     const hairStyle = cleanText(row.hair_style || '', 400);
-    const eyeColor = cleanText(row.eye_color || '', 120);
+    const eyeColor = normalizeEyeColorSlot(row.eye_color || '', 120);
     const height = cleanText(row.height || '', 80);
     const penisSize = cleanText(row.penis_size || '', 40);
     if (hairColor) rec.hair_color = hairColor;
@@ -488,9 +489,9 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
     active_costume: Number(rec.active_costume || 0),
     original: rec.original || '',
     gender,
-    hair_color: cleanText(rec.hair_color || '', 120),
+    hair_color: normalizeHairColorSlot(rec.hair_color || '', 120),
     hair_style: cleanText(rec.hair_style || '', 400),
-    eye_color: cleanText(rec.eye_color || '', 120),
+    eye_color: normalizeEyeColorSlot(rec.eye_color || '', 120),
     height: cleanText(rec.height || '', 80),
     age: rec.age ?? '',
     penis_size: cleanText(rec.penis_size || '', 40),

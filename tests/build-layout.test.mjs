@@ -140,6 +140,25 @@ test('nai5_first toggle lives in gen options next to coords, not dashboard', () 
   assert.doesNotMatch(mtSave, /\be\./);
 });
 
+test('inline msg-actions is a 3-way select, not a checkbox', () => {
+  const source = read('vite.config.ts');
+  const dashHtml = source.slice(
+    source.indexOf('VENDOR_INLINE_TOGGLE_PATCH'),
+    source.indexOf('VENDOR_INLINE_SAVE_NEEDLE'),
+  );
+  assert.match(dashHtml, /<select id="nx-inline-msg-actions">/);
+  assert.match(dashHtml, /value="off"/);
+  assert.match(dashHtml, /value="legacy"/);
+  assert.match(dashHtml, /value="compat"/);
+  assert.match(dashHtml, /사용안함/);
+  assert.match(dashHtml, /편의성 \(오류율 있음 · 2\.4\.7\)/);
+  assert.match(dashHtml, /호환성 \(2\.4\.9\)/);
+  assert.doesNotMatch(dashHtml, /<input type="checkbox" id="nx-inline-msg-actions"/);
+  assert.match(source, /function nxMsgAct\(\)/);
+  assert.match(source, /if \(nxMsgAct\(\) === "legacy"\)/);
+  assert.match(source, /msgActionMountKind\(end, nxMsgAct\(\)\)/);
+});
+
 test('NAI connection test saves family keys then tests', () => {
   const source = read('vite.config.ts');
   assert.match(source, /const VENDOR_NAI_TEST_NEEDLE/);

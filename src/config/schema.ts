@@ -4,6 +4,7 @@ import type { FocusCharacterMode, FocusPromptMode } from '../core/types.ts';
 import { parseStreamKeywords } from '../domain/prompt/stream-keywords.ts';
 import { normalizeLlmRolesSettings } from '../domain/llm/roles.ts';
 import { naiStepsForFamily, normalizeNaiSampler, optionalNaiSampler } from '../domain/nai/samplers.ts';
+import { normalizeInlineMsgActions } from '../domain/inline-msg-actions.ts';
 
 /** NovelAI base natural-language mode (replaces the old boolean toggle). */
 export type NaturalBaseMode = 'off' | 'short' | 'detailed' | 'supplement';
@@ -281,8 +282,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   card.inline_previews = overlayOn;
   if (card.inline_chat_images == null) card.inline_chat_images = false;
   else card.inline_chat_images = card.inline_chat_images === true || card.inline_chat_images === 'true' || card.inline_chat_images === 1 || card.inline_chat_images === '1';
-  if (card.inline_msg_actions == null) card.inline_msg_actions = false;
-  else card.inline_msg_actions = card.inline_msg_actions === true || card.inline_msg_actions === 'true' || card.inline_msg_actions === 1 || card.inline_msg_actions === '1';
+  card.inline_msg_actions = normalizeInlineMsgActions(card.inline_msg_actions);
   {
     const raw = Number(card.inline_chat_scale_pct);
     card.inline_chat_scale_pct = Number.isFinite(raw) && raw > 0

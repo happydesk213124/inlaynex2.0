@@ -156,6 +156,16 @@ test("uc_preset is always none (no leftover human_focus UC block)", () => {
   assert.equal(migrateSettings({ nai: { uc_preset: "heavy" } }).nai.uc_preset, "none");
 });
 
+test("inline_msg_actions migrates checkbox and aliases", () => {
+  assert.equal(migrateSettings({ card: {} }).card.inline_msg_actions, "off");
+  assert.equal(migrateSettings({ card: { inline_msg_actions: false } }).card.inline_msg_actions, "off");
+  assert.equal(migrateSettings({ card: { inline_msg_actions: true } }).card.inline_msg_actions, "compat");
+  assert.equal(migrateSettings({ card: { inline_msg_actions: "legacy" } }).card.inline_msg_actions, "legacy");
+  assert.equal(migrateSettings({ card: { inline_msg_actions: "compat" } }).card.inline_msg_actions, "compat");
+  assert.equal(migrateSettings({ card: { inline_msg_actions: "2.4.7" } }).card.inline_msg_actions, "legacy");
+  assert.equal(migrateSettings({ card: { inline_msg_actions: "2.4.9" } }).card.inline_msg_actions, "compat");
+});
+
 test("overlay_markers is canonical for left-line overlay + inline previews", () => {
   const on = migrateSettings({ card: { overlay_markers: true, inline_previews: false } });
   assert.equal(on.card.overlay_markers, true);

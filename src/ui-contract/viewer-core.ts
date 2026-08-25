@@ -7,6 +7,16 @@
  */
 
 export { matchCharactersInText } from '../domain/character/roster';
+import {
+  inlineMsgActionsLegacy,
+  inlineMsgActionsOn,
+  normalizeInlineMsgActions,
+} from '../domain/inline-msg-actions';
+export {
+  inlineMsgActionsLegacy,
+  inlineMsgActionsOn,
+  normalizeInlineMsgActions,
+};
 
 // ── shared shapes ─────────────────────────────────────────────────────────
 
@@ -2593,14 +2603,20 @@ export function isMessageBodyHostTag(tag: unknown): boolean {
   return name === 'P' || name === 'LI' || name === 'BLOCKQUOTE' || /^H[1-6]$/.test(name);
 }
 
-/** Always the paragraph itself. Parent prepend sits on the name/icon column. */
-export function msgActionMountKind(_end: unknown): 'parent' | 'host' {
+/** Compat: always the paragraph. Legacy: top bar on the content parent. */
+export function msgActionMountKind(end: unknown, mode: unknown = 'compat'): 'parent' | 'host' {
+  if (inlineMsgActionsLegacy(mode) && String(end || '') === 'top') return 'parent';
   return 'host';
 }
 
-/** Parent of the first body host is still the chrome column (name + icon). */
-export function canMountMsgActionOnParent(_parent: unknown, _bubbleRoot: unknown): boolean {
-  return false;
+/** Legacy only: parent prepend when parent is not the card root. */
+export function canMountMsgActionOnParent(
+  parent: unknown,
+  bubbleRoot: unknown,
+  mode: unknown = 'compat',
+): boolean {
+  if (!inlineMsgActionsLegacy(mode)) return false;
+  return parent != null && parent !== bubbleRoot;
 }
 
 /** First and last `<p>` indices. Same index when the bubble has only one. */

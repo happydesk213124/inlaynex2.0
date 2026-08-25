@@ -25,6 +25,9 @@ import {
   msgActionMountKind,
   canMountMsgActionOnParent,
   isMessageBodyHostTag,
+  normalizeInlineMsgActions,
+  inlineMsgActionsOn,
+  inlineMsgActionsLegacy,
   splitMessageLines,
   clampShotLine,
   htmlToPlainLn,
@@ -224,18 +227,41 @@ test("isMessageBodyHostTag ignores card chrome DIVs", () => {
   assert.equal(isMessageBodyHostTag(""), false);
 });
 
-test("msgActionMountKind always paints on the body host", () => {
+test("normalizeInlineMsgActions maps checkbox and aliases", () => {
+  assert.equal(normalizeInlineMsgActions(undefined), "off");
+  assert.equal(normalizeInlineMsgActions(false), "off");
+  assert.equal(normalizeInlineMsgActions(true), "compat");
+  assert.equal(normalizeInlineMsgActions("true"), "compat");
+  assert.equal(normalizeInlineMsgActions("legacy"), "legacy");
+  assert.equal(normalizeInlineMsgActions("2.4.7"), "legacy");
+  assert.equal(normalizeInlineMsgActions("compat"), "compat");
+  assert.equal(normalizeInlineMsgActions("2.4.9"), "compat");
+  assert.equal(inlineMsgActionsOn("legacy"), true);
+  assert.equal(inlineMsgActionsOn("compat"), true);
+  assert.equal(inlineMsgActionsOn("off"), false);
+  assert.equal(inlineMsgActionsLegacy("legacy"), true);
+  assert.equal(inlineMsgActionsLegacy("compat"), false);
+});
+
+test("msgActionMountKind paints on the body host unless legacy top", () => {
   assert.equal(msgActionMountKind("top"), "host");
   assert.equal(msgActionMountKind("bot"), "host");
   assert.equal(msgActionMountKind(""), "host");
+  assert.equal(msgActionMountKind("top", "compat"), "host");
+  assert.equal(msgActionMountKind("top", "legacy"), "parent");
+  assert.equal(msgActionMountKind("bot", "legacy"), "host");
 });
 
-test("canMountMsgActionOnParent never uses a parent (chrome column)", () => {
+test("canMountMsgActionOnParent is legacy-only and skips the card root", () => {
   const bubble = { id: "msg" };
   const content = { id: "box" };
   assert.equal(canMountMsgActionOnParent(content, bubble), false);
   assert.equal(canMountMsgActionOnParent(bubble, bubble), false);
   assert.equal(canMountMsgActionOnParent(null, bubble), false);
+  assert.equal(canMountMsgActionOnParent(content, bubble, "compat"), false);
+  assert.equal(canMountMsgActionOnParent(content, bubble, "legacy"), true);
+  assert.equal(canMountMsgActionOnParent(bubble, bubble, "legacy"), false);
+  assert.equal(canMountMsgActionOnParent(null, bubble, "legacy"), false);
 });
 
 test("findElementIndexForLine matches text + occurrence order", () => {

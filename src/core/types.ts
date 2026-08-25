@@ -166,8 +166,8 @@ export interface CardSettings {
   /** Unified character tab: keep one row per name (priority, then newest). */
   unified_winners_only: boolean;
   generate_all_roles: boolean;
-  /** Insert regenerate/char chips into first+last `<p>` of nearby bubbles. */
-  inline_msg_actions?: boolean;
+  /** off | legacy (2.4.7 parent mount) | compat (body hosts only). */
+  inline_msg_actions?: 'off' | 'legacy' | 'compat' | boolean;
   /** Insert shot images into chat bubbles at LLM `line`. */
   inline_chat_images?: boolean;
   auto_gen_on_reply: boolean;

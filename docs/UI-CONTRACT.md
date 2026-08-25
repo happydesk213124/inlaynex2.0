@@ -108,15 +108,18 @@ every shot. Dashboard save keeps the stored flags when those checkboxes
 are absent.
 
 Dashboard also has `card.nai4_fallback`, `card.nai5_speech`,
-and `card.inline_msg_actions` (tag / regenerate / stop / character / preset chips).
-Same neighbor rule as `inline_chat_images`. Chips still use SafeDOM
-`H()` (not `insertAdjacentHTML`, not bubble-root `prepend`). The top bar
-prepends onto the first host's parent when that parent is not the
-bubble root, so it sits at the front of the content box, outside a
-custom-card leaf `div`. The bottom bar still `prepend`s the last host.
-Chip rows and shot wraps are skipped when collecting hosts
-(`isInlayPaintHost`). Each bubble keeps at most one top bar and
-one bottom bar (`x-inlay-msg-end`); overlapping paints drop extras.
+and `card.inline_msg_actions` as a 3-way select: `off` (사용안함),
+`legacy` (편의성, 오류율 있음 — DIV hosts + top bar on the content
+parent; leftover empty-shot cleanup may `setInnerHTML` the card),
+`compat` (호환성 — body tags `p`/`li`/`h*`/`blockquote` only, host
+mount, leftover markers `remove()` only). Saved checkbox `true`
+migrates to `compat`. Same neighbor rule as `inline_chat_images`.
+Chips still use SafeDOM `H()` (not `insertAdjacentHTML`, not
+bubble-root `prepend`). Chip rows and shot wraps are skipped when
+collecting hosts (`isInlayPaintHost`). Each bubble keeps at most one
+top bar and one bottom bar (`x-inlay-msg-end`); overlapping paints
+drop extras. If a header vanishes after `legacy`, use
+`POST /v1/chat/restore-chrome` (채팅 카드 복구).
 The character chip POSTs the selected DOM message to
 `/v1/characters/triggered` with the same session / unified / source ids as
 `/v1/jobs/create`. That route uses the tagger roster (`rosterForSession` +

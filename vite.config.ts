@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.9';
+const PLUGIN_VERSION = '2.4.10';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -733,6 +733,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.4.10</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>메시지 안 생성 버튼: 사용안함 / 편의성(오류율 있음 · 2.4.7) / 호환성(2.4.9)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.4.9</strong>
@@ -4336,7 +4342,7 @@ const VENDOR_INLINE_LONGPRESS_NEEDLE =
       if (Nt() && !inspectOpen) {`;
 const VENDOR_INLINE_LONGPRESS_PATCH =
   `      // Msg chips: same coord hit-test as inline shots (node click never reaches us).
-      if (!inspectOpen && t.backendSettings?.card?.inline_msg_actions === !0 && typeof hitMsgChipAt == "function") {
+      if (!inspectOpen && nxMsgAct() !== "off" && typeof hitMsgChipAt == "function") {
         try {
           const chip = await hitMsgChipAt(e, x, I);
           if (chip) {
@@ -7382,7 +7388,7 @@ const VENDOR_INLINE_HELP_NEEDLE =
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
     "nx-inline-chat": { title: "이미지 채팅에", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저·라이트보드(본문 30자 이하)는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
-    "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "선택 ±1 말풍선의 첫·마지막 호스트에 태그·재생성·중단·캐릭터·프리셋 칩을 붙입니다. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
+    "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "사용안함 / 편의성(오류율 있음 · 2.4.7, 칩을 본문 위에 붙임) / 호환성(2.4.9, 본문 문단에만 붙임). 헤더가 비면 채팅 카드 복구를 쓰세요. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
     "nx-inline-chat-scale": { title: "이미지 채팅 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
     "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트." },
     "nx-nai4-fallback": { title: "할당량 끝나면 NAI4 폴백", body: "V5 샷이 할당량(402)으로 실패하면 그 샷만 V4.5와 NAI4 프리셋으로 다시 뽑습니다. V5 자연어·대사는 빼입니다." },
@@ -7393,7 +7399,13 @@ const VENDOR_INLINE_TOGGLE_NEEDLE =
 const VENDOR_INLINE_TOGGLE_PATCH =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>
             <label class="toggle-row" data-nx-help-id="nx-inline-chat"><input type="checkbox" id="nx-inline-chat" \${i.inline_chat_images ? "checked" : ""}><span>이미지 채팅에</span></label>
-            <label class="toggle-row" data-nx-help-id="nx-inline-msg-actions"><input type="checkbox" id="nx-inline-msg-actions" \${i.inline_msg_actions ? "checked" : ""}><span>메시지 안에 생성 버튼</span></label>
+            <label data-nx-help-id="nx-inline-msg-actions"><span>메시지 안에 생성 버튼</span>
+              <select id="nx-inline-msg-actions">
+                <option value="off" \${(i.inline_msg_actions || "off") === "off" ? "selected" : ""}>사용안함</option>
+                <option value="legacy" \${i.inline_msg_actions === "legacy" ? "selected" : ""}>편의성 (오류율 있음 · 2.4.7)</option>
+                <option value="compat" \${i.inline_msg_actions === "compat" ? "selected" : ""}>호환성 (2.4.9)</option>
+              </select>
+            </label>
             <label data-nx-help-id="nx-inline-chat-scale"><span>이미지 채팅 배율 (%)</span>
               <input id="nx-inline-chat-scale" type="number" min="25" max="200" step="5" value="\${h(i.inline_chat_scale_pct ?? 100)}">
             </label>
@@ -7406,7 +7418,7 @@ const VENDOR_INLINE_SAVE_NEEDLE =
 const VENDOR_INLINE_SAVE_PATCH =
   `      overlay_markers: ee("nx-overlay"),
       inline_chat_images: ee("nx-inline-chat"),
-      inline_msg_actions: ee("nx-inline-msg-actions"),
+      inline_msg_actions: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeInlineMsgActions == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeInlineMsgActions(N("nx-inline-msg-actions")) : String(N("nx-inline-msg-actions") || "off")),
       inline_chat_scale_pct: Math.max(25, Math.min(200, Math.round(Ne(N("nx-inline-chat-scale"), 100)) || 100)),
       progress_toast: ee("nx-progress-toast"),
       nai4_fallback: ee("nx-nai4-fallback"),
@@ -7518,7 +7530,15 @@ const VENDOR_BIND_QA_PATCH =
 const VENDOR_INLINE_INJECT_FN_NEEDLE =
   `  async function ensureMessageInView(el) {`;
 const VENDOR_INLINE_INJECT_FN_PATCH =
-  `  async function injectChatInlineImages(msgEl, cards, pendingRows) {
+  `  function nxMsgAct() {
+    const raw = t.backendSettings?.card?.inline_msg_actions;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    if (typeof VC?.normalizeInlineMsgActions == "function") return VC.normalizeInlineMsgActions(raw);
+    if (raw === "legacy") return "legacy";
+    if (raw === true || raw === "compat" || raw === "true" || raw === 1) return "compat";
+    return "off";
+  }
+  async function injectChatInlineImages(msgEl, cards, pendingRows) {
     if (!msgEl || t.backendSettings?.card?.inline_chat_images !== !0) return;
     if (typeof msgEl.querySelectorAll != "function" || typeof msgEl.getInnerHTML != "function") return;
     if (t._inlineInjectBusy) {
@@ -7627,10 +7647,17 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       // Nothing to paint: strip leftover shots (scroll onto a no-image bubble).
       if (!placements.length && !encodeLater.length) {
-        // Marker nodes only. Never setInnerHTML the bubble root — PocketRisu
-        // Standard keeps name + icon + persona in that same card, and a smashed
-        // tree is reused until the tab remounts.
         await removeAllMarkers();
+        if (nxMsgAct() === "legacy") {
+          try {
+            const left = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+            if (left.length && typeof msgEl.setInnerHTML == "function" && typeof VC.stripInlayInlineHtml == "function") {
+              let html = String(await msgEl.getInnerHTML() || "");
+              await msgEl.setInnerHTML(VC.stripInlayInlineHtml(html));
+            }
+          } catch {
+          }
+        }
         y("info", "inline.inject", "shots=0 stripped");
         return;
       }
@@ -7682,7 +7709,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         const bodyHost = typeof VC.isMessageBodyHostTag == "function"
           ? VC.isMessageBodyHostTag(name)
           : /^(P|H[1-6]|LI|BLOCKQUOTE)$/.test(name);
-        if (!bodyHost) continue;
+        if (nxMsgAct() !== "legacy" && !bodyHost) continue;
         hosts.push(el);
         hostTags.push(name || "DIV");
       }
@@ -7878,7 +7905,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
   }
   async function refreshSelectedInlineImages(force) {
-    if (t.backendSettings?.card?.inline_chat_images !== !0 && t.backendSettings?.card?.inline_msg_actions !== !0) return;
+    if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") return;
     const sel = t.selectedMessage;
     if (!sel) return;
     try {
@@ -7939,7 +7966,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // Gallery still linked, but Risu wiped bubble HTML (settings, new user msg).
       // Shots and action chips are separate: an image can survive while chips vanish.
       const inlineGoneFromSel = async () => {
-        const wantActions = t.backendSettings?.card?.inline_msg_actions === !0;
+        const wantActions = nxMsgAct() !== "off";
         if (!linkedKey && !pendingKey && !wantActions) return !1;
         const el = els[selIdx];
         if (!el || typeof el.querySelectorAll != "function") return !1;
@@ -8160,7 +8187,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         && prevKeep.every((v, i) => Number(v) === Number(nextKeepArr[i]))
         && String(t._inlineKeepPendingKey || "") === pendingKey
         && String(t._inlineKeepLinkedKey || "") === linkedKey
-        && Boolean(t._inlineKeepMsgActions) === Boolean(t.backendSettings?.card?.inline_msg_actions);
+        && String(t._inlineKeepMsgActions || "") === nxMsgAct();
       if (!force && sameKeep && !(await inlineGoneFromSel())) {
         y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeepArr.join(",")}\`);
         return;
@@ -8182,7 +8209,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       t._inlineKeepSelIdx = selIdx;
       t._inlineKeepPendingKey = pendingKey;
       t._inlineKeepLinkedKey = linkedKey;
-      t._inlineKeepMsgActions = Boolean(t.backendSettings?.card?.inline_msg_actions);
+      t._inlineKeepMsgActions = nxMsgAct();
       const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
       y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=diff\`);
       const N = globalThis.__INLAY_NATIVE__;
@@ -8483,7 +8510,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
   }
   async function hitMsgChipAt(doc, x, y) {
-    if (!doc || t.backendSettings?.card?.inline_msg_actions !== !0) return null;
+    if (!doc || nxMsgAct() === "off") return null;
     if (typeof x != "number" || typeof y != "number") return null;
     const collect = async (root) => {
       if (!root || typeof root.querySelectorAll != "function") return [];
@@ -8523,7 +8550,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
   }
   async function injectChatMsgActions(msgEl, cards, msgIndex) {
     if (!msgEl || typeof msgEl.querySelectorAll != "function") return;
-    const on = t.backendSettings?.card?.inline_msg_actions === !0;
+    const on = nxMsgAct() !== "off";
     const unwrapSafe = async (arr) => {
       if (!arr) return [];
       if (typeof k.unwarpSafeArray == "function") {
@@ -8596,7 +8623,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const bodyHost = typeof globalThis.__INLAY_VIEWER_CORE__?.isMessageBodyHostTag == "function"
         ? globalThis.__INLAY_VIEWER_CORE__.isMessageBodyHostTag(name)
         : /^(P|H[1-6]|LI|BLOCKQUOTE)$/.test(name);
-      if (!bodyHost) continue;
+      if (nxMsgAct() !== "legacy" && !bodyHost) continue;
       hosts.push(el);
     }
     if (!hosts.length) {
@@ -8686,15 +8713,15 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       if (!host) return null;
       const VCMount = globalThis.__INLAY_VIEWER_CORE__;
       const kind = typeof VCMount?.msgActionMountKind == "function"
-        ? VCMount.msgActionMountKind(end)
-        : (end === "top" ? "parent" : "host");
+        ? VCMount.msgActionMountKind(end, nxMsgAct())
+        : (nxMsgAct() === "legacy" && end === "top" ? "parent" : "host");
       let mount = host;
       if (kind === "parent") {
         try {
           const parent = typeof host.getParent == "function" ? await host.getParent() : (host.parentElement || host.parentNode || null);
           const okParent = typeof VCMount?.canMountMsgActionOnParent == "function"
-            ? VCMount.canMountMsgActionOnParent(parent, msgEl)
-            : (parent != null && parent !== msgEl);
+            ? VCMount.canMountMsgActionOnParent(parent, msgEl, nxMsgAct())
+            : (nxMsgAct() === "legacy" && parent != null && parent !== msgEl);
           if (okParent && parent && typeof parent.prepend == "function") mount = parent;
         } catch {
         }
@@ -10023,8 +10050,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.4.9",
-    body: "채팅 카드 복구: 헤더 HTML을 다시 그림. 업데이트 내역 탭 참고."
+    title: "2.4.10",
+    body: "메시지 안 버튼: 사용안함 / 편의성 / 호환성. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -13853,8 +13880,14 @@ const loadVendorUi = (): string => {
     if (out.includes('if (keepIds.size)')) {
       throw new Error('[build] leftover strip must not skip when keepIds is empty');
     }
-    if (out.includes('setInnerHTML(VC.stripInlayInlineHtml') || out.includes('setInnerHTML(VC?.stripInlayInlineHtml')) {
-      throw new Error('[build] leftover strip must not rewrite the bubble root');
+    if (!out.includes('if (nxMsgAct() === "legacy")') || !out.includes('setInnerHTML(VC.stripInlayInlineHtml(html)')) {
+      throw new Error('[build] leftover smash must stay behind legacy msg-actions');
+    }
+    if (!out.includes('id="nx-inline-msg-actions"') || !out.includes('편의성 (오류율 있음 · 2.4.7)') || !out.includes('호환성 (2.4.9)')) {
+      throw new Error('[build] inline msg-actions must be a 3-way select');
+    }
+    if (out.includes('<input type="checkbox" id="nx-inline-msg-actions"')) {
+      throw new Error('[build] inline msg-actions must not be a checkbox');
     }
     if (!out.includes('t._galleryCache = null') || !out.includes('await ce(e.sessionId, !0)')) {
       throw new Error('[build] force retag must reload gallery after unlink');

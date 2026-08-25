@@ -133,8 +133,10 @@ sampler list matches Models (Euler Ancestral … DPM++ SDE).
 `card.secondary_preset_id` is the green 2nd-priority preset.
 `GET /v1/nai/quota` returns `{ keys: [{ family, suffix, ok, fixed, purchased, total, opus,
 v5_usage?, extra?, error? }] }`. `v5_usage` / `extra` are omitted when empty.
-Anlas comes from `GET /user/subscription` (`trainingStepsLeft`); optional
-`GET /user/data` is merged for V5 usage-like fields.
+Anlas comes from `GET https://image.novelai.net/user/subscription`
+(`trainingStepsLeft`). Optional `GET …/user/data` (or `…/user/priority` if data
+fails) fills V5 usage from `maxPriorityActions`. The old `api.novelai.net`
+user host returns HTTP 400 for third-party callers (July 2026 move).
 `nai.api_keys_v5` / `nai.api_keys_v4` are extra tokens (legacy `api_key` still works).
 `nai.sampler_v5` / `nai.sampler_v4` and `nai.steps_v5` / `nai.steps_v4` are
 per-family sampler + steps (Models NAI5/NAI4 panes). Legacy `sampler` /

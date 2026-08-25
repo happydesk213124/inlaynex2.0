@@ -123,7 +123,20 @@ export function parseNaiQuota(subscription: unknown, accountData?: unknown): Nai
     if (extra[row.path] == null) extra[row.path] = row.value;
   }
 
-  const v5_usage = pickV5Usage(extra);
+  const dataRec = asRecord(accountData);
+  const priority = asRecord(dataRec?.priority) || dataRec;
+  const priorityLeft = toNum(priority?.maxPriorityActions);
+  const priorityCap = toNum(perks.maxPriorityActions);
+  let v5_usage = pickV5Usage(extra);
+  if (!v5_usage && priorityLeft != null && priorityCap != null && priorityCap > 0) {
+    const pct = Math.max(0, Math.min(100, Math.round((priorityLeft / priorityCap) * 100)));
+    v5_usage = {
+      remaining: priorityLeft,
+      max: priorityCap,
+      pct,
+      label: `${priorityLeft} / ${priorityCap}`,
+    };
+  }
   const out: NaiQuotaParsed = {
     fixed,
     purchased,

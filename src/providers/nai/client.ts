@@ -1,5 +1,5 @@
 /** NovelAI generate-image and account endpoints. */
-import { ANLAS_URL, USER_DATA_URL } from '../../core/constants.ts';
+import { ANLAS_URL, USER_DATA_URL, USER_PRIORITY_URL } from '../../core/constants.ts';
 import { parseJsonBody, parseNaiQuota, type NaiQuotaParsed } from '../../domain/nai/quota.ts';
 import { dbg, dbgSpan } from '../../core/debug.ts';
 import { Mutex } from '../../core/util/async.ts';
@@ -82,11 +82,26 @@ export async function generateT2i(
 async function fetchNaiJson(token: string, url: string): Promise<unknown> {
   const resp = await networkFetch(url, {
     method: 'GET',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
   });
-  const status = Number(resp?.status || (resp?.ok === false ? 401 : 0));
+  const rawStatus = Number(resp?.status);
+  const status = Number.isFinite(rawStatus) && rawStatus > 0
+    ? rawStatus
+    : (resp?.ok === false ? 0 : 200);
   if (status === 401) throw new Error('인증 실패 (401). API 토큰을 확인하세요.');
-  if (status >= 400) throw new Error(`Anlas 조회 실패: HTTP ${status}`);
+  if (status >= 400) {
+    let detail = '';
+    try {
+      if (typeof resp?.text === 'function') detail = String(await resp.text()).slice(0, 180);
+    } catch { /* body may already be consumed */ }
+    if (!detail && resp && typeof resp === 'object' && 'data' in resp) {
+      detail = String((resp as { data?: unknown }).data ?? '').slice(0, 180);
+    }
+    throw new Error(`Anlas 조회 실패: HTTP ${status}${detail ? ` · ${detail}` : ''}`);
+  }
   const looksLikeAccount = (raw: unknown): boolean => {
     const rec = raw && typeof raw === 'object' && !Array.isArray(raw)
       ? raw as Record<string, unknown>
@@ -132,6 +147,13 @@ export async function getNaiQuotaDetail(token: string): Promise<AnlasBalance> {
     accountData = await fetchNaiJson(token, USER_DATA_URL);
   } catch {
     accountData = undefined;
+  }
+  if (!accountData) {
+    try {
+      accountData = { priority: await fetchNaiJson(token, USER_PRIORITY_URL) };
+    } catch {
+      accountData = undefined;
+    }
   }
   return parseNaiQuota(subscription, accountData);
 }

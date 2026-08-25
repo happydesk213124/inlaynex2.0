@@ -16,6 +16,27 @@ test('parseNaiQuota reads Anlas + Opus from subscription JSON', () => {
   assert.equal(parsed.unlimitedImageGeneration, true);
 });
 
+test('account quota URLs use image.novelai.net after the 2026 host move', async () => {
+  const constants = await import('../.test-build/char-ref-keys.mjs');
+  assert.equal(constants.ANLAS_URL, 'https://image.novelai.net/user/subscription');
+  assert.equal(constants.USER_DATA_URL, 'https://image.novelai.net/user/data');
+  assert.equal(constants.USER_PRIORITY_URL, 'https://image.novelai.net/user/priority');
+});
+
+test('parseNaiQuota reads V5 remaining from /user/priority + perks cap', () => {
+  const parsed = parseNaiQuota(
+    {
+      trainingStepsLeft: { fixedTrainingStepsLeft: 10, purchasedTrainingSteps: 0 },
+      perks: { unlimitedMaxPriority: false, maxPriorityActions: 80 },
+    },
+    { priority: { maxPriorityActions: 40 } },
+  );
+  assert.ok(parsed.v5_usage);
+  assert.equal(parsed.v5_usage.remaining, 40);
+  assert.equal(parsed.v5_usage.max, 80);
+  assert.equal(parsed.v5_usage.pct, 50);
+});
+
 test('parseNaiQuota surfaces V5-like remaining/max as a usage bar', () => {
   const parsed = parseNaiQuota({
     trainingStepsLeft: { fixedTrainingStepsLeft: 10, purchasedTrainingSteps: 0 },

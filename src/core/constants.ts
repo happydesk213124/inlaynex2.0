@@ -147,8 +147,10 @@ export const LEGACY_REF_IMAGE_KEY = 'nxref_image';
 // --- external endpoints ---
 export const API_URL = 'https://image.novelai.net/ai/generate-image';
 export const ENCODE_URL = 'https://image.novelai.net/ai/encode-vibe';
-export const ANLAS_URL = 'https://api.novelai.net/user/subscription';
-export const USER_DATA_URL = 'https://api.novelai.net/user/data';
+/** July 2026: NovelAI moved /user/* off api.novelai.net (old host returns HTTP 400). */
+export const ANLAS_URL = 'https://image.novelai.net/user/subscription';
+export const USER_DATA_URL = 'https://image.novelai.net/user/data';
+export const USER_PRIORITY_URL = 'https://image.novelai.net/user/priority';
 
 export const STORE_NAMES = ['meta', 'cards', 'characters', 'jobs', 'images'] as const;
 export type StoreName = (typeof STORE_NAMES)[number];

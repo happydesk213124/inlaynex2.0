@@ -107,12 +107,23 @@ export function characterAliasKeys(char: CharacterInput | null | undefined): Set
   return keys;
 }
 
+function rowLooksFilled(
+  char: CharacterInput | null | undefined,
+  hasAppearance?: RosterMergeHelpers['hasAppearance'],
+): boolean {
+  if (typeof hasAppearance === 'function') return Boolean(hasAppearance(char));
+  return Boolean(String(char?.appearance || '').trim());
+}
+
 /**
  * Same-person groups keep the winning row as-is (no look folding).
- * Winner: higher `priority`, then newer `updated_at`.
+ * Winner: a filled look beats an empty one, then higher `priority`, then newer
+ * `updated_at`. Empty-appearance rows stay last even if their priority is huge —
+ * otherwise a leftover blank from another linked chat shadows the live chat.
  */
 export function pickUnifiedWinners(
   characters: CharacterInput[] | null | undefined,
+  hasAppearance?: RosterMergeHelpers['hasAppearance'],
 ): MigratedCharacter[] {
   const records = (characters || []).map((character) => migrateCharacter(character));
   const groups: MigratedCharacter[][] = [];
@@ -132,6 +143,9 @@ export function pickUnifiedWinners(
   }
   return groups.map((group) => {
     const sorted = [...group].sort((a, b) => {
+      const lookA = rowLooksFilled(a, hasAppearance) ? 1 : 0;
+      const lookB = rowLooksFilled(b, hasAppearance) ? 1 : 0;
+      if (lookA !== lookB) return lookB - lookA;
       const priority = Number(b.priority || 0) - Number(a.priority || 0);
       if (priority) return priority;
       const updated = Number(b.updated_at || 0) - Number(a.updated_at || 0);
@@ -363,7 +377,14 @@ export function mergeSessionAndGlobalRoster(
   for (const schar of list) {
     const hit = resolve(schar.name, merged);
     if (hit && hasAppearance(schar)) {
-      if (schar.wear_state) hit.wear_state = schar.wear_state;
+      if (!hasAppearance(hit)) {
+        const idx = merged.findIndex((c) => resolve(schar.name, [c]));
+        const wear = schar.wear_state || hit.wear_state;
+        if (idx >= 0) merged[idx] = wear ? { ...schar, wear_state: wear } : schar;
+        else merged.push(schar);
+      } else if (schar.wear_state) {
+        hit.wear_state = schar.wear_state;
+      }
       continue;
     }
     if (hit && !hasAppearance(schar)) {

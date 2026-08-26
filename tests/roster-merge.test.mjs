@@ -204,6 +204,27 @@ test("pickUnifiedWinners does not fold loser looks into the winner", () => {
   assert.equal(winners[0].attire, "");
 });
 
+test("pickUnifiedWinners prefers a filled look over a higher-priority empty row", () => {
+  const winners = pickUnifiedWinners([
+    { name: "민희", appearance: "", attire: "", priority: 99, updated_at: 900, id: "empty", scope: "other" },
+    { name: "민희", appearance: "black hair, brown eyes", attire: "hanbok", priority: 1, updated_at: 10, id: "filled", scope: "live" },
+  ]);
+  assert.equal(winners.length, 1);
+  assert.equal(winners[0].id, "filled");
+  assert.equal(winners[0].appearance, "black hair, brown eyes");
+});
+
+test("mergeSessionAndGlobalRoster lets a later filled session row replace an earlier empty one", () => {
+  const session = [
+    { name: "민희", appearance: "", attire: "", id: "empty", scope: "other" },
+    { name: "민희", appearance: "black hair", attire: "hanbok", id: "filled", scope: "live" },
+  ];
+  const merged = mergeSessionAndGlobalRoster(session, [], helpers());
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].id, "filled");
+  assert.equal(merged[0].appearance, "black hair");
+});
+
 test("matchCharactersInText returns roster rows whose aliases appear in the message", () => {
   const roster = [
     { id: "a", name: "유나", aliases: ["유나", "Yuna"] },

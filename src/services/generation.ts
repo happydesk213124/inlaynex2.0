@@ -43,7 +43,11 @@ import {
 } from '../domain/character/tags';
 import { dimsForAspect } from '../domain/nai-meta/aspect.ts';
 import { shouldUseNaiCoords, readNaiCoord } from '../domain/nai/coords';
-import { speechTagsForShot, stripSpokenBubbleSuppression } from '../domain/nai/speech';
+import {
+  captionWithSpeech,
+  speechCaptionTagsForShot,
+  stripSpokenBubbleSuppression,
+} from '../domain/nai/speech';
 import { tokensForFamily } from '../domain/nai/keys';
 import { naiSamplerForFamily, naiStepsForFamily } from '../domain/nai/samplers';
 import {
@@ -257,10 +261,9 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
     stylePos = joinTags(cleanText(card.custom_pos), filePos);
     styleNeg = joinTags(cleanText(card.custom_neg), fileNeg);
   }
-  const speechTags = route.useSpeech
-    ? speechTagsForShot(shot, chars, (name) => resolveCharacter(name, roster))
-    : '';
-  if (speechTags) stylePos = stripSpokenBubbleSuppression(stylePos);
+  const speechCaps = route.useSpeech ? speechCaptionTagsForShot(shot, chars) : [];
+  const hasSpeech = speechCaps.some(Boolean);
+  if (hasSpeech) stylePos = stripSpokenBubbleSuppression(stylePos);
   let situation: unknown = shot.situation || shot.scene;
   const lockedSetup = cleanText(args.lockedSetup || '');
   let setup: string;
@@ -308,8 +311,6 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   const naiaModel = modelToNaia(route.model || nai.model || 'nai-diffusion-4-5-full');
   if (nai.apply_quality_tags !== false) main += QUALITY_TAGS[naiaModel] || '';
   main = appendNoHumansWhenNoCast(main, chars.length, card.no_humans_when_no_char);
-  // Dialogue commas must stay intact — do not run this through joinTags.
-  if (speechTags) main = main ? `${main}, ${speechTags}` : speechTags;
   // Frozen UI has no UC preset control; leftover human_focus appended a long UC block on every gen.
   const ucPreset = 'none';
   const neg = joinTags(styleNeg, fixedNeg, (UC_PRESETS[naiaModel] || {})[ucPreset] || '');
@@ -357,6 +358,16 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
         captions[i] = focused[i]!;
         charMeta[i] = { ...charMeta[i]!, prompt: focused[i]!.prompt };
       }
+    }
+  }
+  // Last thing in the caption, after out-of-frame so the bubble stays at the end.
+  // `charMeta` deliberately keeps the speech-free caption: it is what the tag
+  // editor shows, and a reroll re-derives the line from `raw.speech` instead.
+  if (hasSpeech) {
+    for (let i = 0; i < captions.length; i++) {
+      const tag = speechCaps[i];
+      if (!tag) continue;
+      captions[i] = { ...captions[i]!, prompt: captionWithSpeech(captions[i]!.prompt, tag) };
     }
   }
   const taggedPairs = chars.map((char) => {

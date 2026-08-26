@@ -353,6 +353,10 @@ const INTENTIONAL_DIFF_STEPS = new Set([
   'presets.reroll_simple_complexity',
   'presets.reroll_keeps_v4_from_complexity',
   'presets.nai5_first_off',
+  // 2.4.20: the V5 bubble sits at the end of the speaker's own character caption.
+  // 1.x has no speech feature at all, so it sends no bubble anywhere. The check
+  // below asserts the placement rather than accepting any difference.
+  'speech.bubble_on_caption',
   // 2.0 wraps person tags (default weight 3); 1.x emits plain 1boy.
   'job.person_tag_emphasis',
   // 2.4.7 forces nai.uc_preset=none; 1.x defaulted human_focus.
@@ -498,6 +502,17 @@ for (const name of oldSteps.keys()) {
         old: String(oldStep.value?.model),
         new: JSON.stringify(newStep.value),
         note: 'with nai5_only on, a reroll must generate on the V5 model it built the prompt for',
+      });
+    }
+    if (name === 'speech.bubble_on_caption'
+      && (newStep.value?.char1_ends_with_bubble !== true
+        || newStep.value?.bubbles !== 1
+        || newStep.value?.main_has_bubble !== false)) {
+      findings.push({
+        at: name,
+        old: JSON.stringify(oldStep.value),
+        new: JSON.stringify(newStep.value),
+        note: 'the speaking character\'s caption must end with the bubble, and only theirs; main carries none',
       });
     }
     if (name === 'job.person_tag_emphasis' && newStep.value?.emphasized !== true) {

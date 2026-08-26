@@ -614,6 +614,47 @@ export async function runScenario(N, handles) {
   handles.setLlmReply?.(DEFAULT_LLM_REPLY);
   await rec('presets.nai5_first_off', () => put('/v1/settings', { card: { nai5_first: false } }));
 
+  // 2.4.20: a V5 bubble rides the speaker's own character caption, not the end of
+  // main. Read it off the outbound NAI payload rather than the card, because the
+  // stored caption is deliberately kept speech-free for the tag editor.
+  const speechReply = JSON.parse(DEFAULT_LLM_REPLY);
+  speechReply.scenes[0].shots[0].characters[0].speech = '안돼!!';
+  handles.setLlmReply?.(JSON.stringify(speechReply));
+  await rec('speech.on', () => put('/v1/settings', {
+    card: { nai5_speech: true, nai5_only: true },
+  }));
+  const speechGenBefore = handles.naiRequests.filter((r) => r.kind === 'generate').length;
+  const speechJob = await rec('speech.job_create', () => post('/v1/jobs/create', {
+    session_id: 'sess_speech',
+    character_id: 'char_style',
+    character_name: '스타일봇',
+    chat_id: 'chat_speech',
+    chat_name: '대사 채팅',
+    assistant_text: '태양이 소리쳤다.',
+    message_index: 1,
+    message_role: 'char',
+    content_hash: 'hash_speech',
+    char_index: 0,
+    chat_index: 0,
+    recent_messages: [{ role: 'user', content: '멈춰.' }],
+  }));
+  await rec('speech.job_wait', () => waitForJob(speechJob?.job_id));
+  await rec('speech.bubble_on_caption', () => {
+    const sent = handles.naiRequests.filter((r) => r.kind === 'generate').slice(speechGenBefore);
+    const caption = sent[sent.length - 1]?.body?.parameters?.v4_prompt?.caption ?? {};
+    const charCaptions = (caption.char_captions ?? []).map((c) => String(c?.char_caption || ''));
+    return {
+      sent: sent.length,
+      main_has_bubble: String(caption.base_caption || '').includes('speechbubble'),
+      char1_ends_with_bubble: /speechbubble, korean text:안돼!!$/.test(charCaptions[0] || ''),
+      bubbles: charCaptions.filter((c) => c.includes('speechbubble')).length,
+    };
+  });
+  handles.setLlmReply?.(DEFAULT_LLM_REPLY);
+  await rec('speech.off', () => put('/v1/settings', {
+    card: { nai5_speech: false, nai5_only: false },
+  }));
+
   // ── character delete cascade ──────────────────────────────────────────
   await rec('chars.delete_cascade', () => post('/v1/characters', {
     session_id: 'sess_chat_a',

@@ -1,8 +1,11 @@
 /**
- * V5 speech → main tags. Default presets suppress bubbles (`-3::spoken bubble, text::`);
- * strip that on speech shots or the bubble never shows.
+ * V5 speech → per-character caption tags. Default presets suppress bubbles
+ * (`-3::spoken bubble, text::`); strip that on speech shots or the bubble never shows.
+ *
+ * The tag names no one: it rides the caption of the character who speaks, so the
+ * speaker is already established and re-describing hair/height there would only
+ * fight that character's own look tags.
  */
-import { normalizeHairColorSlot } from '../character/looks-fields.ts';
 import { cleanText } from '../../core/util/text.ts';
 
 const SPEECH_SUPPRESS_RE = /spoken\s*bubble|speech\s*bubble|speechbubble|\btext\b/i;
@@ -39,79 +42,49 @@ function speechLangTag(text: string, langRaw: unknown): string {
   return 'english text';
 }
 
-function personChunk(stored: {
-  hair_color?: unknown;
-  height?: unknown;
-  gender?: unknown;
-  sex?: unknown;
-  original?: unknown;
-} | null | undefined): string {
-  const hair = normalizeHairColorSlot(stored?.hair_color, 80);
-  const genderRaw = cleanText(stored?.gender ?? stored?.sex, 20).toLowerCase();
-  const girl = genderRaw === 'boy' || genderRaw === 'm' || genderRaw === 'male' || genderRaw === '1boy'
-    ? 'boy'
-    : genderRaw === 'other'
-      ? 'other'
-      : 'girl';
-  const height = cleanText(stored?.height, 20);
-  const heightBit = /^\d{2,3}/.test(height) ? ` ${height.match(/\d{2,3}/)?.[0] || ''}cm` : '';
-  const original = cleanText(stored?.original, 80);
-  const body = `${hair}${hair ? ' ' : ''}${heightBit ? `${heightBit.trim()} ` : ''}${girl}`.replace(/\s+/g, ' ').trim();
-  if (original) return body ? `${body}'s ${original}` : original;
-  return body || 'person';
-}
-
-/** `red hair girl's makima's speechbubble, korean text:안돼!!` — one chunk before the colon. */
-export function speechMainTag(
-  stored: Parameters<typeof personChunk>[0],
-  speech: unknown,
-  speechLang?: unknown,
-): string {
+/** `speechbubble, korean text:안돼!!` — appended to the speaker's own caption. */
+export function speechCaptionTag(speech: unknown, speechLang?: unknown): string {
   const text = cleanText(speech, 200);
   if (!text) return '';
-  const who = personChunk(stored);
-  const lang = speechLangTag(text, speechLang);
-  return `${who}'s speechbubble, ${lang}:${text}`;
+  return `speechbubble, ${speechLangTag(text, speechLang)}:${text}`;
 }
 
-export function collectSpeechMainTags(
-  chars: Array<{ speech?: unknown; speech_lang?: unknown; name?: unknown }>,
-  resolveStored: (name: string) => Parameters<typeof personChunk>[0],
-): string {
-  const parts: string[] = [];
-  for (const ch of chars) {
-    const name = cleanText(ch.name, 200);
-    const tag = speechMainTag(resolveStored(name), ch.speech, ch.speech_lang);
-    if (tag) parts.push(tag);
-  }
-  return parts.join(', ');
+/** True once a caption already carries a bubble, so a reroll cannot stack a second one. */
+export function captionHasSpeech(prompt: unknown): boolean {
+  return /speechbubble/i.test(String(prompt || ''));
 }
 
-/** Character `speech` first; else shot-level `{ speaker, text }` (or a bare string). */
-export function speechTagsForShot(
+export type SpeechCharacter = { speech?: unknown; speech_lang?: unknown; name?: unknown };
+
+/**
+ * One tag per cast slot, index-aligned with `chars` so each caption gets its own
+ * line. Character `speech` wins; a shot-level `speech` is a fallback that speaks
+ * for its named speaker, or for char1 when it is a bare string.
+ */
+export function speechCaptionTagsForShot(
   shot: { speech?: unknown } & Record<string, unknown>,
-  chars: Array<{ speech?: unknown; speech_lang?: unknown; name?: unknown }>,
-  resolveStored: (name: string) => Parameters<typeof personChunk>[0],
-): string {
-  const fromChars = collectSpeechMainTags(chars, resolveStored);
-  if (fromChars) return fromChars;
+  chars: SpeechCharacter[],
+): string[] {
+  const out = chars.map((ch) => speechCaptionTag(ch.speech, ch.speech_lang));
+  if (out.some(Boolean) || !chars.length) return out;
   const raw = shot.speech;
-  if (raw == null || raw === '') return '';
+  if (raw == null || raw === '') return out;
   if (typeof raw === 'string') {
-    const first = chars[0];
-    return speechMainTag(resolveStored(cleanText(first?.name, 200)), raw);
+    out[0] = speechCaptionTag(raw);
+    return out;
   }
   if (typeof raw === 'object') {
     const obj = raw as { speaker?: unknown; text?: unknown; lang?: unknown; speech_lang?: unknown };
     const speaker = cleanText(obj.speaker, 200);
-    const match = speaker
-      ? chars.find((c) => cleanText(c.name, 200) === speaker) || { name: speaker }
-      : chars[0];
-    return speechMainTag(
-      resolveStored(cleanText(match?.name, 200) || speaker),
-      obj.text,
-      obj.lang ?? obj.speech_lang ?? match?.speech_lang,
-    );
+    const at = speaker ? chars.findIndex((c) => cleanText(c.name, 200) === speaker) : -1;
+    const idx = at >= 0 ? at : 0;
+    out[idx] = speechCaptionTag(obj.text, obj.lang ?? obj.speech_lang ?? chars[idx]?.speech_lang);
   }
-  return '';
+  return out;
+}
+
+/** Appends a bubble to one caption. Dialogue commas must survive, so no `joinTags`. */
+export function captionWithSpeech(prompt: string, tag: string): string {
+  if (!tag || captionHasSpeech(prompt)) return prompt;
+  return prompt ? `${prompt}, ${tag}` : tag;
 }

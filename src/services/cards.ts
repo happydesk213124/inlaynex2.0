@@ -68,6 +68,8 @@ import { getPrompt } from './settings';
 import { modelToNaia } from '../providers/nai/payload';
 import { resolveShotRoute } from '../domain/nai/routing';
 import type { ShotNaiRoute } from '../domain/nai/routing';
+import { captionWithSpeech, speechCaptionTagsForShot } from '../domain/nai/speech';
+import type { SpeechCharacter } from '../domain/nai/speech';
 
 /** Serialised card columns are user data; a malformed one must not fail the request. */
 function storedComplexity(meta: Record<string, unknown>): string {
@@ -337,6 +339,20 @@ export async function rerollCard(
       getConfig().nai,
       { complexity: storedComplexity(meta) } as TaggedShot,
     );
+    // Hand-edited captions come back without the bubble, because the tag editor is
+    // never shown the dialogue. Re-derive it from the stored cast or a tag edit
+    // would silently drop the speech on the next reroll.
+    if (route.useSpeech) {
+      const speechCaps = speechCaptionTagsForShot(
+        {},
+        rawCharactersFromMeta(meta) as SpeechCharacter[],
+      );
+      for (let i = 0; i < captions.length; i++) {
+        const tag = speechCaps[i];
+        if (!tag) continue;
+        captions[i] = { ...captions[i]!, prompt: captionWithSpeech(captions[i]!.prompt, tag) };
+      }
+    }
   } else if (cleanText(row.main_prompt || '')) {
     const parsedStored = parseJsonOr(row.characters_json || '[]', []);
     const storedChars: unknown[] = Array.isArray(parsedStored) ? parsedStored : [];

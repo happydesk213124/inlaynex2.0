@@ -630,7 +630,7 @@ function naiSpeechHowTo(): string {
   return [
     '## Speech (V5 shots)',
     'If someone speaks in this shot, set that character `speech` to the exact line and optional `speech_lang` (`korean`/`english`/`japanese`).',
-    "Generation appends one fused tag at the end of main: `red hair girl's makima's speechbubble, korean text:안돼!!` — no comma before speechbubble.",
+    'Generation appends `speechbubble, korean text:안돼!!` to the end of that character\'s own caption, so each speaker carries their own line.',
   ].join('\n');
 }
 

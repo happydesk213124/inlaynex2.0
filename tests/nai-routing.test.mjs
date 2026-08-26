@@ -16,7 +16,12 @@ import {
 } from '../.test-build/nai-samplers.mjs';
 import { shouldUseNaiCoords } from '../.test-build/nai-coords.mjs';
 import { allUniqueNaiTokens, quotaTokenGroups, tokensForFamily } from '../.test-build/nai-keys.mjs';
-import { speechMainTag, speechTagsForShot, stripSpokenBubbleSuppression } from '../.test-build/nai-speech.mjs';
+import {
+  captionWithSpeech,
+  speechCaptionTag,
+  speechCaptionTagsForShot,
+  stripSpokenBubbleSuppression,
+} from '../.test-build/nai-speech.mjs';
 
 test('NAI5 first off uses selected model for every shot', () => {
   assert.equal(
@@ -175,11 +180,10 @@ test('same API key on V5 and V4 is one quota group', () => {
   assert.deepEqual(split.map((g) => g.families.join('/')), ['v5', 'v4']);
 });
 
-test('speech tag is one chunk; suppression groups are stripped', () => {
-  assert.equal(
-    speechMainTag({ hair_color: 'red hair', gender: 'girl', original: 'makima' }, '안돼!!'),
-    "red hair girl's makima's speechbubble, korean text:안돼!!",
-  );
+test('speech tag names no one; suppression groups are stripped', () => {
+  assert.equal(speechCaptionTag('안돼!!'), 'speechbubble, korean text:안돼!!');
+  assert.equal(speechCaptionTag('No!', 'english'), 'speechbubble, english text:No!');
+  assert.equal(speechCaptionTag(''), '');
   const stripped = stripSpokenBubbleSuppression(
     'artist:foo, -3::spoken bubble, text, cross-section::, year 2025',
   );
@@ -187,18 +191,45 @@ test('speech tag is one chunk; suppression groups are stripped', () => {
   assert.doesNotMatch(stripped, /spoken bubble/);
 });
 
-test('shot-level speech fills when character speech is empty', () => {
-  const roster = (name) => (
-    name === '세나'
-      ? { hair_color: 'brown hair', gender: 'girl' }
-      : { hair_color: 'black hair', gender: 'boy' }
+test('each speaker gets a bubble on their own caption slot', () => {
+  assert.deepEqual(
+    speechCaptionTagsForShot({}, [
+      { name: '세나', speech: '안돼!!' },
+      { name: '한진우', speech: 'Stop.', speech_lang: 'english' },
+    ]),
+    ['speechbubble, korean text:안돼!!', 'speechbubble, english text:Stop.'],
+  );
+  // Silent cast members stay empty rather than inheriting someone else's line.
+  assert.deepEqual(
+    speechCaptionTagsForShot({}, [{ name: '세나', speech: '안돼!!' }, { name: '한진우' }]),
+    ['speechbubble, korean text:안돼!!', ''],
+  );
+});
+
+test('shot-level speech fills the named speaker when character speech is empty', () => {
+  assert.deepEqual(
+    speechCaptionTagsForShot({ speech: { speaker: '한진우', text: '안돼!!' } }, [
+      { name: '세나' },
+      { name: '한진우' },
+    ]),
+    ['', 'speechbubble, korean text:안돼!!'],
+  );
+  // A bare string has no speaker, so it belongs to char1.
+  assert.deepEqual(
+    speechCaptionTagsForShot({ speech: '안돼!!' }, [{ name: '세나' }, { name: '한진우' }]),
+    ['speechbubble, korean text:안돼!!', ''],
+  );
+  assert.deepEqual(speechCaptionTagsForShot({ speech: '안돼!!' }, []), []);
+});
+
+test('caption speech append keeps dialogue commas and never doubles', () => {
+  assert.equal(
+    captionWithSpeech('brown hair, girl', 'speechbubble, korean text:안돼, 그러지 마'),
+    'brown hair, girl, speechbubble, korean text:안돼, 그러지 마',
   );
   assert.equal(
-    speechTagsForShot(
-      { speech: { speaker: '세나', text: '안돼!!' } },
-      [{ name: '세나' }, { name: '한진우' }],
-      roster,
-    ),
-    "brown hair girl's speechbubble, korean text:안돼!!",
+    captionWithSpeech('girl, speechbubble, korean text:안돼', 'speechbubble, korean text:안돼'),
+    'girl, speechbubble, korean text:안돼',
   );
+  assert.equal(captionWithSpeech('', 'speechbubble, korean text:안돼'), 'speechbubble, korean text:안돼');
 });

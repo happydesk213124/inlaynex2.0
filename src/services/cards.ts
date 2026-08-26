@@ -66,6 +66,8 @@ import { busyReplyForRequest, jobKey } from './job-locks';
 import { createJob } from './jobs';
 import { getPrompt } from './settings';
 import { modelToNaia } from '../providers/nai/payload';
+import { resolveShotRoute } from '../domain/nai/routing';
+import type { ShotNaiRoute } from '../domain/nai/routing';
 
 /** Serialised card columns are user data; a malformed one must not fail the request. */
 function parseJsonOr(raw: unknown, fallback: unknown): unknown {
@@ -308,6 +310,9 @@ export async function rerollCard(
   let captions: NaiCaption[];
   let charList: unknown;
   let genMetaExtra: Record<string, unknown> = {};
+  // The prompt is built for one family (V5 speech, natural, family preset). Send
+  // that family's model with it, or a V5 prompt lands on the model-tab V4 model.
+  let route: ShotNaiRoute | null = null;
 
   const ov = overrides as Record<string, unknown> | null;
   if (ov && ('main_prompt' in ov || 'negative_prompt' in ov || 'characters' in ov)) {
@@ -323,6 +328,7 @@ export async function rerollCard(
         center_x: Number(ch.center_x ?? 0.5),
         center_y: Number(ch.center_y ?? 0.5),
       }));
+    route = resolveShotRoute(getConfig().card, getConfig().nai, {} as TaggedShot);
   } else if (cleanText(row.main_prompt || '')) {
     const parsedStored = parseJsonOr(row.characters_json || '[]', []);
     const storedChars: unknown[] = Array.isArray(parsedStored) ? parsedStored : [];
@@ -383,6 +389,7 @@ export async function rerollCard(
       sessionId,
       lockedSetup: decision.rebuildMain ? decision.lockedSetup : undefined,
     });
+    route = plan.route;
     if (decision.rebuildMain) {
       main = plan.main;
       neg = plan.neg;
@@ -428,6 +435,7 @@ export async function rerollCard(
       focus: meta.focus,
     };
     const plan = await buildGenerationForShot({ shot, roster, sessionId, lockedSetup });
+    route = plan.route;
     main = plan.main;
     neg = plan.neg;
     captions = plan.captions;
@@ -449,6 +457,7 @@ export async function rerollCard(
       focus: meta.focus,
     };
     const plan = await buildGenerationForShot({ shot, roster, sessionId });
+    route = plan.route;
     main = plan.main;
     neg = plan.neg;
     captions = plan.captions;
@@ -472,6 +481,8 @@ export async function rerollCard(
       characters: Array.isArray(charList)
         ? (charList as Array<{ id?: string; name?: string }>)
         : undefined,
+      model: route?.model,
+      preset: route?.preset ?? undefined,
     },
     meta.aspect ?? ov?.aspect,
   );

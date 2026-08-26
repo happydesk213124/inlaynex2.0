@@ -560,6 +560,22 @@ export async function runScenario(N, handles) {
       && !afterMain.includes('parity_style_beta'),
   }));
 
+  // A reroll builds its prompt for one family (V5 natural / speech / family
+  // preset) and must send that family's model with it. 1.x dropped the route and
+  // fell back to the model tab, so a V5-only prompt was generated on V4.5.
+  const rerolledStyleId = styleReroll?.card?.id;
+  await rec('presets.nai5_only_on', () => put('/v1/settings', { card: { nai5_only: true } }));
+  const naiGenBefore = handles.naiRequests.filter((r) => r.kind === 'generate').length;
+  await rec('presets.reroll_nai5_only', () => (
+    rerolledStyleId ? post(`/v1/cards/${rerolledStyleId}/reroll`, { mode: 'nai' }) : { ok: false }
+  ));
+  await rec('presets.reroll_keeps_v5_model', () => {
+    const sent = handles.naiRequests.filter((r) => r.kind === 'generate').slice(naiGenBefore);
+    const model = String(sent[sent.length - 1]?.body?.model || '');
+    return { sent: sent.length, model, v5: model.includes('nai-diffusion-5') };
+  });
+  await rec('presets.nai5_only_off', () => put('/v1/settings', { card: { nai5_only: false } }));
+
   // ── character delete cascade ──────────────────────────────────────────
   await rec('chars.delete_cascade', () => post('/v1/characters', {
     session_id: 'sess_chat_a',

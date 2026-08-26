@@ -342,6 +342,11 @@ const newRun = JSON.parse(fs.readFileSync(newPath, 'utf8'));
 const INTENTIONAL_DIFF_STEPS = new Set([
   'presets.reroll_after_swap',
   'presets.reroll_swaps_style',
+  // Same preset-rebuild divergence as reroll_after_swap, plus 2.4.16: the reroll
+  // sends the family it built the prompt for. 1.x fell back to the model tab and
+  // generated a V5-only prompt on V4.5.
+  'presets.reroll_nai5_only',
+  'presets.reroll_keeps_v5_model',
   // 2.0 wraps person tags (default weight 3); 1.x emits plain 1boy.
   'job.person_tag_emphasis',
   // 2.4.7 forces nai.uc_preset=none; 1.x defaulted human_focus.
@@ -469,6 +474,15 @@ for (const name of oldSteps.keys()) {
         old: String(oldStep.value?.swapped),
         new: String(newStep.value?.swapped),
         note: '2.0 must report swapped:true after preset change + reroll',
+      });
+    }
+    if (name === 'presets.reroll_keeps_v5_model'
+      && (newStep.value?.v5 !== true || !(newStep.value?.sent >= 1))) {
+      findings.push({
+        at: name,
+        old: String(oldStep.value?.model),
+        new: JSON.stringify(newStep.value),
+        note: 'with nai5_only on, a reroll must generate on the V5 model it built the prompt for',
       });
     }
     if (name === 'job.person_tag_emphasis' && newStep.value?.emphasized !== true) {

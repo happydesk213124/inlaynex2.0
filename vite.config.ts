@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.14';
+const PLUGIN_VERSION = '2.4.15';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -733,6 +733,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.4.15</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>메시지 재생성: 한 장 끝날 때마다 채팅 안 이미지도 바로 교체</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.4.14</strong>
@@ -8516,8 +8522,18 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const live = linkedCards(A);
       try {
         if (live.length && typeof rerollMessageImagesLive == "function") {
-          if (typeof withImageRerollToast == "function") await withImageRerollToast("메시지 이미지 전체 재생성 중…", async (report) => rerollMessageImagesLive(A, { report }));
-          else await rerollMessageImagesLive(A);
+          const onChipShot = async () => {
+            try {
+              await refreshSelectedInlineImages(!0);
+            } catch {
+            }
+          };
+          if (typeof withImageRerollToast == "function") await withImageRerollToast("메시지 이미지 전체 재생성 중…", async (report) => rerollMessageImagesLive(A, { report, onShot: onChipShot }));
+          else await rerollMessageImagesLive(A, { onShot: onChipShot });
+          try {
+            await refreshSelectedInlineImages(!0);
+          } catch {
+          }
           y("info", "regen.all", "msg-actions");
         } else {
           await Be(await Z({ useOverride: !1 }), A.text, !1);
@@ -10079,8 +10095,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.4.14",
-    body: "가져오기 팝업이 중앙에 있습니다. 업데이트 내역 탭 참고."
+    title: "2.4.15",
+    body: "메시지 재생성이 한 장씩 채팅 안 이미지를 바꿉니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -13968,6 +13984,12 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), await refreshSelectedInlineImages(!0)')) {
       throw new Error('[build] tag save-reroll must refresh inline images after gallery');
+    }
+    if (out.includes('rerollMessageImagesLive(A, { report })')) {
+      throw new Error('[build] chip regen must refresh inline images per shot');
+    }
+    if (!out.includes('rerollMessageImagesLive(A, { report, onShot: onChipShot })') || !out.includes('y("info", "regen.all", "msg-actions")')) {
+      throw new Error('[build] chip regen must pass onChipShot into live reroll');
     }
     if (!out.includes('&limit=2000')) {
       throw new Error('[build] session gallery ce() must request limit=2000');

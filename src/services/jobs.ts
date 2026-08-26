@@ -1150,6 +1150,7 @@ async function runJob(jobId: string): Promise<void> {
         const cardMeta = {
           ...cardMetaFromLocation(meta, location, raw?.byteLength || 0),
           aspect: shot.aspect || undefined,
+          ...(cleanText(shot.complexity, 20) ? { complexity: cleanText(shot.complexity, 20) } : {}),
         };
         cards[idx] = {
           id: cardId,

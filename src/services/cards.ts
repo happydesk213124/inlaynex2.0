@@ -70,6 +70,10 @@ import { resolveShotRoute } from '../domain/nai/routing';
 import type { ShotNaiRoute } from '../domain/nai/routing';
 
 /** Serialised card columns are user data; a malformed one must not fail the request. */
+function storedComplexity(meta: Record<string, unknown>): string {
+  return cleanText(meta.complexity, 20);
+}
+
 function parseJsonOr(raw: unknown, fallback: unknown): unknown {
   try {
     return JSON.parse(raw as string);
@@ -328,7 +332,11 @@ export async function rerollCard(
         center_x: Number(ch.center_x ?? 0.5),
         center_y: Number(ch.center_y ?? 0.5),
       }));
-    route = resolveShotRoute(getConfig().card, getConfig().nai, {} as TaggedShot);
+    route = resolveShotRoute(
+      getConfig().card,
+      getConfig().nai,
+      { complexity: storedComplexity(meta) } as TaggedShot,
+    );
   } else if (cleanText(row.main_prompt || '')) {
     const parsedStored = parseJsonOr(row.characters_json || '[]', []);
     const storedChars: unknown[] = Array.isArray(parsedStored) ? parsedStored : [];
@@ -380,6 +388,7 @@ export async function rerollCard(
       place: decision.rebuildMain && decision.lockedSetup ? '' : cleanText(meta.place || ''),
       action: decision.rebuildMain && decision.lockedSetup ? '' : cleanText(meta.action || ''),
       focus: meta.focus,
+      complexity: storedComplexity(meta),
     };
     // Never pass the full main_prompt as lockedSetup: joinTags would re-append
     // person/style/quality tags that are already baked into it.
@@ -400,6 +409,7 @@ export async function rerollCard(
         person: plan.meta.person,
         characters: charList,
         focus: plan.meta.focus ?? meta.focus,
+        complexity: plan.meta.complexity || storedComplexity(meta),
       };
     } else {
       // Hand-edited main (setup mirrored the full prompt): keep tags, refresh cast.
@@ -412,6 +422,7 @@ export async function rerollCard(
         person: plan.meta.person,
         characters: charList,
         focus: plan.meta.focus ?? meta.focus,
+        complexity: plan.meta.complexity || storedComplexity(meta),
       };
     }
   } else {
@@ -433,6 +444,7 @@ export async function rerollCard(
       place: lockedSetup ? '' : cleanText(meta.place || ''),
       action: lockedSetup ? '' : cleanText(meta.action || ''),
       focus: meta.focus,
+      complexity: storedComplexity(meta),
     };
     const plan = await buildGenerationForShot({ shot, roster, sessionId, lockedSetup });
     route = plan.route;
@@ -445,6 +457,7 @@ export async function rerollCard(
       person: plan.meta.person,
       characters: charList,
       focus: plan.meta.focus ?? meta.focus,
+      complexity: plan.meta.complexity || storedComplexity(meta),
     };
   }
 
@@ -455,6 +468,7 @@ export async function rerollCard(
       ) as ShotCharacter[],
       camera: meta.setup as string,
       focus: meta.focus,
+      complexity: storedComplexity(meta),
     };
     const plan = await buildGenerationForShot({ shot, roster, sessionId });
     route = plan.route;
@@ -467,6 +481,7 @@ export async function rerollCard(
       person: plan.meta.person,
       characters: charList,
       focus: plan.meta.focus ?? meta.focus,
+      complexity: plan.meta.complexity || storedComplexity(meta),
     };
   }
 

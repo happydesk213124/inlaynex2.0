@@ -114,6 +114,8 @@ export interface GenerationMeta {
   paragraph: number | undefined;
   /** Tagger shot `focus` (indexes / charN); kept so reroll re-applies out of frame. */
   focus?: unknown;
+  /** Kept so a later reroll can reuse NAI5-first V4/V5 routing. */
+  complexity?: string;
 }
 
 export interface GenerationPlan {
@@ -373,6 +375,7 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
       characters: charMeta,
       paragraph: shot.paragraph,
       focus: appliedFocus,
+      ...(cleanText(shot.complexity, 20) ? { complexity: cleanText(shot.complexity, 20) } : {}),
     },
     route,
     use_coords,

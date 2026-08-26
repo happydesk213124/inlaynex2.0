@@ -576,6 +576,44 @@ export async function runScenario(N, handles) {
   });
   await rec('presets.nai5_only_off', () => put('/v1/settings', { card: { nai5_only: false } }));
 
+  // nai5_first + stored complexity=simple must reroll on V4, not fall through
+  // to V5 because the reconstructed shot omitted complexity.
+  const simpleReply = JSON.parse(DEFAULT_LLM_REPLY);
+  simpleReply.scenes[0].shots[0].complexity = 'simple';
+  handles.setLlmReply?.(JSON.stringify(simpleReply));
+  await rec('presets.nai5_first_on', () => put('/v1/settings', { card: { nai5_first: true, nai5_only: false } }));
+  const firstJob = await rec('presets.first_simple_job', () => post('/v1/jobs/create', {
+    session_id: 'sess_first_simple',
+    character_id: 'char_style',
+    character_name: '스타일봇',
+    chat_id: 'chat_first_simple',
+    chat_name: '선택권 채팅',
+    assistant_text: '망치를 들었다.',
+    message_index: 1,
+    message_role: 'char',
+    content_hash: 'hash_first_simple',
+    char_index: 0,
+    chat_index: 0,
+    recent_messages: [{ role: 'user', content: '작업하자.' }],
+  }));
+  const firstWait = await rec('presets.first_simple_wait', () => waitForJob(firstJob?.job_id));
+  const firstSimpleId = firstWait?.result?.cards?.[0]?.id;
+  const naiGenBeforeSimple = handles.naiRequests.filter((r) => r.kind === 'generate').length;
+  await rec('presets.reroll_simple_complexity', () => (
+    firstSimpleId ? post(`/v1/cards/${firstSimpleId}/reroll`, { mode: 'nai' }) : { ok: false }
+  ));
+  await rec('presets.reroll_keeps_v4_from_complexity', () => {
+    const sent = handles.naiRequests.filter((r) => r.kind === 'generate').slice(naiGenBeforeSimple);
+    const model = String(sent[sent.length - 1]?.body?.model || '');
+    return {
+      sent: sent.length,
+      model,
+      v4: model.includes('nai-diffusion-4') && !model.includes('nai-diffusion-5'),
+    };
+  });
+  handles.setLlmReply?.(DEFAULT_LLM_REPLY);
+  await rec('presets.nai5_first_off', () => put('/v1/settings', { card: { nai5_first: false } }));
+
   // ── character delete cascade ──────────────────────────────────────────
   await rec('chars.delete_cascade', () => post('/v1/characters', {
     session_id: 'sess_chat_a',

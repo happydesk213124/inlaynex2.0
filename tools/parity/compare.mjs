@@ -347,6 +347,12 @@ const INTENTIONAL_DIFF_STEPS = new Set([
   // generated a V5-only prompt on V4.5.
   'presets.reroll_nai5_only',
   'presets.reroll_keeps_v5_model',
+  'presets.nai5_first_on',
+  'presets.first_simple_job',
+  'presets.first_simple_wait',
+  'presets.reroll_simple_complexity',
+  'presets.reroll_keeps_v4_from_complexity',
+  'presets.nai5_first_off',
   // 2.0 wraps person tags (default weight 3); 1.x emits plain 1boy.
   'job.person_tag_emphasis',
   // 2.4.7 forces nai.uc_preset=none; 1.x defaulted human_focus.
@@ -474,6 +480,15 @@ for (const name of oldSteps.keys()) {
         old: String(oldStep.value?.swapped),
         new: String(newStep.value?.swapped),
         note: '2.0 must report swapped:true after preset change + reroll',
+      });
+    }
+    if (name === 'presets.reroll_keeps_v4_from_complexity'
+      && (newStep.value?.v4 !== true || !(newStep.value?.sent >= 1))) {
+      findings.push({
+        at: name,
+        old: String(oldStep.value?.model),
+        new: JSON.stringify(newStep.value),
+        note: 'with nai5_first on, a simple-complexity reroll must stay on V4',
       });
     }
     if (name === 'presets.reroll_keeps_v5_model'

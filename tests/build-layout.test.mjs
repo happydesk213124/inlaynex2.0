@@ -202,7 +202,7 @@ test('Oe() collect writes per-family NAI sampler and steps', () => {
   assert.match(body, /sampler_v4/);
 });
 
-test('new chat/reply schedules a 1s pointer-near message select', () => {
+test('new chat/reply schedules a pointer-near message select', () => {
   const source = read('vite.config.ts');
   assert.match(source, /function schedulePointerSelect/);
   assert.match(source, /async function runPointerSelect/);
@@ -210,6 +210,25 @@ test('new chat/reply schedules a 1s pointer-near message select', () => {
   assert.match(source, /schedulePointerSelect\("boot"\)/);
   assert.match(source, /schedulePointerSelect\("reply"\)/);
   assert.match(source, /source: "provisional"/);
+  // A switch waits 250ms for the new chat DOM, then retries exactly once at 700ms.
+  assert.match(source, /freshSession \? 250 : rawWait/);
+  assert.match(source, /schedulePointerSelect\("session", 7e2\)/);
+});
+
+test('auto select paints inline shots and chips without a click', () => {
+  const source = read('vite.config.ts');
+  assert.match(source, /await Da\(pick, els, \{ source: "provisional", auto: 1 \}\)/);
+  assert.equal((source.match(/source === "provisional" && opts\.auto/g) || []).length, 2);
+  // The double-click first tap and the chip dispatch stay unpainted (no auto flag).
+  assert.doesNotMatch(source, /t\._pendingSelectDom = r, await Da\(r, a, \{ source: "provisional", auto/);
+});
+
+test('session switch is rechecked on user input instead of a faster idle poll', () => {
+  const source = read('vite.config.ts');
+  assert.match(source, /function nxScopeCheckSoon\(\)/);
+  assert.match(source, /now - t\._scopeCheckAt < 700/);
+  assert.equal((source.match(/nxScopeCheckSoon\(\);/g) || []).length, 3);
+  assert.match(source, /const VENDOR_SCOPE_POLL_PATCH = `n\._scopeTick % 24 === 0/);
 });
 
 test('legacy char reference off value is labeled as 안함', () => {

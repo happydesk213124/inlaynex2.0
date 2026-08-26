@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.18';
+const PLUGIN_VERSION = '2.4.19';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -733,6 +733,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.4.19</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>캐릭터 전환 후 클릭 없이 이미지와 메시지 버튼이 붙습니다</li>
+            <li>전환 감지: 화면을 건드리는 순간 즉시, 선택 지연도 단축</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.4.18</strong>
@@ -3747,6 +3754,7 @@ const VENDOR_INLINE_PTR_STICKY_PATCH = `    }, l = async (f) => {
         }
       }
       if (t.uiOpen || t._hostChromeBlocked) return;
+      nxScopeCheckSoon();
       if (pointerGesture && typeof f.clientX == "number" && typeof f.clientY == "number") {
         pointerGesture.movement = Math.max(pointerGesture.movement || 0, Math.hypot(f.clientX - pointerGesture.x, f.clientY - pointerGesture.y));
       }
@@ -3865,6 +3873,7 @@ const VENDOR_SCROLL_PHASE_PATCH = `    }, captureLiveScrollY = () => {
       return t._scrollPhaseBus;
     }, u = () => {
       if (t.uiOpen) return;
+      nxScopeCheckSoon();
       ensureScrollPhaseBus().onScrollSample();
     }, onScrollEnd = () => {
       if (t.uiOpen) return;
@@ -3878,6 +3887,9 @@ const VENDOR_SCROLL_PHASE_PATCH = `    }, captureLiveScrollY = () => {
         t._nxPtrCap = (ev) => {
           if (typeof ev?.clientX == "number") t._pointerClientX = ev.clientX;
           if (typeof ev?.clientY == "number") t._pointerClientY = ev.clientY;
+          // Window capture sees the pointer after a roster click too, which is the
+          // one gesture the chat-scoped handler never gets on a character switch.
+          nxScopeCheckSoon();
           if (t.backendSettings?.card?.inline_chat_images !== !0 || t.uiOpen || !t.overlayUi?.markers?.length) return;
           const scrolling = !!(t._scrollPhaseBus && t._scrollPhaseBus.pendingSettle);
           if (scrolling || t._inlineStickyPtrRaf) return;
@@ -8828,7 +8840,7 @@ const VENDOR_INLINE_CALL_NEEDLE =
   `    return await onSelectionChanged("content"), scheduleOverlayPlace(80), t.debugUi?.refreshSoon && t.debugUi.refreshSoon(), (source === "click" || source === "text") && await ensureMessageInView(o), source === "provisional" ? !0 : !isSelectedCharRole(l) ? (y("info", "select.user", "유저 메시지 — 자동 생성 안 함"), !0) : u.length ? (y("info", "select.hasImage", \`cards=\${u.length} · 재생성은 뷰어 버튼\`), !0) : (y("info", "select.noImage", "해시 이미지 없음 → 태그부터 생성"), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
   }`;
 const VENDOR_INLINE_CALL_PATCH =
-  `    if (source === "click" || source === "text" || source === "scroll") {
+  `    if (source === "click" || source === "text" || source === "scroll" || (source === "provisional" && opts.auto)) {
       try {
         await refreshSelectedInlineImages();
       } catch {
@@ -8851,7 +8863,7 @@ const VENDOR_INLINE_SAME_NEEDLE =
       return !isSelectedCharRole(l) ? !0 : (y("info", "select.same", \`msg#\${i.chatIndex} noImage → retry\`), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
     }`;
 const VENDOR_INLINE_SAME_PATCH =
-  `      if (source === "click" || source === "text" || source === "scroll") {
+  `      if (source === "click" || source === "text" || source === "scroll" || (source === "provisional" && opts.auto)) {
         try {
           await refreshSelectedInlineImages();
         } catch {
@@ -10113,8 +10125,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.4.18",
-    body: "선택권 리롤이 처음 complexity를 따라갑니다. 업데이트 내역 탭 참고."
+    title: "2.4.19",
+    body: "캐릭터 전환 후 클릭 없이 이미지와 메시지 버튼이 붙습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -11163,6 +11175,20 @@ const VENDOR_POINTER_SELECT_PATCH =
       source: opts.source || "click"
     }));
   }
+  /**
+   * Session switch lands on the next user input instead of waiting out the 6s idle
+   * scope poll. Two host index reads, throttled, and never while idle — the idle
+   * cadence is what thrashed when the poll itself was sped up.
+   */
+  function nxScopeCheckSoon() {
+    if (t.uiOpen || t._hostChromeBlocked || t.unloading) return;
+    if (t.jobsInFlight.size) return;
+    if (t.jobProgress && formatViewerJob(t.jobProgress)?.busy) return;
+    const now = Date.now();
+    if (t._scopeCheckAt && now - t._scopeCheckAt < 700) return;
+    t._scopeCheckAt = now;
+    Z().catch(() => {});
+  }
   function schedulePointerSelect(reason, delayMs = 1e3) {
     if (String(reason || "") === "bind" && Math.max(0, Number(delayMs) || 0) === 0) {
       if (t._pointerSelectBindTimer) clearTimeout(t._pointerSelectBindTimer);
@@ -11183,10 +11209,21 @@ const VENDOR_POINTER_SELECT_PATCH =
     }
     if (t._pointerSelectTimer) clearTimeout(t._pointerSelectTimer);
     t._pointerSelectReason = String(reason || "");
+    // A switch only needs the new chat DOM to exist, so try early and retry once
+    // rather than always paying the full second. The retry re-enters with 700 and
+    // is therefore not "fresh", which is what stops it from looping.
+    const rawWait = Math.max(0, Number(delayMs) || 0);
+    const freshSession = t._pointerSelectReason === "session" && rawWait === 1e3;
+    if (freshSession) t._pointerSelectRetried = 0;
     t._pointerSelectTimer = setTimeout(() => {
       t._pointerSelectTimer = null;
-      runPointerSelect(t._pointerSelectReason).catch(() => {});
-    }, Math.max(0, Number(delayMs) || 0));
+      const why = t._pointerSelectReason;
+      runPointerSelect(why).then((selected) => {
+        if (selected || why !== "session" || t._pointerSelectRetried) return;
+        t._pointerSelectRetried = 1;
+        schedulePointerSelect("session", 7e2);
+      }).catch(() => {});
+    }, freshSession ? 250 : rawWait);
   }
   async function runPointerSelect(reason) {
     if (t.uiOpen || t._hostChromeBlocked) return !1;
@@ -11206,7 +11243,8 @@ const VENDOR_POINTER_SELECT_PATCH =
     if (!(pick >= 0)) pick = await Ra(px, py, els);
     if (!(pick >= 0)) return !1;
     y("info", "select.pointer", \`reason=\${reason || ""} DOM#\${pick} x=\${Math.round(px)} y=\${Math.round(py)}\`);
-    await Da(pick, els, { source: "provisional" });
+    // Auto-select paints inline shots + chips; a click is no longer required after a switch.
+    await Da(pick, els, { source: "provisional", auto: 1 });
     return !0;
   }`;
 
@@ -13996,6 +14034,24 @@ const loadVendorUi = (): string => {
     }
     if (out.includes('refreshSelectedInlineImages(source === "scroll")')) {
       throw new Error('[build] scroll inline must not force-refresh (cheap keep skip)');
+    }
+    if ((out.match(/source === "provisional" && opts\.auto/g) || []).length !== 2) {
+      throw new Error('[build] both inline paint gates must open for auto provisional select');
+    }
+    if (!out.includes('await Da(pick, els, { source: "provisional", auto: 1 })')) {
+      throw new Error('[build] runPointerSelect must mark its provisional select as auto');
+    }
+    if (out.includes('await Da(pick, els, { source: "provisional" })')) {
+      throw new Error('[build] runPointerSelect must not select without the auto flag');
+    }
+    if (!out.includes('function nxScopeCheckSoon()') || !out.includes('now - t._scopeCheckAt < 700')) {
+      throw new Error('[build] missing throttled scope recheck for session switches');
+    }
+    if ((out.match(/nxScopeCheckSoon\(\);/g) || []).length !== 3) {
+      throw new Error('[build] scope recheck must ride the existing pointermove/capture/scroll handlers');
+    }
+    if (!out.includes('freshSession ? 250 : rawWait') || !out.includes('schedulePointerSelect("session", 7e2)')) {
+      throw new Error('[build] session pointer select must try at 250ms and retry once');
     }
     if (!out.includes('_paintStatusKey') || !out.includes('_seFp') || !out.includes('_deTextCache')) {
       throw new Error('[build] missing same-feel skip caches (status/Se/De)');

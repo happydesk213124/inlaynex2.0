@@ -178,7 +178,7 @@ test('same API key on V5 and V4 is one quota group', () => {
 test('speech tag is one chunk; suppression groups are stripped', () => {
   assert.equal(
     speechMainTag({ hair_color: 'red hair', gender: 'girl', original: 'makima' }, '안돼!!'),
-    "red hair girl's makima's speechbubble, koreantext:안돼!!",
+    "red hair girl's makima's speechbubble, korean text:안돼!!",
   );
   const stripped = stripSpokenBubbleSuppression(
     'artist:foo, -3::spoken bubble, text, cross-section::, year 2025',
@@ -199,6 +199,6 @@ test('shot-level speech fills when character speech is empty', () => {
       [{ name: '세나' }, { name: '한진우' }],
       roster,
     ),
-    "brown hair girl's speechbubble, koreantext:안돼!!",
+    "brown hair girl's speechbubble, korean text:안돼!!",
   );
 });

@@ -293,7 +293,7 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   }
   // Cut foreign person-count tags from body, then prepend our ONE wrapped block.
   // joinTags must not split N::1girl, 1boy:: (see splitTagTokens).
-  let body = joinTags(stylePos, speechTags, natural, setup, fixedPos);
+  let body = joinTags(stylePos, natural, setup, fixedPos);
   if (personMode !== 'off') {
     body = stripPersonCountTags(body);
     setup = stripPersonCountTags(setup);
@@ -306,6 +306,8 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   const naiaModel = modelToNaia(route.model || nai.model || 'nai-diffusion-4-5-full');
   if (nai.apply_quality_tags !== false) main += QUALITY_TAGS[naiaModel] || '';
   main = appendNoHumansWhenNoCast(main, chars.length, card.no_humans_when_no_char);
+  // Dialogue commas must stay intact — do not run this through joinTags.
+  if (speechTags) main = main ? `${main}, ${speechTags}` : speechTags;
   // Frozen UI has no UC preset control; leftover human_focus appended a long UC block on every gen.
   const ucPreset = 'none';
   const neg = joinTags(styleNeg, fixedNeg, (UC_PRESETS[naiaModel] || {})[ucPreset] || '');

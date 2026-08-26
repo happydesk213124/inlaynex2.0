@@ -26,17 +26,17 @@ export function stripSpokenBubbleSuppression(positive: string): string {
 }
 
 function speechLangTag(text: string, langRaw: unknown): string {
-  const lang = cleanText(langRaw, 40).toLowerCase();
+  const lang = cleanText(langRaw, 40).toLowerCase().replace(/\s+/g, '');
   if (lang === 'ja' || lang === 'jp' || lang === 'japanese' || lang === 'japanesetext') {
-    return 'japanesetext';
+    return 'japanese text';
   }
-  if (lang === 'en' || lang === 'english' || lang === 'englishtext') return 'englishtext';
+  if (lang === 'en' || lang === 'english' || lang === 'englishtext') return 'english text';
   if (lang === 'ko' || lang === 'kr' || lang === 'korean' || lang === 'koreantext') {
-    return 'koreantext';
+    return 'korean text';
   }
-  if (/[\u3040-\u30ff]/.test(text)) return 'japanesetext';
-  if (/[\uac00-\ud7a3]/.test(text)) return 'koreantext';
-  return 'englishtext';
+  if (/[\u3040-\u30ff]/.test(text)) return 'japanese text';
+  if (/[\uac00-\ud7a3]/.test(text)) return 'korean text';
+  return 'english text';
 }
 
 function personChunk(stored: {
@@ -61,7 +61,7 @@ function personChunk(stored: {
   return body || 'person';
 }
 
-/** `red hair girl's makima's speechbubble, koreantext:안돼!!` — one chunk before the colon. */
+/** `red hair girl's makima's speechbubble, korean text:안돼!!` — one chunk before the colon. */
 export function speechMainTag(
   stored: Parameters<typeof personChunk>[0],
   speech: unknown,

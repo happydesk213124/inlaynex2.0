@@ -8,7 +8,7 @@
  */
 import type { LoreEntry } from '../../core/types.ts';
 
-/** One `##`/`###` character block from the entry body. */
+/** One ATX heading character block from the entry body (`#`…`######`, space optional). */
 export interface CharacterImageSection {
   title: string;
   hashes: string;
@@ -28,6 +28,9 @@ interface HeadingMatch {
   titleEnd: number;
 }
 
+/** Line-start ATX heading. Hash count and space after `#` do not matter. */
+export const LORE_SECTION_HEADING_RE = /^(#+)\s*(.+?)\s*$/gm;
+
 /** Detect the special always-on character-image lore entry. */
 export function isCharacterImageExtraLore(entry: LoreEntry | null | undefined): boolean {
   const name = String(entry?.comment || entry?.name || '').trim().toLowerCase();
@@ -35,7 +38,7 @@ export function isCharacterImageExtraLore(entry: LoreEntry | null | undefined): 
 }
 
 /**
- * Parse ## / ### sections from lb-xnai.lb.extra body.
+ * Parse ATX headings from lb-xnai.lb.extra body.
  * "Character Image Tags" is the shared header; every other heading is a character section.
  */
 export function parseCharacterImageTagLore(content: unknown): ParsedCharacterImageLore {
@@ -43,13 +46,15 @@ export function parseCharacterImageTagLore(content: unknown): ParsedCharacterIma
   if (!text.trim()) {
     return { header: '', sections: [] };
   }
-  const re = /^(#{2,3})\s+(.+?)\s*$/gm;
+  const re = new RegExp(LORE_SECTION_HEADING_RE.source, 'gm');
   const matches: HeadingMatch[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
+    const title = String(m[2] || '').trim();
+    if (!title) continue;
     matches.push({
       hashes: m[1],
-      title: String(m[2] || '').trim(),
+      title,
       start: m.index,
       titleEnd: m.index + m[0].length,
     });
@@ -134,7 +139,7 @@ export function trimCharacterImageTagLore(
 }
 
 /**
- * Body for an author's-note style instruction: header + matching ### sections.
+ * Body for an author's-note style instruction: header + matching heading sections.
  * No matching section → header only. No header either → the raw entry.
  */
 export function loreExtraInstructionBody(

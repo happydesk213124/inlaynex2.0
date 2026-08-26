@@ -13,6 +13,7 @@ import { characterTriggers } from '../character/roster.ts';
 import { characterHasAppearance } from '../character/tags.ts';
 import {
   isCharacterImageExtraLore,
+  LORE_SECTION_HEADING_RE,
   matchCharacterImageSectionTitles,
   trimCharacterImageTagLore,
 } from './extra.ts';
@@ -143,7 +144,7 @@ export function isUntrimmedCharacterImageTagDump(
 ): boolean {
   const text = String(content || '');
   if (!/character\s*image\s*tags/i.test(text)) return false;
-  const heads = text.match(/^#{2,3}\s+.+$/gm) || [];
+  const heads = text.match(new RegExp(LORE_SECTION_HEADING_RE.source, 'gm')) || [];
   const sectionHeads = heads.filter((h) => !/character\s*image\s*tags/i.test(h));
   const keep = Array.isArray(keepNames) ? keepNames.filter(Boolean).length : 0;
   // More character sections than unlocked names → still the whole file.

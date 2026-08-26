@@ -153,3 +153,27 @@ test("formatLoreExtraAuthorNote wraps like author's note", () => {
   assert.match(note, /These are instructions explicitly given by the user/);
   assert.equal(formatLoreExtraAuthorNote("  "), "");
 });
+
+test("parseCharacterImageTagLore accepts any ATX heading, space optional", () => {
+  const parsed = parseCharacterImageTagLore(`custom prompt here
+
+# Yoon Ji-soo
+1girl, brown eyes
+
+##yoon park
+1boy
+
+#### Yoo Tae-sung
+1man
+`);
+  assert.equal(parsed.header, "custom prompt here");
+  assert.equal(parsed.sections.map((s) => s.title).join("|"), "Yoon Ji-soo|yoon park|Yoo Tae-sung");
+  assert.equal(parsed.sections[0].hashes, "#");
+  assert.equal(parsed.sections[1].hashes, "##");
+  assert.equal(parsed.sections[2].hashes, "####");
+  const keep = matchCharacterImageSectionTitles(
+    `# Yoon Ji-soo\n1girl\n##yoon park\n1boy`,
+    "Yoon Ji-soo and yoon park walked in",
+  );
+  assert.deepEqual(keep, ["Yoon Ji-soo", "yoon park"]);
+});

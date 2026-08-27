@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.31';
+const PLUGIN_VERSION = '2.4.32';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -8561,7 +8561,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         hideAttachToast().catch(() => {});
         return;
       }
-      // Past the cheap skip: chips/shots still need resolve + inject.
+      // Cheap skip said this keep window is not already painted. Spinner now.
       showAttachToast().catch(() => {});
       const VC = globalThis.__INLAY_VIEWER_CORE__;
       const allRoles = !!t.backendSettings?.card?.generate_all_roles;
@@ -10342,12 +10342,7 @@ const VENDOR_REBIND_RETARGET_PATCH =
 const VENDOR_SELECT_SAME_NEEDLE =
   `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c) return !0;`;
 const VENDOR_SELECT_SAME_PATCH =
-  `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c && !t.pendingSessionId && t.selectedMessage.sessionId && t.lastScope?.sessionId && t.selectedMessage.sessionId === t.lastScope.sessionId) return !0;
-    // Spinner now — Za/ce/rebind are the wait. Do not wait until inject.
-    if (source === "click" || source === "text" || source === "scroll" || opts.auto) {
-      showAttachToast().catch(() => {
-      });
-    }`;
+  `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c && !t.pendingSessionId && t.selectedMessage.sessionId && t.lastScope?.sessionId && t.selectedMessage.sessionId === t.lastScope.sessionId) return !0;`;
 
 /**
  * Scroll DOM select skipped gallery fetch (`ce`). Empty `t.gallery` → linkedCards=[] →
@@ -11874,11 +11869,6 @@ const VENDOR_POINTER_SELECT_PATCH =
     Z().catch(() => {});
   }
   function schedulePointerSelect(reason, delayMs = 1e3) {
-    const why0 = String(reason || "");
-    if (why0 === "boot" || why0 === "session" || why0 === "reply" || why0 === "bind") {
-      if (typeof showAttachToast == "function") showAttachToast().catch(() => {
-      });
-    }
     if (String(reason || "") === "bind" && Math.max(0, Number(delayMs) || 0) === 0) {
       if (t._pointerSelectBindTimer) clearTimeout(t._pointerSelectBindTimer);
       const queueFallback = () => {
@@ -14790,10 +14780,14 @@ const loadVendorUi = (): string => {
       if ((body.match(/maybeRebindAndLink\(/g) || []).length !== 1) {
         throw new Error('[build] refreshSelectedInlineImages must reach maybeRebindAndLink only through nxRebind');
       }
-      const showAt = body.indexOf('showAttachToast().catch');
+      const skipAt = body.indexOf('inline.keep.skip');
+      const showAt = body.lastIndexOf('showAttachToast().catch');
       const zaAt = body.indexOf('const scope = await Za()');
-      if (showAt < 0 || zaAt < 0 || showAt > zaAt) {
-        throw new Error('[build] attach toast must start before Za/resolve, not after');
+      if (skipAt < 0 || showAt < 0 || zaAt < 0 || !(skipAt < showAt && showAt < zaAt)) {
+        throw new Error('[build] attach toast must start after the already-painted skip, before Za');
+      }
+      if (body.includes('Cheap skip said this keep window is not already painted') === false) {
+        throw new Error('[build] attach toast must wait for the already-painted skip');
       }
     }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
@@ -14827,7 +14821,17 @@ const loadVendorUi = (): string => {
     if (!out.includes('showAttachToast().catch') || !out.includes('hideAttachToast().catch')) {
       throw new Error('[build] attach toast must show before inject and hide after');
     }
-    assertOnce(out, 'Spinner now — Za/ce/rebind are the wait', 'Da starts attach toast before scope/gallery');
+    if (out.includes('Spinner now — Za/ce/rebind are the wait')) {
+      throw new Error('[build] Da must not raise the attach toast before the already-painted skip');
+    }
+    {
+      const from = out.indexOf('function schedulePointerSelect(');
+      const to = out.indexOf('async function runPointerSelect(');
+      if (from < 0 || to < 0 || to < from) throw new Error('[build] cannot slice schedulePointerSelect');
+      if (out.slice(from, to).includes('showAttachToast')) {
+        throw new Error('[build] schedulePointerSelect must not raise the attach toast before the already-painted skip');
+      }
+    }
     {
       const from = out.indexOf('async function showAttachToast()');
       const to = out.indexOf('async function ensureSelectionToastRoot()');

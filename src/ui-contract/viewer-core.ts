@@ -643,6 +643,78 @@ export function pickInlineKeepDomIndices(opts: {
   return out;
 }
 
+export interface SessionGalleryMerge<T> {
+  cards: T[];
+  /** Rows carried over from the previous cache because the window missed them. */
+  kept: number;
+  /** Rows the response proves are gone. */
+  dropped: number;
+  /** True when the response listed the whole session and simply replaced the cache. */
+  replaced: boolean;
+}
+
+/**
+ * Folds a windowed session listing into the cached one.
+ *
+ * A window is only safe if older cards survive in the cache — otherwise a shot
+ * on an old message stops attaching, which is exactly why the request used to
+ * ask for the session ceiling. But the cache must not keep deleted cards
+ * either, and a window cannot see a deletion below its own edge.
+ *
+ * `windowOldestAt` is the oldest timestamp the window reached, so a cached row
+ * at or above it that the response omits was deleted. Below that edge the
+ * response says nothing, except about hashes it was explicitly asked for: an
+ * asked hash that came back with no rows has no cards left.
+ */
+export function mergeSessionGallery<T extends GalleryCard = GalleryCard>(opts: {
+  prev: readonly T[] | null | undefined;
+  next: readonly T[] | null | undefined;
+  total?: unknown;
+  windowOldestAt?: unknown;
+  askedHashes?: readonly unknown[] | null;
+  cap?: number;
+}): SessionGalleryMerge<T> {
+  const next = Array.isArray(opts.next) ? [...opts.next] : [];
+  const prev = Array.isArray(opts.prev) ? opts.prev : [];
+  const total = Math.max(0, finiteNumber(opts.total, 0));
+  const cap = Math.max(1, finiteNumber(opts.cap, 2000));
+  if (!prev.length || next.length >= total) {
+    return { cards: next.slice(0, cap), kept: 0, dropped: 0, replaced: true };
+  }
+
+  const haveIds = new Set(next.map((card) => String(card?.id || '')).filter(Boolean));
+  const haveHashes = new Set(next.map((card) => String(card?.content_hash || '')).filter(Boolean));
+  const asked = new Set(
+    (Array.isArray(opts.askedHashes) ? opts.askedHashes : [])
+      .map((h) => String(h || ''))
+      .filter(Boolean),
+  );
+  const edge = opts.windowOldestAt == null ? null : finiteNumber(opts.windowOldestAt, 0);
+
+  const carried: T[] = [];
+  let dropped = 0;
+  for (const card of prev) {
+    const id = String(card?.id || '');
+    if (!id || haveIds.has(id)) continue;
+    const at = finiteNumber(card?.created_at, 0);
+    if (edge != null && at >= edge) {
+      dropped += 1;
+      continue;
+    }
+    const hash = String(card?.content_hash || '');
+    if (hash && asked.has(hash) && !haveHashes.has(hash)) {
+      dropped += 1;
+      continue;
+    }
+    carried.push(card);
+  }
+
+  const cards = [...next, ...carried]
+    .sort((a, b) => finiteNumber(b?.created_at, 0) - finiteNumber(a?.created_at, 0))
+    .slice(0, cap);
+  return { cards, kept: carried.length, dropped, replaced: false };
+}
+
 export type InlinePaintSource = 'selection' | 'remap' | 'unresolved';
 
 export interface InlinePaintTarget<T> {

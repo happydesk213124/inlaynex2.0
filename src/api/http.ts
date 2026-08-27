@@ -36,6 +36,23 @@ export function q(query: Query, key: string, fallback = ''): string {
   return v ?? fallback;
 }
 
+/**
+ * Every value for a query key. Accepts both a repeated key and one
+ * comma-separated value, since a URL builder may produce either.
+ */
+export function qAll(query: Query, key: string): string[] {
+  const v = query[key];
+  const raw = Array.isArray(v) ? v : v === undefined ? [] : [v];
+  const out: string[] = [];
+  for (const entry of raw) {
+    for (const part of String(entry).split(',')) {
+      const clean = part.trim();
+      if (clean && !out.includes(clean)) out.push(clean);
+    }
+  }
+  return out;
+}
+
 export type Headers = Record<string, unknown>;
 
 /**

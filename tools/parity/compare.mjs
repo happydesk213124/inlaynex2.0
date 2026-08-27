@@ -287,6 +287,16 @@ const normalize = (root) => {
         // 2.0 message-reroll soft-stop flag (`stopped`). 1.x has no field; idle
         // reroll returns false — unit/scenario assert stop behaviour, not wire.
         if (k === 'stopped') continue;
+        // 2.0 /v1/gallery answers a window and names the hashes it needs, so it
+        // reports the session card count and the window's oldest timestamp for
+        // the caller to merge against. 1.x always listed the whole session and
+        // had neither. Scoped to the session listing (session_id + items, no
+        // folders) so the explorer payload's own `total` still compares.
+        // gallery.window_* / gallery.hash_* assert the values.
+        if (
+          (k === 'total' || k === 'window_oldest_at')
+          && 'session_id' in node && 'items' in node && !('folders' in node)
+        ) continue;
         out[k] = walk(node[k], k);
       }
       return out;
@@ -397,6 +407,24 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (v === 'data'
       ? null
       : `2.x gallery image_url must be a data:image URL — SafeDOM strips blob: and cannot setAttribute src, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'gallery.window_reports_total',
+    (v) => (typeof v?.total === 'number' && v.total >= 1 && v.matches_items === true && v.window_oldest_at === null
+      ? null
+      : `2.0 /v1/gallery must report the session card count, and no window edge when the window covered it all, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'gallery.window_excludes_beyond_limit',
+    (v) => (v?.window_capped === true && v?.edge_only_when_short === true
+      ? null
+      : `2.0 /v1/gallery must cap at the limit and report a window edge exactly when it stopped short of the session, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'gallery.hash_outside_window_still_ships',
+    (v) => (Number(v?.hashed_rows) >= 1 && v?.all_match === true && Number(v?.unknown_hash_rows) === 0
+      ? null
+      : `2.0 must ship a named hash's cards with an empty window, and nothing for an unknown hash, got ${JSON.stringify(v)}`),
   ],
   [
     'host.gallery_pixels',

@@ -36,7 +36,7 @@ import * as lorefilter from '../services/lorefilter';
 import * as charImport from '../services/char-import';
 import * as settings from '../services/settings';
 import * as curation from '../services/curation';
-import { authorized, parseQuery, q, type Headers, type Query } from './http';
+import { authorized, parseQuery, q, qAll, type Headers, type Query } from './http';
 
 export interface RouteResult {
   status: number;
@@ -145,7 +145,14 @@ const GET_ROUTES: readonly Route[] = [
   { match: exact('/v1/gallery/favorites'), handler: async () => ok(await gallery.getExplorerFavorites()) },
   {
     match: under('/v1/gallery'),
-    handler: async ({ query }) => ok(await gallery.gallery(q(query, 'session_id'), Number(q(query, 'limit', '40')))),
+    handler: async ({ query }) =>
+      ok(
+        await gallery.gallery(
+          q(query, 'session_id'),
+          Number(q(query, 'limit', '40')),
+          [...qAll(query, 'hashes'), ...qAll(query, 'content_hash')],
+        ),
+      ),
   },
   {
     match: exact('/v1/nai/reference.png'),

@@ -91,6 +91,7 @@ import {
   isCharMessageRole,
   pickInlineKeepDomIndices,
   resolveInlinePaintCards,
+  mergeSessionGallery,
   INLINE_KEEP_MAX_PER_SIDE,
   desiredInlinePlacements,
   desiredInlinePaintKey,
@@ -827,6 +828,70 @@ test("pickInlineKeepDomIndices keeps selected char plus 1 each side (max 3)", ()
     pickInlineKeepDomIndices({ selIdx: 4, length: 9, allRoles: false, isCharAt }).sort((a, b) => a - b),
     [2, 4, 6],
   );
+});
+
+test("a complete listing replaces the gallery cache outright", () => {
+  const next = [{ id: "b", created_at: 20 }, { id: "a", created_at: 10 }];
+  const got = mergeSessionGallery({ prev: [{ id: "gone", created_at: 5 }], next, total: 2 });
+  assert.equal(got.replaced, true);
+  assert.deepEqual(got.cards.map((c) => c.id), ["b", "a"]);
+});
+
+test("a windowed listing keeps cards older than the window edge", () => {
+  // Session has 5 cards, window returned the newest 2 (edge at 40).
+  const prev = [
+    { id: "e", created_at: 50 },
+    { id: "d", created_at: 40 },
+    { id: "c", created_at: 30, content_hash: "h3" },
+    { id: "b", created_at: 20, content_hash: "h2" },
+  ];
+  const next = [{ id: "e", created_at: 50 }, { id: "d", created_at: 40 }];
+  const got = mergeSessionGallery({ prev, next, total: 5, windowOldestAt: 40 });
+  assert.equal(got.replaced, false);
+  assert.equal(got.kept, 2);
+  assert.equal(got.dropped, 0);
+  assert.deepEqual(got.cards.map((c) => c.id), ["e", "d", "c", "b"]);
+});
+
+test("a windowed listing drops cards the window proves are deleted", () => {
+  // "d" is inside the window (created_at >= edge) but absent from the response.
+  const prev = [{ id: "e", created_at: 50 }, { id: "d", created_at: 40 }, { id: "c", created_at: 30 }];
+  const next = [{ id: "e", created_at: 50 }, { id: "z", created_at: 45 }];
+  const got = mergeSessionGallery({ prev, next, total: 9, windowOldestAt: 40 });
+  assert.equal(got.dropped, 1);
+  assert.deepEqual(got.cards.map((c) => c.id), ["e", "z", "c"]);
+});
+
+test("an asked hash that comes back empty drops that message's cached cards", () => {
+  const prev = [{ id: "old", created_at: 10, content_hash: "hx" }];
+  const next = [{ id: "new", created_at: 90, content_hash: "hy" }];
+  const got = mergeSessionGallery({
+    prev,
+    next,
+    total: 40,
+    windowOldestAt: 80,
+    askedHashes: ["hx"],
+  });
+  assert.equal(got.dropped, 1);
+  assert.deepEqual(got.cards.map((c) => c.id), ["new"]);
+  // Not asked about → below the edge, so it must survive.
+  const untouched = mergeSessionGallery({ prev, next, total: 40, windowOldestAt: 80, askedHashes: [] });
+  assert.equal(untouched.dropped, 0);
+  assert.deepEqual(untouched.cards.map((c) => c.id), ["new", "old"]);
+});
+
+test("a hash fetch below the window edge merges without dropping the window", () => {
+  const prev = [{ id: "w1", created_at: 90 }, { id: "w2", created_at: 80 }];
+  const next = [{ id: "old", created_at: 5, content_hash: "hz" }];
+  const got = mergeSessionGallery({
+    prev,
+    next,
+    total: 300,
+    windowOldestAt: null,
+    askedHashes: ["hz"],
+  });
+  assert.equal(got.dropped, 0);
+  assert.deepEqual(got.cards.map((c) => c.id), ["w1", "w2", "old"]);
 });
 
 test("remapped paint index uses that bubble's cards, never the selection's", () => {

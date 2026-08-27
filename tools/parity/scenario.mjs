@@ -332,6 +332,36 @@ export async function runScenario(N, handles) {
     if (/^data:image\//i.test(u)) return 'data';
     return 'other';
   });
+  // 2.0 asks for a newest-first window and names the hashes it is about to
+  // paint, so an old shot still attaches without listing the whole session.
+  await rec('gallery.window_reports_total', () => {
+    const all = gallery?.items?.length ?? -1;
+    return { total: gallery?.total, matches_items: gallery?.total === all, window_oldest_at: gallery?.window_oldest_at };
+  });
+  await rec('gallery.window_excludes_beyond_limit', async () => {
+    const limit = 1;
+    const win = await get(`/v1/gallery?session_id=sess_main&limit=${limit}`);
+    const total = Number(win?.total);
+    const items = win?.items?.length ?? -1;
+    return {
+      items,
+      total,
+      // The window returns min(limit, total), and reports an edge only when it
+      // stopped short of the session — that edge is what a merge prunes against.
+      window_capped: items === Math.min(limit, total),
+      edge_only_when_short: (typeof win?.window_oldest_at === 'number') === (total > limit),
+    };
+  });
+  await rec('gallery.hash_outside_window_still_ships', async () => {
+    // limit=0: nothing from the window, only what the hash asks for.
+    const byHash = await get('/v1/gallery?session_id=sess_main&limit=0&hashes=hash_main');
+    const other = await get('/v1/gallery?session_id=sess_main&limit=0&hashes=no_such_hash');
+    return {
+      hashed_rows: byHash?.items?.length ?? -1,
+      all_match: (byHash?.items || []).every((r) => r.content_hash === 'hash_main'),
+      unknown_hash_rows: other?.items?.length ?? -1,
+    };
+  });
   await rec('gallery.explore', () => get('/v1/gallery/explore?limit=200'));
   await rec('gallery.favorites_empty', () => get('/v1/gallery/favorites'));
   await rec('gallery.favorites_set', () => post('/v1/gallery/favorites', { ids: cardId ? [cardId] : [] }));

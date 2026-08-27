@@ -18,7 +18,7 @@
     "unit": "node tools/build-tests.mjs && node --test tests/*.test.mjs",
     "audit": "node tools/audit.mjs && node tools/check-docs.mjs",
     "smoke": "node tools/smoke.mjs",
-    "bench": "node tools/bench-gallery.mjs --route=gallery && node tools/bench-gallery.mjs --route=explore",
+    "bench": "node tools/bench-gallery.mjs --route=gallery && node tools/bench-gallery.mjs --route=explore && node tools/bench-gallery.mjs --route=window",
     "parity:old": "node tools/parity/run.mjs --target=old --out=.parity/old.json",
     "parity:new": "node tools/parity/run.mjs --target=new --out=.parity/new.json",
     "parity": "npm run parity:old && npm run parity:new && node tools/parity/compare.mjs .parity/old.json .parity/new.json",

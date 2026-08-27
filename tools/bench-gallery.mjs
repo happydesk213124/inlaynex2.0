@@ -21,7 +21,13 @@
  * second route in the same process sees a warm cache and would pass no matter what
  * it does.
  *
- *   node tools/bench-gallery.mjs --route=gallery|explore [--count=40]
+ * `--route=window` is a different question: the session listing answers a
+ * newest-first window plus the hashes the caller named, so a session far larger
+ * than the window must not cost a full assembly. The tail is still probed for
+ * the named hashes, and that probe has to stay an index read — one lookup per
+ * tail row, not a row build.
+ *
+ *   node tools/bench-gallery.mjs --route=gallery|explore|window [--count=40]
  */
 import path from 'node:path';
 import vm from 'node:vm';
@@ -34,13 +40,19 @@ const arg = (name, fallback) => {
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 const ROUTE = arg('route', 'gallery');
-const COUNT = Number(arg('count', 40));
 const SESSION = 'bench_session';
 
-if (ROUTE !== 'gallery' && ROUTE !== 'explore') {
-  console.error(`[bench] unknown --route=${ROUTE} (expected "gallery" or "explore")`);
+if (ROUTE !== 'gallery' && ROUTE !== 'explore' && ROUTE !== 'window') {
+  console.error(`[bench] unknown --route=${ROUTE} (expected "gallery", "explore" or "window")`);
   process.exit(1);
 }
+
+const COUNT = Number(arg('count', ROUTE === 'window' ? 400 : 40));
+/** Window mode: ask for this many newest rows plus one hash from deep in the tail. */
+const WINDOW = 120;
+// Cards are seeded oldest-first, so a low index is deep below the window edge.
+const TAIL_INDEX = 10;
+const TAIL_HASH = `hash_${TAIL_INDEX}`;
 
 const handles = installHost({ promptsDir: path.join(root, 'prompts') });
 
@@ -128,7 +140,11 @@ const failures = [];
 
 const url = ROUTE === 'gallery'
   ? `/v1/gallery?session_id=${SESSION}&limit=${COUNT}`
-  : `/v1/gallery/explore?limit=${COUNT}`;
+  : ROUTE === 'window'
+    ? `/v1/gallery?session_id=${SESSION}&limit=${WINDOW}&hashes=${TAIL_HASH}`
+    : `/v1/gallery/explore?limit=${COUNT}`;
+/** Rows the response is expected to assemble: the window plus the named hash. */
+const WANT_ROWS = ROUTE === 'window' ? WINDOW + 1 : COUNT;
 
 // Per-card index lookups. A row's placement sidecar, its mapped location fields
 // and its `png_bytes` all live on one image row, so a listing should read that
@@ -138,11 +154,18 @@ const url = ROUTE === 'gallery'
 //
 // None of it reaches storage (these are in-memory index reads), so the Map is the
 // only place left to count. Bench ids are distinctive enough to filter on.
-// Exact, not a ratio: the count is deterministic. A gallery row costs its card
-// row, its image index row, and the two `resolveImageUrl` cache probes (one
-// inline in the row, one from `attachImageUrls`). The explorer reads all cards in
-// one pass, so it pays no per-card card lookup.
-const LOOKUP_BUDGET = ROUTE === 'gallery' ? 4 : 3;
+// Exact, not a ratio: the count is deterministic and splits into three parts.
+//
+//  - The session index: `cardsForSession` reads one card row per card in the
+//    session, whatever the window. The explorer reads all cards in one pass and
+//    pays none of this.
+//  - Per assembled row: its image index row plus the two `resolveImageUrl` cache
+//    probes (one inline in the row, one from `attachImageUrls`).
+//  - Window mode only: one index read per tail row while looking for the named
+//    hashes. That probe is the allowance for asking by hash; assembling a row
+//    down there instead would blow straight past it.
+const SESSION_INDEX_READS = ROUTE === 'explore' ? 0 : COUNT;
+const PER_ROW_READS = 3;
 
 const mapGet = Map.prototype.get;
 let idLookups = 0;
@@ -163,9 +186,17 @@ const bytesOk = items.filter((c) => Number(c.png_bytes) === PNG_1X1.length).leng
 console.log(`[bench] ${COUNT} images, cold cache, ${url}`);
 console.log(`[bench] ${items.length} item(s), ${eagerUrls} eager URL(s), ${bytesOk} with png_bytes`);
 
-if (items.length !== COUNT) failures.push(`returned ${items.length} of ${COUNT} cards`);
+if (items.length !== WANT_ROWS) failures.push(`returned ${items.length} of ${WANT_ROWS} cards`);
 // Byte counts must survive without pixels — that is the metadata path working.
-if (bytesOk !== COUNT) failures.push(`${COUNT - bytesOk} card(s) lost png_bytes; the index path is broken`);
+if (bytesOk !== WANT_ROWS) failures.push(`${WANT_ROWS - bytesOk} card(s) lost png_bytes; the index path is broken`);
+if (ROUTE === 'window') {
+  if (Number(res?.total) !== COUNT) failures.push(`total ${res?.total} does not report the ${COUNT}-card session`);
+  if (typeof res?.window_oldest_at !== 'number') failures.push('window stopped short but reported no edge to merge against');
+  // The whole point: a card far below the window edge still ships when named.
+  if (!items.some((c) => c.content_hash === TAIL_HASH)) {
+    failures.push(`named hash ${TAIL_HASH} did not ship — a shot below the window edge cannot attach`);
+  }
+}
 // `cachedOnly` means a cold listing cannot have encoded anything.
 if (eagerUrls > 0) failures.push(`encoded ${eagerUrls} image(s) synchronously on a cold cache`);
 // The decisive number. Warming runs at concurrency 2 and may land a few decodes
@@ -175,12 +206,25 @@ if (decodedDuring > COUNT / 4) {
   failures.push(`decoded ${decodedDuring} of ${COUNT} PNG(s) before responding — the response is hydrating per row`);
 }
 console.log(`[bench] ${decodedDuring} PNG(s) decoded before the response resolved`);
-console.log(`[bench] ${idLookups} per-card index lookup(s) (${(idLookups / COUNT).toFixed(2)} per card)`);
-if (idLookups > LOOKUP_BUDGET * COUNT) {
+const TAIL_PROBES = ROUTE === 'window' ? COUNT - WINDOW : 0;
+const budget = SESSION_INDEX_READS + PER_ROW_READS * WANT_ROWS + TAIL_PROBES;
+console.log(`[bench] ${idLookups} index lookup(s) for ${WANT_ROWS} row(s), budget ${budget}`);
+if (idLookups > budget) {
   failures.push(
-    `${(idLookups / COUNT).toFixed(2)} index lookup(s) per card, budget ${LOOKUP_BUDGET}`
+    `${idLookups} index lookup(s) for ${WANT_ROWS} row(s), budget ${budget}`
     + ' — a listing row is reading the same index row more than once',
   );
+}
+if (ROUTE === 'window') {
+  // What the old session-ceiling request cost. The window has to come in under it.
+  const fullAssembly = COUNT + PER_ROW_READS * COUNT;
+  if (idLookups >= fullAssembly) {
+    failures.push(
+      `${idLookups} lookup(s) is what a full ${COUNT}-card assembly costs (${fullAssembly})`
+      + ' — the window is not narrowing the work',
+    );
+  }
+  console.log(`[bench] window ${idLookups} vs full assembly ${fullAssembly}`);
 }
 
 if (failures.length) {

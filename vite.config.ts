@@ -5067,11 +5067,47 @@ const VENDOR_SAVE_REROLL_INLINE_NEEDLE =
 const VENDOR_SAVE_REROLL_INLINE_PATCH =
   `        await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), await refreshSelectedInlineImages(!0), t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(\`저장·리롤 완료 · \${String(Gt || cardId).slice(0, 8)}\`), y("info", "card.tags.reroll", \`\${String(cardId).slice(0, 8)}→\${String(Gt).slice(0, 8)}\`);`;
 
-/** Session gallery used 120 because 1.x decoded every listed PNG. Now cachedOnly. */
+/**
+ * Session gallery: newest window plus the hashes we are about to paint.
+ *
+ * This used to ask for 2000 — the session ceiling — because a plain 120 cut the
+ * hash links on old messages and their shots stopped attaching. The window is
+ * back because the request now names the hashes it needs and the cache merges
+ * instead of replacing, so an old shot survives outside the window.
+ */
 const VENDOR_GALLERY_CE_LIMIT_NEEDLE =
   `      o = await K(\`/v1/gallery?session_id=\${encodeURIComponent(n)}&limit=120\`, { method: "GET" });`;
 const VENDOR_GALLERY_CE_LIMIT_PATCH =
-  `      o = await K(\`/v1/gallery?session_id=\${encodeURIComponent(n)}&limit=2000\`, { method: "GET" });`;
+  `      const askHashes = nxCeWantHashes();
+      const hashQ = askHashes.length ? \`&hashes=\${encodeURIComponent(askHashes.join(","))}\` : "";
+      o = await K(\`/v1/gallery?session_id=\${encodeURIComponent(n)}&limit=\${NX_GALLERY_WINDOW}\${hashQ}\`, { method: "GET" });
+      o.__askedHashes = askHashes;`;
+
+const VENDOR_GALLERY_CE_MERGE_NEEDLE =
+  `    t.gallery = nextItems;
+    t._galleryCache = { sessionId: n, at: Date.now() };`;
+const VENDOR_GALLERY_CE_MERGE_PATCH =
+  `    {
+      const VCm = globalThis.__INLAY_VIEWER_CORE__;
+      // A forced reload means cards may have appeared; retry remembered misses.
+      if (force) t._galleryHashMiss = null;
+      const samePrev = t._galleryCache?.sessionId === n ? prevGallery : [];
+      const merged = typeof VCm?.mergeSessionGallery == "function"
+        ? VCm.mergeSessionGallery({
+          prev: samePrev,
+          next: nextItems,
+          total: o?.total,
+          windowOldestAt: o?.window_oldest_at,
+          askedHashes: o?.__askedHashes || [],
+          cap: 2000
+        })
+        : { cards: nextItems, kept: 0, dropped: 0, replaced: !0 };
+      t.gallery = merged.cards;
+      if (!merged.replaced) {
+        y("info", "gallery.window", \`win=\${nextItems.length}/\${Number(o?.total || 0)} keep=\${merged.kept} drop=\${merged.dropped}\`);
+      }
+    }
+    t._galleryCache = { sessionId: n, at: Date.now() };`;
 
 const VENDOR_CHAR_SAVE_BG_NEEDLE =
   `        if (t.charactersSession = v?.characters || t.charactersSession, t.charactersGlobal = v?.global || t.charactersGlobal, t.appearance = v?.appearance || t.appearance, y("info", "char.edit.save", \`\${I} → \${rosterMeta?.rosterUnified ? "roots" : x === "__global__" ? "global" : "session"} app=\${F.length} attire=\${T.length} acc=\${Acc.length}\`), t.galleryUi?.status?.setTextContent) try {
@@ -8108,6 +8144,65 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
   // chat DOM, so the first paint can find nothing and there is no click coming
   // to try again. Retries are event-seeded and bounded — never a poll.
   const NX_ATTACH_BACKOFF = [200, 400, 800];
+  // Session listing window. Wide enough for the viewer strip (8) plus the inline
+  // window and normal browsing; older cards arrive by hash, not by raising this.
+  const NX_GALLERY_WINDOW = 120;
+  /** Hashes the next paint needs, cheap and synchronous — ce() is a hot path. */
+  function nxCeWantHashes() {
+    const out = [];
+    const add = (h) => {
+      const s = String(h || "").trim();
+      if (s && !out.includes(s)) out.push(s);
+    };
+    add(t.selectedMessage?.hash);
+    add(t.lastImagedMessage?.hash);
+    for (const h of Array.isArray(t._inlineKeepHashes) ? t._inlineKeepHashes : []) add(h);
+    return out.slice(0, 12);
+  }
+  /**
+   * Pulls one message's cards in when they sit outside the loaded window.
+   * A hash that comes back empty is remembered so a message with no shots does
+   * not re-ask on every paint.
+   */
+  async function nxEnsureCardsForHash(hash) {
+    const h = String(hash || "").trim();
+    if (!h) return !1;
+    if (!(t._galleryHashMiss instanceof Set)) t._galleryHashMiss = new Set();
+    if (t._galleryHashMiss.has(h)) return !1;
+    if ((t.gallery || []).some((card) => String(card?.content_hash || "") === h)) return !0;
+    const sid = t.lastScope?.sessionId || t.selectedMessage?.sessionId || "";
+    if (!sid) return !1;
+    let res = null;
+    try {
+      res = await K(\`/v1/gallery?session_id=\${encodeURIComponent(sid)}&limit=0&hashes=\${encodeURIComponent(h)}\`, { method: "GET" }, 8e3);
+    } catch {
+      return !1;
+    }
+    const rows = Array.isArray(res?.items) ? res.items : [];
+    if (!rows.length) {
+      t._galleryHashMiss.add(h);
+      return !1;
+    }
+    const VCm = globalThis.__INLAY_VIEWER_CORE__;
+    if (typeof VCm?.mergeSessionGallery == "function") {
+      t.gallery = VCm.mergeSessionGallery({
+        prev: t.gallery,
+        next: rows,
+        total: nxResTotal(res),
+        windowOldestAt: null,
+        askedHashes: [h],
+        cap: 2000
+      }).cards;
+    } else {
+      t.gallery = [...(t.gallery || []), ...rows];
+    }
+    y("info", "gallery.hash.fetch", \`\${h.slice(0, 8)} rows=\${rows.length}\`);
+    return !0;
+  }
+  function nxResTotal(res) {
+    const n = Number(res?.total);
+    return Number.isFinite(n) ? n : 0;
+  }
   function nxResetAttachRetry() {
     t._inlineAttachTries = 0;
     if (t._inlineAttachTimer) {
@@ -8141,6 +8236,14 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     t._inlineAttachOk = 0;
     const nxRebind = async (msg, fallback) => {
       if (t._inlineNoRebind) return fallback;
+      // Cheap first: the cards may exist but sit below the loaded window edge.
+      try {
+        if (await nxEnsureCardsForHash(msg?.hash)) {
+          const hit = linkedCards(msg);
+          if (hit.length) return hit;
+        }
+      } catch {
+      }
       return await maybeRebindAndLink(msg) || fallback;
     };
     try {
@@ -8511,6 +8614,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const neighborIds = neighborCardLists.flatMap((row) =>
         row.cards.map((card) => String(card?.id || "")).filter(Boolean)
       );
+      // The hashes ce() should name next time, so the window it asks for covers
+      // the bubbles this walk actually paints.
+      t._inlineKeepHashes = [
+        String(sel.hash || ""),
+        ...neighborMsgs.map((row) => String(row?.msg?.hash || "")),
+      ].filter(Boolean);
       const warmHead = paintIds.length ? paintIds : selIds;
       try {
         if (typeof N?.prioritizeWarmFocus == "function" && warmHead.length) N.prioritizeWarmFocus(warmHead);
@@ -13702,6 +13811,7 @@ const loadVendorUi = (): string => {
     [VENDOR_SAVE_REROLL_BG_NEEDLE, 'shot save reroll close first'],
     [VENDOR_SAVE_REROLL_INLINE_NEEDLE, 'shot save reroll refresh inline'],
     [VENDOR_GALLERY_CE_LIMIT_NEEDLE, 'session gallery ce limit'],
+    [VENDOR_GALLERY_CE_MERGE_NEEDLE, 'session gallery ce cache write'],
     [VENDOR_CHAR_SAVE_BG_NEEDLE, 'char save skip close after POST'],
     [VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, 'char save close before POST'],
     [VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, 'settings open sticky hide'],
@@ -14090,6 +14200,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_SAVE_REROLL_BG_NEEDLE, VENDOR_SAVE_REROLL_BG_PATCH)
     .replace(VENDOR_SAVE_REROLL_INLINE_NEEDLE, VENDOR_SAVE_REROLL_INLINE_PATCH)
     .replace(VENDOR_GALLERY_CE_LIMIT_NEEDLE, VENDOR_GALLERY_CE_LIMIT_PATCH)
+    .replace(VENDOR_GALLERY_CE_MERGE_NEEDLE, VENDOR_GALLERY_CE_MERGE_PATCH)
     .replace(VENDOR_CHAR_SAVE_BG_NEEDLE, VENDOR_CHAR_SAVE_BG_PATCH)
     .replace(VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, VENDOR_CHAR_SAVE_CLOSE_FIRST_PATCH)
     .replace(VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, VENDOR_SETTINGS_OPEN_STICKY_PATCH)
@@ -14506,11 +14617,29 @@ const loadVendorUi = (): string => {
     if (!out.includes('rerollMessageImagesLive(A, { report, onShot: onChipShot })') || !out.includes('y("info", "regen.all", "msg-actions")')) {
       throw new Error('[build] chip regen must pass onChipShot into live reroll');
     }
-    if (!out.includes('&limit=2000')) {
-      throw new Error('[build] session gallery ce() must request limit=2000');
+    // The window is only safe because the request names the hashes it needs and
+    // the cache merges. Losing either turns a narrow window into "old shots
+    // stop attaching" — the bug that forced limit=2000 in the first place.
+    if (!out.includes('&limit=${NX_GALLERY_WINDOW}${hashQ}')) {
+      throw new Error('[build] session gallery ce() must request the window plus its hashes');
+    }
+    if (!out.includes('const NX_GALLERY_WINDOW = 120;')) {
+      throw new Error('[build] NX_GALLERY_WINDOW missing — ce() would request an undefined limit');
+    }
+    if (!out.includes('VCm.mergeSessionGallery({')) {
+      throw new Error('[build] ce() must merge the window into t.gallery, not replace it');
+    }
+    if (out.includes('t.gallery = nextItems;')) {
+      throw new Error('[build] ce() still replaces t.gallery — cards outside the window would be dropped');
+    }
+    if (!out.includes('async function nxEnsureCardsForHash(hash)')) {
+      throw new Error('[build] hash-miss fetch missing — a shot below the window edge could never attach');
+    }
+    if (out.includes('&limit=2000')) {
+      throw new Error('[build] session gallery ce() must not ask for the session ceiling');
     }
     if (out.includes('&limit=120')) {
-      throw new Error('[build] session gallery ce() must not still request limit=120');
+      throw new Error('[build] session gallery ce() must not hardcode a bare limit=120');
     }
     if (out.includes('afterRequest.skip", "execute=manual"') || out.includes('afterReply.skip", "execute=manual"')) {
       throw new Error('[build] after-reply/stream-keyword must not skip on execute=manual');

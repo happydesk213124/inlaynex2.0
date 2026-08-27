@@ -253,10 +253,40 @@ export async function galleryExplore(limit = 400): Promise<ApiResult> {
   return exploreCards(limit);
 }
 
-export async function gallery(sessionId: string, limit = 40): Promise<ApiResult> {
-  const rows = (await cardsForSession(sessionId))
-    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-    .slice(0, Number(limit));
+/**
+ * One session's cards, newest first.
+ *
+ * `hashes` names messages the caller is about to paint. Their cards ship even
+ * when they fell out of the newest-first window — without that, asking for a
+ * window instead of the whole session silently stops old shots from attaching,
+ * which is why the window was widened to the session ceiling in the first place.
+ *
+ * `total` lets the caller tell a complete listing from a windowed one, so it
+ * knows whether it may replace its cache or has to merge into it.
+ */
+export async function gallery(
+  sessionId: string,
+  limit = 40,
+  hashes: readonly unknown[] = [],
+): Promise<ApiResult> {
+  const sorted = (await cardsForSession(sessionId))
+    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  const window = Math.max(0, Math.min(2000, Math.floor(Number(limit)) || 0));
+  const rows = sorted.slice(0, window);
+  const want = new Set(hashes.map((h) => cleanText(h, 128)).filter(Boolean));
+  if (want.size) {
+    // Only the tail is probed, and only when hashes were asked for. `imageMeta`
+    // is an index read; `idbGet('images')` here would decode the whole session.
+    for (const row of sorted.slice(window)) {
+      const meta = parseMeta(row);
+      const info = await imageMeta(row.id);
+      const hash = cleanText(
+        (info?.location as Record<string, unknown> | undefined)?.content_hash || meta.content_hash || '',
+        128,
+      );
+      if (hash && want.has(hash)) rows.push(row);
+    }
+  }
   const items: GalleryRow[] = [];
   for (const row of rows) {
     const meta = parseMeta(row);
@@ -291,7 +321,21 @@ export async function gallery(sessionId: string, limit = 40): Promise<ApiResult>
       png_bytes: pngBytes,
     });
   }
-  const payload = { ok: true, session_id: sessionId, items, storage: 'indexeddb' };
+  // Oldest card the window itself reached. A caller merging a windowed listing
+  // into its cache needs this to tell "still there, just older than the window"
+  // from "deleted": anything at or above this timestamp that the response omits
+  // is gone. Null when the window covered the whole session.
+  const windowOldestAt = rows.length && window < sorted.length
+    ? Number(sorted[Math.min(window, sorted.length) - 1]?.created_at || 0)
+    : null;
+  const payload = {
+    ok: true,
+    session_id: sessionId,
+    items,
+    total: sorted.length,
+    window_oldest_at: windowOldestAt,
+    storage: 'indexeddb',
+  };
   // Same as explorer: do not enqueue every miss. UI `ce()` warms the visible strip.
   await attachImageUrls(payload, { cachedOnly: true, warmMissing: false });
   return payload;

@@ -328,7 +328,7 @@ lore_trigger_keys[], character_description, persona_description, force`.
 ### Gallery / cards
 | Route | Notes |
 |---|---|
-| `/v1/gallery?session_id=&limit=` | `{ items: Card[] }` |
+| `/v1/gallery?session_id=&limit=&hashes=` | `{ items: Card[], total, window_oldest_at }` — `items` is the newest `limit` cards **plus** every card whose `content_hash` is named in `hashes` (comma-separated or repeated), so a shot on an old message still ships. `total` is the session card count and `window_oldest_at` the oldest timestamp the window reached (`null` when it covered the session); a caller merging a window into a cache prunes against that edge |
 | `/v1/gallery/explore?limit=` | `{ folders[], items[] }` — folder rows use `key`, item rows use `folder_key` |
 | `/v1/gallery/favorites` · `POST` `{ids}` | explorer favourites |
 | `POST /v1/gallery/unlink` | `{session_id, content_hash, message_index}` |

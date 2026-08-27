@@ -35,6 +35,25 @@ test("BlobUrlCache get touches LRU order", () => {
   assert.equal(cache.get("b"), undefined);
 });
 
+test("BlobUrlCache uses byteLen for budget and revokes blob URLs on drop", () => {
+  const revoked = [];
+  const orig = URL.revokeObjectURL;
+  URL.revokeObjectURL = (u) => {
+    revoked.push(u);
+  };
+  try {
+    const cache = new BlobUrlCache(15);
+    cache.set("a", "blob:http://x/1", 10);
+    cache.set("b", "blob:http://x/2", 10);
+    assert.equal(cache.get("a"), undefined);
+    assert.ok(revoked.includes("blob:http://x/1"));
+    cache.drop("b");
+    assert.ok(revoked.includes("blob:http://x/2"));
+  } finally {
+    URL.revokeObjectURL = orig;
+  }
+});
+
 test("BlobUrlCache retainOnly drops unpinned immediately", () => {
   const cache = new BlobUrlCache(1000);
   cache.set("a", "a".repeat(10));

@@ -1781,11 +1781,27 @@ export function stickyV2CornerLayout(opts: {
   };
 }
 
+/**
+ * Display URLs the UI can point an <img> at. `blob:` is valid on setAttribute
+ * but SafeDOM/DOMPurify strips it from setInnerHTML — never embed those in HTML.
+ */
+export function isReadyImageSrc(src: unknown): boolean {
+  const s = String(src || '');
+  return /^data:image\//i.test(s) || /^blob:/i.test(s);
+}
+
+/** Only `data:image` survives setInnerHTML. Empty string → setAttribute later. */
+export function htmlSafeImageSrc(src: unknown): string {
+  const s = String(src || '');
+  return /^data:image\//i.test(s) ? s : '';
+}
+
 /** Pure-image sticky HTML — box already matches aspect; no letterbox frame. */
 export function composeStickyV2ThumbHtml(src: string | null | undefined): string {
   const next = typeof src === 'string' ? src : '';
   if (!next) return '<div style="width:100%;height:100%;background:transparent"></div>';
-  return `<img src="${next}" style="width:100%;height:100%;object-fit:fill;display:block;background:transparent;border:none;outline:none" />`;
+  const embed = htmlSafeImageSrc(next);
+  return `<img src="${embed}" style="width:100%;height:100%;object-fit:fill;display:block;background:transparent;border:none;outline:none" />`;
 }
 
 /** Counts of shots above / below the active sticky index. */
@@ -2706,7 +2722,7 @@ export function desiredInlinePlacements(
     if (Number.isFinite(line) && line >= 1) seenLine.add(line);
     if (!Number.isFinite(line) || line < 1) continue;
     const src = String(getSrc(card) || '');
-    if (!/^data:image\//i.test(src)) {
+    if (!isReadyImageSrc(src)) {
       if (cardId) encodeLater.push(card);
       continue;
     }
@@ -2777,7 +2793,7 @@ export function reconcileInlineShot(
 
   if (!hasDesired) return hasLive ? { op: 'strip' } : { op: 'keep' };
 
-  const hold = !desired.pending && !/^data:image\//i.test(String(desired.src || ''));
+  const hold = !desired.pending && !isReadyImageSrc(desired.src);
   if (hold) return { op: 'keep' };
   if (!hasLive) return { op: 'prepend', placement: desired };
 
@@ -3114,7 +3130,7 @@ export function markerBlockHtml(p: InlineImagePlacement, scalePct: unknown = 100
   // hit max-height first). Mobile narrow bubbles still shrink instead of clipping.
   // scalePct (dashboard) multiplies the 78%/70vh defaults.
   const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box';
-  if (p.pending || !/^data:image\//i.test(String(p.src || ''))) {
+  if (p.pending || !isReadyImageSrc(p.src)) {
     const spin = '<svg width="28" height="28" viewBox="0 0 28 28" style="display:inline-block;vertical-align:middle" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="#c4b5fd" stroke-width="3" stroke-linecap="round" stroke-dasharray="18 52"><animateTransform attributeName="transform" type="rotate" from="0 14 14" to="360 14 14" dur="0.75s" repeatCount="indefinite"/></circle></svg>';
     return (
       `<div ${INLAY_INLINE_ATTR}="${id}" data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
@@ -3123,9 +3139,10 @@ export function markerBlockHtml(p: InlineImagePlacement, scalePct: unknown = 100
     );
   }
   const imgStyle = inlineChatImgStyle(scalePct);
+  const embed = htmlSafeImageSrc(p.src);
   return (
     `<div ${INLAY_INLINE_ATTR}="${id}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-    + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(p.src)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
+    + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(embed)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
     + `</div>`
   );
 }
@@ -3154,9 +3171,9 @@ export function injectInlineImagesIntoHtml(
     const line = clampShotLine(p?.line, lineCount);
     const src = String(p?.src || '');
     const cardId = String(p?.cardId || '');
-    const pending = p?.pending === true || (!!line && !/^data:image\//i.test(src));
+    const pending = p?.pending === true || (!!line && !isReadyImageSrc(src));
     if (!line) continue;
-    if (!pending && !/^data:image\//i.test(src)) continue;
+    if (!pending && !isReadyImageSrc(src)) continue;
     if (cardId && seenCard.has(cardId)) continue;
     if (byLine.has(line)) continue;
     if (cardId) seenCard.add(cardId);

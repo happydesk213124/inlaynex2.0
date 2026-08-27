@@ -1,16 +1,16 @@
 /**
  * Image delivery to the UI.
  *
- * The UI renders images through `SafeElement.setInnerHTML`, and DOMPurify strips
- * `blob:` URLs from that path while allowing `data:image`. So every image has to
- * become a base64 data URL, which is expensive: encoding is O(bytes) and the
- * resulting string is ~33% larger than the source.
+ * SafeDOM/DOMPurify strips `blob:` from `setInnerHTML`, so HTML templates never
+ * embed these URLs. Callers insert a placeholder `<img>` and `setAttribute`
+ * the object URL afterwards. That avoids a base64 round-trip (~33% larger
+ * strings, O(bytes) encode) on every gallery/sticky/inline paint.
  *
  * The cache is therefore the whole design. `resolveImageUrl` is synchronous
  * because the UI calls it during render and cannot await; it returns only what
  * is already cached. Anything missing is warmed in the background at low
  * concurrency, so a gallery of 200 images paints immediately from cache and
- * fills in progressively instead of blocking on 200 encodes.
+ * fills in progressively instead of blocking on 200 decodes.
  */
 
 import { dbg, dbgSpan } from '../core/debug';
@@ -19,25 +19,35 @@ import { sleep } from '../core/util/async';
 import { encodeWebpQuality } from '../core/util/image';
 import { dropBlobUrl, getBlobUrl, idbGet, idbPut, pinBlobUrls, retainBlobUrls, setBlobUrl } from './stores';
 
-/** Encodes an id to a data URL, reusing the cache. Returns '' when absent. */
+function objectUrlFromBytes(png: ArrayBuffer, mime: string): string {
+  if (typeof Blob === 'function' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+    return URL.createObjectURL(new Blob([png], { type: mime || 'image/png' }));
+  }
+  return '';
+}
+
+/** Resolves an id to a display URL (`blob:`), reusing the cache. Returns '' when absent. */
 export async function ensureBlobUrl(id: string): Promise<string> {
   if (!id) return '';
   const cached = getBlobUrl(id);
   if (cached !== undefined) return cached;
-  // Selection focus owns encoding slots — non-focus waits (or was deferred).
+  // Selection focus owns decode slots — non-focus waits (or was deferred).
   await waitOutOfWarmFocus(id);
   const cached2 = getBlobUrl(id);
   if (cached2 !== undefined) return cached2;
-  const span = dbgSpan('image.data_url');
+  const span = dbgSpan('image.blob_url');
   const rec = await idbGet('images', id);
   if (!rec?.png) {
     span.end({ message: `missing png ${id}`, id, background: true }, 'warn');
     return '';
   }
   const mime = (typeof rec.mime === 'string' && rec.mime) || sniffImageMime(rec.png);
-  const b64 = await abToBase64Async(rec.png);
-  const url = `data:${mime};base64,${b64}`;
-  setBlobUrl(id, url);
+  let url = objectUrlFromBytes(rec.png, mime);
+  if (!url) {
+    const b64 = await abToBase64Async(rec.png);
+    url = `data:${mime};base64,${b64}`;
+  }
+  setBlobUrl(id, url, rec.png.byteLength || 0);
   span.end({ message: id, bytes: rec.png.byteLength || 0, mime, url_len: url.length, focus: true });
   return url;
 }

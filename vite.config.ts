@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.21';
+const PLUGIN_VERSION = '2.4.22';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -1659,7 +1659,9 @@ const VENDOR_EXPLORER_THUMB_PAINT_PATCH = `    document.querySelectorAll("[data-
       if (img && id) {
         try {
           const src = Ie({ id });
-          if (typeof src == "string" && /^data:image\\//i.test(src)) {
+          const VC = globalThis.__INLAY_VIEWER_CORE__;
+          const ready = typeof VC?.isReadyImageSrc == "function" ? VC.isReadyImageSrc(src) : typeof src == "string" && (/^data:image\\//i.test(src) || /^blob:/i.test(src));
+          if (ready) {
             if (img.getAttribute("src") !== src) img.setAttribute("src", src);
             img.classList.add("is-ready");
           }
@@ -2020,7 +2022,8 @@ const VENDOR_EXPLORER_ET_FN_PATCH =
       const missing = list.filter((id) => {
         try {
           const src = Ie({ id });
-          return !(typeof src == "string" && /^data:image\\//i.test(src));
+          const VC = globalThis.__INLAY_VIEWER_CORE__;
+          return !(typeof VC?.isReadyImageSrc == "function" ? VC.isReadyImageSrc(src) : typeof src == "string" && (/^data:image\\//i.test(src) || /^blob:/i.test(src)));
         } catch {
           return !0;
         }
@@ -2112,7 +2115,8 @@ const VENDOR_EXPLORER_ET_FN_PATCH =
     const needLoad = ids.some((id) => {
       try {
         const src = Ie({ id });
-        return !(typeof src == "string" && /^data:image\\//i.test(src));
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        return !(typeof VC?.isReadyImageSrc == "function" ? VC.isReadyImageSrc(src) : typeof src == "string" && (/^data:image\\//i.test(src) || /^blob:/i.test(src)));
       } catch {
         return !0;
       }
@@ -3384,6 +3388,11 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
       // Fast swap: paint+show new, then hide old immediately (no blank gap, no delay).
       if (showSticky && next._thumbSrc && typeof next.thumb.setInnerHTML == "function" && next._paintedSrc !== next._thumbSrc) {
         await next.thumb.setInnerHTML(compose(next._thumbSrc));
+        try {
+          const img = typeof next.thumb.querySelector == "function" ? await next.thumb.querySelector("img") : null;
+          if (img && typeof img.setAttribute == "function") await img.setAttribute("src", next._thumbSrc);
+        } catch {
+        }
         if (flashGen !== e._flashGen) return;
         next._thumbHtmlId = activeId, next._paintedSrc = next._thumbSrc, e._lastStickyThumbHtmlId = activeId;
       }
@@ -7526,6 +7535,98 @@ const VENDOR_DE_STRIP_PATCH =
     } catch {
     }`;
 
+const VENDOR_IE_FN_NEEDLE =
+  `  function Ie(e) {
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      const u = N?.resolveImageUrl?.(e) || e?.image_url;
+      // DOMPurify keeps data:image, strips blob:. Never use blob: or localhost backend.
+      if (typeof u == "string" && /^data:image\\//i.test(u)) return u;
+    } catch {
+    }
+    return "";
+  }
+  /** Warm a card to a DOMPurify-safe data:image URL (Risu strips blob:/http). */
+  async function ensureStickyCardImage(card) {
+    if (!card?.id) return "";
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      let src = typeof N?.resolveImageUrl == "function" ? N.resolveImageUrl(card) || "" : "";
+      if ((!src || !/^data:image\\//i.test(src)) && typeof N?.ensureImageUrl == "function") {
+        src = await N.ensureImageUrl(card.id) || "";
+        if (src) card.image_url = src;
+      }
+      if (typeof src == "string" && /^data:image\\//i.test(src)) return src;
+    } catch {
+    }
+    try {
+      const fallback = Ie(card);
+      if (typeof fallback == "string" && /^data:image\\//i.test(fallback)) return fallback;
+    } catch {
+    }
+    return "";
+  }`;
+
+const VENDOR_IE_FN_PATCH =
+  `  function nxReadyImg(src) {
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    if (typeof VC?.isReadyImageSrc == "function") return VC.isReadyImageSrc(src);
+    return typeof src == "string" && (/^data:image\\//i.test(src) || /^blob:/i.test(src));
+  }
+  function Ie(e) {
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      const u = N?.resolveImageUrl?.(e) || e?.image_url;
+      // blob: is set via setAttribute after insert — SafeDOM strips it from setInnerHTML.
+      if (nxReadyImg(u)) return typeof u == "string" ? u : "";
+    } catch {
+    }
+    return "";
+  }
+  /** Warm a card to a display URL. blob: is applied with setAttribute, not innerHTML. */
+  async function ensureStickyCardImage(card) {
+    if (!card?.id) return "";
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      let src = typeof N?.resolveImageUrl == "function" ? N.resolveImageUrl(card) || "" : "";
+      if (!nxReadyImg(src) && typeof N?.ensureImageUrl == "function") {
+        src = await N.ensureImageUrl(card.id) || "";
+        if (src) card.image_url = src;
+      }
+      if (nxReadyImg(src)) return src;
+    } catch {
+    }
+    try {
+      const fallback = Ie(card);
+      if (nxReadyImg(fallback)) return fallback;
+    } catch {
+    }
+    return "";
+  }`;
+
+const VENDOR_IE_READY_FB_NEEDLE = `typeof fb == "string" && /^data:image\\//i.test(fb)`;
+const VENDOR_IE_READY_FB_PATCH = `nxReadyImg(fb)`;
+const VENDOR_IE_READY_FRESH_NEEDLE = `typeof fresh == "string" && /^data:image\\//i.test(fresh)`;
+const VENDOR_IE_READY_FRESH_PATCH = `nxReadyImg(fresh)`;
+
+const VENDOR_STICKY_POOL_IMG_NEEDLE =
+  `        const X = await H(n, "div", {
+          style: "position:fixed;display:none;z-index:99970;",
+          html: \`<img src="\${src}" style="width:100%;height:100%;object-fit:cover;display:block" />\`
+        });
+        await e.layer.appendChild(X);`;
+const VENDOR_STICKY_POOL_IMG_PATCH =
+  `        const X = await H(n, "div", {
+          style: "position:fixed;display:none;z-index:99970;",
+          html: \`<img src="" style="width:100%;height:100%;object-fit:cover;display:block" />\`
+        });
+        try {
+          const img = typeof X.querySelector == "function" ? await X.querySelector("img") : null;
+          if (img && typeof img.setAttribute == "function") await img.setAttribute("src", src);
+        } catch {
+        }
+        await e.layer.appendChild(X);`;
+
 const VENDOR_DT_FN_NEEDLE =
   `  async function dt(e) {
     if (!e) return [];
@@ -7591,6 +7692,26 @@ const VENDOR_DT_FN_PATCH =
       if (b.length) return b;
     }
     return [];
+  }
+  async function dtNewest(e) {
+    if (!e) return [];
+    const unwrap = async (sel) => {
+      try {
+        const o = await e.querySelectorAll(sel);
+        const a = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(o) : [];
+        return Array.isArray(a) ? a : [];
+      } catch {
+        return [];
+      }
+    };
+    let a = await unwrap("[data-chat-id]");
+    if (!a.length) a = await unwrap(".risu-chat");
+    if (a.length) return [a[a.length - 1]];
+    for (const n of $a) {
+      const b = await unwrap(n);
+      if (b.length) return [b[b.length - 1]];
+    }
+    return [];
   }`;
 
 const VENDOR_DA_QA_NEEDLE =
@@ -7649,9 +7770,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       try {
         const N = globalThis.__INLAY_NATIVE__;
         let src = typeof N?.resolveImageUrl == "function" ? String(N.resolveImageUrl(card) || "") : "";
-        if (!src || !/^data:image\\//i.test(src)) {
+        if (!nxReadyImg(src)) {
           const fb = typeof Ie == "function" ? Ie(card) : "";
-          if (typeof fb == "string" && /^data:image\\//i.test(fb)) src = fb;
+          if (nxReadyImg(fb)) src = fb;
         }
         return src;
       } catch {
@@ -7699,7 +7820,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
       }
       const patchShotSrc = async (wrap, src) => {
-        if (!wrap || !src || !/^data:image\\//i.test(src)) return;
+        if (!wrap || !src || !nxReadyImg(src)) return;
         try {
           const imgs = await unwrapSafe(await wrap.querySelectorAll("img"));
           const img = imgs[0];
@@ -7829,6 +7950,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           const wrap = kids[0];
           if (wrap) {
             await host.prepend(wrap);
+            if (shot.src && !shot.pending) await patchShotSrc(wrap, shot.src);
             return !0;
           }
         } catch {
@@ -7921,7 +8043,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           src = await ensureStickyCardImage(card) || "";
         } catch {
         }
-        if (!src || !/^data:image\\//i.test(src)) continue;
+        if (!src || !nxReadyImg(src)) continue;
         const line0 = Number(card?.line);
         const cardId = String(card?.id || "");
         if (!Number.isFinite(line0) || line0 < 1) continue;
@@ -7986,6 +8108,35 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") return;
     const sel = t.selectedMessage;
     if (!sel) return;
+    if (t._inlineSelfOnly && t._inlineSelfEl) {
+      const el = t._inlineSelfEl;
+      t._inlineSelfOnly = 0;
+      t._inlineSelfEl = null;
+      let selCards = [];
+      try {
+        selCards = linkedCards(sel);
+        if (!selCards.length) selCards = await maybeRebindAndLink(sel) || [];
+      } catch {
+        selCards = [];
+      }
+      const selIds = selCards.map((card) => String(card?.id || "")).filter(Boolean);
+      try {
+        const N = globalThis.__INLAY_NATIVE__;
+        if (typeof N?.prioritizeWarmFocus == "function" && selIds.length) N.prioritizeWarmFocus(selIds);
+      } catch {
+      }
+      try {
+        await injectChatMsgActions(el, selCards, Number(sel.domIndex) || 0);
+        await injectChatInlineImages(el, selCards, t._inlinePending);
+      } finally {
+        try {
+          const N = globalThis.__INLAY_NATIVE__;
+          if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
+        } catch {
+        }
+      }
+      return;
+    }
     try {
       const doc = await ue().catch(() => t.hostDoc);
       if (!doc) return;
@@ -8323,8 +8474,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       } catch {
       }
       if (keep.has(paintIdx) && els[paintIdx]) {
-        await injectChatInlineImages(els[paintIdx], selCards, t._inlinePending);
         await injectChatMsgActions(els[paintIdx], selCards, paintIdx);
+        await injectChatInlineImages(els[paintIdx], selCards, t._inlinePending);
       }
       try {
         if (typeof N?.prioritizeWarmFocus == "function" && neighborIds.length) {
@@ -8333,8 +8484,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       } catch {
       }
       for (const row of neighborCardLists) {
-        await injectChatInlineImages(els[row.idx], row.cards, []);
         await injectChatMsgActions(els[row.idx], row.cards, row.idx);
+        await injectChatInlineImages(els[row.idx], row.cards, []);
       }
       try {
         if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
@@ -11227,16 +11378,32 @@ const VENDOR_POINTER_SELECT_PATCH =
     // is therefore not "fresh", which is what stops it from looping.
     const rawWait = Math.max(0, Number(delayMs) || 0);
     const freshSession = t._pointerSelectReason === "session" && rawWait === 1e3;
-    if (freshSession) t._pointerSelectRetried = 0;
+    const freshBoot = t._pointerSelectReason === "boot" && rawWait === 1e3;
+    const freshReply = t._pointerSelectReason === "reply" && rawWait === 1e3;
+    if (freshSession || freshReply) t._pointerSelectRetried = 0;
+    if (freshBoot) t._pointerSelectBootTries = 0;
     t._pointerSelectTimer = setTimeout(() => {
       t._pointerSelectTimer = null;
       const why = t._pointerSelectReason;
       runPointerSelect(why).then((selected) => {
-        if (selected || why !== "session" || t._pointerSelectRetried) return;
-        t._pointerSelectRetried = 1;
-        schedulePointerSelect("session", 7e2);
+        if (selected) return;
+        if (why === "session" && !t._pointerSelectRetried) {
+          t._pointerSelectRetried = 1;
+          schedulePointerSelect("session", 7e2);
+          return;
+        }
+        if (why === "reply" && !t._pointerSelectRetried) {
+          t._pointerSelectRetried = 1;
+          schedulePointerSelect("reply", 200);
+          return;
+        }
+        if (why === "boot") {
+          const n = Number(t._pointerSelectBootTries || 0) + 1;
+          t._pointerSelectBootTries = n;
+          if (n < 5) schedulePointerSelect("boot", 200);
+        }
       }).catch(() => {});
-    }, freshSession ? 250 : rawWait);
+    }, freshBoot || freshReply ? 200 : freshSession ? 250 : rawWait);
   }
   async function runPointerSelect(reason) {
     if (t.uiOpen || t._hostChromeBlocked) return !1;
@@ -11244,6 +11411,23 @@ const VENDOR_POINTER_SELECT_PATCH =
     const doc = t.overlayUi?.doc || t.hostDoc || await ue().catch(() => null);
     if (!doc) return !1;
     t._msgElsCache = null;
+    const why = String(reason || "");
+    const fast = why === "boot" || why === "session" || why === "reply";
+    if (fast) {
+      let root = doc;
+      try {
+        if (typeof qe == "function") root = await qe(doc) || doc;
+      } catch {
+        root = doc;
+      }
+      const newest = typeof dtNewest == "function" ? await dtNewest(root) : [];
+      if (!newest.length) return !1;
+      t._inlineSelfEl = newest[0];
+      t._inlineSelfOnly = 1;
+      y("info", "select.pointer", \`reason=\${why} newest-only\`);
+      await Da(0, newest, { source: "provisional", auto: 1 });
+      return !0;
+    }
     const vh = typeof window < "u" && window.innerHeight || 800;
     const vw = typeof window < "u" && window.innerWidth || 800;
     let px = Number(t._pointerClientX), py = Number(t._pointerClientY);
@@ -13448,6 +13632,8 @@ const loadVendorUi = (): string => {
     [VENDOR_FORCE_REGEN_GALLERY_NEEDLE, 'force regen gallery reload'],
     [VENDOR_FORCE_REGEN_INLINE_NEEDLE, 'force regen inline clear'],
     [VENDOR_DE_STRIP_NEEDLE, 'De strip inline markers'],
+    [VENDOR_IE_FN_NEEDLE, 'Ie/ensureSticky accept blob display urls'],
+    [VENDOR_STICKY_POOL_IMG_NEEDLE, 'sticky pool img setAttribute'],
     [VENDOR_DT_FN_NEEDLE, 'risu-chat data-chat-id list'],
     [VENDOR_DA_QA_NEEDLE, 'Da qa data-chat-index'],
     [VENDOR_BIND_QA_NEEDLE, 'bindCard qa data-chat-index'],
@@ -13817,6 +14003,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_FORCE_REGEN_GALLERY_NEEDLE, VENDOR_FORCE_REGEN_GALLERY_PATCH)
     .replace(VENDOR_FORCE_REGEN_INLINE_NEEDLE, VENDOR_FORCE_REGEN_INLINE_PATCH)
     .replace(VENDOR_DE_STRIP_NEEDLE, VENDOR_DE_STRIP_PATCH)
+    .replace(VENDOR_IE_FN_NEEDLE, VENDOR_IE_FN_PATCH)
+    .replaceAll(VENDOR_IE_READY_FB_NEEDLE, VENDOR_IE_READY_FB_PATCH)
+    .replaceAll(VENDOR_IE_READY_FRESH_NEEDLE, VENDOR_IE_READY_FRESH_PATCH)
+    .replace(VENDOR_STICKY_POOL_IMG_NEEDLE, VENDOR_STICKY_POOL_IMG_PATCH)
     .replace(VENDOR_DT_FN_NEEDLE, VENDOR_DT_FN_PATCH)
     .replace(VENDOR_DA_QA_NEEDLE, VENDOR_DA_QA_PATCH)
     .replace(VENDOR_BIND_QA_NEEDLE, VENDOR_BIND_QA_PATCH)
@@ -13944,6 +14134,13 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'async function nxHostToast', 'nxHostToast landed');
     assertOnce(out, 'async function showSelectionToast', 'selection toast landed');
     assertOnce(out, 'async function nxStickyV2ApplyFromHt', 'sticky v2 apply landed');
+    assertOnce(out, 'function nxReadyImg(src)', 'nxReadyImg display-url helper landed');
+    if (out.includes('typeof fb == "string" && /^data:image')) {
+      throw new Error('[build] leftover data:image gate on fb — blob thumbs would stay empty');
+    }
+    if (out.includes('typeof fresh == "string" && /^data:image')) {
+      throw new Error('[build] leftover data:image gate on fresh — blob thumbs would stay empty');
+    }
     assertOnce(out, 'function __nxDeadStickyFlashBody()', 'legacy flash body retired');
     assertOnce(out, 'Sticky v2 only — skip legacy frame', 'Ht early-return to v2 landed');
     assertOnce(out, 'const anchorY = o * 0.5;', 'scroll track viewport mid landed');

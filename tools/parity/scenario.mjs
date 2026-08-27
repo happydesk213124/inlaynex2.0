@@ -326,6 +326,12 @@ export async function runScenario(N, handles) {
   const gallery = await rec('gallery.list', () => get('/v1/gallery?session_id=sess_main&limit=40'));
   const cardId = gallery?.items?.[0]?.id;
   await rec('gallery.first_card_is_data_url', () => String(gallery?.items?.[0]?.image_url ?? '').slice(0, 22));
+  await rec('gallery.display_url_scheme', () => {
+    const u = String(gallery?.items?.[0]?.image_url ?? '');
+    if (/^blob:/i.test(u)) return 'blob';
+    if (/^data:image\//i.test(u)) return 'data';
+    return 'other';
+  });
   await rec('gallery.explore', () => get('/v1/gallery/explore?limit=200'));
   await rec('gallery.favorites_empty', () => get('/v1/gallery/favorites'));
   await rec('gallery.favorites_set', () => post('/v1/gallery/favorites', { ids: cardId ? [cardId] : [] }));

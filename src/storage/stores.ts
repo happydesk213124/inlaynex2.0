@@ -841,8 +841,8 @@ export function getBlobUrl(id: string): string | undefined {
   return blobUrlCache.get(String(id));
 }
 
-export function setBlobUrl(id: string, url: string): void {
-  blobUrlCache.set(String(id), url);
+export function setBlobUrl(id: string, url: string, byteLen?: number): void {
+  blobUrlCache.set(String(id), url, byteLen);
 }
 
 export function dropBlobUrl(id: string): void {

@@ -79,10 +79,13 @@ const isByStage = (key, node) =>
 
 const EVENT_LOG_MARKER = '__eventLog';
 
+/** 2.x warms object URLs; the work is the same display-url stage 1.x logged as image.data_url. */
+const aliasDebugStage = (stage) => (stage === 'image.blob_url' ? 'image.data_url' : stage);
+
 const summarizeEventLog = (events) => ({
   [EVENT_LOG_MARKER]: true,
-  stages: [...new Set(events.map((e) => String(e.stage)))].filter((s) => !s.startsWith('storage.')).sort(),
-  errors: events.filter((e) => e.level === 'error').map((e) => String(e.stage)).sort(),
+  stages: [...new Set(events.map((e) => aliasDebugStage(String(e.stage))))].filter((s) => !s.startsWith('storage.')).sort(),
+  errors: events.filter((e) => e.level === 'error').map((e) => aliasDebugStage(String(e.stage))).sort(),
 });
 
 const normalize = (root) => {
@@ -112,6 +115,10 @@ const normalize = (root) => {
       return Number.isInteger(node) ? node : Math.round(node * 1000) / 1000;
     }
     if (typeof node === 'string') {
+      // 2.x uses blob: object URLs (runtime UUID). 1.x used data:image base64.
+      // Both are displayable; the UUID / payload length is not behaviour.
+      // scenario.mjs asserts the 2.x scheme on gallery.display_url_scheme.
+      if (/^data:image\//i.test(node) || /^blob:/i.test(node)) return '<DISPLAY_URL>';
       if (key && VOLATILE_KEYS.has(key) && /^\d+$/.test(node)) return '<NUM>';
       if (key === 'version' && VERSION_RE.test(node)) return '<VERSION>';
       if (key && STAGE_NAME_KEYS.has(key)) return node ? '<STAGE>' : node;
@@ -152,7 +159,7 @@ const normalize = (root) => {
     if (isDebugEventLog(key, node)) return walk(summarizeEventLog(node), 'event_log_summary');
     if (isByStage(key, node)) {
       // Counts collapse to presence for the same window reason as the event log.
-      return { [EVENT_LOG_MARKER]: true, stages: Object.keys(node).filter((s) => !s.startsWith('storage.')).sort(), errors: [] };
+      return { [EVENT_LOG_MARKER]: true, stages: Object.keys(node).map(aliasDebugStage).filter((s) => !s.startsWith('storage.')).sort(), errors: [] };
     }
     if (Array.isArray(node)) {
       // New 2.0-only prompts have no 1.x equivalent; comparing list length/order fails.
@@ -382,6 +389,12 @@ const INTENTIONAL_DIFF_STEPS = new Set([
  * the new side's behaviour, keyed by step name.
  */
 const NEW_ONLY_STEPS = new Map([
+  [
+    'gallery.display_url_scheme',
+    (v) => (v === 'blob'
+      ? null
+      : `2.x gallery image_url must be a blob: object URL, got ${JSON.stringify(v)}`),
+  ],
   [
     'curation.strict_ids.enable',
     (v) => (v?.mode === 'off' && v?.strict_ids === true

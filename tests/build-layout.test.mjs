@@ -211,8 +211,24 @@ test('new chat/reply schedules a pointer-near message select', () => {
   assert.match(source, /schedulePointerSelect\("reply"\)/);
   assert.match(source, /source: "provisional"/);
   // A switch waits 250ms for the new chat DOM, then retries exactly once at 700ms.
-  assert.match(source, /freshSession \? 250 : rawWait/);
+  // Boot/reply poll at 200ms instead of a fixed 1s wait.
+  assert.match(source, /freshBoot \|\| freshReply \? 200 : freshSession \? 250 : rawWait/);
   assert.match(source, /schedulePointerSelect\("session", 7e2\)/);
+  assert.match(source, /schedulePointerSelect\("boot", 200\)/);
+  assert.match(source, /async function dtNewest/);
+  assert.match(source, /t\._inlineSelfOnly/);
+});
+
+test('inline paint puts chips before shots so the bar is not blocked by encode', () => {
+  const source = read('vite.config.ts');
+  const start = source.indexOf('if (keep.has(paintIdx) && els[paintIdx])');
+  const end = source.indexOf('for (const row of neighborCardLists)', start);
+  assert.ok(start >= 0 && end > start, 'selected-bubble paint block not found');
+  const body = source.slice(start, end);
+  assert.ok(
+    body.indexOf('await injectChatMsgActions(els[paintIdx]') < body.indexOf('await injectChatInlineImages(els[paintIdx]'),
+    'chips must paint before inline shots on the selected bubble',
+  );
 });
 
 test('auto select paints inline shots and chips without a click', () => {

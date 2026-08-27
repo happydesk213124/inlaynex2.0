@@ -77,6 +77,8 @@ import {
   stickyV2CornerLayout,
   stickyV2ShotCounts,
   composeStickyV2ThumbHtml,
+  isReadyImageSrc,
+  htmlSafeImageSrc,
   resolveChatMessageMatch,
   messageCompactKey,
   messageContextTriplet,
@@ -327,6 +329,15 @@ test("markerBlockHtml ready is image-only", () => {
   }, 50);
   assert.match(scaled, /max-width:min\(39%,100%\)/);
   assert.match(scaled, /max-height:min\(35vh,450px\)/);
+  const blobReady = markerBlockHtml({
+    line: 2,
+    src: "blob:https://host/abc",
+    shotIndex: 0,
+    cardId: "c1",
+  });
+  assert.match(blobReady, /data-inlay-inline-img="1"/);
+  assert.doesNotMatch(blobReady, /blob:/);
+  assert.doesNotMatch(blobReady, /data-inlay-inline-pending/);
 });
 
 test("injectInlineImagesIntoHtml hard-dedupes pending circles by line and cardId", () => {
@@ -596,6 +607,19 @@ test("sticky v2 shot counts and pure-image html", () => {
   const html = composeStickyV2ThumbHtml("data:image/png;base64,xx");
   assert.match(html, /object-fit:fill/);
   assert.doesNotMatch(html, /object-fit:contain/);
+  assert.match(html, /src="data:image\/png;base64,xx"/);
+  const blobHtml = composeStickyV2ThumbHtml("blob:https://host/abc");
+  assert.match(blobHtml, /<img /);
+  assert.doesNotMatch(blobHtml, /blob:/);
+});
+
+test("isReadyImageSrc accepts data and blob; htmlSafeImageSrc drops blob", () => {
+  assert.equal(isReadyImageSrc("data:image/png;base64,xx"), true);
+  assert.equal(isReadyImageSrc("blob:https://host/abc"), true);
+  assert.equal(isReadyImageSrc(""), false);
+  assert.equal(isReadyImageSrc("https://x/a.png"), false);
+  assert.equal(htmlSafeImageSrc("data:image/webp;base64,yy"), "data:image/webp;base64,yy");
+  assert.equal(htmlSafeImageSrc("blob:https://host/abc"), "");
 });
 
 test("stickyThumbNeedsHtmlPaint skips when already painted", () => {
@@ -802,6 +826,17 @@ test("pickInlineKeepDomIndices keeps selected char plus 1 each side (max 3)", ()
     pickInlineKeepDomIndices({ selIdx: 4, length: 9, allRoles: false, isCharAt }).sort((a, b) => a - b),
     [2, 4, 6],
   );
+});
+
+test("desiredInlinePlacements treats blob URLs as ready", () => {
+  const got = desiredInlinePlacements(
+    [{ id: "c1", line: 2, shot_index: 0 }],
+    [{ line: 2, shot_index: 0 }],
+    () => "blob:https://host/abc",
+  );
+  assert.equal(got.placements.length, 1);
+  assert.equal(got.placements[0].pending, false);
+  assert.equal(got.encodeLater.length, 0);
 });
 
 test("desiredInlinePlacements claims ready cards before pending on the same line", () => {

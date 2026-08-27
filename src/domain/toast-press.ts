@@ -25,10 +25,68 @@ export function imagePressAllowsSecondPointer(mode: unknown): boolean {
   return m === 'two' || m === 'both';
 }
 
-/** Move of a *different* finger must not kill the first image press. */
+/**
+ * Live image-press pointer bookkeeping.
+ *
+ * Counting by `pointerId` looked right and never worked on mobile: the host
+ * forwards a plain object, so `pointerId` can be missing or repeated and two
+ * fingers collapse into one entry. These helpers count *pointerdown events that
+ * landed on a shot* instead, so identity never matters. `windowMs` exists
+ * because a lost `pointerup` would otherwise leave the count high forever and
+ * make one finger pass as two.
+ */
+export const IMAGE_PRESS_WINDOW_MS = 4000;
+
+export function pruneImagePressDowns(
+  downs: unknown,
+  now: unknown,
+  windowMs: unknown = IMAGE_PRESS_WINDOW_MS,
+): number[] {
+  const at = Number(now);
+  const nowMs = Number.isFinite(at) ? at : 0;
+  const raw = Number(windowMs);
+  const win = Number.isFinite(raw) && raw > 0 ? raw : IMAGE_PRESS_WINDOW_MS;
+  if (!Array.isArray(downs)) return [];
+  return downs
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && nowMs - v <= win);
+}
+
+export function noteImagePressDown(
+  downs: unknown,
+  now: unknown,
+  windowMs: unknown = IMAGE_PRESS_WINDOW_MS,
+): number[] {
+  const at = Number(now);
+  const kept = pruneImagePressDowns(downs, now, windowMs);
+  kept.push(Number.isFinite(at) ? at : 0);
+  return kept;
+}
+
+/** One lifted finger drops one entry — oldest, so a stale row cannot outlive the gesture. */
+export function noteImagePressUp(downs: unknown): number[] {
+  if (!Array.isArray(downs) || !downs.length) return [];
+  return downs.slice(1).map((v) => Number(v)).filter((v) => Number.isFinite(v));
+}
+
+export function imagePressDownCount(
+  downs: unknown,
+  now: unknown,
+  windowMs: unknown = IMAGE_PRESS_WINDOW_MS,
+): number {
+  return pruneImagePressDowns(downs, now, windowMs).length;
+}
+
+/**
+ * Move of a *different* finger must not kill the first image press, and neither
+ * may the jitter of a two-finger hold: with both fingers down the reported point
+ * jumps between them, which read as a drag and cancelled every attempt.
+ */
 export function imagePressMoveCancels(opts: {
   pressPointerId?: unknown;
   eventPointerId?: unknown;
+  mode?: unknown;
+  pressCount?: unknown;
   fromX?: unknown;
   fromY?: unknown;
   toX?: unknown;
@@ -38,6 +96,10 @@ export function imagePressMoveCancels(opts: {
   const ev = opts.eventPointerId;
   const pr = opts.pressPointerId;
   if (ev != null && pr != null && ev !== pr) return false;
+  if (imagePressAllowsSecondPointer(opts.mode)) {
+    const held = Number(opts.pressCount);
+    if (Number.isFinite(held) && held >= 2) return false;
+  }
   const slop = Number(opts.slopPx);
   const s = Number.isFinite(slop) ? Math.max(0, slop) : 8;
   const dx = Number(opts.toX) - Number(opts.fromX);

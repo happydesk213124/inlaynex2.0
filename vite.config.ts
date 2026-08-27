@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.29';
+const PLUGIN_VERSION = '2.4.30';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -3786,6 +3786,10 @@ const VENDOR_INLINE_PTR_STICKY_PATCH = `    }, l = async (f) => {
           ? VC.imagePressMoveCancels({
             pressPointerId: mobilePress.pointerId,
             eventPointerId: f.pointerId,
+            mode: t.backendSettings?.card?.image_press_inspect,
+            pressCount: typeof VC.imagePressDownCount == "function"
+              ? VC.imagePressDownCount(t._imagePressDowns, Date.now())
+              : 0,
             fromX: mobilePress.x,
             fromY: mobilePress.y,
             toX: f.clientX,
@@ -4440,21 +4444,30 @@ const VENDOR_INLINE_LONGPRESS_NEEDLE =
   `      // Sticky always-image: short-tap hide / long-press fullscreen+sheet.
       if (Nt() && !inspectOpen) {`;
 const VENDOR_INLINE_LONGPRESS_PATCH =
-  `      // Inspect press mode: off / one-finger / two-finger / both. Track ids so
-      // a second mobile touch can arm the timer instead of cancelling the first.
+  `      // Inspect press mode: off / one-finger / two-finger / both.
+      // Count pointerdowns that landed on a shot — never pointerIds. The host
+      // forwards a plain object, so pointerId can be absent or repeated and two
+      // fingers deduped into one entry, which is why two-finger never armed.
       const nxImagePressMode = () => {
         const VC = globalThis.__INLAY_VIEWER_CORE__;
         const raw = t.backendSettings?.card?.image_press_inspect;
         return typeof VC?.normalizeImagePressInspect == "function" ? VC.normalizeImagePressInspect(raw) : "hold";
       };
-      const nxPressIdSet = () => {
-        if (!(t._imagePressIds instanceof Set)) t._imagePressIds = new Set();
-        return t._imagePressIds;
+      const nxPressCount = () => {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        if (typeof VC?.imagePressDownCount == "function") return VC.imagePressDownCount(t._imagePressDowns, Date.now());
+        return Array.isArray(t._imagePressDowns) ? t._imagePressDowns.length : 0;
+      };
+      const nxNotePressDown = () => {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        t._imagePressDowns = typeof VC?.noteImagePressDown == "function"
+          ? VC.noteImagePressDown(t._imagePressDowns, Date.now())
+          : [...(Array.isArray(t._imagePressDowns) ? t._imagePressDowns : []), Date.now()];
       };
       const nxInspectAllowed = () => {
         const VC = globalThis.__INLAY_VIEWER_CORE__;
         const mode = nxImagePressMode();
-        const n = nxPressIdSet().size;
+        const n = nxPressCount();
         return typeof VC?.shouldStartImagePressInspect == "function"
           ? VC.shouldStartImagePressInspect({ mode, pointerCount: n })
           : mode !== "off" && (mode === "two" ? n >= 2 : n >= 1);
@@ -4467,11 +4480,6 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
           showStickyInspect(F.card).catch(() => {
           });
         }, PRESS_MS);
-      };
-      const nxNotePressId = (id, hit) => {
-        const ids = nxPressIdSet();
-        if (hit) ids.add(id);
-        else ids.delete(id);
       };
       // Msg chips: same coord hit-test as inline shots (node click never reaches us).
       if (!inspectOpen && nxMsgAct() !== "off" && typeof hitMsgChipAt == "function") {
@@ -4515,11 +4523,12 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
             }
             const card = (t.gallery || []).find((c) => String(c?.id || "") === String(cardId || ""));
             if (!card) continue;
-            nxNotePressId(f.pointerId, !0);
+            nxNotePressDown();
             // Long-press start: activate sticky image to this inline shot immediately.
             if (typeof nxActivateStickyByCardId == "function") nxActivateStickyByCardId(card.id).catch(() => {});
             if (mobilePress && (mobilePress.source === "inline-shot" || mobilePress.source === "sticky-thumb")) {
               if (typeof f.preventDefault == "function") f.preventDefault();
+              if (nxInspectAllowed()) showPressFill(node, x, I).catch(() => {});
               nxArmInspect(mobilePress);
               pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
               return;
@@ -4586,9 +4595,11 @@ const VENDOR_STICKY_INSPECT_PRESS_NEEDLE =
 const VENDOR_STICKY_INSPECT_PRESS_PATCH =
   `          if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;
           if (!await hitEl(g.thumb, x, I)) continue;
-          nxNotePressId(f.pointerId, !0);
+          nxNotePressDown();
           if (mobilePress && (mobilePress.source === "inline-shot" || mobilePress.source === "sticky-thumb")) {
             if (typeof f.preventDefault == "function") f.preventDefault();
+            if (nxInspectAllowed()) showPressFill(g.thumb, x, I).catch(() => {
+            });
             nxArmInspect(mobilePress);
             return;
           }
@@ -4654,7 +4665,7 @@ const VENDOR_CANCEL_PRESS_IDS_NEEDLE =
 const VENDOR_CANCEL_PRESS_IDS_PATCH =
   `    }, cancelMobilePress = () => {
       mobilePress?.timer && clearTimeout(mobilePress.timer), mobilePress = null;
-      t._imagePressIds = null;`;
+      t._imagePressDowns = null;`;
 
 const VENDOR_SECOND_PTR_CANCEL_NEEDLE =
   `      if (mobilePress && f.pointerId != null && mobilePress.pointerId != null && f.pointerId !== mobilePress.pointerId) {
@@ -4681,10 +4692,13 @@ const VENDOR_PRESS_PTR_UP_PATCH =
   `      const fPress = mobilePress;
       if (!fPress) return;
       const VCUp = globalThis.__INLAY_VIEWER_CORE__;
+      // One finger up drops one live press slot, so a two-finger hold stops
+      // qualifying the moment either finger leaves the image.
+      if (typeof VCUp?.noteImagePressUp == "function") t._imagePressDowns = VCUp.noteImagePressUp(t._imagePressDowns);
+      else if (Array.isArray(t._imagePressDowns)) t._imagePressDowns = t._imagePressDowns.slice(1);
       if (typeof VCUp?.imagePressOtherPointerUp == "function"
         ? VCUp.imagePressOtherPointerUp({ pressPointerId: fPress.pointerId, eventPointerId: f.pointerId })
         : f.pointerId != null && fPress.pointerId != null && f.pointerId !== fPress.pointerId) {
-        if (t._imagePressIds instanceof Set) t._imagePressIds.delete(f.pointerId);
         return;
       }
       fPress.timer && clearTimeout(fPress.timer), mobilePress = null;`;
@@ -4699,7 +4713,8 @@ const VENDOR_PRESS_PTR_CANCEL_PATCH =
       if (typeof VC?.imagePressIgnorePointerCancel == "function"
         ? VC.imagePressIgnorePointerCancel(t.backendSettings?.card?.image_press_inspect, mobilePress?.source)
         : !1) {
-        if (f?.pointerId != null && t._imagePressIds instanceof Set) t._imagePressIds.delete(f.pointerId);
+        // Pinch/zoom cancels the first finger mid-hold. Keep the slot: no
+        // pointerup follows a cancel, so the press window prunes it instead.
         return;
       }
       cancelMobilePress(), pointerGesture = null, pinClick = null, pendingSheetHit = null;
@@ -14773,6 +14788,15 @@ const loadVendorUi = (): string => {
     if (out.includes('f.pointerId !== mobilePress.pointerId) {\n        cancelMobilePress();')) {
       throw new Error('[build] second pointer still cancels image press before hit-test');
     }
+    // Counting fingers by pointerId is what silently broke two-finger press: the
+    // forwarded event repeats or omits the id, so two touches deduped into one.
+    if (out.includes('_imagePressIds')) {
+      throw new Error('[build] image press still counts pointerIds — two fingers can dedupe into one');
+    }
+    if ((out.match(/nxNotePressDown\(\);/g) || []).length !== 2) {
+      throw new Error('[build] both inline-shot and sticky hit-tests must record a press down');
+    }
+    assertOnce(out, 'VCUp.noteImagePressUp(t._imagePressDowns)', 'pointerup releases one press slot');
     assertOnce(out, 'select id="nx-toast-anchor"', 'toast position select landed');
     assertOnce(out, 'select id="nx-image-press"', 'image press select landed');
     if (out.includes('PROGRESS_TOAST_STYLE_SHOW')) {

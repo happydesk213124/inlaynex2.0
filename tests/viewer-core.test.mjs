@@ -116,6 +116,9 @@ import {
   imagePressMoveCancels,
   imagePressIgnorePointerCancel,
   imagePressOtherPointerUp,
+  imagePressDownCount,
+  noteImagePressDown,
+  noteImagePressUp,
   formatProgressElapsedSec,
   galleryStripSplitAt,
   galleryIndexFromChildIndex,
@@ -1198,6 +1201,49 @@ test("two-finger press keeps the first pointer through a second touch", () => {
   assert.equal(imagePressIgnorePointerCancel("hold", "inline-shot"), false);
   assert.equal(imagePressOtherPointerUp({ pressPointerId: 1, eventPointerId: 2 }), true);
   assert.equal(imagePressOtherPointerUp({ pressPointerId: 1, eventPointerId: 1 }), false);
+});
+
+test("two identical-id touches still count as two fingers", () => {
+  // The host forwards a plain object: pointerId repeats or is missing, so the
+  // count must come from the downs themselves.
+  let downs = noteImagePressDown(null, 1000);
+  assert.equal(imagePressDownCount(downs, 1000), 1);
+  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: imagePressDownCount(downs, 1000) }), false);
+
+  downs = noteImagePressDown(downs, 1080);
+  assert.equal(imagePressDownCount(downs, 1080), 2);
+  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: imagePressDownCount(downs, 1080) }), true);
+
+  downs = noteImagePressUp(downs);
+  assert.equal(imagePressDownCount(downs, 1200), 1);
+  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: imagePressDownCount(downs, 1200) }), false);
+});
+
+test("a lost pointerup expires instead of passing one finger off as two", () => {
+  const downs = noteImagePressDown(noteImagePressDown(null, 1000), 1050);
+  assert.equal(imagePressDownCount(downs, 1600), 2);
+  // Each down ages out on its own clock, so a cancelled finger cannot keep the
+  // pair alive until the next gesture.
+  assert.equal(imagePressDownCount(downs, 5001), 1);
+  assert.equal(imagePressDownCount(downs, 5051), 0);
+  const late = noteImagePressDown(downs, 5051);
+  assert.equal(imagePressDownCount(late, 5051), 1);
+  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: imagePressDownCount(late, 5051) }), false);
+});
+
+test("a two-finger hold survives the jitter between both contact points", () => {
+  const held = {
+    pressPointerId: 1,
+    eventPointerId: 1,
+    fromX: 10,
+    fromY: 10,
+    toX: 90,
+    toY: 90,
+    slopPx: 8,
+  };
+  assert.equal(imagePressMoveCancels({ ...held, mode: "two", pressCount: 2 }), false);
+  assert.equal(imagePressMoveCancels({ ...held, mode: "two", pressCount: 1 }), true);
+  assert.equal(imagePressMoveCancels({ ...held, mode: "hold", pressCount: 2 }), true);
 });
 
 test("composeAttachToastHtml is a spinner chip, not a progress rail", () => {

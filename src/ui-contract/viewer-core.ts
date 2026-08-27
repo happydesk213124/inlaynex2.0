@@ -13,12 +13,17 @@ import {
   normalizeInlineMsgActions,
 } from '../domain/inline-msg-actions';
 import {
+  IMAGE_PRESS_WINDOW_MS,
   imagePressAllowsSecondPointer,
+  imagePressDownCount,
   imagePressIgnorePointerCancel,
   imagePressMoveCancels,
   imagePressOtherPointerUp,
+  noteImagePressDown,
+  noteImagePressUp,
   normalizeImagePressInspect,
   normalizeToastAnchor,
+  pruneImagePressDowns,
 } from '../domain/toast-press';
 export {
   inlineMsgActionsLegacy,
@@ -26,12 +31,17 @@ export {
   normalizeInlineMsgActions,
 };
 export {
+  IMAGE_PRESS_WINDOW_MS,
   imagePressAllowsSecondPointer,
+  imagePressDownCount,
   imagePressIgnorePointerCancel,
   imagePressMoveCancels,
   imagePressOtherPointerUp,
+  noteImagePressDown,
+  noteImagePressUp,
   normalizeImagePressInspect,
   normalizeToastAnchor,
+  pruneImagePressDowns,
 };
 export type { ImagePressInspect, ToastAnchor } from '../domain/toast-press';
 

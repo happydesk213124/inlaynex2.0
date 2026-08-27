@@ -8104,39 +8104,45 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
     }
   }
+  // Attach retry budget. Automatic selection lands before Risu has swapped the
+  // chat DOM, so the first paint can find nothing and there is no click coming
+  // to try again. Retries are event-seeded and bounded — never a poll.
+  const NX_ATTACH_BACKOFF = [200, 400, 800];
+  function nxResetAttachRetry() {
+    t._inlineAttachTries = 0;
+    if (t._inlineAttachTimer) {
+      clearTimeout(t._inlineAttachTimer);
+      t._inlineAttachTimer = null;
+    }
+  }
+  function nxScheduleAttachRetry(why) {
+    const n = Number(t._inlineAttachTries || 0);
+    if (n >= NX_ATTACH_BACKOFF.length || t._inlineAttachTimer) return;
+    t._inlineAttachTries = n + 1;
+    const wait = NX_ATTACH_BACKOFF[n];
+    y("info", "inline.attach.retry", \`\${why} try=\${n + 1}/\${NX_ATTACH_BACKOFF.length} in=\${wait}ms\`);
+    t._inlineAttachTimer = setTimeout(() => {
+      t._inlineAttachTimer = null;
+      // No force (keeps the cheap skip alive) and no rebind (no POST per retry).
+      t._inlineNoRebind = 1;
+      refreshSelectedInlineImages().then(() => {
+        t._inlineNoRebind = 0;
+        if (!t._inlineAttachOk) nxScheduleAttachRetry(why);
+      }).catch(() => {
+        t._inlineNoRebind = 0;
+      });
+    }, wait);
+  }
   async function refreshSelectedInlineImages(force) {
     if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") return;
     const sel = t.selectedMessage;
     if (!sel) return;
-    if (t._inlineSelfOnly && t._inlineSelfEl) {
-      const el = t._inlineSelfEl;
-      t._inlineSelfOnly = 0;
-      t._inlineSelfEl = null;
-      let selCards = [];
-      try {
-        selCards = linkedCards(sel);
-        if (!selCards.length) selCards = await maybeRebindAndLink(sel) || [];
-      } catch {
-        selCards = [];
-      }
-      const selIds = selCards.map((card) => String(card?.id || "")).filter(Boolean);
-      try {
-        const N = globalThis.__INLAY_NATIVE__;
-        if (typeof N?.prioritizeWarmFocus == "function" && selIds.length) N.prioritizeWarmFocus(selIds);
-      } catch {
-      }
-      try {
-        await injectChatMsgActions(el, selCards, Number(sel.domIndex) || 0);
-        await injectChatInlineImages(el, selCards, t._inlinePending);
-      } finally {
-        try {
-          const N = globalThis.__INLAY_NATIVE__;
-          if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
-        } catch {
-        }
-      }
-      return;
-    }
+    // Only a run that reached (or knowingly skipped) the paint counts as attached.
+    t._inlineAttachOk = 0;
+    const nxRebind = async (msg, fallback) => {
+      if (t._inlineNoRebind) return fallback;
+      return await maybeRebindAndLink(msg) || fallback;
+    };
     try {
       const doc = await ue().catch(() => t.hostDoc);
       if (!doc) return;
@@ -8187,7 +8193,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       let linkedKey = "";
       try {
         let selLinked = linkedCards(sel);
-        if (!selLinked.length && !pendingKey) selLinked = await maybeRebindAndLink(sel) || [];
+        if (!selLinked.length && !pendingKey) selLinked = await nxRebind(sel, []);
         linkedKey = selLinked.map((card) => String(card?.id || "")).filter(Boolean).sort().join("|");
       } catch {
         linkedKey = "";
@@ -8241,6 +8247,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         && !(await inlineGoneFromSel())
       ) {
         y("info", "inline.keep.skip", \`DOM#\${selIdx} cheap keep=\${t._inlineKeepIdxs.join(",")}\`);
+        t._inlineAttachOk = 1;
         return;
       }
       const VC = globalThis.__INLAY_VIEWER_CORE__;
@@ -8429,6 +8436,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         && String(t._inlineKeepMsgActions || "") === nxMsgAct();
       if (!force && sameKeep && !(await inlineGoneFromSel())) {
         y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeepArr.join(",")}\`);
+        t._inlineAttachOk = 1;
         return;
       }
       if (listChanged && fromCache || await inlineGoneFromSel()) {
@@ -8455,7 +8463,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       let selCards = [];
       try {
         selCards = linkedCards(sel);
-        if (!selCards.length && !pendingKey) selCards = await maybeRebindAndLink(sel) || [];
+        if (!selCards.length && !pendingKey) selCards = await nxRebind(sel, []);
       } catch {
         selCards = [];
       }
@@ -8491,7 +8499,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         let nbCards = [];
         try {
           nbCards = linkedCards(row.msg);
-          if (!nbCards.length) nbCards = await maybeRebindAndLink(row.msg) || [];
+          if (!nbCards.length) nbCards = await nxRebind(row.msg, []);
         } catch {
           nbCards = [];
         }
@@ -8526,6 +8534,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         await injectChatMsgActions(els[row.idx], row.cards, row.idx);
         await injectChatInlineImages(els[row.idx], row.cards, []);
       }
+      t._inlineAttachOk = 1;
       try {
         if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
       } catch {
@@ -10321,6 +10330,14 @@ const VENDOR_BOOT_MOUNT_FIRST_PATCH = `    if (!t.backendSettings || Date.now() 
         invalidateOverlayLayoutCache(), await he(), Ce();
       } catch {
       }
+      // The first attach ran with an empty ledger, so it had nothing to link.
+      // One pass now that cards exist — the cheap keep-skip makes it free when
+      // the earlier attempt already landed.
+      try {
+        await refreshSelectedInlineImages();
+        if (!t._inlineAttachOk) nxScheduleAttachRetry("ledger");
+      } catch {
+      }
     }).catch(() => {
     });`;
 
@@ -11514,10 +11531,13 @@ const VENDOR_POINTER_SELECT_PATCH =
       }
       const newest = typeof dtNewest == "function" ? await dtNewest(root) : [];
       if (!newest.length) return !1;
-      t._inlineSelfEl = newest[0];
-      t._inlineSelfOnly = 1;
-      y("info", "select.pointer", \`reason=\${why} newest-only\`);
+      y("info", "select.pointer", \`reason=\${why} newest\`);
+      // Full char±1 attach, same as a click. Then seed the bounded retry: this
+      // fires before Risu finishes swapping the chat DOM often enough that a
+      // single attempt is what made shots and chips need a click to show up.
+      nxResetAttachRetry();
       await Da(0, newest, { source: "provisional", auto: 1 });
+      if (!t._inlineAttachOk) nxScheduleAttachRetry(why);
       return !0;
     }
     const vh = typeof window < "u" && window.innerHeight || 800;
@@ -11533,7 +11553,9 @@ const VENDOR_POINTER_SELECT_PATCH =
     if (!(pick >= 0)) return !1;
     y("info", "select.pointer", \`reason=\${reason || ""} DOM#\${pick} x=\${Math.round(px)} y=\${Math.round(py)}\`);
     // Auto-select paints inline shots + chips; a click is no longer required after a switch.
+    nxResetAttachRetry();
     await Da(pick, els, { source: "provisional", auto: 1 });
+    if (!t._inlineAttachOk) nxScheduleAttachRetry(why || "pointer");
     return !0;
   }`;
 
@@ -14316,6 +14338,25 @@ const loadVendorUi = (): string => {
     out = out.replace(VENDOR_THUMBS_WARM_REPAINT_NEEDLE, VENDOR_THUMBS_WARM_REPAINT_PATCH);
     if (out.includes('fillThumbSrcs')) {
       throw new Error('[build] fillThumbSrcs survived — a dead setAttribute("src") fill is still shipping');
+    }
+    // The one-shot self-only attach is what made shots/chips wait for a click.
+    if (out.includes('_inlineSelfOnly')) {
+      throw new Error('[build] _inlineSelfOnly survived — automatic selection would attach once and give up');
+    }
+    assertOnce(out, 'const NX_ATTACH_BACKOFF = [200, 400, 800];', 'bounded attach retry budget landed');
+    assertOnce(out, 'if (t._inlineNoRebind) return fallback;', 'retry rebind gate landed');
+    {
+      // A retry must never fan out POST /v1/jobs/retarget-hash per neighbour.
+      const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
+      const to = out.indexOf('async function openSettingsTab(tab) {', from);
+      if (from < 0 || to < 0) throw new Error('[build] cannot slice refreshSelectedInlineImages');
+      const body = out.slice(from, to);
+      if (body.includes('maybeRebindAndLink(') && !body.includes('return await maybeRebindAndLink(msg) || fallback;')) {
+        throw new Error('[build] refreshSelectedInlineImages calls maybeRebindAndLink outside the nxRebind gate');
+      }
+      if ((body.match(/maybeRebindAndLink\(/g) || []).length !== 1) {
+        throw new Error('[build] refreshSelectedInlineImages must reach maybeRebindAndLink only through nxRebind');
+      }
     }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
     assertOnce(out, 'ensureScrollPhaseBus = () =>', 'scroll phase bus landed');

@@ -216,7 +216,10 @@ test('new chat/reply schedules a pointer-near message select', () => {
   assert.match(source, /schedulePointerSelect\("session", 7e2\)/);
   assert.match(source, /schedulePointerSelect\("boot", 200\)/);
   assert.match(source, /async function dtNewest/);
-  assert.match(source, /t\._inlineSelfOnly/);
+  // The fast path takes the full char±1 attach and seeds the bounded retry;
+  // the old self-only one-shot is what made shots/chips wait for a click.
+  assert.match(source, /nxResetAttachRetry\(\);\s*\n\s*await Da\(0, newest, \{ source: "provisional", auto: 1 \}\);/);
+  assert.match(source, /if \(!t\._inlineAttachOk\) nxScheduleAttachRetry\(why\);/);
 });
 
 test('inline paint puts chips before shots so the bar is not blocked by encode', () => {
@@ -402,6 +405,21 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /resolveInlinePaintCards\(\{ selIdx, paintIdx, selCards, paintCards \}\)/);
   assert.doesNotMatch(source, /injectChatInlineImages\(els\[paintIdx\], selCards,/);
   assert.match(source, /injectChatMsgActions\(els\[row\.idx\], row\.cards, row\.idx\)/);
+  // Automatic selection must take the same char±1 path a click takes, and the
+  // bounded retry must stay a retry: no force (keeps the cheap skip) and no
+  // rebind POST per attempt.
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.doesNotMatch(bundle, /_inlineSelfOnly/);
+  assert.match(bundle, /const NX_ATTACH_BACKOFF = \[200, 400, 800\];/);
+  const retryStart = bundle.indexOf('function nxScheduleAttachRetry(why)');
+  const retryEnd = bundle.indexOf('async function refreshSelectedInlineImages(force)', retryStart);
+  assert.ok(retryStart >= 0 && retryEnd > retryStart, 'attach retry section not found');
+  const retry = bundle.slice(retryStart, retryEnd);
+  assert.match(retry, /if \(n >= NX_ATTACH_BACKOFF\.length \|\| t\._inlineAttachTimer\) return;/);
+  assert.match(retry, /t\._inlineNoRebind = 1;/);
+  assert.match(retry, /refreshSelectedInlineImages\(\)\.then/);
+  assert.doesNotMatch(retry, /refreshSelectedInlineImages\(!0\)/);
+  assert.doesNotMatch(retry, /setInterval/);
   assert.match(body, /Da\(idx, els, \{ source: "provisional" \}\)/);
   assert.doesNotMatch(body, /<span x-inlay-msg-chip=/);
   assert.doesNotMatch(body, /getAttribute\("data-inlay-msg-/);

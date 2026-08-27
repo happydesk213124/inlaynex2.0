@@ -112,6 +112,10 @@ import {
   normalizeImagePressInspect,
   toastAnchorStyle,
   shouldStartImagePressInspect,
+  imagePressAllowsSecondPointer,
+  imagePressMoveCancels,
+  imagePressIgnorePointerCancel,
+  imagePressOtherPointerUp,
   formatProgressElapsedSec,
   galleryStripSplitAt,
   galleryIndexFromChildIndex,
@@ -1178,6 +1182,22 @@ test("shouldStartImagePressInspect gates one-finger vs two-finger", () => {
   assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: 1 }), false);
   assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: 2 }), true);
   assert.equal(shouldStartImagePressInspect({ mode: "both", pointerCount: 1 }), true);
+});
+
+test("two-finger press keeps the first pointer through a second touch", () => {
+  assert.equal(imagePressAllowsSecondPointer("hold"), false);
+  assert.equal(imagePressAllowsSecondPointer("two"), true);
+  assert.equal(imagePressAllowsSecondPointer("both"), true);
+  assert.equal(imagePressMoveCancels({
+    pressPointerId: 1, eventPointerId: 2, fromX: 10, fromY: 10, toX: 80, toY: 80, slopPx: 8,
+  }), false);
+  assert.equal(imagePressMoveCancels({
+    pressPointerId: 1, eventPointerId: 1, fromX: 10, fromY: 10, toX: 80, toY: 80, slopPx: 8,
+  }), true);
+  assert.equal(imagePressIgnorePointerCancel("two", "inline-shot"), true);
+  assert.equal(imagePressIgnorePointerCancel("hold", "inline-shot"), false);
+  assert.equal(imagePressOtherPointerUp({ pressPointerId: 1, eventPointerId: 2 }), true);
+  assert.equal(imagePressOtherPointerUp({ pressPointerId: 1, eventPointerId: 1 }), false);
 });
 
 test("composeAttachToastHtml is a spinner chip, not a progress rail", () => {

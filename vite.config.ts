@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.28';
+const PLUGIN_VERSION = '2.4.29';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -3780,7 +3780,22 @@ const VENDOR_INLINE_PTR_STICKY_PATCH = `    }, l = async (f) => {
       if (pointerGesture && typeof f.clientX == "number" && typeof f.clientY == "number") {
         pointerGesture.movement = Math.max(pointerGesture.movement || 0, Math.hypot(f.clientX - pointerGesture.x, f.clientY - pointerGesture.y));
       }
-      if (mobilePress && typeof f.clientX == "number" && typeof f.clientY == "number" && Math.hypot(f.clientX - mobilePress.x, f.clientY - mobilePress.y) > 8) cancelMobilePress();
+      if (mobilePress && typeof f.clientX == "number" && typeof f.clientY == "number") {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const cancelMove = typeof VC?.imagePressMoveCancels == "function"
+          ? VC.imagePressMoveCancels({
+            pressPointerId: mobilePress.pointerId,
+            eventPointerId: f.pointerId,
+            fromX: mobilePress.x,
+            fromY: mobilePress.y,
+            toX: f.clientX,
+            toY: f.clientY,
+            slopPx: 8
+          })
+          : (f.pointerId == null || mobilePress.pointerId == null || f.pointerId === mobilePress.pointerId)
+            && Math.hypot(f.clientX - mobilePress.x, f.clientY - mobilePress.y) > 8;
+        if (cancelMove) cancelMobilePress();
+      }
       // Sticky pin hover preview removed — keep preview layer hidden.
       if (t._hoverPreviewCardId) s().catch(() => {});
     }, p = async (f) => {`;
@@ -4504,6 +4519,7 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
             // Long-press start: activate sticky image to this inline shot immediately.
             if (typeof nxActivateStickyByCardId == "function") nxActivateStickyByCardId(card.id).catch(() => {});
             if (mobilePress && (mobilePress.source === "inline-shot" || mobilePress.source === "sticky-thumb")) {
+              if (typeof f.preventDefault == "function") f.preventDefault();
               nxArmInspect(mobilePress);
               pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
               return;
@@ -4572,6 +4588,7 @@ const VENDOR_STICKY_INSPECT_PRESS_PATCH =
           if (!await hitEl(g.thumb, x, I)) continue;
           nxNotePressId(f.pointerId, !0);
           if (mobilePress && (mobilePress.source === "inline-shot" || mobilePress.source === "sticky-thumb")) {
+            if (typeof f.preventDefault == "function") f.preventDefault();
             nxArmInspect(mobilePress);
             return;
           }
@@ -4638,6 +4655,55 @@ const VENDOR_CANCEL_PRESS_IDS_PATCH =
   `    }, cancelMobilePress = () => {
       mobilePress?.timer && clearTimeout(mobilePress.timer), mobilePress = null;
       t._imagePressIds = null;`;
+
+const VENDOR_SECOND_PTR_CANCEL_NEEDLE =
+  `      if (mobilePress && f.pointerId != null && mobilePress.pointerId != null && f.pointerId !== mobilePress.pointerId) {
+        cancelMobilePress();
+        return;
+      }`;
+const VENDOR_SECOND_PTR_CANCEL_PATCH =
+  `      if (mobilePress && f.pointerId != null && mobilePress.pointerId != null && f.pointerId !== mobilePress.pointerId) {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const keep = typeof VC?.imagePressAllowsSecondPointer == "function"
+          ? VC.imagePressAllowsSecondPointer(t.backendSettings?.card?.image_press_inspect)
+          : !1;
+        if (!keep) {
+          cancelMobilePress();
+          return;
+        }
+      }`;
+
+const VENDOR_PRESS_PTR_UP_NEEDLE =
+  `      const fPress = mobilePress;
+      if (!fPress) return;
+      fPress.timer && clearTimeout(fPress.timer), mobilePress = null;`;
+const VENDOR_PRESS_PTR_UP_PATCH =
+  `      const fPress = mobilePress;
+      if (!fPress) return;
+      const VCUp = globalThis.__INLAY_VIEWER_CORE__;
+      if (typeof VCUp?.imagePressOtherPointerUp == "function"
+        ? VCUp.imagePressOtherPointerUp({ pressPointerId: fPress.pointerId, eventPointerId: f.pointerId })
+        : f.pointerId != null && fPress.pointerId != null && f.pointerId !== fPress.pointerId) {
+        if (t._imagePressIds instanceof Set) t._imagePressIds.delete(f.pointerId);
+        return;
+      }
+      fPress.timer && clearTimeout(fPress.timer), mobilePress = null;`;
+
+const VENDOR_PRESS_PTR_CANCEL_NEEDLE =
+  `    }, onPointerCancel = () => {
+      cancelMobilePress(), pointerGesture = null, pinClick = null, pendingSheetHit = null;
+    }`;
+const VENDOR_PRESS_PTR_CANCEL_PATCH =
+  `    }, onPointerCancel = (f) => {
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      if (typeof VC?.imagePressIgnorePointerCancel == "function"
+        ? VC.imagePressIgnorePointerCancel(t.backendSettings?.card?.image_press_inspect, mobilePress?.source)
+        : !1) {
+        if (f?.pointerId != null && t._imagePressIds instanceof Set) t._imagePressIds.delete(f.pointerId);
+        return;
+      }
+      cancelMobilePress(), pointerGesture = null, pinClick = null, pendingSheetHit = null;
+    }`;
 
 const VENDOR_STICKY_PRESS_NEEDLE = `if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbUserHidden) continue;`;
 const VENDOR_STICKY_PRESS_PATCH = `if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;`;
@@ -14002,6 +14068,9 @@ const loadVendorUi = (): string => {
     [VENDOR_STICKY_PRESS_NEEDLE, 'sticky press skip'],
     [VENDOR_PRESS_FILL_NEEDLE, 'press fill lightweight ring'],
     [VENDOR_CANCEL_PRESS_IDS_NEEDLE, 'cancel press clears image press ids'],
+    [VENDOR_SECOND_PTR_CANCEL_NEEDLE, 'second pointer used to cancel press'],
+    [VENDOR_PRESS_PTR_UP_NEEDLE, 'pointerup tears down mobilePress'],
+    [VENDOR_PRESS_PTR_CANCEL_NEEDLE, 'pointercancel tears down mobilePress'],
     [VENDOR_PRESS_FILL_STICKY_CALL_NEEDLE, 'press fill sticky call xy'],
     [VENDOR_INLINE_LONGPRESS_NEEDLE, 'inline shot long-press'],
     [VENDOR_MSG_CHIP_UP_NEEDLE, 'msg chip pointerup'],
@@ -14391,6 +14460,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_STICKY_CLICK_NEEDLE, VENDOR_STICKY_CLICK_PATCH)
     .replace(VENDOR_PRESS_FILL_NEEDLE, VENDOR_PRESS_FILL_PATCH)
     .replace(VENDOR_CANCEL_PRESS_IDS_NEEDLE, VENDOR_CANCEL_PRESS_IDS_PATCH)
+    .replace(VENDOR_SECOND_PTR_CANCEL_NEEDLE, VENDOR_SECOND_PTR_CANCEL_PATCH)
+    .replace(VENDOR_PRESS_PTR_UP_NEEDLE, VENDOR_PRESS_PTR_UP_PATCH)
+    .replace(VENDOR_PRESS_PTR_CANCEL_NEEDLE, VENDOR_PRESS_PTR_CANCEL_PATCH)
     .replace(VENDOR_PRESS_FILL_STICKY_CALL_NEEDLE, VENDOR_PRESS_FILL_STICKY_CALL_PATCH)
     .replace(VENDOR_STICKY_PRESS_NEEDLE, VENDOR_STICKY_PRESS_PATCH)
     .replace(VENDOR_INLINE_LONGPRESS_NEEDLE, VENDOR_INLINE_LONGPRESS_PATCH);
@@ -14696,6 +14768,11 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'async function showAttachToast()', 'attach spinner toast landed');
     assertOnce(out, 'function nxToastAnchor()', 'toast anchor helper landed');
     assertOnce(out, 'const nxImagePressMode = () => {', 'image press mode helper landed');
+    assertOnce(out, 'VC.imagePressAllowsSecondPointer(t.backendSettings?.card?.image_press_inspect)', 'second pointer keep helper landed');
+    assertOnce(out, 'VC.imagePressIgnorePointerCancel(t.backendSettings?.card?.image_press_inspect, mobilePress?.source)', 'pinch cancel ignore landed');
+    if (out.includes('f.pointerId !== mobilePress.pointerId) {\n        cancelMobilePress();')) {
+      throw new Error('[build] second pointer still cancels image press before hit-test');
+    }
     assertOnce(out, 'select id="nx-toast-anchor"', 'toast position select landed');
     assertOnce(out, 'select id="nx-image-press"', 'image press select landed');
     if (out.includes('PROGRESS_TOAST_STYLE_SHOW')) {

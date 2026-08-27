@@ -13,6 +13,10 @@ import {
   normalizeInlineMsgActions,
 } from '../domain/inline-msg-actions';
 import {
+  imagePressAllowsSecondPointer,
+  imagePressIgnorePointerCancel,
+  imagePressMoveCancels,
+  imagePressOtherPointerUp,
   normalizeImagePressInspect,
   normalizeToastAnchor,
 } from '../domain/toast-press';
@@ -22,6 +26,10 @@ export {
   normalizeInlineMsgActions,
 };
 export {
+  imagePressAllowsSecondPointer,
+  imagePressIgnorePointerCancel,
+  imagePressMoveCancels,
+  imagePressOtherPointerUp,
   normalizeImagePressInspect,
   normalizeToastAnchor,
 };

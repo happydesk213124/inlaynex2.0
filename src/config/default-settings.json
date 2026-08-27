@@ -110,6 +110,8 @@
     "inline_msg_actions": "off",
     "inline_chat_scale_pct": 100,
     "progress_toast": false,
+    "toast_anchor": "tc",
+    "image_press_inspect": "hold",
     "llm_anchor_percent": true,
     "natural_base": "short",
     "composition_curation": false,

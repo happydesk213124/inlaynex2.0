@@ -234,7 +234,7 @@ const normalize = (root) => {
         if (k === 'attire_locked' || k === 'accessories_locked') continue;
         // 2.0 bubble inline shots + progress toast — no 1.x card fields.
         // Defaults false; UI/schema + unit tests assert behaviour.
-        if (k === 'inline_chat_images' || k === 'inline_msg_actions' || k === 'progress_toast') continue;
+        if (k === 'inline_chat_images' || k === 'inline_msg_actions' || k === 'progress_toast' || k === 'toast_anchor' || k === 'image_press_inspect') continue;
         // 2.0 per-character NAI reference (dashboard mode + per-char image).
         // No 1.x fields; schema defaults + UI/unit tests assert behaviour.
         if (k === 'char_ref_mode' || k === 'char_ref_strength' || k === 'char_ref_fidelity' || k === 'char_ref_image_type') continue;

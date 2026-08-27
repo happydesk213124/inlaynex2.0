@@ -166,6 +166,17 @@ test("inline_msg_actions migrates checkbox and aliases", () => {
   assert.equal(migrateSettings({ card: { inline_msg_actions: "2.4.9" } }).card.inline_msg_actions, "compat");
 });
 
+test("toast_anchor and image_press_inspect migrate with safe defaults", () => {
+  const empty = migrateSettings({ card: {} });
+  assert.equal(empty.card.toast_anchor, "tc");
+  assert.equal(empty.card.image_press_inspect, "hold");
+  assert.equal(migrateSettings({ card: { toast_anchor: "bottom-right" } }).card.toast_anchor, "br");
+  assert.equal(migrateSettings({ card: { toast_anchor: "nope" } }).card.toast_anchor, "tc");
+  assert.equal(migrateSettings({ card: { image_press_inspect: "two-hand" } }).card.image_press_inspect, "two");
+  assert.equal(migrateSettings({ card: { image_press_inspect: "off" } }).card.image_press_inspect, "off");
+  assert.equal(migrateSettings({ card: { image_press_inspect: "both" } }).card.image_press_inspect, "both");
+});
+
 test("overlay_markers is canonical for left-line overlay + inline previews", () => {
   const on = migrateSettings({ card: { overlay_markers: true, inline_previews: false } });
   assert.equal(on.card.overlay_markers, true);

@@ -107,6 +107,11 @@ import {
   resolveIndexProgress,
   composeDualProgressBarsHtml,
   composeProgressToastHtml,
+  composeAttachToastHtml,
+  normalizeToastAnchor,
+  normalizeImagePressInspect,
+  toastAnchorStyle,
+  shouldStartImagePressInspect,
   formatProgressElapsedSec,
   galleryStripSplitAt,
   galleryIndexFromChildIndex,
@@ -1149,7 +1154,39 @@ test("composeProgressToastHtml shows stage and a single rail when busy", () => {
   assert.match(html, /height:3px/);
   assert.match(html, /padding:6px 10px/);
   assert.match(html, /width:min\(280px/);
+  assert.match(html, /rgba\(18,24,32,\.42\)/);
   assert.doesNotMatch(html, /#2dd4bf/);
+});
+
+test("toastAnchorStyle pins the chip to the chosen corner", () => {
+  assert.equal(normalizeToastAnchor("nope"), "tc");
+  assert.equal(normalizeToastAnchor("bottom-right"), "br");
+  const br = toastAnchorStyle("br", { visible: true });
+  assert.match(br, /bottom:16px/);
+  assert.match(br, /right:16px/);
+  assert.doesNotMatch(br, /translateX/);
+  const stacked = toastAnchorStyle("tc", { shiftPx: 48, visible: true });
+  assert.match(stacked, /top:64px/);
+  assert.match(stacked, /translateX\(-50%\)/);
+  assert.match(toastAnchorStyle("tl", { visible: false }), /display:none/);
+});
+
+test("shouldStartImagePressInspect gates one-finger vs two-finger", () => {
+  assert.equal(normalizeImagePressInspect(""), "hold");
+  assert.equal(shouldStartImagePressInspect({ mode: "off", pointerCount: 2 }), false);
+  assert.equal(shouldStartImagePressInspect({ mode: "hold", pointerCount: 1 }), true);
+  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: 1 }), false);
+  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: 2 }), true);
+  assert.equal(shouldStartImagePressInspect({ mode: "both", pointerCount: 1 }), true);
+});
+
+test("composeAttachToastHtml is a spinner chip, not a progress rail", () => {
+  const html = composeAttachToastHtml();
+  assert.match(html, /data-inlay-attach-toast/);
+  assert.match(html, /인레이 넥서스 조각 불러오는중/);
+  assert.match(html, /animateTransform/);
+  assert.match(html, /rgba\(18,24,32,\.42\)/);
+  assert.doesNotMatch(html, /height:3px/);
 });
 
 test("composeProgressToastHtml uses mint rail for indexing tone", () => {

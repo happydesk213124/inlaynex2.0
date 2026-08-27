@@ -12,11 +12,20 @@ import {
   inlineMsgActionsOn,
   normalizeInlineMsgActions,
 } from '../domain/inline-msg-actions';
+import {
+  normalizeImagePressInspect,
+  normalizeToastAnchor,
+} from '../domain/toast-press';
 export {
   inlineMsgActionsLegacy,
   inlineMsgActionsOn,
   normalizeInlineMsgActions,
 };
+export {
+  normalizeImagePressInspect,
+  normalizeToastAnchor,
+};
+export type { ImagePressInspect, ToastAnchor } from '../domain/toast-press';
 
 // ── shared shapes ─────────────────────────────────────────────────────────
 
@@ -2442,7 +2451,58 @@ export function composeProgressToastHtml(args: {
   const metaRow = meta
     ? `<div style="min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8b97ab;font-size:10px;line-height:1.25">${meta}</div>`
     : '';
-  return `<div data-inlay-progress-toast="1" style="display:flex;flex-direction:column;gap:4px;box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;cursor:pointer;user-select:none"><div style="min-width:0;font-weight:700;color:${accent};font-size:11px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stage}</div>${metaRow}${bar ? `<div style="width:100%">${bar}</div>` : ''}</div>`;
+  return `<div data-inlay-progress-toast="1" style="display:flex;flex-direction:column;gap:4px;box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:rgba(18,24,32,.42);border:1px solid rgba(42,51,68,.5);cursor:pointer;user-select:none"><div style="min-width:0;font-weight:700;color:${accent};font-size:11px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stage}</div>${metaRow}${bar ? `<div style="width:100%">${bar}</div>` : ''}</div>`;
+}
+
+/**
+ * Fixed-position chip for progress / selection / host / attach toasts.
+ * `shiftPx` pushes a stacked toast inward from the same corner so two chips
+ * do not cover each other.
+ */
+export function toastAnchorStyle(anchor: unknown, opts: {
+  insetPx?: unknown;
+  shiftPx?: unknown;
+  visible?: unknown;
+  pointerEvents?: unknown;
+  zIndex?: unknown;
+} = {}): string {
+  const a = normalizeToastAnchor(anchor);
+  const inset = Math.max(0, finiteNumber(opts.insetPx, 16));
+  const shift = Math.max(0, finiteNumber(opts.shiftPx, 0));
+  const vis = opts.visible === false || opts.visible === 0 ? 'none' : 'block';
+  const pe = opts.pointerEvents === false || opts.pointerEvents === 0 ? 'none' : 'auto';
+  const z = Math.max(1, Math.round(finiteNumber(opts.zIndex, 99999)));
+  const box = `z-index:${z};pointer-events:${pe};width:min(280px,92vw);box-sizing:border-box;display:${vis}`;
+  const along = inset + shift;
+  if (a === 'tl') return `position:fixed;top:${along}px;left:${inset}px;${box};`;
+  if (a === 'tr') return `position:fixed;top:${along}px;right:${inset}px;${box};`;
+  if (a === 'bl') return `position:fixed;bottom:${along}px;left:${inset}px;${box};`;
+  if (a === 'br') return `position:fixed;bottom:${along}px;right:${inset}px;${box};`;
+  return `position:fixed;top:${along}px;left:50%;transform:translateX(-50%);${box};`;
+}
+
+export function shouldStartImagePressInspect(opts: {
+  mode?: unknown;
+  pointerCount?: unknown;
+} = {}): boolean {
+  const mode = normalizeImagePressInspect(opts.mode);
+  const n = Math.max(0, Math.floor(finiteNumber(opts.pointerCount, 0)));
+  if (mode === 'off' || n < 1) return false;
+  if (mode === 'two') return n >= 2;
+  return n >= 1;
+}
+
+/** Spinner chip shown while chips/shots are about to land — gone the moment they inject. */
+export function composeAttachToastHtml(escapeHtml?: ((s: string) => string) | null): string {
+  const esc = typeof escapeHtml === 'function'
+    ? escapeHtml
+    : (s: string) => String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  const stage = esc('인레이 넥서스 조각 불러오는중..');
+  return `<div data-inlay-attach-toast="1" style="display:flex;align-items:center;gap:8px;box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:rgba(18,24,32,.42);border:1px solid rgba(42,51,68,.5);color:#e8eef8;font-size:11px;user-select:none"><svg width="12" height="12" viewBox="0 0 12 12" style="flex:0 0 12px" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="rgba(196,181,253,.35)" stroke-width="2"/><circle cx="6" cy="6" r="4.5" fill="none" stroke="#c4b5fd" stroke-width="2" stroke-dasharray="8 20" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 6 6" to="360 6 6" dur="0.7s" repeatCount="indefinite"/></circle></svg><div style="min-width:0;font-weight:700;color:#c4b5fd;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stage}</div></div>`;
 }
 
 // ── anchor / reading / segment index ──────────────────────────────────────

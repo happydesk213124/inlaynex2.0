@@ -170,6 +170,10 @@ export interface CardSettings {
   inline_msg_actions?: 'off' | 'legacy' | 'compat' | boolean;
   /** Insert shot images into chat bubbles at LLM `line`. */
   inline_chat_images?: boolean;
+  /** Screen corner for progress / selection / host / attach toasts. */
+  toast_anchor?: 'tl' | 'bl' | 'tr' | 'br' | 'tc';
+  /** How a long-press on an inline/sticky shot opens the enlarge sheet. */
+  image_press_inspect?: 'off' | 'hold' | 'two' | 'both';
   auto_gen_on_reply: boolean;
   /** Master switch for stream-keyword gen. Independent of execute / auto_gen_on_reply. */
   stream_keywords_enabled: boolean;

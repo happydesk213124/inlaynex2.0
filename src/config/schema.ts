@@ -5,6 +5,7 @@ import { parseStreamKeywords } from '../domain/prompt/stream-keywords.ts';
 import { normalizeLlmRolesSettings } from '../domain/llm/roles.ts';
 import { naiStepsForFamily, normalizeNaiSampler, optionalNaiSampler } from '../domain/nai/samplers.ts';
 import { normalizeInlineMsgActions } from '../domain/inline-msg-actions.ts';
+import { normalizeImagePressInspect, normalizeToastAnchor } from '../domain/toast-press.ts';
 
 /** NovelAI base natural-language mode (replaces the old boolean toggle). */
 export type NaturalBaseMode = 'off' | 'short' | 'detailed' | 'supplement';
@@ -291,6 +292,8 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   }
   if (card.progress_toast == null) card.progress_toast = false;
   else card.progress_toast = card.progress_toast === true || card.progress_toast === 'true' || card.progress_toast === 1 || card.progress_toast === '1';
+  card.toast_anchor = normalizeToastAnchor(card.toast_anchor);
+  card.image_press_inspect = normalizeImagePressInspect(card.image_press_inspect);
   {
     const mode = String(card.char_ref_mode || 'off').toLowerCase();
     card.char_ref_mode = mode === 'vibe' || mode === 'image' ? mode : 'off';

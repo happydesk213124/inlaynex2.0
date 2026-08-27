@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.26';
+const PLUGIN_VERSION = '2.4.27';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -4425,7 +4425,40 @@ const VENDOR_INLINE_LONGPRESS_NEEDLE =
   `      // Sticky always-image: short-tap hide / long-press fullscreen+sheet.
       if (Nt() && !inspectOpen) {`;
 const VENDOR_INLINE_LONGPRESS_PATCH =
-  `      // Msg chips: same coord hit-test as inline shots (node click never reaches us).
+  `      // Inspect press mode: off / one-finger / two-finger / both. Track ids so
+      // a second mobile touch can arm the timer instead of cancelling the first.
+      const nxImagePressMode = () => {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const raw = t.backendSettings?.card?.image_press_inspect;
+        return typeof VC?.normalizeImagePressInspect == "function" ? VC.normalizeImagePressInspect(raw) : "hold";
+      };
+      const nxPressIdSet = () => {
+        if (!(t._imagePressIds instanceof Set)) t._imagePressIds = new Set();
+        return t._imagePressIds;
+      };
+      const nxInspectAllowed = () => {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const mode = nxImagePressMode();
+        const n = nxPressIdSet().size;
+        return typeof VC?.shouldStartImagePressInspect == "function"
+          ? VC.shouldStartImagePressInspect({ mode, pointerCount: n })
+          : mode !== "off" && (mode === "two" ? n >= 2 : n >= 1);
+      };
+      const nxArmInspect = (F) => {
+        if (!F || F.timer || F.long || !nxInspectAllowed()) return;
+        F.timer = setTimeout(() => {
+          if (mobilePress !== F || !nxInspectAllowed()) return;
+          F.long = !0;
+          showStickyInspect(F.card).catch(() => {
+          });
+        }, PRESS_MS);
+      };
+      const nxNotePressId = (id, hit) => {
+        const ids = nxPressIdSet();
+        if (hit) ids.add(id);
+        else ids.delete(id);
+      };
+      // Msg chips: same coord hit-test as inline shots (node click never reaches us).
       if (!inspectOpen && nxMsgAct() !== "off" && typeof hitMsgChipAt == "function") {
         try {
           const chip = await hitMsgChipAt(e, x, I);
@@ -4467,8 +4500,14 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
             }
             const card = (t.gallery || []).find((c) => String(c?.id || "") === String(cardId || ""));
             if (!card) continue;
+            nxNotePressId(f.pointerId, !0);
             // Long-press start: activate sticky image to this inline shot immediately.
             if (typeof nxActivateStickyByCardId == "function") nxActivateStickyByCardId(card.id).catch(() => {});
+            if (mobilePress && (mobilePress.source === "inline-shot" || mobilePress.source === "sticky-thumb")) {
+              nxArmInspect(mobilePress);
+              pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
+              return;
+            }
             if (mobilePress) {
               cancelMobilePress();
               return;
@@ -4483,14 +4522,9 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
               timer: null,
               thumb: node
             };
-            showPressFill(node, x, I).catch(() => {
-            });
-            F.timer = setTimeout(() => {
-              if (mobilePress !== F) return;
-              F.long = !0;
-              showStickyInspect(F.card).catch(() => {
-              });
-            }, PRESS_MS), mobilePress = F;
+            if (nxInspectAllowed()) showPressFill(node, x, I).catch(() => {});
+            nxArmInspect(F);
+            mobilePress = F;
             pointerGesture = {
               x,
               y: I,
@@ -4506,6 +4540,60 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
       }
       // Sticky always-image: short-tap hide / long-press fullscreen+sheet.
       if (Nt() && !inspectOpen) {`;
+
+const VENDOR_STICKY_INSPECT_PRESS_NEEDLE =
+  `          if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;
+          if (!await hitEl(g.thumb, x, I)) continue;
+          if (mobilePress) {
+            cancelMobilePress();
+            return;
+          }
+          const F = {
+            x,
+            y: I,
+            card: g.card,
+            source: "sticky-thumb",
+            pointerId: f.pointerId,
+            long: !1,
+            timer: null,
+            thumb: g.thumb
+          };
+          showPressFill(g.thumb, x, I).catch(() => {
+          });
+          F.timer = setTimeout(() => {
+            if (mobilePress !== F) return;
+            F.long = !0;
+            showStickyInspect(F.card).catch(() => {
+            });
+          }, PRESS_MS), mobilePress = F;
+          return;`;
+const VENDOR_STICKY_INSPECT_PRESS_PATCH =
+  `          if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;
+          if (!await hitEl(g.thumb, x, I)) continue;
+          nxNotePressId(f.pointerId, !0);
+          if (mobilePress && (mobilePress.source === "inline-shot" || mobilePress.source === "sticky-thumb")) {
+            nxArmInspect(mobilePress);
+            return;
+          }
+          if (mobilePress) {
+            cancelMobilePress();
+            return;
+          }
+          const F = {
+            x,
+            y: I,
+            card: g.card,
+            source: "sticky-thumb",
+            pointerId: f.pointerId,
+            long: !1,
+            timer: null,
+            thumb: g.thumb
+          };
+          if (nxInspectAllowed()) showPressFill(g.thumb, x, I).catch(() => {
+          });
+          nxArmInspect(F);
+          mobilePress = F;
+          return;`;
 
 const VENDOR_MSG_CHIP_UP_NEEDLE =
   `    }, onPointerUp = async (f) => {
@@ -4542,6 +4630,14 @@ const VENDOR_MSG_CHIP_UP_PATCH =
           return;
         }
       }`;
+
+const VENDOR_CANCEL_PRESS_IDS_NEEDLE =
+  `    }, cancelMobilePress = () => {
+      mobilePress?.timer && clearTimeout(mobilePress.timer), mobilePress = null;`;
+const VENDOR_CANCEL_PRESS_IDS_PATCH =
+  `    }, cancelMobilePress = () => {
+      mobilePress?.timer && clearTimeout(mobilePress.timer), mobilePress = null;
+      t._imagePressIds = null;`;
 
 const VENDOR_STICKY_PRESS_NEEDLE = `if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbUserHidden) continue;`;
 const VENDOR_STICKY_PRESS_PATCH = `if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;`;
@@ -7513,7 +7609,9 @@ const VENDOR_INLINE_HELP_PATCH =
     "nx-inline-chat": { title: "이미지 채팅에", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저·라이트보드(본문 30자 이하)는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "사용안함 / 편의성(오류율 있음 · 2.4.7, 칩을 본문 위에 붙임) / 호환성(2.4.9, 본문 문단에만 붙임). 헤더가 비면 채팅 카드 복구를 쓰세요. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
     "nx-inline-chat-scale": { title: "이미지 채팅 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
-    "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트." },
+    "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트. 칩·샷을 꽂기 직전에는 조각 불러오는 중 스피너가 같은 자리에 뜹니다." },
+    "nx-toast-anchor": { title: "토스트 위치", body: "진행·선택·알림·조각 로딩 토스트가 붙는 화면 모서리입니다. 기본은 중상단입니다." },
+    "nx-image-press": { title: "이미지 크게보기", body: "인라인·스티키 샷을 꾸욱 눌러 크게 봅니다. 사용안함 / 두 점 동시(모바일) / 한 점(지금) / 둘 다. 탐색기·메시지 선택 길게 누르기는 그대로입니다." },
     "nx-nai4-fallback": { title: "할당량 끝나면 NAI4 폴백", body: "V5 샷이 할당량(402)으로 실패하면 그 샷만 V4.5와 NAI4 프리셋으로 다시 뽑습니다. V5 자연어·대사는 빼입니다." },
     "nx-nai5-speech": { title: "NAI5 대사삽입", body: "V5 샷에서 말한 캐릭터의 캡션 끝에 말풍선을 넣습니다. 여러 명이 말하면 각자 자기 대사만 가집니다. 프리셋의 spoken bubble 억제는 그 샷에서 빼입니다." },`;
 
@@ -7533,6 +7631,23 @@ const VENDOR_INLINE_TOGGLE_PATCH =
               <input id="nx-inline-chat-scale" type="number" min="25" max="200" step="5" value="\${h(i.inline_chat_scale_pct ?? 100)}">
             </label>
             <label class="toggle-row" data-nx-help-id="nx-progress-toast"><input type="checkbox" id="nx-progress-toast" \${i.progress_toast ? "checked" : ""}><span>진행 토스트</span></label>
+            <label data-nx-help-id="nx-toast-anchor"><span>토스트 위치</span>
+              <select id="nx-toast-anchor">
+                <option value="tl" \${(i.toast_anchor || "tc") === "tl" ? "selected" : ""}>좌상단</option>
+                <option value="bl" \${i.toast_anchor === "bl" ? "selected" : ""}>좌하단</option>
+                <option value="tr" \${i.toast_anchor === "tr" ? "selected" : ""}>우상단</option>
+                <option value="br" \${i.toast_anchor === "br" ? "selected" : ""}>우하단</option>
+                <option value="tc" \${!i.toast_anchor || i.toast_anchor === "tc" ? "selected" : ""}>중상단</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-image-press"><span>이미지 크게보기</span>
+              <select id="nx-image-press">
+                <option value="off" \${i.image_press_inspect === "off" ? "selected" : ""}>사용안함</option>
+                <option value="two" \${i.image_press_inspect === "two" ? "selected" : ""}>두손으로 꾸욱 누르기</option>
+                <option value="hold" \${!i.image_press_inspect || i.image_press_inspect === "hold" ? "selected" : ""}>꾸욱 누르기</option>
+                <option value="both" \${i.image_press_inspect === "both" ? "selected" : ""}>둘 다 사용</option>
+              </select>
+            </label>
             <label class="toggle-row" data-nx-help-id="nx-nai4-fallback"><input type="checkbox" id="nx-nai4-fallback" \${i.nai4_fallback ? "checked" : ""}><span>할당량 끝나면 NAI4 폴백</span></label>
             <label class="toggle-row" data-nx-help-id="nx-nai5-speech"><input type="checkbox" id="nx-nai5-speech" \${i.nai5_speech ? "checked" : ""}><span>NAI5 대사삽입</span></label>`;
 
@@ -7544,6 +7659,8 @@ const VENDOR_INLINE_SAVE_PATCH =
       inline_msg_actions: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeInlineMsgActions == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeInlineMsgActions(N("nx-inline-msg-actions")) : String(N("nx-inline-msg-actions") || "off")),
       inline_chat_scale_pct: Math.max(25, Math.min(200, Math.round(Ne(N("nx-inline-chat-scale"), 100)) || 100)),
       progress_toast: ee("nx-progress-toast"),
+      toast_anchor: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeToastAnchor == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeToastAnchor(N("nx-toast-anchor")) : String(N("nx-toast-anchor") || "tc")),
+      image_press_inspect: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeImagePressInspect == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeImagePressInspect(N("nx-image-press")) : String(N("nx-image-press") || "hold")),
       nai4_fallback: ee("nx-nai4-fallback"),
       nai5_speech: ee("nx-nai5-speech"),`;
 
@@ -8351,6 +8468,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       ) {
         y("info", "inline.keep.skip", \`DOM#\${selIdx} cheap keep=\${t._inlineKeepIdxs.join(",")}\`);
         t._inlineAttachOk = 1;
+        hideAttachToast().catch(() => {});
         return;
       }
       const VC = globalThis.__INLAY_VIEWER_CORE__;
@@ -8540,6 +8658,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       if (!force && sameKeep && !(await inlineGoneFromSel())) {
         y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeepArr.join(",")}\`);
         t._inlineAttachOk = 1;
+        hideAttachToast().catch(() => {});
         return;
       }
       if (listChanged && fromCache || await inlineGoneFromSel()) {
@@ -8562,6 +8681,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       t._inlineKeepMsgActions = nxMsgAct();
       const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
       y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=diff\`);
+      // Chips/shots are about to land — show the spinner until inject returns.
+      showAttachToast().catch(() => {});
       const N = globalThis.__INLAY_NATIVE__;
       let selCards = [];
       try {
@@ -8644,11 +8765,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         await injectChatInlineImages(els[row.idx], row.cards, []);
       }
       t._inlineAttachOk = 1;
+      hideAttachToast().catch(() => {});
       try {
         if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
       } catch {
       }
     } catch (err) {
+      hideAttachToast().catch(() => {});
       y("warn", "inline.refresh.fail", z(err?.message || err, 100));
     }
   }
@@ -10754,16 +10877,34 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }
   }
   /** Progress toast root — gated by card.progress_toast. */
-  const PROGRESS_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:auto;width:min(280px,92vw);display:block;";
-  const PROGRESS_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:none;width:min(280px,92vw);display:none;";
-  const HOST_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;width:min(280px,92vw);box-sizing:border-box;display:block;background:rgba(37,99,235,.95);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.4);";
-  const HOST_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;width:min(280px,92vw);display:none;";
+  function nxToastAnchor() {
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const raw = t.backendSettings?.card?.toast_anchor;
+    return typeof VC?.normalizeToastAnchor == "function" ? VC.normalizeToastAnchor(raw) : "tc";
+  }
+  function nxToastPos(opts) {
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const vis = opts?.visible !== !1;
+    const pe = opts?.pointerEvents !== !1;
+    const shift = Number(opts?.shiftPx) || 0;
+    const z = Number(opts?.zIndex) || 99999;
+    if (typeof VC?.toastAnchorStyle == "function") {
+      return VC.toastAnchorStyle(nxToastAnchor(), { visible: vis, pointerEvents: pe, shiftPx: shift, zIndex: z, insetPx: 16 });
+    }
+    const eye = vis ? "block" : "none";
+    const pointer = pe ? "auto" : "none";
+    return \`position:fixed;top:\${16 + shift}px;left:50%;transform:translateX(-50%);z-index:\${z};pointer-events:\${pointer};width:min(280px,92vw);box-sizing:border-box;display:\${eye};\`;
+  }
+  const HOST_TOAST_CHROME = "background:rgba(37,99,235,.42);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.18);";
+  function progressToastStyle(visible) {
+    return nxToastPos({ visible: !!visible, pointerEvents: !!visible, zIndex: 99999 });
+  }
+  function hostToastStyle(visible) {
+    return nxToastPos({ visible: !!visible, pointerEvents: !1, zIndex: 1e5 }) + (visible ? HOST_TOAST_CHROME : "");
+  }
   const SELECTION_TOAST_HIDE_MS = 2e3;
   function selectionToastStyle(visible, belowProgress) {
-    const top = belowProgress ? 64 : 16;
-    const eye = visible ? "block" : "none";
-    const pe = visible ? "auto" : "none";
-    return \`position:fixed;top:\${top}px;left:50%;transform:translateX(-50%);z-index:100001;pointer-events:\${pe};width:min(280px,92vw);box-sizing:border-box;display:\${eye};\`;
+    return nxToastPos({ visible: !!visible, pointerEvents: !!visible, shiftPx: belowProgress ? 48 : 0, zIndex: 100001 });
   }
   const PROGRESS_TOAST_HIDE_MS = 2e3;
   async function setProgressToastEye(visible, force) {
@@ -10778,7 +10919,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }
     t._progressToastShown = !!visible;
     try {
-      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(visible ? PROGRESS_TOAST_STYLE_SHOW : PROGRESS_TOAST_STYLE_HIDE);
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(progressToastStyle(visible));
     } catch {
     }
   }
@@ -10829,7 +10970,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     const body = await Ee(doc);
     if (!body) return null;
     const root = await H(doc, "div", {
-      style: PROGRESS_TOAST_STYLE_HIDE
+      style: progressToastStyle(!1)
     });
     try {
       typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-progress-toast");
@@ -10891,7 +11032,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     const body = await Ee(doc);
     if (!body) return null;
     const root = await H(doc, "div", {
-      style: HOST_TOAST_STYLE_HIDE
+      style: hostToastStyle(!1)
     });
     try {
       typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-host-toast");
@@ -10908,7 +11049,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     if (t._hostToastTimer) clearTimeout(t._hostToastTimer), t._hostToastTimer = null;
     try {
       if (typeof root.setInnerHTML == "function") await root.setInnerHTML(msg ? h(msg) : "");
-      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(msg ? HOST_TOAST_STYLE_SHOW : HOST_TOAST_STYLE_HIDE);
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(hostToastStyle(!!msg));
     } catch {
       return;
     }
@@ -10919,6 +11060,50 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       nxHostToast("").catch(() => {
       });
     }, ms);
+  }
+  function attachToastStyle(visible) {
+    return nxToastPos({ visible: !!visible, pointerEvents: !1, zIndex: 99998 });
+  }
+  async function hideAttachToast() {
+    const root = t._attachToastRoot;
+    t._attachToastShown = !1;
+    if (!root) return;
+    try {
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(attachToastStyle(!1));
+    } catch {
+    }
+  }
+  async function showAttachToast() {
+    if (t._attachToastShown) return;
+    try {
+      if (t.jobProgress && formatViewerJob(t.jobProgress)?.busy) return;
+      if (readIndexProgress(t.jobProgress)?.busy) return;
+    } catch {
+    }
+    const doc = await ue().catch(() => t.hostDoc);
+    if (!doc || typeof doc.createElement != "function") return;
+    const body = await Ee(doc);
+    if (!body) return;
+    let root = t._attachToastRoot;
+    if (!root) {
+      root = await H(doc, "div", { style: attachToastStyle(!1) });
+      try {
+        typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-attach-toast");
+      } catch {
+      }
+      await body.appendChild(root);
+      t._attachToastRoot = root;
+    }
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const html = typeof VC?.composeAttachToastHtml == "function"
+      ? VC.composeAttachToastHtml(h)
+      : \`<div data-inlay-attach-toast="1">인레이 넥서스 조각 불러오는중..</div>\`;
+    try {
+      if (typeof root.setInnerHTML == "function") await root.setInnerHTML(html);
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(attachToastStyle(!0));
+      t._attachToastShown = !0;
+    } catch {
+    }
   }
   /** Selection toast — own DOM; never shares the progress/reroll slot. */
   async function ensureSelectionToastRoot() {
@@ -10996,7 +11181,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       showBar: !1,
       tone: "job",
       escapeHtml: h
-    }) : \`<div data-inlay-selection-toast="1" style="box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px;cursor:pointer"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(stage)}</div><div style="color:#8b97ab;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(meta)}</div></div>\`;
+    }) : \`<div data-inlay-selection-toast="1" style="box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:rgba(18,24,32,.42);border:1px solid rgba(42,51,68,.5);color:#e8eef8;font-size:11px;cursor:pointer"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(stage)}</div><div style="color:#8b97ab;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(meta)}</div></div>\`;
     const root = await ensureSelectionToastRoot();
     if (!root) return;
     try {
@@ -11141,7 +11326,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         error: isError,
         tone,
         escapeHtml: h
-      }) : \`<div data-inlay-progress-toast="1" style="padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px;cursor:pointer">\${h(stage + " " + meta)}</div>\`;
+      }) : \`<div data-inlay-progress-toast="1" style="padding:6px 10px;border-radius:8px;background:rgba(18,24,32,.42);border:1px solid rgba(42,51,68,.5);color:#e8eef8;font-size:11px;cursor:pointer">\${h(stage + " " + meta)}</div>\`;
       // Stay up while busy; auto-hide on terminal job or when index-only ends via idle branch.
       await paintProgressToastHtml(html, { armHide: !liveBusy });
     } finally {
@@ -13792,6 +13977,7 @@ const loadVendorUi = (): string => {
     [VENDOR_STICKY_CLICK_NEEDLE, 'sticky click hide/revive'],
     [VENDOR_STICKY_PRESS_NEEDLE, 'sticky press skip'],
     [VENDOR_PRESS_FILL_NEEDLE, 'press fill lightweight ring'],
+    [VENDOR_CANCEL_PRESS_IDS_NEEDLE, 'cancel press clears image press ids'],
     [VENDOR_PRESS_FILL_STICKY_CALL_NEEDLE, 'press fill sticky call xy'],
     [VENDOR_INLINE_LONGPRESS_NEEDLE, 'inline shot long-press'],
     [VENDOR_MSG_CHIP_UP_NEEDLE, 'msg chip pointerup'],
@@ -14180,9 +14366,12 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_PCT_LIVE_NEEDLE, VENDOR_INLINE_PCT_LIVE_PATCH)
     .replace(VENDOR_STICKY_CLICK_NEEDLE, VENDOR_STICKY_CLICK_PATCH)
     .replace(VENDOR_PRESS_FILL_NEEDLE, VENDOR_PRESS_FILL_PATCH)
+    .replace(VENDOR_CANCEL_PRESS_IDS_NEEDLE, VENDOR_CANCEL_PRESS_IDS_PATCH)
     .replace(VENDOR_PRESS_FILL_STICKY_CALL_NEEDLE, VENDOR_PRESS_FILL_STICKY_CALL_PATCH)
     .replace(VENDOR_STICKY_PRESS_NEEDLE, VENDOR_STICKY_PRESS_PATCH)
-    .replace(VENDOR_INLINE_LONGPRESS_NEEDLE, VENDOR_INLINE_LONGPRESS_PATCH)
+    .replace(VENDOR_INLINE_LONGPRESS_NEEDLE, VENDOR_INLINE_LONGPRESS_PATCH);
+    assertOnce(out, VENDOR_STICKY_INSPECT_PRESS_NEEDLE, 'sticky inspect press after collapsed rename');
+    out = out.replace(VENDOR_STICKY_INSPECT_PRESS_NEEDLE, VENDOR_STICKY_INSPECT_PRESS_PATCH)
     .replace(VENDOR_MSG_CHIP_UP_NEEDLE, VENDOR_MSG_CHIP_UP_PATCH)
     .replace(VENDOR_STICKY_REVIVE_NEEDLE, VENDOR_STICKY_REVIVE_PATCH)
     .replace(VENDOR_STICKY_INIT_NEEDLE, VENDOR_STICKY_INIT_PATCH)
@@ -14475,6 +14664,17 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'async function nxActivateStickyByCardId', 'nx sticky by cardId landed');
     assertOnce(out, 'async function nxHostToast', 'nxHostToast landed');
     assertOnce(out, 'async function showSelectionToast', 'selection toast landed');
+    assertOnce(out, 'async function showAttachToast()', 'attach spinner toast landed');
+    assertOnce(out, 'function nxToastAnchor()', 'toast anchor helper landed');
+    assertOnce(out, 'const nxImagePressMode = () => {', 'image press mode helper landed');
+    assertOnce(out, 'select id="nx-toast-anchor"', 'toast position select landed');
+    assertOnce(out, 'select id="nx-image-press"', 'image press select landed');
+    if (out.includes('PROGRESS_TOAST_STYLE_SHOW')) {
+      throw new Error('[build] toast still uses hardcoded top-center style constants');
+    }
+    if (!out.includes('showAttachToast().catch') || !out.includes('hideAttachToast().catch')) {
+      throw new Error('[build] attach toast must show before inject and hide after');
+    }
     assertOnce(out, 'async function nxStickyV2ApplyFromHt', 'sticky v2 apply landed');
     assertOnce(out, 'function nxReadyImg(src)', 'nxReadyImg display-url helper landed');
     if (out.includes('typeof fb == "string" && /^data:image')) {

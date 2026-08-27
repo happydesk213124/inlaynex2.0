@@ -109,6 +109,12 @@ solo, costume, no humans. Off `nai5_first` uses the model-tab model for
 every shot. Dashboard save keeps the stored flags when those checkboxes
 are absent.
 
+Dashboard also has `card.toast_anchor` (`tl` | `bl` | `tr` | `br` | `tc`,
+default `tc`) for progress / selection / host / attach toasts, and
+`card.image_press_inspect` (`off` | `hold` | `two` | `both`, default `hold`)
+for enlarge-on-press on inline/sticky shots. `two` needs two simultaneous
+hits on the image. While chips/shots are about to inject, an attach toast
+reads `인레이 넥서스 조각 불러오는중..` and drops the moment they land.
 Dashboard also has `card.nai4_fallback`, `card.nai5_speech`,
 and `card.inline_msg_actions` as a 3-way select: `off` (사용안함),
 `legacy` (편의성, 오류율 있음 — DIV hosts + top bar on the content

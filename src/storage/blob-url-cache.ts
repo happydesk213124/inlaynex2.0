@@ -1,8 +1,10 @@
 /**
  * Bounded display-URL cache for gallery/sticky/inline thumbs.
  *
- * URLs may be short `blob:` object URLs; budget is therefore source bytes
- * (passed at set), not character length. Eviction revokes object URLs.
+ * The budget is source bytes, passed at `set`, not character length: a `blob:`
+ * URL is a short string standing for a large buffer, so charging by string length
+ * would let an unbounded amount of image data stay resident. `data:` URLs cost
+ * roughly 4/3 of the bytes they are charged. Eviction revokes object URLs.
  */
 
 function revokeDisplayUrl(url: string): void {
@@ -127,7 +129,12 @@ export class BlobUrlCache {
   }
 }
 
-/** ~32MB of decoded image bytes — enough for a sticky window + recent browse. */
+/**
+ * 32MB of source image bytes — enough for a sticky window plus recent browsing,
+ * and the point where re-encoding on a message round trip stops being common.
+ * Raising it is only worth doing against a measurement; a bigger resident set
+ * trades encode work for main-thread memory pressure.
+ */
 export const BLOB_URL_BUDGET_CHARS = 32 * 1024 * 1024;
 
 export const blobUrlCache = new BlobUrlCache(BLOB_URL_BUDGET_CHARS);

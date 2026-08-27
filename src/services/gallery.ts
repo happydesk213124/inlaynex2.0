@@ -29,6 +29,7 @@ import { buildGalleryManifest, packGalleryZip, resolveReattach, unpackGalleryZip
 import {
   cardMetaFromLocation,
   locationFieldsForCard,
+  locationFieldsFrom,
   readImageLocation,
   writeImageLocation,
 } from './generation';
@@ -140,13 +141,21 @@ function parseMeta(row: CardRow): Record<string, unknown> {
 }
 
 /**
- * `png_bytes` as 1.x reported it: the stored image's byte length when there is
- * one, else whatever the card recorded. The index holds that byte length, so the
- * precedence survives without hydrating anything.
+ * Placement sidecar, mapped location fields and `png_bytes` from a single index
+ * lookup — a listing row needs all three and they live on the same image row.
+ *
+ * `png_bytes` keeps the 1.x precedence: the stored image's byte length when there
+ * is one, else whatever the card recorded. The index holds that byte length, so
+ * the precedence survives without hydrating anything.
  */
-async function pngBytesOf(id: string, meta: Record<string, unknown>): Promise<number> {
+async function rowLocation(id: string, meta: Record<string, unknown>) {
   const info = await imageMeta(id);
-  return info?.png_bytes || Number(meta.png_bytes) || 0;
+  const sidecar = info?.location || {};
+  return {
+    sidecar,
+    loc: locationFieldsFrom(id, meta, sidecar),
+    png_bytes: info?.png_bytes || Number(meta.png_bytes) || 0,
+  };
 }
 
 /**
@@ -161,8 +170,7 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
   const items: ExploreRow[] = [];
   for (const row of rows) {
     const meta = parseMeta(row);
-    const loc = await locationFieldsForCard(row.id, meta);
-    const sidecar = await readImageLocation(row.id);
+    const { sidecar, loc, png_bytes: pngBytes } = await rowLocation(row.id, meta);
     const characterName = cleanText(loc.character_name || sidecar.character_name || meta.character_name || '', 200);
     const chatName = cleanText(loc.chat_name || sidecar.chat_name || meta.chat_name || '', 200);
     const characterId = cleanText(loc.character_id || '', 200) || 'unknown';
@@ -220,7 +228,7 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
       storage: 'indexeddb',
       storage_key: loc.storage_key || IMAGE_KEY(row.id),
       location_file: loc.location_file || '',
-      png_bytes: await pngBytesOf(row.id, meta),
+      png_bytes: pngBytes,
     });
   }
   const folderList = Object.values(folders).sort((a, b) =>
@@ -252,8 +260,7 @@ export async function gallery(sessionId: string, limit = 40): Promise<ApiResult>
   const items: GalleryRow[] = [];
   for (const row of rows) {
     const meta = parseMeta(row);
-    const loc = await locationFieldsForCard(row.id, meta);
-    const sidecar = await readImageLocation(row.id);
+    const { sidecar, loc, png_bytes: pngBytes } = await rowLocation(row.id, meta);
     items.push({
       id: row.id,
       job_id: row.job_id,
@@ -281,7 +288,7 @@ export async function gallery(sessionId: string, limit = 40): Promise<ApiResult>
       created_at: row.created_at,
       storage: 'indexeddb',
       storage_key: loc.storage_key || IMAGE_KEY(row.id),
-      png_bytes: await pngBytesOf(row.id, meta),
+      png_bytes: pngBytes,
     });
   }
   const payload = { ok: true, session_id: sessionId, items, storage: 'indexeddb' };

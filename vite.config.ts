@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.24';
+const PLUGIN_VERSION = '2.4.25';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -10232,6 +10232,59 @@ const VENDOR_OVERLAY_MOUNT_PATCH =
     // Overlay toggle only hides markers — shell + click tracking stay mounted.
     if (!0) {`;
 
+/**
+ * Boot mounted the window shell behind two things it does not need: a third
+ * `GET /v1/settings` and the whole session gallery.
+ *
+ * Three calls fetched settings before anything could appear — `Qa` on entry,
+ * `retryHostUi` again, then `it()` a third time. `le()` now stamps when it
+ * answered so `it()` can reuse a fetch from milliseconds ago, and `retryHostUi`
+ * drops its own call since `it()` still fetches when the value is stale.
+ *
+ * `ce()` is worse: it is a `limit=2000` listing plus a characters fetch, and it
+ * was awaited *before* `lt()`/`Ya()` appended their shells, so the viewer and the
+ * sticky overlay stayed absent for the whole round trip. Nothing below the mount
+ * line reads `t.gallery`, so it fires after the mounts and repaints when it
+ * lands.
+ */
+const VENDOR_BOOT_SETTINGS_STAMP_NEEDLE = `    const e = await K("/v1/settings", { method: "GET" });`;
+const VENDOR_BOOT_SETTINGS_STAMP_PATCH = `    const e = await K("/v1/settings", { method: "GET" });
+    // When this answered, so a boot re-entry can skip a redundant round trip.
+    t._nxSettingsAt = Date.now();`;
+
+const VENDOR_BOOT_RETRY_SETTINGS_NEEDLE = `        t.hostDoc = null, await le(), await it();`;
+const VENDOR_BOOT_RETRY_SETTINGS_PATCH = `        // it() fetches settings itself when they are stale; this second GET only
+        // delayed the first mount.
+        t.hostDoc = null, await it();`;
+
+/** Written against the post-`VENDOR_OVERLAY_MOUNT` text, so it is applied after it. */
+const VENDOR_BOOT_MOUNT_FIRST_NEEDLE = `    try {
+      await le();
+    } catch {
+    }
+    const e = t.backendSettings?.card || {}, n = await Z().catch(() => null);
+    if (n?.sessionId) try {
+      await ce(n.sessionId);
+    } catch {
+    }
+    e.floating_viewer !== !1 ? await lt() : await st(), await Ya(), e.debug_panel ? await Ba() : await ct();`;
+const VENDOR_BOOT_MOUNT_FIRST_PATCH = `    if (!t.backendSettings || Date.now() - Number(t._nxSettingsAt || 0) > 1e3) try {
+      await le();
+    } catch {
+    }
+    const e = t.backendSettings?.card || {}, n = await Z().catch(() => null);
+    e.floating_viewer !== !1 ? await lt() : await st(), await Ya(), e.debug_panel ? await Ba() : await ct();
+    // Gallery + characters after the shells exist. Neither mount reads t.gallery,
+    // and ce() does not paint on its own, so repaint once it resolves.
+    if (n?.sessionId) ce(n.sessionId).then(async () => {
+      try {
+        t.galleryUi?.renderGal && await t.galleryUi.renderGal();
+        invalidateOverlayLayoutCache(), await he(), Ce();
+      } catch {
+      }
+    }).catch(() => {
+    });`;
+
 const VENDOR_OVERLAY_WATCH_NEEDLE =
   `const card = t.backendSettings?.card || {}, needViewer = card.floating_viewer !== !1, needOverlay = card.overlay_markers !== !1;`;
 const VENDOR_OVERLAY_WATCH_PATCH =
@@ -12795,6 +12848,87 @@ const VENDOR_SOFT_SKIP_FILL_NEEDLE =
 const VENDOR_SOFT_SKIP_FILL_PATCH =
   `      if (gen !== (d._metaGen || 0)) return;`;
 
+/**
+ * The thumb strip painted only after encoding up to 12 originals, one at a time.
+ *
+ * Every caller of `paintThumbsStrip` already runs `warmVisibleImages` for the
+ * same window, so the strip was waiting on work that was in flight anyway — and
+ * waiting is all it accomplished: the paint uses `Ie()`, a cache lookup, and the
+ * cache is what the warm wave fills.
+ *
+ * `fillThumbSrcs` was supposed to be the cheap follow-up, filling `src` on the
+ * existing nodes. It cannot: SafeElement rejects every attribute without an `x-`
+ * prefix, so both its `getAttribute("data-gal-idx")` and its `setAttribute("src")`
+ * threw into a bare `catch`. `setInnerHTML` is the only paint SafeDOM honours, so
+ * the warm wave now ends in a real repaint and the pretend path is deleted rather
+ * than left looking functional.
+ *
+ * Written against the post-chain text, so applied after it.
+ */
+const VENDOR_THUMBS_DEAD_FILL_NEEDLE = `fillThumbSrcs = async (items, idx) => {
+      try {
+        const list = items || [];
+        const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await thumbsPaintEl().getChildren()) : [];
+        if (!kids?.length) return;
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const warmIds = new Set(VC?.visibleGalleryImageIds ? VC.visibleGalleryImageIds(list, idx, 1, 12) : list.slice(Math.max(0, idx - 3), idx + 5).map((c) => String(c?.id || "")).filter(Boolean));
+        for (const id of warmIds) {
+          const card = list.find((c) => String(c?.id || "") === id);
+          if (card) await ensureCardImage(card);
+        }
+        for (const el of kids) {
+          if (!el || typeof el.getAttribute != "function") continue;
+          let galIdx = null;
+          try {
+            const split = await el.getAttribute("data-nx-split");
+            if (split != null && split !== "") continue;
+            const raw = await el.getAttribute("data-gal-idx");
+            if (raw != null && raw !== "") galIdx = Number(raw);
+          } catch {
+            continue;
+          }
+          if (!Number.isFinite(galIdx)) continue;
+          const card = list[galIdx], id = String(card?.id || "");
+          if (!warmIds.has(id)) continue;
+          const src = Ie(card);
+          if (!src || typeof el.setAttribute != "function") continue;
+          try {
+            await el.setAttribute("src", src);
+          } catch {
+          }
+        }
+      } catch {
+      }
+    }, `;
+const VENDOR_THUMBS_DEAD_FILL_PATCH = '';
+
+const VENDOR_THUMBS_STRIP_NONBLOCK_NEEDLE = `      const warmIds = new Set(VC?.visibleGalleryImageIds ? VC.visibleGalleryImageIds(list, idx, 1, 12) : list.slice(Math.max(0, idx - 3), idx + 5).map((c) => String(c?.id || "")).filter(Boolean));
+      for (const id of warmIds) {
+        const card = list.find((c) => String(c?.id || "") === id);
+        if (card) await ensureCardImage(card);
+      }
+      const thumbBits = [];`;
+const VENDOR_THUMBS_STRIP_NONBLOCK_PATCH = `      const warmIds = new Set(VC?.visibleGalleryImageIds ? VC.visibleGalleryImageIds(list, idx, 1, 12) : list.slice(Math.max(0, idx - 3), idx + 5).map((c) => String(c?.id || "")).filter(Boolean));
+      // Cache hits only. Callers already started warmVisibleImages for this same
+      // window and it repaints when the wave lands, so awaiting the encodes here
+      // delayed the strip without changing what it could draw.
+      const thumbBits = [];`;
+
+const VENDOR_THUMBS_WARM_REPAINT_NEEDLE = `        const done = () => {
+          if (gen !== (d._metaGen || 0) || t.uiOpen || d.minimized) return;
+          // Fill srcs in place — avoid full strip rebuild (separator flicker).
+          fillThumbSrcs(items, d.index).catch(() => {
+          });
+        };`;
+const VENDOR_THUMBS_WARM_REPAINT_PATCH = `        const done = () => {
+          if (gen !== (d._metaGen || 0) || t.uiOpen || d.minimized) return;
+          // Full rebuild, not an in-place src fill: SafeElement refuses any
+          // attribute without an \`x-\` prefix, so the fill never landed. The gen
+          // check above keeps this to one repaint per selection.
+          paintThumbsStrip(items, d.index).catch(() => {
+          });
+        };`;
+
 const VENDOR_THUMBS_KIDS_NEEDLE =
   `await k.unwarpSafeArray(await E.getChildren())`;
 const VENDOR_THUMBS_KIDS_PATCH =
@@ -13515,6 +13649,8 @@ const loadVendorUi = (): string => {
     [VENDOR_BLOCK_HOST_UNBLOCK_NEEDLE, 'blockHostChrome unblock style-only'],
     [VENDOR_SANGSI_TOGGLE_NEEDLE, 'viewer 상시 optimistic toggle'],
     [VENDOR_SETTINGS_WATCH_STICKY_NEEDLE, 'settings watch sticky restore'],
+    [VENDOR_BOOT_SETTINGS_STAMP_NEEDLE, 'boot settings fetch stamp'],
+    [VENDOR_BOOT_RETRY_SETTINGS_NEEDLE, 'boot retry drops its settings GET'],
     [VENDOR_OVERLAY_MOUNT_NEEDLE, 'overlay keep Ya shell'],
     [VENDOR_OVERLAY_WATCH_NEEDLE, 'overlay watchdog always shell'],
     [VENDOR_OVERLAY_RETRY_NEEDLE, 'overlay retry always shell'],
@@ -14105,6 +14241,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_ACTIONS_END_CLEAR_NEEDLE, VENDOR_ACTIONS_END_CLEAR_PATCH)
     .replace(VENDOR_ICON_EXPAND_GUARD_NEEDLE, VENDOR_ICON_EXPAND_GUARD_PATCH)
     .replace(VENDOR_HIDE_MODAL_CANCEL_EXPAND_NEEDLE, VENDOR_HIDE_MODAL_CANCEL_EXPAND_PATCH)
+    .replace(VENDOR_BOOT_SETTINGS_STAMP_NEEDLE, VENDOR_BOOT_SETTINGS_STAMP_PATCH)
+    .replace(VENDOR_BOOT_RETRY_SETTINGS_NEEDLE, VENDOR_BOOT_RETRY_SETTINGS_PATCH)
     .replace(VENDOR_OVERLAY_MOUNT_NEEDLE, VENDOR_OVERLAY_MOUNT_PATCH)
     .replace(VENDOR_OVERLAY_WATCH_NEEDLE, VENDOR_OVERLAY_WATCH_PATCH)
     .replace(VENDOR_OVERLAY_RETRY_NEEDLE, VENDOR_OVERLAY_RETRY_PATCH)
@@ -14127,6 +14265,19 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_NAI_SAMPLER_NEEDLE, VENDOR_NAI_SAMPLER_PATCH);
     assertOnce(out, VENDOR_CHAR_REF_MODE_OFF_LABEL_NEEDLE, 'char ref automatic mode label');
     out = out.replace(VENDOR_CHAR_REF_MODE_OFF_LABEL_NEEDLE, VENDOR_CHAR_REF_MODE_OFF_LABEL_PATCH);
+    assertOnce(out, VENDOR_BOOT_MOUNT_FIRST_NEEDLE, 'boot mount before gallery (after overlay mount)');
+    out = out.replace(VENDOR_BOOT_MOUNT_FIRST_NEEDLE, VENDOR_BOOT_MOUNT_FIRST_PATCH);
+    // Delete the dead fill first: its body carries the same warm loop the strip
+    // needle matches, so removing it is what makes that needle unambiguous.
+    assertOnce(out, VENDOR_THUMBS_DEAD_FILL_NEEDLE, 'dead fillThumbSrcs (after soft-skip)');
+    out = out.replace(VENDOR_THUMBS_DEAD_FILL_NEEDLE, VENDOR_THUMBS_DEAD_FILL_PATCH);
+    assertOnce(out, VENDOR_THUMBS_STRIP_NONBLOCK_NEEDLE, 'thumb strip warm await');
+    out = out.replace(VENDOR_THUMBS_STRIP_NONBLOCK_NEEDLE, VENDOR_THUMBS_STRIP_NONBLOCK_PATCH);
+    assertOnce(out, VENDOR_THUMBS_WARM_REPAINT_NEEDLE, 'warm wave repaints the strip');
+    out = out.replace(VENDOR_THUMBS_WARM_REPAINT_NEEDLE, VENDOR_THUMBS_WARM_REPAINT_PATCH);
+    if (out.includes('fillThumbSrcs')) {
+      throw new Error('[build] fillThumbSrcs survived — a dead setAttribute("src") fill is still shipping');
+    }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
     assertOnce(out, 'ensureScrollPhaseBus = () =>', 'scroll phase bus landed');
     assertOnce(out, 'async function nxUpdateStickyActiveOnScrollEnd', 'nx scroll-end sticky activate landed');

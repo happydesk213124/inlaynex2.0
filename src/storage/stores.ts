@@ -562,12 +562,29 @@ export async function idbGet<S extends StoreName>(store: S, key: unknown): Promi
   return (row == null ? undefined : row) as RowOf<S> | undefined;
 }
 
-/** Image metadata without touching storage or decoding base64. */
-export async function imageMeta(id: string): Promise<{ has_png: boolean; png_bytes: number } | undefined> {
+export interface ImageMeta {
+  has_png: boolean;
+  png_bytes: number;
+  /** Placement metadata, `{}` when the row never got one. Shared, not copied. */
+  location: Record<string, unknown>;
+}
+
+/**
+ * Everything about an image except its pixels, in one index lookup.
+ *
+ * Placement and byte count live on the same row, so a listing that wants both
+ * should ask once. `imageLocation` remains for callers that only need placement.
+ */
+export async function imageMeta(id: string): Promise<ImageMeta | undefined> {
   await openDb();
   const row = memStores.images.get(String(id));
   if (!row) return undefined;
-  return { has_png: row.has_png, png_bytes: row.png_bytes };
+  const loc = row.location;
+  return {
+    has_png: row.has_png,
+    png_bytes: row.png_bytes,
+    location: loc && typeof loc === 'object' ? (loc as Record<string, unknown>) : {},
+  };
 }
 
 export interface PutOptions {

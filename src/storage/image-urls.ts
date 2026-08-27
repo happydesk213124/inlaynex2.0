@@ -13,7 +13,7 @@
  */
 
 import { dbg, dbgSpan } from '../core/debug';
-import { abToBase64, abToBase64Async, sniffImageMime } from '../core/util/bytes';
+import { abToBase64, bytesToDataUrlAsync, sniffImageMime } from '../core/util/bytes';
 import { sleep } from '../core/util/async';
 import { encodeWebpQuality } from '../core/util/image';
 import { dropBlobUrl, getBlobUrl, idbGet, idbPut, pinBlobUrls, retainBlobUrls, setBlobUrl } from './stores';
@@ -34,8 +34,11 @@ export async function ensureBlobUrl(id: string): Promise<string> {
     return '';
   }
   const mime = (typeof rec.mime === 'string' && rec.mime) || sniffImageMime(rec.png);
-  const b64 = await abToBase64Async(rec.png);
-  const url = `data:${mime};base64,${b64}`;
+  const url = await bytesToDataUrlAsync(rec.png, mime);
+  if (!url) {
+    span.end({ message: `encode failed ${id}`, id, bytes: rec.png.byteLength || 0, mime }, 'warn');
+    return '';
+  }
   setBlobUrl(id, url, rec.png.byteLength || 0);
   span.end({ message: id, bytes: rec.png.byteLength || 0, mime, url_len: url.length, focus: true });
   return url;

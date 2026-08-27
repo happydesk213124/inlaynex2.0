@@ -655,7 +655,20 @@ export async function writeImageLocation(imageId: string, location: unknown): Pr
 
 /** Location fields for a card response, filling gaps from the card's own meta. */
 export async function locationFieldsForCard(imageId: string, meta: unknown = {}): Promise<CardLocationFields> {
-  const loc = await readImageLocation(imageId);
+  return locationFieldsFrom(imageId, meta, await readImageLocation(imageId));
+}
+
+/**
+ * The same mapping with the sidecar already in hand.
+ *
+ * Listings need the raw sidecar as well as these fields, and reading it twice per
+ * row is a lookup per card for nothing.
+ */
+export function locationFieldsFrom(
+  imageId: string,
+  meta: unknown,
+  loc: Record<string, unknown>,
+): CardLocationFields {
   const base = (typeof meta === 'object' && meta ? meta : {}) as Record<string, unknown>;
   let yPercent: unknown = loc.y_percent;
   if (yPercent == null) yPercent = base.y_percent ?? base.anchor_percent ?? base.read_percent;

@@ -51,6 +51,7 @@ const MODULES = {
   'nai-meta-png-rgba': 'src/domain/nai-meta/png-rgba.ts',
   'nai-meta-risu-asset-list': 'src/domain/nai-meta/risu-asset-list.ts',
   'text-util': 'src/core/util/text.ts',
+  'bytes-util': 'src/core/util/bytes.ts',
   'blob-url-cache': 'src/storage/blob-url-cache.ts',
   'prompt-codec': 'src/config/prompt-codec.ts',
   'style-preset-overrides': 'src/domain/style-preset-overrides.ts',

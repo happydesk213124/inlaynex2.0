@@ -130,9 +130,31 @@ const url = ROUTE === 'gallery'
   ? `/v1/gallery?session_id=${SESSION}&limit=${COUNT}`
   : `/v1/gallery/explore?limit=${COUNT}`;
 
+// Per-card index lookups. A row's placement sidecar, its mapped location fields
+// and its `png_bytes` all live on one image row, so a listing should read that
+// row once per card. Reading it three times is not a hydration bug and parity
+// cannot see it — the response is identical — but it is a lookup and a microtask
+// hop per card, paid on every gallery open.
+//
+// None of it reaches storage (these are in-memory index reads), so the Map is the
+// only place left to count. Bench ids are distinctive enough to filter on.
+// Exact, not a ratio: the count is deterministic. A gallery row costs its card
+// row, its image index row, and the two `resolveImageUrl` cache probes (one
+// inline in the row, one from `attachImageUrls`). The explorer reads all cards in
+// one pass, so it pays no per-card card lookup.
+const LOOKUP_BUDGET = ROUTE === 'gallery' ? 4 : 3;
+
+const mapGet = Map.prototype.get;
+let idLookups = 0;
+Map.prototype.get = function patchedGet(key) {
+  if (typeof key === 'string' && key.startsWith('bench-image-')) idLookups += 1;
+  return mapGet.call(this, key);
+};
+
 const decodesBefore = pngReads();
 const res = await N.fetch(url, { method: 'GET' });
 const decodedDuring = pngReads() - decodesBefore;
+Map.prototype.get = mapGet;
 
 const items = res?.items ?? [];
 const eagerUrls = items.filter((c) => c.image_url).length;
@@ -153,6 +175,13 @@ if (decodedDuring > COUNT / 4) {
   failures.push(`decoded ${decodedDuring} of ${COUNT} PNG(s) before responding — the response is hydrating per row`);
 }
 console.log(`[bench] ${decodedDuring} PNG(s) decoded before the response resolved`);
+console.log(`[bench] ${idLookups} per-card index lookup(s) (${(idLookups / COUNT).toFixed(2)} per card)`);
+if (idLookups > LOOKUP_BUDGET * COUNT) {
+  failures.push(
+    `${(idLookups / COUNT).toFixed(2)} index lookup(s) per card, budget ${LOOKUP_BUDGET}`
+    + ' — a listing row is reading the same index row more than once',
+  );
+}
 
 if (failures.length) {
   for (const f of failures) console.error(`[bench] FAIL: ${f}`);

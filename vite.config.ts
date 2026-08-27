@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.35';
+const PLUGIN_VERSION = '2.4.36';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -8612,10 +8612,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       ) {
         y("info", "inline.keep.skip", \`DOM#\${selIdx} cheap keep=\${t._inlineKeepIdxs.join(",")}\`);
         t._inlineAttachOk = 1;
-        hideAttachToast().catch(() => {});
+        hideAttachToast({ done: 1 }).catch(() => {});
         return;
       }
-      // Cheap skip said this keep window is not already painted. Spinner now.
+      // First session attach only — later clicks no-op inside showAttachToast.
       showAttachToast().catch(() => {});
       const VC = globalThis.__INLAY_VIEWER_CORE__;
       const allRoles = !!t.backendSettings?.card?.generate_all_roles;
@@ -8826,7 +8826,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       if (!force && sameKeep && !(await inlineGoneFromSel())) {
         y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeepArr.join(",")}\`);
         t._inlineAttachOk = 1;
-        hideAttachToast().catch(() => {});
+        hideAttachToast({ done: 1 }).catch(() => {});
         return;
       }
       if (listChanged && fromCache || await inlineGoneFromSel()) {
@@ -9005,13 +9005,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       t._inlinePaintedKeys = nextPaintedKeys;
       t._inlinePaintedCounts = nextPaintedCounts;
       t._inlineAttachOk = 1;
-      hideAttachToast().catch(() => {});
+      hideAttachToast({ done: 1 }).catch(() => {});
       try {
         if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
       } catch {
       }
     } catch (err) {
-      hideAttachToast().catch(() => {});
       y("warn", "inline.refresh.fail", z(err?.message || err, 100));
     }
   }
@@ -11335,8 +11334,20 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
   function attachToastStyle(visible) {
     return nxToastPos({ visible: !!visible, pointerEvents: !1, zIndex: 99998 });
   }
-  async function hideAttachToast() {
+  function nxAttachSessionKey() {
+    return String(t.lastScope?.sessionId || t.selectedMessage?.sessionId || "");
+  }
+  function nxAttachToastClearTimer() {
+    if (t._attachToastTimer) {
+      clearTimeout(t._attachToastTimer);
+      t._attachToastTimer = null;
+    }
+  }
+  async function hideAttachToast(opts) {
+    const done = !!(opts && opts.done);
     t._attachToastWanted = 0;
+    nxAttachToastClearTimer();
+    if (done) t._attachToastDoneSession = nxAttachSessionKey();
     const root = t._attachToastRoot;
     t._attachToastShown = !1;
     if (!root) return;
@@ -11346,7 +11357,24 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }
   }
   async function showAttachToast() {
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const sid = nxAttachSessionKey();
+    const allow = typeof VC?.shouldShowSessionAttachToast == "function"
+      ? VC.shouldShowSessionAttachToast({
+        sessionId: sid,
+        doneSessionId: t._attachToastDoneSession,
+        alreadyWanted: t._attachToastWanted
+      })
+      : (t._attachToastWanted || t._attachToastDoneSession == null || String(t._attachToastDoneSession) !== sid);
+    if (!allow) return;
     t._attachToastWanted = 1;
+    const maxMs = Number(VC?.ATTACH_TOAST_MAX_MS) > 0 ? Number(VC.ATTACH_TOAST_MAX_MS) : 1e4;
+    if (!t._attachToastTimer) {
+      t._attachToastTimer = setTimeout(() => {
+        t._attachToastTimer = null;
+        hideAttachToast({ done: 1 }).catch(() => {});
+      }, maxMs);
+    }
     if (t._attachToastShown) return;
     const doc = await ue().catch(() => t.hostDoc);
     if (!t._attachToastWanted) return;
@@ -11363,7 +11391,6 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       await body.appendChild(root);
       t._attachToastRoot = root;
     }
-    const VC = globalThis.__INLAY_VIEWER_CORE__;
     const html = typeof VC?.composeAttachToastHtml == "function"
       ? VC.composeAttachToastHtml(h)
       : \`<div data-inlay-attach-toast="1">인레이 넥서스 조각 불러오는중..</div>\`;
@@ -12045,6 +12072,10 @@ const VENDOR_POINTER_SELECT_PATCH =
       }, 0);
       return;
     }
+    const why0 = String(reason || "");
+    if ((why0 === "boot" || why0 === "session" || why0 === "reply") && typeof showAttachToast == "function") {
+      showAttachToast().catch(() => {});
+    }
     if (t._pointerSelectTimer) clearTimeout(t._pointerSelectTimer);
     t._pointerSelectReason = String(reason || "");
     // A switch only needs the new chat DOM to exist, so try early and retry once
@@ -12075,12 +12106,9 @@ const VENDOR_POINTER_SELECT_PATCH =
           const n = Number(t._pointerSelectBootTries || 0) + 1;
           t._pointerSelectBootTries = n;
           if (n < 5) schedulePointerSelect("boot", 200);
-          else if (typeof hideAttachToast == "function") hideAttachToast().catch(() => {});
           return;
         }
-        if (typeof hideAttachToast == "function") hideAttachToast().catch(() => {});
       }).catch(() => {
-        if (typeof hideAttachToast == "function") hideAttachToast().catch(() => {});
       });
     }, freshBoot || freshReply ? 200 : freshSession ? 250 : rawWait);
   }
@@ -14945,7 +14973,7 @@ const loadVendorUi = (): string => {
       if (skipAt < 0 || showAt < 0 || zaAt < 0 || !(skipAt < showAt && showAt < zaAt)) {
         throw new Error('[build] attach toast must start after the already-painted skip, before Za');
       }
-      if (body.includes('Cheap skip said this keep window is not already painted') === false) {
+      if (body.includes('First session attach only') === false) {
         throw new Error('[build] attach toast must wait for the already-painted skip');
       }
     }
@@ -14986,19 +15014,33 @@ const loadVendorUi = (): string => {
     if (out.includes('PROGRESS_TOAST_STYLE_SHOW')) {
       throw new Error('[build] toast still uses hardcoded top-center style constants');
     }
-    if (!out.includes('showAttachToast().catch') || !out.includes('hideAttachToast().catch')) {
-      throw new Error('[build] attach toast must show before inject and hide after');
+    if (!out.includes('showAttachToast().catch') || !out.includes('hideAttachToast({ done: 1 })')) {
+      throw new Error('[build] attach toast must show on first attach and hide only when done');
     }
     if (out.includes('Spinner now — Za/ce/rebind are the wait')) {
       throw new Error('[build] Da must not raise the attach toast before the already-painted skip');
     }
+    assertOnce(out, 'VC.shouldShowSessionAttachToast({', 'attach toast is once per session');
+    assertOnce(out, 'Number(VC.ATTACH_TOAST_MAX_MS)', 'attach toast 10s cap landed');
     {
       const from = out.indexOf('function schedulePointerSelect(');
       const to = out.indexOf('async function runPointerSelect(');
       if (from < 0 || to < 0 || to < from) throw new Error('[build] cannot slice schedulePointerSelect');
-      if (out.slice(from, to).includes('showAttachToast')) {
-        throw new Error('[build] schedulePointerSelect must not raise the attach toast before the already-painted skip');
+      const sched = out.slice(from, to);
+      if (!sched.includes('why0 === "boot" || why0 === "session" || why0 === "reply"')) {
+        throw new Error('[build] attach toast must rise on boot/session/reply, not every pointer');
       }
+      if (sched.includes('runPointerSelect("bind")') && sched.indexOf('showAttachToast') < sched.indexOf('runPointerSelect("bind")') && sched.indexOf('why0 === "boot"') < 0) {
+        throw new Error('[build] bind pointer must not raise the attach toast');
+      }
+    }
+    {
+      const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
+      const to = out.indexOf('async function openSettingsTab(tab) {', from);
+      const body = from >= 0 && to > from ? out.slice(from, to) : '';
+      const failAt = body.lastIndexOf('inline.refresh.fail');
+      const failHide = failAt >= 0 ? body.slice(Math.max(0, failAt - 80), failAt).includes('hideAttachToast') : !1;
+      if (failHide) throw new Error('[build] attach toast must stay up when the first paint throws');
     }
     {
       const from = out.indexOf('async function showAttachToast()');

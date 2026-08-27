@@ -113,6 +113,8 @@ import {
   resolveIndexProgress,
   composeDualProgressBarsHtml,
   composeProgressToastHtml,
+  ATTACH_TOAST_MAX_MS,
+  shouldShowSessionAttachToast,
   composeAttachToastHtml,
   normalizeToastAnchor,
   normalizeImagePressInspect,
@@ -1333,6 +1335,16 @@ test("a two-finger hold no longer special-cases jitter — two is double-tap", (
   };
   assert.equal(imagePressMoveCancels({ ...held, mode: "two", pressCount: 2 }), true);
   assert.equal(imagePressMoveCancels({ ...held, mode: "hold", pressCount: 2 }), true);
+});
+
+test("shouldShowSessionAttachToast is once per session until done", () => {
+  assert.equal(shouldShowSessionAttachToast({}), true);
+  assert.equal(shouldShowSessionAttachToast({ sessionId: "a", doneSessionId: null }), true);
+  assert.equal(shouldShowSessionAttachToast({ sessionId: "a", alreadyWanted: true, doneSessionId: "a" }), true);
+  assert.equal(shouldShowSessionAttachToast({ sessionId: "a", doneSessionId: "a" }), false);
+  assert.equal(shouldShowSessionAttachToast({ sessionId: "b", doneSessionId: "a" }), true);
+  assert.equal(shouldShowSessionAttachToast({ sessionId: "", doneSessionId: "" }), false);
+  assert.equal(ATTACH_TOAST_MAX_MS, 10000);
 });
 
 test("composeAttachToastHtml is a spinner chip, not a progress rail", () => {

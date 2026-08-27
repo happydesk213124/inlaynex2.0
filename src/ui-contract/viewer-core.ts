@@ -2630,7 +2630,24 @@ export function shouldStartImagePressInspect(opts: {
   return true;
 }
 
-/** Spinner chip shown while chips/shots are about to land — gone the moment they inject. */
+/** First attach wait — boot / first enter of a session. Not every click. */
+export const ATTACH_TOAST_MAX_MS = 10000;
+
+/**
+ * One toast per session. Stay visible (`alreadyWanted`) until hide-done or a
+ * new session id. `doneSessionId == null` means this boot has never finished.
+ */
+export function shouldShowSessionAttachToast(opts: {
+  sessionId?: unknown;
+  doneSessionId?: unknown;
+  alreadyWanted?: unknown;
+} = {}): boolean {
+  if (opts.alreadyWanted) return true;
+  if (opts.doneSessionId == null) return true;
+  return String(opts.sessionId ?? '') !== String(opts.doneSessionId);
+}
+
+/** Spinner chip shown while the first chips/shots of a session are landing. */
 export function composeAttachToastHtml(escapeHtml?: ((s: string) => string) | null): string {
   const esc = typeof escapeHtml === 'function'
     ? escapeHtml

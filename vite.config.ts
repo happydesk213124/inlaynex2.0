@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.25';
+const PLUGIN_VERSION = '2.4.26';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -8194,10 +8194,20 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       // Gallery still linked, but Risu wiped bubble HTML (settings, new user msg).
       // Shots and action chips are separate: an image can survive while chips vanish.
+      // Probe the bubble inline last painted, not the selection: a user turn is
+      // remapped to a neighbouring char, so its own bubble never holds markers
+      // and probing it would report "gone" forever, defeating the cheap skip.
+      const probeIdx = (() => {
+        const kept = Number(t._inlineKeepPaintIdx);
+        if (Number(t._inlineKeepSelIdx) !== selIdx) return selIdx;
+        if (!Number.isFinite(kept) || kept < 0 || kept >= els.length) return selIdx;
+        return kept;
+      })();
+      const probeLinkedKey = probeIdx === selIdx ? linkedKey : String(t._inlineKeepPaintLinkedKey || "");
       const inlineGoneFromSel = async () => {
         const wantActions = nxMsgAct() !== "off";
-        if (!linkedKey && !pendingKey && !wantActions) return !1;
-        const el = els[selIdx];
+        if (!probeLinkedKey && !pendingKey && !wantActions) return !1;
+        const el = els[probeIdx];
         if (!el || typeof el.querySelectorAll != "function") return !1;
         const unwrapGone = async (sel) => {
           try {
@@ -8209,7 +8219,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         };
         try {
-          if ((linkedKey || pendingKey) && !(await unwrapGone("[data-inlay-inline-shot],[data-inlay-inline-pending]")).length) return !0;
+          if ((probeLinkedKey || pendingKey) && !(await unwrapGone("[data-inlay-inline-shot],[data-inlay-inline-pending]")).length) return !0;
           if (wantActions && !(await unwrapGone("[x-inlay-msg-actions]")).length) return !0;
           return !1;
         } catch {
@@ -8450,6 +8460,30 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         selCards = [];
       }
       const selIds = selCards.map((card) => String(card?.id || "")).filter(Boolean);
+      // paintIdx left the selection (user turn remapped to the nearest char).
+      // Its cards must come from that bubble's own message — selCards is [] on a
+      // user turn, and [] makes injectChatInlineImages strip the char's shots.
+      let paintCards = null;
+      if (paintIdx !== selIdx) {
+        const paintRow = msgCache.get(paintIdx);
+        if (paintRow?.msg) {
+          try {
+            paintCards = linkedCards(paintRow.msg) || [];
+          } catch {
+            paintCards = [];
+          }
+        }
+      }
+      const paintPlan = typeof VC?.resolveInlinePaintCards == "function"
+        ? VC.resolveInlinePaintCards({ selIdx, paintIdx, selCards, paintCards })
+        : paintIdx === selIdx
+          ? { cards: selCards, skipInline: !1, source: "selection" }
+          : Array.isArray(paintCards)
+            ? { cards: paintCards, skipInline: !1, source: "remap" }
+            : { cards: [], skipInline: !0, source: "unresolved" };
+      const paintIds = paintPlan.cards.map((card) => String(card?.id || "")).filter(Boolean);
+      t._inlineKeepPaintIdx = paintIdx;
+      t._inlineKeepPaintLinkedKey = [...paintIds].sort().join("|");
       const neighborCardLists = [];
       for (const row of neighborMsgs) {
         if (row?.idx == null || !els[row.idx] || !row.msg) continue;
@@ -8469,17 +8503,22 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const neighborIds = neighborCardLists.flatMap((row) =>
         row.cards.map((card) => String(card?.id || "")).filter(Boolean)
       );
+      const warmHead = paintIds.length ? paintIds : selIds;
       try {
-        if (typeof N?.prioritizeWarmFocus == "function" && selIds.length) N.prioritizeWarmFocus(selIds);
+        if (typeof N?.prioritizeWarmFocus == "function" && warmHead.length) N.prioritizeWarmFocus(warmHead);
       } catch {
       }
       if (keep.has(paintIdx) && els[paintIdx]) {
-        await injectChatMsgActions(els[paintIdx], selCards, paintIdx);
-        await injectChatInlineImages(els[paintIdx], selCards, t._inlinePending);
+        await injectChatMsgActions(els[paintIdx], paintPlan.cards, paintIdx);
+        if (paintPlan.skipInline) {
+          y("info", "inline.paint.hold", \`DOM#\${paintIdx} remap unresolved — leaving shots\`);
+        } else {
+          await injectChatInlineImages(els[paintIdx], paintPlan.cards, t._inlinePending);
+        }
       }
       try {
         if (typeof N?.prioritizeWarmFocus == "function" && neighborIds.length) {
-          N.prioritizeWarmFocus([...selIds, ...neighborIds]);
+          N.prioritizeWarmFocus([...warmHead, ...neighborIds]);
         }
       } catch {
       }

@@ -90,6 +90,7 @@ import {
   roleFromGenerationInfo,
   isCharMessageRole,
   pickInlineKeepDomIndices,
+  resolveInlinePaintCards,
   INLINE_KEEP_MAX_PER_SIDE,
   desiredInlinePlacements,
   desiredInlinePaintKey,
@@ -826,6 +827,41 @@ test("pickInlineKeepDomIndices keeps selected char plus 1 each side (max 3)", ()
     pickInlineKeepDomIndices({ selIdx: 4, length: 9, allRoles: false, isCharAt }).sort((a, b) => a - b),
     [2, 4, 6],
   );
+});
+
+test("remapped paint index uses that bubble's cards, never the selection's", () => {
+  const shot = { id: "c9", line: 2, shot_index: 0 };
+  // DOM0 user clicked, paint remapped to DOM1 char which owns the shot.
+  const remap = resolveInlinePaintCards({ selIdx: 0, paintIdx: 1, selCards: [], paintCards: [shot] });
+  assert.deepEqual(remap.cards, [shot]);
+  assert.equal(remap.skipInline, false);
+  assert.equal(remap.source, "remap");
+});
+
+test("unresolved remap target holds its shots instead of stripping", () => {
+  const held = resolveInlinePaintCards({ selIdx: 0, paintIdx: 1, selCards: [], paintCards: null });
+  assert.deepEqual(held.cards, []);
+  assert.equal(held.skipInline, true);
+  assert.equal(held.source, "unresolved");
+});
+
+test("char selection paints its own cards and may strip an empty list", () => {
+  const shot = { id: "c1" };
+  const own = resolveInlinePaintCards({ selIdx: 3, paintIdx: 3, selCards: [shot], paintCards: null });
+  assert.deepEqual(own.cards, [shot]);
+  assert.equal(own.skipInline, false);
+  assert.equal(own.source, "selection");
+  // Cards genuinely deleted on the selected bubble: [] must still strip.
+  const cleared = resolveInlinePaintCards({ selIdx: 3, paintIdx: 3, selCards: [], paintCards: null });
+  assert.deepEqual(cleared.cards, []);
+  assert.equal(cleared.skipInline, false);
+});
+
+test("remapped paint target with no cards of its own still strips", () => {
+  const empty = resolveInlinePaintCards({ selIdx: 0, paintIdx: 1, selCards: [], paintCards: [] });
+  assert.deepEqual(empty.cards, []);
+  assert.equal(empty.skipInline, false);
+  assert.equal(empty.source, "remap");
 });
 
 test("desiredInlinePlacements treats blob URLs as ready", () => {

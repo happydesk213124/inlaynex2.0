@@ -643,6 +643,45 @@ export function pickInlineKeepDomIndices(opts: {
   return out;
 }
 
+export type InlinePaintSource = 'selection' | 'remap' | 'unresolved';
+
+export interface InlinePaintTarget<T> {
+  cards: T[];
+  /** True when the caller must leave the bubble alone instead of painting []. */
+  skipInline: boolean;
+  source: InlinePaintSource;
+}
+
+/**
+ * Cards to paint on the bubble inline actually writes to.
+ *
+ * `paintIdx` is remapped away from the selection when the selected bubble is not
+ * a keep candidate (a user turn, with `generate_all_roles` off). The cards must
+ * follow that remap: painting the *selection's* cards on someone else's bubble
+ * means an empty list on a user turn, and an empty list makes
+ * `injectChatInlineImages` strip the char bubble's existing shots.
+ *
+ * `paintCards === null` means the remapped bubble's message could not be
+ * resolved, so we cannot tell "no cards" from "unknown" — skip rather than strip.
+ */
+export function resolveInlinePaintCards<T>(opts: {
+  selIdx: unknown;
+  paintIdx: unknown;
+  selCards: readonly T[] | null | undefined;
+  paintCards: readonly T[] | null | undefined;
+}): InlinePaintTarget<T> {
+  const selIdx = Number(opts.selIdx);
+  const paintIdx = Number(opts.paintIdx);
+  const sel = Array.isArray(opts.selCards) ? [...opts.selCards] : [];
+  if (!Number.isFinite(selIdx) || !Number.isFinite(paintIdx) || selIdx === paintIdx) {
+    return { cards: sel, skipInline: false, source: 'selection' };
+  }
+  if (!Array.isArray(opts.paintCards)) {
+    return { cards: [], skipInline: true, source: 'unresolved' };
+  }
+  return { cards: [...opts.paintCards], skipInline: false, source: 'remap' };
+}
+
 // ── DOM ↔ API message matching ────────────────────────────────────────────
 
 export type ChatMatchMethod = 'reverse' | 'fallback' | 'attr';

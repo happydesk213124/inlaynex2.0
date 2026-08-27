@@ -395,7 +395,12 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(body, /setAttribute\("x-inlay-ignore"/);
   assert.match(body, /getAttribute\("x-inlay-msg-chip"\)/);
   assert.match(body, /getAttribute\("x-inlay-msg-index"\)/);
-  assert.match(source, /injectChatMsgActions\(els\[paintIdx\], selCards, paintIdx\)/);
+  // paintIdx must carry the cards of the bubble it paints, not the selection's:
+  // selCards is [] on a user turn and [] strips the remapped char's shots.
+  assert.match(source, /injectChatMsgActions\(els\[paintIdx\], paintPlan\.cards, paintIdx\)/);
+  assert.match(source, /injectChatInlineImages\(els\[paintIdx\], paintPlan\.cards, t\._inlinePending\)/);
+  assert.match(source, /resolveInlinePaintCards\(\{ selIdx, paintIdx, selCards, paintCards \}\)/);
+  assert.doesNotMatch(source, /injectChatInlineImages\(els\[paintIdx\], selCards,/);
   assert.match(source, /injectChatMsgActions\(els\[row\.idx\], row\.cards, row\.idx\)/);
   assert.match(body, /Da\(idx, els, \{ source: "provisional" \}\)/);
   assert.doesNotMatch(body, /<span x-inlay-msg-chip=/);

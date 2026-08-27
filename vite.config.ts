@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.27';
+const PLUGIN_VERSION = '2.4.28';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -8346,7 +8346,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }, wait);
   }
   async function refreshSelectedInlineImages(force) {
-    if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") return;
+    if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") {
+      hideAttachToast().catch(() => {});
+      return;
+    }
     const sel = t.selectedMessage;
     if (!sel) return;
     // Only a run that reached (or knowingly skipped) the paint counts as attached.
@@ -8365,7 +8368,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     };
     try {
       const doc = await ue().catch(() => t.hostDoc);
-      if (!doc) return;
+      if (!doc) {
+        showAttachToast().catch(() => {});
+        return;
+      }
       if (force) t._msgElsCache = null;
       let fromCache = !force && !!(t._msgElsCache?.doc === doc && Array.isArray(t._msgElsCache.els) && t._msgElsCache.els.length);
       let els = fromCache ? t._msgElsCache.els : null;
@@ -8377,7 +8383,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         fromCache = !1;
       }
-      if (!Array.isArray(els) || !els.length) return;
+      if (!Array.isArray(els) || !els.length) {
+        showAttachToast().catch(() => {});
+        return;
+      }
       const selIdx = Number(sel.domIndex);
       if (!Number.isFinite(selIdx) || selIdx < 0 || selIdx >= els.length) return;
       const elStillMounted = async (el) => {
@@ -8471,6 +8480,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         hideAttachToast().catch(() => {});
         return;
       }
+      // Past the cheap skip: chips/shots still need resolve + inject.
+      showAttachToast().catch(() => {});
       const VC = globalThis.__INLAY_VIEWER_CORE__;
       const allRoles = !!t.backendSettings?.card?.generate_all_roles;
       const maxPerSide = Number(VC?.INLINE_KEEP_MAX_PER_SIDE) > 0
@@ -8681,8 +8692,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       t._inlineKeepMsgActions = nxMsgAct();
       const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
       y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=diff\`);
-      // Chips/shots are about to land — show the spinner until inject returns.
-      showAttachToast().catch(() => {});
       const N = globalThis.__INLAY_NATIVE__;
       let selCards = [];
       try {
@@ -10230,7 +10239,12 @@ const VENDOR_REBIND_RETARGET_PATCH =
 const VENDOR_SELECT_SAME_NEEDLE =
   `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c) return !0;`;
 const VENDOR_SELECT_SAME_PATCH =
-  `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c && !t.pendingSessionId && t.selectedMessage.sessionId && t.lastScope?.sessionId && t.selectedMessage.sessionId === t.lastScope.sessionId) return !0;`;
+  `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c && !t.pendingSessionId && t.selectedMessage.sessionId && t.lastScope?.sessionId && t.selectedMessage.sessionId === t.lastScope.sessionId) return !0;
+    // Spinner now — Za/ce/rebind are the wait. Do not wait until inject.
+    if (source === "click" || source === "text" || source === "scroll" || opts.auto) {
+      showAttachToast().catch(() => {
+      });
+    }`;
 
 /**
  * Scroll DOM select skipped gallery fetch (`ce`). Empty `t.gallery` → linkedCards=[] →
@@ -11065,6 +11079,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     return nxToastPos({ visible: !!visible, pointerEvents: !1, zIndex: 99998 });
   }
   async function hideAttachToast() {
+    t._attachToastWanted = 0;
     const root = t._attachToastRoot;
     t._attachToastShown = !1;
     if (!root) return;
@@ -11074,16 +11089,13 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }
   }
   async function showAttachToast() {
+    t._attachToastWanted = 1;
     if (t._attachToastShown) return;
-    try {
-      if (t.jobProgress && formatViewerJob(t.jobProgress)?.busy) return;
-      if (readIndexProgress(t.jobProgress)?.busy) return;
-    } catch {
-    }
     const doc = await ue().catch(() => t.hostDoc);
+    if (!t._attachToastWanted) return;
     if (!doc || typeof doc.createElement != "function") return;
     const body = await Ee(doc);
-    if (!body) return;
+    if (!body || !t._attachToastWanted) return;
     let root = t._attachToastRoot;
     if (!root) {
       root = await H(doc, "div", { style: attachToastStyle(!1) });
@@ -11099,9 +11111,11 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       ? VC.composeAttachToastHtml(h)
       : \`<div data-inlay-attach-toast="1">인레이 넥서스 조각 불러오는중..</div>\`;
     try {
+      if (!t._attachToastWanted) return;
       if (typeof root.setInnerHTML == "function") await root.setInnerHTML(html);
+      if (!t._attachToastWanted) return;
       if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(attachToastStyle(!0));
-      t._attachToastShown = !0;
+      if (t._attachToastWanted) t._attachToastShown = !0;
     } catch {
     }
   }
@@ -11757,6 +11771,11 @@ const VENDOR_POINTER_SELECT_PATCH =
     Z().catch(() => {});
   }
   function schedulePointerSelect(reason, delayMs = 1e3) {
+    const why0 = String(reason || "");
+    if (why0 === "boot" || why0 === "session" || why0 === "reply" || why0 === "bind") {
+      if (typeof showAttachToast == "function") showAttachToast().catch(() => {
+      });
+    }
     if (String(reason || "") === "bind" && Math.max(0, Number(delayMs) || 0) === 0) {
       if (t._pointerSelectBindTimer) clearTimeout(t._pointerSelectBindTimer);
       const queueFallback = () => {
@@ -11804,8 +11823,13 @@ const VENDOR_POINTER_SELECT_PATCH =
           const n = Number(t._pointerSelectBootTries || 0) + 1;
           t._pointerSelectBootTries = n;
           if (n < 5) schedulePointerSelect("boot", 200);
+          else if (typeof hideAttachToast == "function") hideAttachToast().catch(() => {});
+          return;
         }
-      }).catch(() => {});
+        if (typeof hideAttachToast == "function") hideAttachToast().catch(() => {});
+      }).catch(() => {
+        if (typeof hideAttachToast == "function") hideAttachToast().catch(() => {});
+      });
     }, freshBoot || freshReply ? 200 : freshSession ? 250 : rawWait);
   }
   async function runPointerSelect(reason) {
@@ -14657,6 +14681,11 @@ const loadVendorUi = (): string => {
       if ((body.match(/maybeRebindAndLink\(/g) || []).length !== 1) {
         throw new Error('[build] refreshSelectedInlineImages must reach maybeRebindAndLink only through nxRebind');
       }
+      const showAt = body.indexOf('showAttachToast().catch');
+      const zaAt = body.indexOf('const scope = await Za()');
+      if (showAt < 0 || zaAt < 0 || showAt > zaAt) {
+        throw new Error('[build] attach toast must start before Za/resolve, not after');
+      }
     }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
     assertOnce(out, 'ensureScrollPhaseBus = () =>', 'scroll phase bus landed');
@@ -14674,6 +14703,16 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('showAttachToast().catch') || !out.includes('hideAttachToast().catch')) {
       throw new Error('[build] attach toast must show before inject and hide after');
+    }
+    assertOnce(out, 'Spinner now — Za/ce/rebind are the wait', 'Da starts attach toast before scope/gallery');
+    {
+      const from = out.indexOf('async function showAttachToast()');
+      const to = out.indexOf('async function ensureSelectionToastRoot()');
+      if (from < 0 || to < 0 || to < from) throw new Error('[build] cannot slice showAttachToast');
+      const body = out.slice(from, to);
+      if (body.includes('readIndexProgress') || body.includes('formatViewerJob')) {
+        throw new Error('[build] attach toast must not hide behind job/index busy');
+      }
     }
     assertOnce(out, 'async function nxStickyV2ApplyFromHt', 'sticky v2 apply landed');
     assertOnce(out, 'function nxReadyImg(src)', 'nxReadyImg display-url helper landed');

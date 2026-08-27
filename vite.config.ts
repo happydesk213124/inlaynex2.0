@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.30';
+const PLUGIN_VERSION = '2.4.31';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -8572,44 +8572,54 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const msgs = scope?.messages || [];
       const roleCache = new Map();
       const msgCache = new Map();
+      const resolvePend = new Map();
       const resolveAt = async (idx) => {
         if (msgCache.has(idx)) return msgCache.get(idx);
-        let row = null;
-        try {
-          const raw = await De(els[idx]);
-          const text = w(raw || "");
-          if (text.length >= 4) {
-            const hit = typeof qa == "function"
-              ? qa(text, msgs, idx, els.length, {})
-              : typeof VC?.resolveChatMessageMatch == "function"
-                ? VC.resolveChatMessageMatch(text, msgs, idx, els.length)
-                : null;
-            const role = w(hit?.role || "");
-            row = {
-              idx,
-              msg: {
-                domIndex: idx,
-                chatIndex: hit?.chatIndex,
-                messageIndex: hit?.chatIndex,
-                characterId: sel.characterId,
-                chatId: sel.chatId,
-                sessionId: sel.sessionId,
-                role,
-                text,
-                hash: ye(text)
-              }
-            };
-            roleCache.set(idx, role);
-          } else {
+        if (resolvePend.has(idx)) return resolvePend.get(idx);
+        const task = (async () => {
+          let row = null;
+          try {
+            const raw = await De(els[idx]);
+            const text = w(raw || "");
+            if (text.length >= 4) {
+              const hit = typeof qa == "function"
+                ? qa(text, msgs, idx, els.length, {})
+                : typeof VC?.resolveChatMessageMatch == "function"
+                  ? VC.resolveChatMessageMatch(text, msgs, idx, els.length)
+                  : null;
+              const role = w(hit?.role || "");
+              row = {
+                idx,
+                msg: {
+                  domIndex: idx,
+                  chatIndex: hit?.chatIndex,
+                  messageIndex: hit?.chatIndex,
+                  characterId: sel.characterId,
+                  chatId: sel.chatId,
+                  sessionId: sel.sessionId,
+                  role,
+                  text,
+                  hash: ye(text)
+                }
+              };
+              roleCache.set(idx, role);
+            } else {
+              roleCache.set(idx, "");
+              row = { idx, msg: null };
+            }
+          } catch {
             roleCache.set(idx, "");
             row = { idx, msg: null };
           }
-        } catch {
-          roleCache.set(idx, "");
-          row = { idx, msg: null };
+          msgCache.set(idx, row);
+          return row;
+        })();
+        resolvePend.set(idx, task);
+        try {
+          return await task;
+        } finally {
+          resolvePend.delete(idx);
         }
-        msgCache.set(idx, row);
-        return row;
       };
       const isCharAtSync = (idx) => {
         let role = "";
@@ -8633,6 +8643,18 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (isSkipBodyAt(idx)) return !1;
         return allRoles ? !0 : isCharAtSync(idx);
       };
+      // First wave: sel ±2 in parallel (5 DOM when the chat is long enough).
+      // The ± walk still decides keep and asks further if this wave missed a char.
+      const prefetchIdxs = typeof VC?.prefetchInlineRoleDomIndices == "function"
+        ? VC.prefetchInlineRoleDomIndices({ selIdx, length: els.length })
+        : (() => {
+          const out = [];
+          const lo = Math.max(0, selIdx - 2);
+          const hi = Math.min(els.length - 1, selIdx + 2);
+          for (let i = lo; i <= hi; i += 1) out.push(i);
+          return out;
+        })();
+      await Promise.all(prefetchIdxs.map((i) => resolveAt(i)));
       // Prefetch roles/text along walk so pickInlineKeepDomIndices can stay sync.
       await resolveAt(selIdx);
       let paintIdx = selIdx;
@@ -14908,6 +14930,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('strip=diff')) {
       throw new Error('[build] inline keep must diff-strip only (no full-chat wipe)');
+    }
+    if (!out.includes('prefetchInlineRoleDomIndices') || !out.includes('Promise.all(prefetchIdxs.map')) {
+      throw new Error('[build] inline role prefetch must ask sel±2 in parallel');
     }
     if (!out.includes('inlineGoneFromSel') || !out.includes('refreshSelectedInlineImages(!0)')) {
       throw new Error('[build] missing re-inject when inline markers vanished from live DOM');

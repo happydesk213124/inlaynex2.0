@@ -90,6 +90,8 @@ import {
   roleFromGenerationInfo,
   isCharMessageRole,
   pickInlineKeepDomIndices,
+  prefetchInlineRoleDomIndices,
+  INLINE_ROLE_PREFETCH_RADIUS,
   resolveInlinePaintCards,
   mergeSessionGallery,
   INLINE_KEEP_MAX_PER_SIDE,
@@ -830,6 +832,16 @@ test("pickInlineKeepDomIndices skips lightboard-only bodies like users", () => {
     pickInlineKeepDomIndices({ selIdx: 4, length: 9, allRoles: false, isCharAt, isSkipBodyAt }).sort((a, b) => a - b),
     [1, 4, 7],
   );
+});
+
+test("prefetchInlineRoleDomIndices asks sel ±2 and clamps to the chat", () => {
+  assert.equal(INLINE_ROLE_PREFETCH_RADIUS, 2);
+  assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 4, length: 9 }), [2, 3, 4, 5, 6]);
+  assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 0, length: 2 }), [0, 1]);
+  assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 1, length: 2 }), [0, 1]);
+  assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 0, length: 1 }), [0]);
+  assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 0, length: 0 }), []);
+  assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: -1, length: 5 }), []);
 });
 
 test("pickInlineKeepDomIndices keeps selected char plus 1 each side (max 3)", () => {

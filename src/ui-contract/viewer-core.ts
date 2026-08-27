@@ -613,6 +613,34 @@ export function isCharMessageRole(roleOrMessage: string | ChatMessage | null | u
 /** Max char bubbles kept above/below selection when inline skips user roles. */
 export const INLINE_KEEP_MAX_PER_SIDE = 1;
 
+/** Selected bubble plus this many DOM slots each side — 5 asks when the chat is long enough. */
+export const INLINE_ROLE_PREFETCH_RADIUS = 2;
+
+/**
+ * DOM indices whose role/text we ask in parallel before the ± walk.
+ *
+ * The walk still decides keep. This list is only the first wave: sel ± radius,
+ * clamped to the chat. Two messages stay two; we never invent slots.
+ */
+export function prefetchInlineRoleDomIndices(opts: {
+  selIdx?: unknown;
+  length?: unknown;
+  radius?: unknown;
+} = {}): number[] {
+  const sel = Number(opts.selIdx);
+  const length = Number(opts.length);
+  if (!Number.isInteger(sel) || !Number.isInteger(length) || sel < 0 || length <= 0 || sel >= length) {
+    return [];
+  }
+  const raw = Number(opts.radius);
+  const radius = Number.isInteger(raw) && raw >= 0 ? raw : INLINE_ROLE_PREFETCH_RADIUS;
+  const lo = Math.max(0, sel - radius);
+  const hi = Math.min(length - 1, sel + radius);
+  const out: number[] = [];
+  for (let i = lo; i <= hi; i += 1) out.push(i);
+  return out;
+}
+
 /** Same gate as auto-gen: LBDATA-stripped body too short → not an inline neighbor. */
 export function isInlineSkipBody(value: unknown): boolean {
   return messageBodyCharCount(value) <= 30;

@@ -28,7 +28,9 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 | `debug` / `clearDebug` | `() => any` | Not read by the UI |
 
 > **Image URLs must be `data:image/...`.** The UI passes them through DOMPurify,
-> which strips `blob:`. Returning a `blob:` URL renders nothing.
+> which strips `blob:`. SafeElement `setAttribute` only allows `x-*` names, so
+> `setAttribute('src', blobUrl)` throws and cannot recover. Returning a `blob:`
+> URL renders the broken-image icon on every surface.
 >
 > Explorer thumbs: `/v1/gallery/explore` attaches URLs with `cachedOnly`, so the
 > grid paints from `resolveImageUrl` and fills in via `warmImages` /

@@ -115,9 +115,8 @@ const normalize = (root) => {
       return Number.isInteger(node) ? node : Math.round(node * 1000) / 1000;
     }
     if (typeof node === 'string') {
-      // 2.x uses blob: object URLs (runtime UUID). 1.x used data:image base64.
-      // Both are displayable; the UUID / payload length is not behaviour.
-      // scenario.mjs asserts the 2.x scheme on gallery.display_url_scheme.
+      // Display URLs are data:image (SafeDOM). Payload length is not behaviour.
+      // scenario.mjs asserts the scheme on gallery.display_url_scheme.
       if (/^data:image\//i.test(node) || /^blob:/i.test(node)) return '<DISPLAY_URL>';
       if (key && VOLATILE_KEYS.has(key) && /^\d+$/.test(node)) return '<NUM>';
       if (key === 'version' && VERSION_RE.test(node)) return '<VERSION>';
@@ -395,9 +394,9 @@ const INTENTIONAL_DIFF_STEPS = new Set([
 const NEW_ONLY_STEPS = new Map([
   [
     'gallery.display_url_scheme',
-    (v) => (v === 'blob'
+    (v) => (v === 'data'
       ? null
-      : `2.x gallery image_url must be a blob: object URL, got ${JSON.stringify(v)}`),
+      : `2.x gallery image_url must be a data:image URL — SafeDOM strips blob: and cannot setAttribute src, got ${JSON.stringify(v)}`),
   ],
   [
     'host.gallery_pixels',

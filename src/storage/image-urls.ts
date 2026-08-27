@@ -1,10 +1,9 @@
 /**
  * Image delivery to the UI.
  *
- * SafeDOM/DOMPurify strips `blob:` from `setInnerHTML`, so HTML templates never
- * embed these URLs. Callers insert a placeholder `<img>` and `setAttribute`
- * the object URL afterwards. That avoids a base64 round-trip (~33% larger
- * strings, O(bytes) encode) on every gallery/sticky/inline paint.
+ * Display URLs must be `data:image/…`. SafeDOM runs `setInnerHTML` through
+ * DOMPurify, which strips `blob:`. `setAttribute('src', …)` is not an escape
+ * hatch either — SafeElement only allows `x-*` attributes, so the call throws.
  *
  * The cache is therefore the whole design. `resolveImageUrl` is synchronous
  * because the UI calls it during render and cannot await; it returns only what
@@ -19,14 +18,7 @@ import { sleep } from '../core/util/async';
 import { encodeWebpQuality } from '../core/util/image';
 import { dropBlobUrl, getBlobUrl, idbGet, idbPut, pinBlobUrls, retainBlobUrls, setBlobUrl } from './stores';
 
-function objectUrlFromBytes(png: ArrayBuffer, mime: string): string {
-  if (typeof Blob === 'function' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
-    return URL.createObjectURL(new Blob([png], { type: mime || 'image/png' }));
-  }
-  return '';
-}
-
-/** Resolves an id to a display URL (`blob:`), reusing the cache. Returns '' when absent. */
+/** Resolves an id to a display URL (`data:image`), reusing the cache. Returns '' when absent. */
 export async function ensureBlobUrl(id: string): Promise<string> {
   if (!id) return '';
   const cached = getBlobUrl(id);
@@ -35,18 +27,15 @@ export async function ensureBlobUrl(id: string): Promise<string> {
   await waitOutOfWarmFocus(id);
   const cached2 = getBlobUrl(id);
   if (cached2 !== undefined) return cached2;
-  const span = dbgSpan('image.blob_url');
+  const span = dbgSpan('image.data_url');
   const rec = await idbGet('images', id);
   if (!rec?.png) {
     span.end({ message: `missing png ${id}`, id, background: true }, 'warn');
     return '';
   }
   const mime = (typeof rec.mime === 'string' && rec.mime) || sniffImageMime(rec.png);
-  let url = objectUrlFromBytes(rec.png, mime);
-  if (!url) {
-    const b64 = await abToBase64Async(rec.png);
-    url = `data:${mime};base64,${b64}`;
-  }
+  const b64 = await abToBase64Async(rec.png);
+  const url = `data:${mime};base64,${b64}`;
   setBlobUrl(id, url, rec.png.byteLength || 0);
   span.end({ message: id, bytes: rec.png.byteLength || 0, mime, url_len: url.length, focus: true });
   return url;

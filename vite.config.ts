@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.33';
+const PLUGIN_VERSION = '2.4.34';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -8077,6 +8077,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       ].filter(Boolean).sort();
       const scaleNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
       let prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+      let htmlProbe = "n/a";
       if (prev.length === wantIds.length && t._inlinePaintScale === scaleNow) {
         if (!wantIds.length) {
           y("info", "inline.inject.skip", "shots=0 already");
@@ -8092,7 +8093,11 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           y("info", "inline.inject.skip", \`shots=\${wantIds.length} already\`);
           return;
         }
+        htmlProbe = "miss";
       }
+      // Re-inserting through SafeDOM always flashes empty first, so every repaint
+      // is visible to the user. Name the reason — count, scale or marker id.
+      y("info", "inline.inject.repaint", \`prev=\${prev.length} want=\${wantIds.length} scale=\${t._inlinePaintScale}/\${scaleNow} html=\${htmlProbe}\`);
       const patchShotSrc = async (wrap, src) => {
         if (!wrap || !src || !nxReadyImg(src)) return;
         try {
@@ -8881,6 +8886,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         neighborCardLists.push({
           idx: row.idx,
+          hash: String(row.msg?.hash || ""),
           cards: nbCards
         });
       }
@@ -8894,16 +8900,80 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         ...neighborMsgs.map((row) => String(row?.msg?.hash || "")),
       ].filter(Boolean);
       const warmHead = paintIds.length ? paintIds : selIds;
+      // Moving the selection one slot re-enters bubbles that are already correct.
+      // Fingerprint each one so an unchanged bubble costs one query instead of a
+      // full host scan — the scan is ~4 bridge round-trips per paragraph.
+      const scalePctNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
+      const paintKeyOf = (cards, pendingOn, domIndex) => typeof VC?.inlinePaintKey == "function"
+        ? VC.inlinePaintKey({
+          cardIds: (Array.isArray(cards) ? cards : []).map((card) => String(card?.id || "")),
+          scalePct: scalePctNow,
+          msgActions: nxMsgAct(),
+          pending: pendingOn,
+          domIndex
+        })
+        : "";
+      const paintRows = [];
+      if (keep.has(paintIdx) && els[paintIdx] && !paintPlan.skipInline) {
+        paintRows.push({
+          idx: paintIdx,
+          hash: paintIdx === selIdx ? String(sel.hash || "") : String(msgCache.get(paintIdx)?.msg?.hash || ""),
+          key: paintKeyOf(paintPlan.cards, !!pendingKey, paintIdx)
+        });
+      }
+      for (const row of neighborCardLists) {
+        paintRows.push({ idx: row.idx, hash: row.hash, key: paintKeyOf(row.cards, !1, row.idx) });
+      }
+      const prevPaintedKeys = !force && t._inlinePaintedKeys && typeof t._inlinePaintedKeys == "object" ? t._inlinePaintedKeys : {};
+      const prevPaintedCounts = !force && t._inlinePaintedCounts && typeof t._inlinePaintedCounts == "object" ? t._inlinePaintedCounts : {};
+      // Rebuilt every run so the map stays the size of the keep window.
+      const nextPaintedKeys = {};
+      const nextPaintedCounts = {};
+      const markerCount = async (el) => {
+        if (!el || typeof el.querySelectorAll != "function") return -1;
+        try {
+          const nodes = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-shot],[data-inlay-inline-pending],[x-inlay-msg-actions]"));
+          return nodes.length;
+        } catch {
+          return -1;
+        }
+      };
+      const notePainted = async (idx, hash, key) => {
+        if (!hash || !key) return;
+        const n = await markerCount(els[idx]);
+        if (n < 0) return;
+        nextPaintedKeys[hash] = key;
+        nextPaintedCounts[hash] = n;
+      };
+      const repaintSplit = typeof VC?.pickInlineRepaintIndices == "function"
+        ? VC.pickInlineRepaintIndices({ rows: paintRows, painted: prevPaintedKeys })
+        : { repaint: paintRows.map((row) => row.idx), skip: [] };
+      // A matching fingerprint is not proof the nodes survived — Risu can rebuild
+      // a bubble under us. Confirm the marker count recorded at last paint.
+      const reuseIdxs = new Set();
+      for (const idx of Array.isArray(repaintSplit.skip) ? repaintSplit.skip : []) {
+        const row = paintRows.find((r) => r.idx === idx);
+        if (!row) continue;
+        const want = Number(prevPaintedCounts[row.hash]);
+        if (!Number.isFinite(want) || want < 0) continue;
+        if (await markerCount(els[idx]) !== want) continue;
+        reuseIdxs.add(idx);
+        nextPaintedKeys[row.hash] = row.key;
+        nextPaintedCounts[row.hash] = want;
+      }
+      if (reuseIdxs.size) y("info", "inline.paint.reuse", \`kept=\${[...reuseIdxs].join(",")} of \${paintRows.length}\`);
       try {
         if (typeof N?.prioritizeWarmFocus == "function" && warmHead.length) N.prioritizeWarmFocus(warmHead);
       } catch {
       }
-      if (keep.has(paintIdx) && els[paintIdx]) {
+      if (keep.has(paintIdx) && els[paintIdx] && !reuseIdxs.has(paintIdx)) {
         await injectChatMsgActions(els[paintIdx], paintPlan.cards, paintIdx);
         if (paintPlan.skipInline) {
           y("info", "inline.paint.hold", \`DOM#\${paintIdx} remap unresolved — leaving shots\`);
         } else {
           await injectChatInlineImages(els[paintIdx], paintPlan.cards, t._inlinePending);
+          const row = paintRows.find((r) => r.idx === paintIdx);
+          if (row) await notePainted(paintIdx, row.hash, row.key);
         }
       }
       try {
@@ -8913,9 +8983,14 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       } catch {
       }
       for (const row of neighborCardLists) {
+        if (reuseIdxs.has(row.idx)) continue;
         await injectChatMsgActions(els[row.idx], row.cards, row.idx);
         await injectChatInlineImages(els[row.idx], row.cards, []);
+        const planned = paintRows.find((r) => r.idx === row.idx);
+        if (planned) await notePainted(row.idx, planned.hash, planned.key);
       }
+      t._inlinePaintedKeys = nextPaintedKeys;
+      t._inlinePaintedCounts = nextPaintedCounts;
       t._inlineAttachOk = 1;
       hideAttachToast().catch(() => {});
       try {
@@ -9257,6 +9332,38 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const doc = t.hostDoc;
     if (!doc || typeof H != "function") return;
     const wantSig = "tag|regen|stop|char|preset";
+    const msgIdx = Number.isInteger(Number(msgIndex)) && Number(msgIndex) >= 0 ? Number(msgIndex) : -1;
+    // The host scan below costs ~4 bridge round-trips per paragraph and it runs
+    // before we ever learn the bars are already right. Two bars carrying the
+    // wanted signature, both ends and this slot can only be a finished paint.
+    const earlyBars = await readBars();
+    if (earlyBars.length === 2) {
+      const ends = new Set();
+      let intact = !0;
+      for (const bar of earlyBars) {
+        let sig = "";
+        let end = "";
+        let at = "";
+        try {
+          if (typeof bar?.getAttribute != "function") throw new Error("no getAttribute");
+          sig = String(await bar.getAttribute("x-inlay-msg-sig") || "");
+          end = String(await bar.getAttribute("x-inlay-msg-end") || "");
+          at = String(await bar.getAttribute("x-inlay-msg-index") || "");
+        } catch {
+          intact = !1;
+          break;
+        }
+        if (sig !== wantSig || at !== String(msgIdx)) {
+          intact = !1;
+          break;
+        }
+        if (end) ends.add(end);
+      }
+      if (intact && ends.has("top") && ends.has("bot")) {
+        y("info", "msgact.skip", \`bars=2 already DOM#\${msgIdx}\`);
+        return;
+      }
+    }
     const hostsRaw = await unwrapSafe(await msgEl.querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"));
     const hosts = [];
     for (const el of hostsRaw) {
@@ -9378,7 +9485,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const chipsHtml = chipKinds.map((kind) =>
       '<span style="' + chipCss(kind) + '">' + chipLabels[kind] + "</span>"
     ).join("");
-    const msgIdx = Number.isInteger(Number(msgIndex)) && Number(msgIndex) >= 0 ? Number(msgIndex) : -1;
     const barHtml = '<div contenteditable="false" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-start;margin:10px 0;text-align:left;pointer-events:auto;line-height:1.2">' + chipsHtml + "</div>";
     const prependBar = async (host, end) => {
       if (!host) return null;
@@ -14986,6 +15092,23 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('prefetchInlineRoleDomIndices') || !out.includes('Promise.all(prefetchIdxs.map')) {
       throw new Error('[build] inline role prefetch must ask sel±2 in parallel');
+    }
+    assertOnce(out, 'VC.pickInlineRepaintIndices({ rows: paintRows, painted: prevPaintedKeys })', 'per-bubble repaint split landed');
+    // Both paint sites must consult the reuse set, or half the keep window still
+    // repaints and the flash is back for the neighbours.
+    if ((out.match(/reuseIdxs\.has\(/g) || []).length !== 2) {
+      throw new Error('[build] both paint sites must honour the per-bubble reuse set');
+    }
+    assertOnce(out, 'y("info", "inline.inject.repaint",', 'repaint reason log landed');
+    {
+      // The bar check is only worth anything ahead of the host scan — that scan is
+      // ~4 bridge round-trips per paragraph and it is what the exit is dodging.
+      const from = out.indexOf('async function injectChatMsgActions(msgEl, cards, msgIndex) {');
+      const early = out.indexOf('const earlyBars = await readBars();', from);
+      const scan = out.indexOf('querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div")', from);
+      if (from < 0 || early < 0 || scan < 0 || early > scan) {
+        throw new Error('[build] chip bar early-exit must run before the per-paragraph host scan');
+      }
     }
     if (!out.includes('inlineGoneFromSel') || !out.includes('refreshSelectedInlineImages(!0)')) {
       throw new Error('[build] missing re-inject when inline markers vanished from live DOM');

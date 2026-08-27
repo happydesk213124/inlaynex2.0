@@ -92,6 +92,8 @@ import {
   pickInlineKeepDomIndices,
   prefetchInlineRoleDomIndices,
   INLINE_ROLE_PREFETCH_RADIUS,
+  inlinePaintKey,
+  pickInlineRepaintIndices,
   resolveInlinePaintCards,
   mergeSessionGallery,
   INLINE_KEEP_MAX_PER_SIDE,
@@ -845,6 +847,58 @@ test("prefetchInlineRoleDomIndices asks sel ±2 and clamps to the chat", () => {
   assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 0, length: 1 }), [0]);
   assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 0, length: 0 }), []);
   assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: -1, length: 5 }), []);
+});
+
+test("inlinePaintKey ignores card order but not scale, chips, pending or slot", () => {
+  const base = { cardIds: ["b", "a"], scalePct: 100, msgActions: "on", pending: false, domIndex: 3 };
+  assert.equal(inlinePaintKey(base), inlinePaintKey({ ...base, cardIds: ["a", "b"] }));
+  assert.equal(inlinePaintKey(base), inlinePaintKey({ ...base, cardIds: ["a", "b", "a"] }));
+  // The chip bar bakes the DOM slot in as x-inlay-msg-index — a shifted bubble
+  // must repaint or its chips act on the wrong message.
+  assert.notEqual(inlinePaintKey(base), inlinePaintKey({ ...base, domIndex: 4 }));
+  assert.notEqual(inlinePaintKey(base), inlinePaintKey({ ...base, scalePct: 120 }));
+  assert.notEqual(inlinePaintKey(base), inlinePaintKey({ ...base, msgActions: "off" }));
+  assert.notEqual(inlinePaintKey(base), inlinePaintKey({ ...base, pending: true }));
+  assert.notEqual(inlinePaintKey(base), inlinePaintKey({ ...base, cardIds: ["a"] }));
+  // Out-of-range scale clamps the same way the injector does, so 0/NaN cannot
+  // silently produce a key that never matches.
+  assert.equal(inlinePaintKey({ scalePct: 5 }), inlinePaintKey({ scalePct: 25 }));
+  assert.equal(inlinePaintKey({ scalePct: "nope" }), inlinePaintKey({ scalePct: 100 }));
+});
+
+test("pickInlineRepaintIndices skips bubbles whose fingerprint is unchanged", () => {
+  const keyA = inlinePaintKey({ cardIds: ["a"], scalePct: 100, msgActions: "on" });
+  const keyB = inlinePaintKey({ cardIds: ["b"], scalePct: 100, msgActions: "on" });
+  const painted = new Map([["h2", keyA], ["h3", keyB]]);
+  const rows = [
+    { idx: 1, hash: "h1", key: keyA },
+    { idx: 2, hash: "h2", key: keyA },
+    { idx: 3, hash: "h3", key: keyB },
+  ];
+  assert.deepEqual(pickInlineRepaintIndices({ rows, painted }), { repaint: [1], skip: [2, 3] });
+
+  // A changed card list on an already-painted bubble must repaint.
+  assert.deepEqual(
+    pickInlineRepaintIndices({ rows: [{ idx: 2, hash: "h2", key: keyB }], painted }).repaint,
+    [2],
+  );
+  // Scale change invalidates every bubble at once.
+  const scaled = rows.map((r) => ({ ...r, key: `${r.key}!` }));
+  assert.deepEqual(pickInlineRepaintIndices({ rows: scaled, painted }).skip, []);
+  // No hash means no identity — never skip on DOM index alone.
+  assert.deepEqual(
+    pickInlineRepaintIndices({ rows: [{ idx: 2, hash: "", key: keyA }], painted }).repaint,
+    [2],
+  );
+  // Plain objects work as the painted map, and duplicate rows collapse.
+  assert.deepEqual(
+    pickInlineRepaintIndices({
+      rows: [{ idx: 2, hash: "h2", key: keyA }, { idx: 2, hash: "h2", key: keyB }],
+      painted: { h2: keyA },
+    }),
+    { repaint: [], skip: [2] },
+  );
+  assert.deepEqual(pickInlineRepaintIndices(), { repaint: [], skip: [] });
 });
 
 test("pickInlineKeepDomIndices keeps selected char plus 1 each side (max 3)", () => {

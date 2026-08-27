@@ -651,6 +651,67 @@ export function prefetchInlineRoleDomIndices(opts: {
   return out;
 }
 
+/**
+ * One-line fingerprint of everything a bubble's paint depends on.
+ *
+ * Two runs with the same key produce byte-identical markers and chips, so the
+ * bubble can be left alone. Card order is not meaningful — sort so a reordered
+ * link list does not force a repaint.
+ */
+export function inlinePaintKey(opts: {
+  cardIds?: unknown;
+  scalePct?: unknown;
+  msgActions?: unknown;
+  pending?: unknown;
+  domIndex?: unknown;
+} = {}): string {
+  const ids = Array.isArray(opts.cardIds)
+    ? [...new Set(opts.cardIds.map((v) => String(v ?? '')).filter(Boolean))].sort()
+    : [];
+  const scale = Math.max(25, Math.min(200, Math.round(finiteNumber(opts.scalePct, 100)) || 100));
+  const acts = String(opts.msgActions ?? '');
+  const pending = opts.pending ? '1' : '0';
+  // The DOM slot is baked into the chip bar as `x-inlay-msg-index`, so a bubble
+  // that shifted slots must repaint even though its content is identical.
+  const dom = Number.isInteger(Number(opts.domIndex)) ? String(Number(opts.domIndex)) : '';
+  return `s${scale}|a=${acts}|p=${pending}|d=${dom}|c=${ids.join(',')}`;
+}
+
+/**
+ * Split the keep window into bubbles that must be repainted and ones already
+ * correct. A row without a hash always repaints — DOM index alone is not an
+ * identity, it shifts the moment the chat grows.
+ */
+export function pickInlineRepaintIndices(opts: {
+  rows?: unknown;
+  painted?: unknown;
+} = {}): { repaint: number[]; skip: number[] } {
+  const rows = Array.isArray(opts.rows) ? opts.rows : [];
+  const painted = opts.painted;
+  const lookup = (hash: string): string => {
+    if (!hash) return '';
+    if (painted instanceof Map) return String(painted.get(hash) ?? '');
+    if (painted && typeof painted === 'object') {
+      return String((painted as Record<string, unknown>)[hash] ?? '');
+    }
+    return '';
+  };
+  const repaint: number[] = [];
+  const skip: number[] = [];
+  const seen = new Set<number>();
+  for (const raw of rows) {
+    const row = raw as { idx?: unknown; hash?: unknown; key?: unknown } | null;
+    const idx = Number(row?.idx);
+    if (!Number.isInteger(idx) || idx < 0 || seen.has(idx)) continue;
+    seen.add(idx);
+    const hash = String(row?.hash ?? '');
+    const key = String(row?.key ?? '');
+    if (hash && key && lookup(hash) === key) skip.push(idx);
+    else repaint.push(idx);
+  }
+  return { repaint, skip };
+}
+
 /** Same gate as auto-gen: LBDATA-stripped body too short → not an inline neighbor. */
 export function isInlineSkipBody(value: unknown): boolean {
   return messageBodyCharCount(value) <= 30;

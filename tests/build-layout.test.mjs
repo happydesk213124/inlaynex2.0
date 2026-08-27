@@ -224,7 +224,7 @@ test('new chat/reply schedules a pointer-near message select', () => {
 
 test('inline paint puts chips before shots so the bar is not blocked by encode', () => {
   const source = read('vite.config.ts');
-  const start = source.indexOf('if (keep.has(paintIdx) && els[paintIdx])');
+  const start = source.indexOf('if (keep.has(paintIdx) && els[paintIdx] && !reuseIdxs.has(paintIdx))');
   const end = source.indexOf('for (const row of neighborCardLists)', start);
   assert.ok(start >= 0 && end > start, 'selected-bubble paint block not found');
   const body = source.slice(start, end);

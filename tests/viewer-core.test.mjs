@@ -93,7 +93,9 @@ import {
   prefetchInlineRoleDomIndices,
   INLINE_ROLE_PREFETCH_RADIUS,
   inlinePaintKey,
+  inlinePaintKeyHasCards,
   pickInlineRepaintIndices,
+  shouldStripEmptyInlineDesired,
   resolveInlinePaintCards,
   mergeSessionGallery,
   INLINE_KEEP_MAX_PER_SIDE,
@@ -899,6 +901,20 @@ test("pickInlineRepaintIndices skips bubbles whose fingerprint is unchanged", ()
     { repaint: [], skip: [2] },
   );
   assert.deepEqual(pickInlineRepaintIndices(), { repaint: [], skip: [] });
+});
+
+test("inlinePaintKeyHasCards rejects an empty card list", () => {
+  assert.equal(inlinePaintKeyHasCards(inlinePaintKey({ cardIds: ["a"] })), true);
+  assert.equal(inlinePaintKeyHasCards(inlinePaintKey({ cardIds: [] })), false);
+  assert.equal(inlinePaintKeyHasCards(inlinePaintKey({})), false);
+  assert.equal(inlinePaintKeyHasCards(""), false);
+});
+
+test("shouldStripEmptyInlineDesired holds live shots unless the miss is confirmed", () => {
+  assert.equal(shouldStripEmptyInlineDesired({ liveShotCount: 0 }), true);
+  assert.equal(shouldStripEmptyInlineDesired({ liveShotCount: 2 }), false);
+  assert.equal(shouldStripEmptyInlineDesired({ liveShotCount: 2, confirmedEmpty: true }), true);
+  assert.equal(shouldStripEmptyInlineDesired({}), true);
 });
 
 test("pickInlineKeepDomIndices keeps selected char plus 1 each side (max 3)", () => {

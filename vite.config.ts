@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.34';
+const PLUGIN_VERSION = '2.4.35';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -8123,8 +8123,16 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         }
       };
-      // Nothing to paint: strip leftover shots (scroll onto a no-image bubble).
+      // Nothing to paint. Live shots usually mean the gallery miss is temporary
+      // (retry with noRebind, hash still loading) — stripping them is the flash.
       if (!placements.length && !encodeLater.length) {
+        const stripEmpty = typeof VC.shouldStripEmptyInlineDesired == "function"
+          ? VC.shouldStripEmptyInlineDesired({ liveShotCount: prev.length })
+          : !prev.length;
+        if (!stripEmpty) {
+          y("info", "inline.inject.hold", \`shots=0 live=\${prev.length}\`);
+          return;
+        }
         await removeAllMarkers();
         if (nxMsgAct() === "legacy") {
           try {
@@ -8315,8 +8323,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         await applyShot(shot);
       }
       // Progressive: encode cache misses one-by-one; prepend without wiping ready shots.
+      // Finish this bubble even if another refresh queued — breaking here left
+      // half-placed shots that the follow-up then stripped as "empty".
       for (const card of encodeLater) {
-        if (t._inlineInjectQueued) break;
         let src = "";
         try {
           src = await ensureStickyCardImage(card) || "";
@@ -8940,6 +8949,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       const notePainted = async (idx, hash, key) => {
         if (!hash || !key) return;
+        const hasCards = typeof VC?.inlinePaintKeyHasCards == "function"
+          ? VC.inlinePaintKeyHasCards(key)
+          : /\|c=.+/.test(String(key));
+        if (!hasCards) return;
         const n = await markerCount(els[idx]);
         if (n < 0) return;
         nextPaintedKeys[hash] = key;
@@ -15100,6 +15113,17 @@ const loadVendorUi = (): string => {
       throw new Error('[build] both paint sites must honour the per-bubble reuse set');
     }
     assertOnce(out, 'y("info", "inline.inject.repaint",', 'repaint reason log landed');
+    assertOnce(out, 'y("info", "inline.inject.hold",', 'empty-desired hold must keep live shots');
+    assertOnce(out, 'VC.inlinePaintKeyHasCards(key)', 'empty paint keys must not be reused');
+    {
+      const from = out.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows) {');
+      const to = out.indexOf('async function refreshSelectedInlineImages(force) {', from);
+      const body = from >= 0 && to > from ? out.slice(from, to) : '';
+      if (!body) throw new Error('[build] injectChatInlineImages body not found');
+      if (body.includes('_inlineInjectQueued) break') || body.includes('_inlineInjectQueued) break;')) {
+        throw new Error('[build] encodeLater must finish the bubble even when another refresh queued');
+      }
+    }
     {
       // The bar check is only worth anything ahead of the host scan — that scan is
       // ~4 bridge round-trips per paragraph and it is what the exit is dodging.

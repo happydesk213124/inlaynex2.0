@@ -712,6 +712,28 @@ export function pickInlineRepaintIndices(opts: {
   return { repaint, skip };
 }
 
+/** True when the fingerprint named at least one card. Empty `c=` is a miss, not a paint. */
+export function inlinePaintKeyHasCards(key: unknown): boolean {
+  const s = String(key || '');
+  const i = s.lastIndexOf('|c=');
+  if (i < 0) return false;
+  return s.slice(i + 3).length > 0;
+}
+
+/**
+ * Empty desired is often "gallery not loaded yet", not "this bubble has no shots".
+ * Live markers stay until a later pass actually finds cards — or the keep window
+ * strips the bubble when it leaves. Confirmed-empty (hash miss) may still strip.
+ */
+export function shouldStripEmptyInlineDesired(opts: {
+  liveShotCount?: unknown;
+  confirmedEmpty?: unknown;
+} = {}): boolean {
+  const live = Math.max(0, Math.floor(finiteNumber(opts.liveShotCount, 0)));
+  if (live <= 0) return true;
+  return !!opts.confirmedEmpty;
+}
+
 /** Same gate as auto-gen: LBDATA-stripped body too short → not an inline neighbor. */
 export function isInlineSkipBody(value: unknown): boolean {
   return messageBodyCharCount(value) <= 30;

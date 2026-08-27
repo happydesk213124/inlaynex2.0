@@ -272,6 +272,10 @@ export function installHost({ promptsDir, seed = 0x5eed }) {
     perf.byKey.set(key, { writes: prev.writes + 1, bytes: prev.bytes + bytes });
   };
 
+  const assetFiles = new Map();
+  let assetSeq = 0;
+  const risuDb = { modules: [], enabledModules: [] };
+
   globalThis.risuai = {
     async getLocalPluginStorage() {
       return {
@@ -284,6 +288,32 @@ export function installHost({ promptsDir, seed = 0x5eed }) {
       async getItem(k) { return legacyStorage.has(k) ? legacyStorage.get(k) : null; },
       async setItem(k, v) { legacyStorage.set(k, v); },
       async removeItem(k) { legacyStorage.delete(k); },
+    },
+    async getDatabase() {
+      return structuredClone(risuDb);
+    },
+    async setDatabase(next) {
+      if (next && typeof next === 'object') {
+        if ('modules' in next) risuDb.modules = structuredClone(next.modules) || [];
+        if ('enabledModules' in next) risuDb.enabledModules = structuredClone(next.enabledModules) || [];
+      }
+    },
+    async saveAsset(data) {
+      assetSeq += 1;
+      const path = `assets/parity-shot-${assetSeq}.bin`;
+      if (data instanceof ArrayBuffer) assetFiles.set(path, new Uint8Array(data));
+      else if (data instanceof Uint8Array) assetFiles.set(path, Uint8Array.from(data));
+      else if (data && typeof data === 'object' && typeof data.byteLength === 'number') {
+        assetFiles.set(path, Uint8Array.from(data));
+      } else {
+        assetFiles.set(path, new Uint8Array());
+      }
+      return path;
+    },
+    async readImage(path) {
+      const bytes = assetFiles.get(path);
+      if (!bytes) throw new Error('missing asset');
+      return bytes;
     },
     nativeFetch,
     async runLLMModel({ messages }) {

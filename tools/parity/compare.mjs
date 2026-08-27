@@ -84,7 +84,7 @@ const aliasDebugStage = (stage) => (stage === 'image.blob_url' ? 'image.data_url
 
 const summarizeEventLog = (events) => ({
   [EVENT_LOG_MARKER]: true,
-  stages: [...new Set(events.map((e) => aliasDebugStage(String(e.stage))))].filter((s) => !s.startsWith('storage.')).sort(),
+  stages: [...new Set(events.map((e) => aliasDebugStage(String(e.stage))))].filter((s) => !s.startsWith('storage.') && !s.startsWith('shot.module')).sort(),
   errors: events.filter((e) => e.level === 'error').map((e) => aliasDebugStage(String(e.stage))).sort(),
 });
 
@@ -159,9 +159,13 @@ const normalize = (root) => {
     if (isDebugEventLog(key, node)) return walk(summarizeEventLog(node), 'event_log_summary');
     if (isByStage(key, node)) {
       // Counts collapse to presence for the same window reason as the event log.
-      return { [EVENT_LOG_MARKER]: true, stages: Object.keys(node).map(aliasDebugStage).filter((s) => !s.startsWith('storage.')).sort(), errors: [] };
+      return { [EVENT_LOG_MARKER]: true, stages: Object.keys(node).map(aliasDebugStage).filter((s) => !s.startsWith('storage.') && !s.startsWith('shot.module')).sort(), errors: [] };
     }
     if (Array.isArray(node)) {
+      // 2.x writes new shots to the gallery module; 1.x used inx_nximg_* base64 keys.
+      if (key === 'storageKeys' && node.every((v) => typeof v === 'string')) {
+        return node.filter((k) => k !== 'inx_nximg_*' && !String(k).startsWith('inx_nximg_')).map((v) => walk(v, key));
+      }
       // New 2.0-only prompts have no 1.x equivalent; comparing list length/order fails.
       if (
         key === 'prompts'
@@ -394,6 +398,12 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (v === 'blob'
       ? null
       : `2.x gallery image_url must be a blob: object URL, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'host.gallery_pixels',
+    (v) => (v === 'module'
+      ? null
+      : `2.x must persist new shots as module assets, not inx_nximg_* keys, got ${JSON.stringify(v)}`),
   ],
   [
     'curation.strict_ids.enable',

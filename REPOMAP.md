@@ -161,8 +161,8 @@ On top of it we keep five logical row stores plus per-image blobs.
 | `inx_nxstore_cards` | generated image cards |
 | `inx_nxstore_characters` | roster rows, keyed `"<scope>\t<id>"` |
 | `inx_nxstore_jobs` | job rows |
-| `inx_nxstore_images` | image metadata (**not** bytes) |
-| `inx_nximg_<id>` | one image's bytes, base64 |
+| `inx_nxstore_images` | image metadata (**not** bytes); may include `location.asset_path` |
+| `inx_nximg_<id>` | legacy / fallback bytes, base64 (new shots prefer the `inlay-gallery` module) |
 
 **Keys are frozen.** Renaming one silently orphans every existing user's data.
 The same is true of `//@name inlay-nexus-native` in `vite.config.ts` — Risu

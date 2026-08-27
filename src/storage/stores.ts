@@ -8,8 +8,9 @@
  *  1. **Lazy PNG hydration.** 1.x decoded every stored PNG from base64 during
  *     boot, so start-up cost grew linearly with gallery size. Here the images
  *     store holds only metadata (`has_png` / `png_bytes`) and pixel data is
- *     fetched on first real use, then held in a byte-budgeted LRU. Callers that
- *     only need a size use `imageMeta()` and never touch storage at all.
+ *     fetched on first real use (module `readImage` or legacy `inx_nximg_*`),
+ *     then held in a byte-budgeted LRU. Callers that only need a size use
+ *     `imageMeta()` and never touch storage at all.
  *  2. **Coalesced persistence.** 1.x re-serialised an entire store on every
  *     single row write, so a job that touched `meta` 47 times wrote 47 full
  *     snapshots. Writes now mark the store dirty and one flush covers the burst.
@@ -43,6 +44,7 @@ import { base64ToAb, bytesToBase64Async } from '../core/util/bytes';
 import type { CardRow, CharacterRecord, JobRow, MetaRow, StoreName } from '../core/types';
 import { psGet, psRemove, psSet } from './device-store';
 import { blobUrlCache } from './blob-url-cache';
+import { dropShotAsset, putShotAsset, readShotAssetBytes } from './shot-module';
 
 /** Rows as held in memory. Images carry metadata even when pixels are absent. */
 interface ImageMemRow {
@@ -65,6 +67,9 @@ interface ImageMemRow {
    * in-memory copy is the only one, so it must never be evicted.
    */
   durable: boolean;
+  /** Risu module path from saveAsset. Empty when the row is legacy plugin storage. */
+  asset_path?: string;
+  asset_name?: string;
 }
 
 type RowOf<S extends StoreName> = S extends 'cards'
@@ -187,13 +192,15 @@ function snapshotOf(store: StoreName): Record<string, unknown> {
   const obj: Record<string, unknown> = {};
   if (store === 'images') {
     for (const [k, v] of memStores.images) {
+      const assetPath = String(v.asset_path || '');
       obj[k] = {
         id: v.id,
         location: v.location || null,
         has_png: v.has_png,
         png_bytes: v.png_bytes,
-        storage: 'indexeddb',
-        storage_key: IMAGE_KEY(k),
+        storage: assetPath ? 'module' : 'indexeddb',
+        storage_key: assetPath || IMAGE_KEY(k),
+        ...(assetPath ? { asset_path: assetPath, asset_name: v.asset_name || '' } : {}),
       };
     }
     return obj;
@@ -364,7 +371,9 @@ async function hydrateImage(id: string, row: ImageMemRow): Promise<ArrayBuffer |
   const existing = hydrating.get(id);
   if (existing) return existing;
   const task = (async () => {
-    const png = decodeStoredPng(await psGet(IMAGE_KEY(id), LEGACY_IMAGE_KEY(id)));
+    const assetPath = String(row.asset_path || row.location?.asset_path || '');
+    let png = assetPath ? await readShotAssetBytes(assetPath) : null;
+    if (!png) png = decodeStoredPng(await psGet(IMAGE_KEY(id), LEGACY_IMAGE_KEY(id)));
     row.png = png;
     row.hydrated = true;
     row.durable = true;
@@ -406,14 +415,20 @@ export async function openDb(): Promise<boolean> {
         const v = (rawRow ?? {}) as Record<string, unknown>;
         if (store === 'images') {
           const hasPng = Boolean(v.has_png);
+          const loc = (v.location as Record<string, unknown>) || {};
           memStores.images.set(k, {
             id: String(v.id || k),
-            location: (v.location as Record<string, unknown>) || {},
+            location: loc,
             png: null,
             has_png: hasPng,
             png_bytes: Number(v.png_bytes) || 0,
             hydrated: !hasPng,
             durable: true,
+            ...(typeof v.asset_path === 'string' && v.asset_path
+              ? { asset_path: v.asset_path, asset_name: String(v.asset_name || '') }
+              : typeof loc.asset_path === 'string' && loc.asset_path
+                ? { asset_path: String(loc.asset_path), asset_name: String(loc.asset_name || '') }
+                : {}),
           });
         } else if (store === 'meta' && (v.key === 'reference_image' || k === 'reference_image')) {
           const png = decodeStoredPng(await psGet(REF_IMAGE_KEY, LEGACY_REF_IMAGE_KEY));
@@ -585,8 +600,16 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
       chargePng(png.byteLength);
       imagePersistChain = imagePersistChain
         .then(async () => {
-          const b64 = await bytesToBase64Async(new Uint8Array(png));
-          await psSet(IMAGE_KEY(k), b64);
+          const saved = await putShotAsset(k, png);
+          if (saved?.path) {
+            row.asset_path = saved.path;
+            row.asset_name = saved.name;
+            await psRemove(IMAGE_KEY(k));
+            await persistStore('images');
+          } else {
+            const b64 = await bytesToBase64Async(new Uint8Array(png));
+            await psSet(IMAGE_KEY(k), b64);
+          }
           // Only now may the cache reclaim these bytes.
           if (memStores.images.get(k) === row) row.durable = true;
         })
@@ -729,7 +752,10 @@ export async function idbDelete(store: StoreName, key: unknown): Promise<boolean
     if (prev?.png) pngCacheBytes -= prev.png.byteLength;
   }
   (memStores[store] as Map<string, unknown>).delete(k);
-  if (store === 'images') await psRemove(IMAGE_KEY(k));
+  if (store === 'images') {
+    await dropShotAsset(k).catch(() => false);
+    await psRemove(IMAGE_KEY(k));
+  }
   if (store === 'meta' && k === 'reference_image') await psRemove(REF_IMAGE_KEY);
   if (store === 'meta' && k === 'vibe_transfer') {
     await psRemove(VIBE_IMAGE_KEY);

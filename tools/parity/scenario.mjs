@@ -717,6 +717,12 @@ export async function runScenario(N, handles) {
         .filter((k, i, a) => a.indexOf(k) === i),
     },
   });
+  transcript.push({
+    step: step + 2,
+    name: 'host.gallery_pixels',
+    ok: true,
+    value: [...handles.storage.keys()].some((k) => /^inx_nximg_/.test(k)) ? 'plugin' : 'module',
+  });
 
   return transcript;
 }

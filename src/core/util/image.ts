@@ -152,8 +152,8 @@ export async function encodeCharRefWebp(buf: BytesLike): Promise<ArrayBuffer> {
   }
 }
 
-/** Re-encode gallery images to WebP @ 0.8 for smaller IndexedDB + data: URLs. Falls back to original. */
-export async function encodeWebpQuality(buf: BytesLike, quality = 0.8): Promise<ArrayBuffer | null> {
+/** Re-encode gallery images to WebP @ 0.9. Falls back to original. */
+export async function encodeWebpQuality(buf: BytesLike, quality = 0.9): Promise<ArrayBuffer | null> {
   const src = asU8(buf);
   if (!src.length) return null;
   if (isWebpBytes(src)) return u8ToArrayBuffer(src);

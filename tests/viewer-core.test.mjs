@@ -114,7 +114,10 @@ import {
   normalizeImagePressInspect,
   toastAnchorStyle,
   shouldStartImagePressInspect,
+  imagePressAllowsDoubleTap,
+  imagePressAllowsHold,
   imagePressAllowsSecondPointer,
+  imagePressDoubleTapHits,
   imagePressMoveCancels,
   imagePressIgnorePointerCancel,
   imagePressOtherPointerUp,
@@ -1190,45 +1193,51 @@ test("toastAnchorStyle pins the chip to the chosen corner", () => {
   assert.match(toastAnchorStyle("tl", { visible: false }), /display:none/);
 });
 
-test("shouldStartImagePressInspect gates one-finger vs two-finger", () => {
+test("shouldStartImagePressInspect is hold-only — two is double-tap", () => {
   assert.equal(normalizeImagePressInspect(""), "hold");
+  assert.equal(normalizeImagePressInspect("double-tap"), "two");
   assert.equal(shouldStartImagePressInspect({ mode: "off", pointerCount: 2 }), false);
   assert.equal(shouldStartImagePressInspect({ mode: "hold", pointerCount: 1 }), true);
   assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: 1 }), false);
-  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: 2 }), true);
+  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: 2 }), false);
   assert.equal(shouldStartImagePressInspect({ mode: "both", pointerCount: 1 }), true);
+  assert.equal(imagePressAllowsHold("two"), false);
+  assert.equal(imagePressAllowsDoubleTap("two"), true);
+  assert.equal(imagePressAllowsDoubleTap("hold"), false);
+  assert.equal(imagePressAllowsDoubleTap("both"), true);
 });
 
-test("two-finger press keeps the first pointer through a second touch", () => {
+test("imagePressDoubleTapHits needs the same shot twice, fast and close", () => {
+  const base = { prevAt: 1000, prevX: 40, prevY: 40, prevCardId: "shot-a", now: 1300, x: 44, y: 42, cardId: "shot-a" };
+  assert.equal(imagePressDoubleTapHits(base), true);
+  assert.equal(imagePressDoubleTapHits({ ...base, cardId: "shot-b" }), false);
+  assert.equal(imagePressDoubleTapHits({ ...base, now: 1600 }), false);
+  assert.equal(imagePressDoubleTapHits({ ...base, x: 120, y: 120 }), false);
+  assert.equal(imagePressDoubleTapHits({ ...base, prevAt: null }), false);
+});
+
+test("a leftover second pointer still does not cancel a hold by id", () => {
   assert.equal(imagePressAllowsSecondPointer("hold"), false);
-  assert.equal(imagePressAllowsSecondPointer("two"), true);
-  assert.equal(imagePressAllowsSecondPointer("both"), true);
+  assert.equal(imagePressAllowsSecondPointer("two"), false);
   assert.equal(imagePressMoveCancels({
     pressPointerId: 1, eventPointerId: 2, fromX: 10, fromY: 10, toX: 80, toY: 80, slopPx: 8,
   }), false);
   assert.equal(imagePressMoveCancels({
     pressPointerId: 1, eventPointerId: 1, fromX: 10, fromY: 10, toX: 80, toY: 80, slopPx: 8,
   }), true);
-  assert.equal(imagePressIgnorePointerCancel("two", "inline-shot"), true);
-  assert.equal(imagePressIgnorePointerCancel("hold", "inline-shot"), false);
+  assert.equal(imagePressIgnorePointerCancel("two", "inline-shot"), false);
+  assert.equal(imagePressIgnorePointerCancel("hold", "inline-shot"), true);
   assert.equal(imagePressOtherPointerUp({ pressPointerId: 1, eventPointerId: 2 }), true);
   assert.equal(imagePressOtherPointerUp({ pressPointerId: 1, eventPointerId: 1 }), false);
 });
 
-test("two identical-id touches still count as two fingers", () => {
-  // The host forwards a plain object: pointerId repeats or is missing, so the
-  // count must come from the downs themselves.
+test("two identical-id touches still count as two downs", () => {
   let downs = noteImagePressDown(null, 1000);
   assert.equal(imagePressDownCount(downs, 1000), 1);
-  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: imagePressDownCount(downs, 1000) }), false);
-
   downs = noteImagePressDown(downs, 1080);
   assert.equal(imagePressDownCount(downs, 1080), 2);
-  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: imagePressDownCount(downs, 1080) }), true);
-
   downs = noteImagePressUp(downs);
   assert.equal(imagePressDownCount(downs, 1200), 1);
-  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: imagePressDownCount(downs, 1200) }), false);
 });
 
 test("a lost pointerup expires instead of passing one finger off as two", () => {
@@ -1240,10 +1249,9 @@ test("a lost pointerup expires instead of passing one finger off as two", () => 
   assert.equal(imagePressDownCount(downs, 5051), 0);
   const late = noteImagePressDown(downs, 5051);
   assert.equal(imagePressDownCount(late, 5051), 1);
-  assert.equal(shouldStartImagePressInspect({ mode: "two", pointerCount: imagePressDownCount(late, 5051) }), false);
 });
 
-test("a two-finger hold survives the jitter between both contact points", () => {
+test("a two-finger hold no longer special-cases jitter — two is double-tap", () => {
   const held = {
     pressPointerId: 1,
     eventPointerId: 1,
@@ -1253,8 +1261,7 @@ test("a two-finger hold survives the jitter between both contact points", () => 
     toY: 90,
     slopPx: 8,
   };
-  assert.equal(imagePressMoveCancels({ ...held, mode: "two", pressCount: 2 }), false);
-  assert.equal(imagePressMoveCancels({ ...held, mode: "two", pressCount: 1 }), true);
+  assert.equal(imagePressMoveCancels({ ...held, mode: "two", pressCount: 2 }), true);
   assert.equal(imagePressMoveCancels({ ...held, mode: "hold", pressCount: 2 }), true);
 });
 

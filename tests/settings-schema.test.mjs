@@ -173,6 +173,7 @@ test("toast_anchor and image_press_inspect migrate with safe defaults", () => {
   assert.equal(migrateSettings({ card: { toast_anchor: "bottom-right" } }).card.toast_anchor, "br");
   assert.equal(migrateSettings({ card: { toast_anchor: "nope" } }).card.toast_anchor, "tc");
   assert.equal(migrateSettings({ card: { image_press_inspect: "two-hand" } }).card.image_press_inspect, "two");
+  assert.equal(migrateSettings({ card: { image_press_inspect: "double-tap" } }).card.image_press_inspect, "two");
   assert.equal(migrateSettings({ card: { image_press_inspect: "off" } }).card.image_press_inspect, "off");
   assert.equal(migrateSettings({ card: { image_press_inspect: "both" } }).card.image_press_inspect, "both");
 });

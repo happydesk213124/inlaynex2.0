@@ -14,15 +14,29 @@ export function normalizeToastAnchor(value: unknown): ToastAnchor {
 export function normalizeImagePressInspect(value: unknown): ImagePressInspect {
   const v = String(value ?? '').toLowerCase().trim();
   if (v === 'off' || v === 'none' || v === '0' || v === 'false') return 'off';
-  if (v === 'two' || v === 'twohand' || v === 'two-hand' || v === '2') return 'two';
+  if (
+    v === 'two' || v === 'twohand' || v === 'two-hand' || v === '2'
+    || v === 'dbl' || v === 'double' || v === 'doubletap' || v === 'double-tap' || v === 'tap'
+  ) return 'two';
   if (v === 'both' || v === 'all' || v === 'any') return 'both';
   return 'hold';
 }
 
-/** two / both: a second pointer must reach the image hit-test, not cancel the first. */
-export function imagePressAllowsSecondPointer(mode: unknown): boolean {
+/** Saved `two` is double-tap (it used to mean two fingers). `both` = hold + double-tap. */
+export function imagePressAllowsHold(mode: unknown): boolean {
+  const m = normalizeImagePressInspect(mode);
+  return m === 'hold' || m === 'both';
+}
+
+export function imagePressAllowsDoubleTap(mode: unknown): boolean {
   const m = normalizeImagePressInspect(mode);
   return m === 'two' || m === 'both';
+}
+
+/** Second simultaneous finger is not a gesture anymore. */
+export function imagePressAllowsSecondPointer(_mode: unknown): boolean {
+  void _mode;
+  return false;
 }
 
 /**
@@ -108,9 +122,41 @@ export function imagePressMoveCancels(opts: {
   return Math.hypot(dx, dy) > s;
 }
 
-/** Mobile pinch often pointercancel's the first finger — keep the two-finger hold. */
+export const IMAGE_DOUBLE_TAP_WINDOW_MS = 450;
+export const IMAGE_DOUBLE_TAP_SLOP_PX = 28;
+
+/** Same card, same spot, second down inside the window — not a drag and not a new shot. */
+export function imagePressDoubleTapHits(opts: {
+  prevAt?: unknown;
+  prevX?: unknown;
+  prevY?: unknown;
+  prevCardId?: unknown;
+  now?: unknown;
+  x?: unknown;
+  y?: unknown;
+  cardId?: unknown;
+  windowMs?: unknown;
+  slopPx?: unknown;
+} = {}): boolean {
+  const id = String(opts.cardId ?? '');
+  const prevId = String(opts.prevCardId ?? '');
+  if (!id || prevId !== id) return false;
+  const prevAt = Number(opts.prevAt);
+  const now = Number(opts.now);
+  const rawWin = Number(opts.windowMs);
+  const win = Number.isFinite(rawWin) && rawWin > 0 ? rawWin : IMAGE_DOUBLE_TAP_WINDOW_MS;
+  if (!Number.isFinite(prevAt) || !Number.isFinite(now) || now < prevAt || now - prevAt > win) return false;
+  const rawSlop = Number(opts.slopPx);
+  const slop = Number.isFinite(rawSlop) ? Math.max(0, rawSlop) : IMAGE_DOUBLE_TAP_SLOP_PX;
+  const dx = Number(opts.x) - Number(opts.prevX);
+  const dy = Number(opts.y) - Number(opts.prevY);
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return false;
+  return Math.hypot(dx, dy) <= slop;
+}
+
+/** Mobile pinch often pointercancel's the first finger — keep an in-progress hold. */
 export function imagePressIgnorePointerCancel(mode: unknown, source: unknown): boolean {
-  if (!imagePressAllowsSecondPointer(mode)) return false;
+  if (!imagePressAllowsHold(mode)) return false;
   const src = String(source || '');
   return src === 'inline-shot' || src === 'sticky-thumb';
 }

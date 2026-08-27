@@ -13,8 +13,13 @@ import {
   normalizeInlineMsgActions,
 } from '../domain/inline-msg-actions';
 import {
+  IMAGE_DOUBLE_TAP_SLOP_PX,
+  IMAGE_DOUBLE_TAP_WINDOW_MS,
   IMAGE_PRESS_WINDOW_MS,
+  imagePressAllowsDoubleTap,
+  imagePressAllowsHold,
   imagePressAllowsSecondPointer,
+  imagePressDoubleTapHits,
   imagePressDownCount,
   imagePressIgnorePointerCancel,
   imagePressMoveCancels,
@@ -31,8 +36,13 @@ export {
   normalizeInlineMsgActions,
 };
 export {
+  IMAGE_DOUBLE_TAP_SLOP_PX,
+  IMAGE_DOUBLE_TAP_WINDOW_MS,
   IMAGE_PRESS_WINDOW_MS,
+  imagePressAllowsDoubleTap,
+  imagePressAllowsHold,
   imagePressAllowsSecondPointer,
+  imagePressDoubleTapHits,
   imagePressDownCount,
   imagePressIgnorePointerCancel,
   imagePressMoveCancels,
@@ -2533,9 +2543,8 @@ export function shouldStartImagePressInspect(opts: {
 } = {}): boolean {
   const mode = normalizeImagePressInspect(opts.mode);
   const n = Math.max(0, Math.floor(finiteNumber(opts.pointerCount, 0)));
-  if (mode === 'off' || n < 1) return false;
-  if (mode === 'two') return n >= 2;
-  return n >= 1;
+  if (!imagePressAllowsHold(mode) || n < 1) return false;
+  return true;
 }
 
 /** Spinner chip shown while chips/shots are about to land — gone the moment they inject. */

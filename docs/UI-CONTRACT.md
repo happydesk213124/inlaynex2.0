@@ -112,8 +112,9 @@ are absent.
 Dashboard also has `card.toast_anchor` (`tl` | `bl` | `tr` | `br` | `tc`,
 default `tc`) for progress / selection / host / attach toasts, and
 `card.image_press_inspect` (`off` | `hold` | `two` | `both`, default `hold`)
-for enlarge-on-press on inline/sticky shots. `two` needs two simultaneous
-hits on the image. While chips/shots are about to inject, an attach toast
+for enlarge on inline/sticky shots. `two` is a fast double-tap on the same
+shot (saved `two` / `double-tap` normalize here). `hold` is a long press.
+`both` accepts either. While chips/shots are about to inject, an attach toast
 reads `인레이 넥서스 조각 불러오는중..` and drops the moment they land.
 Dashboard also has `card.nai4_fallback`, `card.nai5_speech`,
 and `card.inline_msg_actions` as a 3-way select: `off` (사용안함),

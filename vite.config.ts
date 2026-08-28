@@ -8359,7 +8359,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       const applyShot = async (shot) => {
         const id = String(shot.cardId || "");
-        if (id && placedIds.has(id)) return !1;
+        // A spinner already claimed this id — ready shots must still swap.
+        if (id && placedIds.has(id) && (shot.pending || !nxReadyImg(shot.src))) return !1;
         const line = Number(shot.line);
         if (!line || !Number.isFinite(line)) return !1;
         const hit = VC.findElementIndexForLineWithFallback(hostTexts, hostTags, messageLines, line, ["P"]);
@@ -8435,24 +8436,32 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       for (const [, shot] of byLine) {
         await applyShot(shot);
       }
-      // Progressive: encode cache misses one-by-one; prepend without wiping ready shots.
-      // Finish this bubble even if another refresh queued — breaking here left
-      // half-placed shots that the follow-up then stripped as "empty".
-      for (const card of encodeLater) {
+      // Spinners for cache misses are already in byLine. Bake two at a time and
+      // swap as each URL lands. Finish this bubble even if another refresh
+      // queued — breaking here left half-placed shots that the follow-up then
+      // stripped as "empty".
+      const applyReady = (() => {
+        let tail = Promise.resolve();
+        return (shot) => {
+          const run = tail.then(() => applyShot(shot));
+          tail = run.catch(() => {});
+          return run;
+        };
+      })();
+      const bakeOne = async (card) => {
         let src = "";
         try {
           src = await ensureStickyCardImage(card) || "";
         } catch {
         }
-        if (!src || !nxReadyImg(src)) continue;
+        if (!src || !nxReadyImg(src)) return;
         const line0 = Number(card?.line);
         const cardId = String(card?.id || "");
-        if (!Number.isFinite(line0) || line0 < 1) continue;
-        if (cardId && placedIds.has(cardId)) continue;
+        if (!Number.isFinite(line0) || line0 < 1) return;
         const line = typeof VC.clampShotLine == "function"
           ? VC.clampShotLine(line0, messageLines.length)
           : Math.floor(line0);
-        if (!line || byLine.has(line)) continue;
+        if (!line) return;
         const shot = {
           line,
           src,
@@ -8461,7 +8470,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           pending: !1
         };
         byLine.set(line, shot);
-        await applyShot(shot);
+        await applyReady(shot);
+      };
+      if (typeof VC.runBoundedPool == "function") {
+        await VC.runBoundedPool(encodeLater, 2, bakeOne);
+      } else {
+        for (const card of encodeLater) await bakeOne(card);
       }
       const keepIds = new Set(placedIds);
       for (const card of encodeLater) {
@@ -15298,6 +15312,17 @@ const loadVendorUi = (): string => {
       if (!body) throw new Error('[build] injectChatInlineImages body not found');
       if (body.includes('_inlineInjectQueued) break') || body.includes('_inlineInjectQueued) break;')) {
         throw new Error('[build] encodeLater must finish the bubble even when another refresh queued');
+      }
+      if (body.includes('if (!line || byLine.has(line)) continue')) {
+        throw new Error('[build] encodeLater must not skip a line the spinner already claimed');
+      }
+      if (!body.includes('runBoundedPool')) {
+        throw new Error('[build] encodeLater must bake through runBoundedPool');
+      }
+      const applyByLine = body.indexOf('for (const [, shot] of byLine)');
+      const bake = body.indexOf('ensureStickyCardImage');
+      if (applyByLine < 0 || bake < 0 || applyByLine > bake) {
+        throw new Error('[build] spinner applyShot must run before encodeLater bake');
       }
     }
     {

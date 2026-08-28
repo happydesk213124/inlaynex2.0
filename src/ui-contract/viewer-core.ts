@@ -3024,7 +3024,8 @@ export type InlineReconcileAction =
 
 /**
  * Ready cards first (they claim line/shot). Pending only fills leftover lines.
- * A linked card with no bytes goes to encodeLater and still blocks pending.
+ * A linked card with no bytes is a spinner on its own id and still blocks
+ * job-pending on that line; encodeLater bakes the bytes after the spinner is in.
  */
 export function desiredInlinePlacements(
   cards: InlineCardInput[] | null | undefined,
@@ -3050,7 +3051,17 @@ export function desiredInlinePlacements(
     if (!Number.isFinite(line) || line < 1) continue;
     const src = String(getSrc(card) || '');
     if (!isReadyImageSrc(src)) {
-      if (cardId) encodeLater.push(card);
+      if (cardId) {
+        encodeLater.push(card);
+        seenCard.add(cardId);
+        placements.push({
+          line,
+          src: '',
+          shotIndex: Number.isFinite(shotIndex) ? shotIndex : undefined,
+          cardId,
+          pending: true,
+        });
+      }
       continue;
     }
     if (cardId) seenCard.add(cardId);
@@ -3083,6 +3094,31 @@ export function desiredInlinePlacements(
   }
 
   return { placements, encodeLater };
+}
+
+/**
+ * Run `worker` over `items` with at most `limit` in flight.
+ * Completion order is whatever the workers finish — callers that paint should
+ * do it inside `worker`, not wait for this to return an ordered list.
+ */
+export async function runBoundedPool<T>(
+  items: T[] | null | undefined,
+  limit: unknown,
+  worker: (item: T, index: number) => Promise<unknown> | unknown,
+): Promise<void> {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return;
+  const cap = Math.max(1, Math.floor(Number(limit)) || 1);
+  let next = 0;
+  const run = async () => {
+    while (next < list.length) {
+      const i = next;
+      next += 1;
+      await worker(list[i] as T, i);
+    }
+  };
+  const n = Math.min(cap, list.length);
+  await Promise.all(Array.from({ length: n }, () => run()));
 }
 
 /** Cheap skip key: line + pending/image + id. Bytes themselves stay out. */

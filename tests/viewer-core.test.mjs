@@ -100,6 +100,7 @@ import {
   mergeSessionGallery,
   INLINE_KEEP_MAX_PER_SIDE,
   desiredInlinePlacements,
+  runBoundedPool,
   desiredInlinePaintKey,
   pendingInlineKey,
   reconcileInlineShot,
@@ -1065,8 +1066,39 @@ test("desiredInlinePlacements holds a linked card without bytes so pending canno
   assert.deepEqual(got.encodeLater.map((c) => c.id), ["c2"]);
   assert.deepEqual(
     got.placements.map((p) => ({ line: p.line, cardId: p.cardId, pending: !!p.pending })),
-    [{ line: 4, cardId: "pending-2", pending: true }],
+    [
+      { line: 3, cardId: "c2", pending: true },
+      { line: 4, cardId: "pending-2", pending: true },
+    ],
   );
+});
+
+test("runBoundedPool caps concurrency at the limit", async () => {
+  const delays = [80, 40, 10];
+  let inflight = 0;
+  let maxInflight = 0;
+  const finished = [];
+  await runBoundedPool(delays, 2, async (ms, i) => {
+    inflight += 1;
+    maxInflight = Math.max(maxInflight, inflight);
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    inflight -= 1;
+    finished.push(i);
+  });
+  assert.equal(maxInflight, 2);
+  assert.deepEqual(finished, [1, 2, 0]);
+});
+
+test("runBoundedPool ignores a bad limit and empty list", async () => {
+  const seen = [];
+  await runBoundedPool(null, 0, async (item) => {
+    seen.push(item);
+  });
+  assert.deepEqual(seen, []);
+  await runBoundedPool(["a"], 0, async (item) => {
+    seen.push(item);
+  });
+  assert.deepEqual(seen, ["a"]);
 });
 
 test("desiredInlinePaintKey changes when pending becomes a card", () => {

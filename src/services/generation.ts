@@ -41,6 +41,7 @@ import {
   stripPersonCountTags,
   appendNoHumansWhenNoCast,
 } from '../domain/character/tags';
+import { resolveStoredContentHash } from '../domain/gallery/unlink-match';
 import { dimsForAspect } from '../domain/nai-meta/aspect.ts';
 import { composeComicSlotCaption } from '../domain/comic/caption';
 import { resolveComicUseCoords } from '../domain/comic/coords';
@@ -811,7 +812,7 @@ export function locationFieldsFrom(
       const n = Math.floor(Number(loc.line ?? base.line));
       return Number.isFinite(n) && n >= 1 ? n : null;
     })(),
-    content_hash: cleanText(loc.content_hash || base.content_hash || '', 128),
+    content_hash: resolveStoredContentHash(loc, base),
     assistant_preview: cleanText(loc.assistant_preview || base.assistant_preview || '', ASSISTANT_PREVIEW_LIMIT),
     unified_session_id: cleanText(loc.unified_session_id || base.unified_session_id || '', 200),
     // UI-compat field: was a sidecar .json path; now an IndexedDB key ref.

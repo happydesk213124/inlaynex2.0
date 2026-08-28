@@ -24,6 +24,7 @@ const MODULES = {
   'viewer-core': 'src/ui-contract/viewer-core.ts',
   'explorer-selection': 'src/ui-contract/explorer-selection.ts',
   'gallery-zip': 'src/ui-contract/gallery-zip.ts',
+  'unlink-match': 'src/domain/gallery/unlink-match.ts',
   'roster-merge': 'src/domain/character/roster.ts',
   'character-identity': 'src/domain/character/identity.ts',
   'lore-extra': 'src/domain/lore/extra.ts',

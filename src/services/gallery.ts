@@ -16,6 +16,7 @@
  * and the reattach decision must see rows exactly as the explorer showed them.
  */
 
+import { cardMatchesMessageUnlink } from '../domain/gallery/unlink-match';
 import { IMAGE_KEY } from '../core/constants';
 import { dbg } from '../core/debug';
 import { errorBody } from '../core/errors';
@@ -413,21 +414,27 @@ export async function unlinkCardsForMessage(
     msgIdx = null;
   }
   if (!sid || (!hash && msgIdx == null)) return { ok: true, unlinked: 0, ids: [] };
-  // The returned id order is 1.x's cards-store scan order, i.e. creation order.
-  // The session index reorders a card when it is rewritten, so sort rather than
-  // depend on it.
-  const rows = (await cardsForSession(sid)).sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+  // Session index plus a full scan: a late comic save can miss the index.
+  const byId = new Map<string, CardRow>();
+  for (const row of await cardsForSession(sid)) byId.set(row.id, row);
+  for (const row of await idbGetAll('cards')) {
+    if (byId.has(row.id)) continue;
+    if (cleanText(row.session_id, 200) !== sid) continue;
+    byId.set(row.id, row);
+  }
+  const rows = [...byId.values()].sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
   const unlinkedIds: string[] = [];
   for (const row of rows) {
     const meta = parseMeta(row);
     const loc = await locationFieldsForCard(row.id, meta);
-    const cardHash = cleanText(loc.content_hash || '');
-    const cardMsg = toInt(loc.message_index, -1);
-    let match = false;
-    if (hash && cardHash && cardHash === hash) match = true;
-    else if (msgIdx != null && msgIdx >= 0 && cardMsg === msgIdx) match = true;
-    if (!match) continue;
-    const existing = await readImageLocation(row.id);
+    const sidecar = await readImageLocation(row.id);
+    if (!cardMatchesMessageUnlink({
+      hashes: [loc.content_hash, meta.content_hash, sidecar.content_hash],
+      messageIndexes: [loc.message_index, meta.message_index, sidecar.message_index],
+      wantHash: hash,
+      wantMessageIndex: msgIdx,
+    })) continue;
+    const existing = sidecar;
     const cleared = {
       ...existing,
       version: 1,
@@ -442,14 +449,12 @@ export async function unlinkCardsForMessage(
       unlinked_at: Date.now() / 1000,
     };
     await writeImageLocation(row.id, cleared);
-    if (meta.content_hash || meta.message_index != null || meta.assistant_preview) {
-      meta.content_hash = '';
-      meta.assistant_preview = '';
-      meta.message_index = -1;
-      meta.unlinked_at = Date.now() / 1000;
-      row.meta_json = JSON.stringify(meta);
-      await idbPut('cards', row);
-    }
+    meta.content_hash = '';
+    meta.assistant_preview = '';
+    meta.message_index = -1;
+    meta.unlinked_at = Date.now() / 1000;
+    row.meta_json = JSON.stringify(meta);
+    await idbPut('cards', row);
     unlinkedIds.push(row.id);
   }
   return { ok: true, unlinked: unlinkedIds.length, ids: unlinkedIds };

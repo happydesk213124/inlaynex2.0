@@ -3121,6 +3121,55 @@ export async function runBoundedPool<T>(
   await Promise.all(Array.from({ length: n }, () => run()));
 }
 
+/**
+ * Cheap "bubble is already correct" gate for the inject pass.
+ *
+ * A cache-miss card owns a spinner marker under its *own* id, so matching ids
+ * and marker counts no longer proves the paint finished — anything still in
+ * `encodeLater` has to reach the bake loop or its spinner never becomes an image.
+ */
+export function canSkipInlineInject(opts: {
+  scaleMatches?: unknown;
+  liveShotCount?: unknown;
+  wantIdCount?: unknown;
+  encodeLaterCount?: unknown;
+} = {}): boolean {
+  if (!opts.scaleMatches) return false;
+  if (Math.max(0, Math.floor(finiteNumber(opts.encodeLaterCount, 0))) > 0) return false;
+  const live = Math.max(0, Math.floor(finiteNumber(opts.liveShotCount, 0)));
+  const want = Math.max(0, Math.floor(finiteNumber(opts.wantIdCount, 0)));
+  return live === want;
+}
+
+export const INLINE_ENCODE_RETRY_MAX = 3;
+
+/**
+ * Bounded bake retries per card, and the answer to "is this still worth
+ * retrying?".
+ *
+ * A card whose bytes are genuinely gone would otherwise keep the pass-level
+ * cheap skip disabled forever, so every scroll would pay the full host scan —
+ * the exact cost that skip exists to avoid. A success forgets the card, because
+ * the URL cache is an LRU and the same id may legitimately need baking again.
+ */
+export function trackInlineEncodeAttempt(
+  attempts: Map<string, number> | null | undefined,
+  cardId: unknown,
+  ok: boolean,
+  max: unknown = INLINE_ENCODE_RETRY_MAX,
+): boolean {
+  const id = String(cardId || '');
+  if (!attempts || !id) return false;
+  if (ok) {
+    attempts.delete(id);
+    return false;
+  }
+  const cap = Math.max(1, Math.floor(finiteNumber(max, INLINE_ENCODE_RETRY_MAX)));
+  const n = (Number(attempts.get(id)) || 0) + 1;
+  attempts.set(id, n);
+  return n < cap;
+}
+
 /** Cheap skip key: line + pending/image + id. Bytes themselves stay out. */
 export function desiredInlinePaintKey(
   placements: InlineImagePlacement[] | null | undefined,

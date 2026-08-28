@@ -234,6 +234,29 @@ test('inline paint puts chips before shots so the bar is not blocked by encode',
   );
 });
 
+test('a spinner without bytes is retried instead of cached as painted', () => {
+  const source = read('vite.config.ts');
+  const start = source.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows) {');
+  const end = source.indexOf('async function refreshSelectedInlineImages(force) {', start);
+  assert.ok(start >= 0 && end > start, 'inject body not found');
+  const inject = source.slice(start, end);
+  // Ids alone would match the spinner the previous pass placed under the card's
+  // own id, and the bake loop below would never run again.
+  assert.match(inject, /VC\.canSkipInlineInject\(\{/);
+  assert.doesNotMatch(inject, /if \(prev\.length === wantIds\.length && t\._inlinePaintScale === scaleNow\) \{/);
+  assert.ok(inject.includes('encodeLeft += 1'), 'failed bake must count as debt');
+  assert.match(inject, /VC\.trackInlineEncodeAttempt\(t\._inlineEncodeMiss/);
+
+  const refresh = source.slice(end);
+  assert.match(refresh, /if \(Number\(t\._inlineInjectEncodeLeft\) > 0\) return;/);
+  assert.match(refresh, /&& !encodeLeftPrev/);
+  // Reset must land before the paint calls, or the debt of this pass is read as
+  // the debt of the previous one.
+  const reset = refresh.indexOf('t._inlineEncodeLeft = 0;');
+  const firstInject = refresh.indexOf('await injectChatInlineImages(els[paintIdx]');
+  assert.ok(reset >= 0 && firstInject > reset, 'encode debt must reset before painting');
+});
+
 test('auto select paints inline shots and chips without a click', () => {
   const source = read('vite.config.ts');
   assert.match(source, /await Da\(pick, els, \{ source: "provisional", auto: 1 \}\)/);

@@ -101,6 +101,9 @@ import {
   INLINE_KEEP_MAX_PER_SIDE,
   desiredInlinePlacements,
   runBoundedPool,
+  canSkipInlineInject,
+  trackInlineEncodeAttempt,
+  INLINE_ENCODE_RETRY_MAX,
   desiredInlinePaintKey,
   pendingInlineKey,
   reconcileInlineShot,
@@ -1087,6 +1090,52 @@ test("runBoundedPool caps concurrency at the limit", async () => {
   });
   assert.equal(maxInflight, 2);
   assert.deepEqual(finished, [1, 2, 0]);
+});
+
+test("inject may not skip while a spinner still owes bytes", () => {
+  // The spinner carries the card's own id, so an id/count match is not proof the
+  // bubble is done — skipping here is what left spinners frozen after a scroll.
+  assert.equal(
+    canSkipInlineInject({ scaleMatches: true, liveShotCount: 1, wantIdCount: 1, encodeLaterCount: 1 }),
+    false,
+  );
+  assert.equal(
+    canSkipInlineInject({ scaleMatches: true, liveShotCount: 1, wantIdCount: 1, encodeLaterCount: 0 }),
+    true,
+  );
+});
+
+test("bake retries are bounded so a dead card stops disabling the cheap skip", () => {
+  const attempts = new Map();
+  assert.equal(INLINE_ENCODE_RETRY_MAX, 3);
+  assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), true);
+  assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), true);
+  assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), false);
+  assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), false);
+});
+
+test("a successful bake clears the miss count so a later eviction retries", () => {
+  const attempts = new Map();
+  trackInlineEncodeAttempt(attempts, "c1", false);
+  trackInlineEncodeAttempt(attempts, "c1", false);
+  assert.equal(trackInlineEncodeAttempt(attempts, "c1", true), false);
+  assert.equal(attempts.has("c1"), false);
+  assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), true);
+});
+
+test("inject skip still needs matching scale and marker count", () => {
+  assert.equal(
+    canSkipInlineInject({ scaleMatches: false, liveShotCount: 1, wantIdCount: 1, encodeLaterCount: 0 }),
+    false,
+  );
+  assert.equal(
+    canSkipInlineInject({ scaleMatches: true, liveShotCount: 0, wantIdCount: 1, encodeLaterCount: 0 }),
+    false,
+  );
+  assert.equal(
+    canSkipInlineInject({ scaleMatches: true, liveShotCount: 0, wantIdCount: 0, encodeLaterCount: 0 }),
+    true,
+  );
 });
 
 test("runBoundedPool ignores a bad limit and empty list", async () => {

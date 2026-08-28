@@ -130,11 +130,10 @@ export class BlobUrlCache {
 }
 
 /**
- * 32MB of source image bytes — enough for a sticky window plus recent browsing,
- * and the point where re-encoding on a message round trip stops being common.
- * Raising it is only worth doing against a measurement; a bigger resident set
- * trades encode work for main-thread memory pressure.
+ * 64MB of source image bytes — sticky window plus recent browsing without
+ * re-baking as often after a first load. A bigger resident set trades encode
+ * work for main-thread memory pressure.
  */
-export const BLOB_URL_BUDGET_CHARS = 32 * 1024 * 1024;
+export const BLOB_URL_BUDGET_CHARS = 64 * 1024 * 1024;
 
 export const blobUrlCache = new BlobUrlCache(BLOB_URL_BUDGET_CHARS);

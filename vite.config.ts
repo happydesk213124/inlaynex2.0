@@ -8133,6 +8133,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     t._inlineInjectBusy = !0;
     t._inlineInjectQueued = !1;
+    // Cleared up front so an early return cannot leave a previous bubble's debt
+    // attached to this one.
+    t._inlineInjectEncodeLeft = 0;
     try {
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     if (typeof VC?.findElementIndexForLineWithFallback != "function" || typeof VC?.markerBlockHtml != "function") return;
@@ -8191,7 +8194,15 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const scaleNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
       let prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
       let htmlProbe = "n/a";
-      if (prev.length === wantIds.length && t._inlinePaintScale === scaleNow) {
+      const skipOk = typeof VC.canSkipInlineInject == "function"
+        ? VC.canSkipInlineInject({
+          scaleMatches: t._inlinePaintScale === scaleNow,
+          liveShotCount: prev.length,
+          wantIdCount: wantIds.length,
+          encodeLaterCount: encodeLater.length
+        })
+        : prev.length === wantIds.length && t._inlinePaintScale === scaleNow && !encodeLater.length;
+      if (skipOk) {
         if (!wantIds.length) {
           y("info", "inline.inject.skip", "shots=0 already");
           return;
@@ -8448,20 +8459,37 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           return run;
         };
       })();
+      // Bytes that never arrived. The bubble is not a finished paint while this
+      // is above zero — the fingerprint must not be recorded and the next pass
+      // has to come back and retry, or the spinner is frozen for good. Retries
+      // are capped per card so a dead id cannot disable the cheap skip forever.
+      let encodeLeft = 0;
+      if (!(t._inlineEncodeMiss instanceof Map)) t._inlineEncodeMiss = new Map();
+      const noteBake = (cardId, ok) => {
+        if (typeof VC.trackInlineEncodeAttempt != "function") return !ok;
+        return VC.trackInlineEncodeAttempt(t._inlineEncodeMiss, cardId, ok);
+      };
       const bakeOne = async (card) => {
+        const cardId = String(card?.id || "");
         let src = "";
         try {
           src = await ensureStickyCardImage(card) || "";
         } catch {
         }
-        if (!src || !nxReadyImg(src)) return;
         const line0 = Number(card?.line);
-        const cardId = String(card?.id || "");
-        if (!Number.isFinite(line0) || line0 < 1) return;
+        const usable = Boolean(src) && nxReadyImg(src) && Number.isFinite(line0) && line0 >= 1;
+        if (!usable) {
+          if (noteBake(cardId, !1)) encodeLeft += 1;
+          return;
+        }
         const line = typeof VC.clampShotLine == "function"
           ? VC.clampShotLine(line0, messageLines.length)
           : Math.floor(line0);
-        if (!line) return;
+        if (!line) {
+          if (noteBake(cardId, !1)) encodeLeft += 1;
+          return;
+        }
+        noteBake(cardId, !0);
         const shot = {
           line,
           src,
@@ -8505,9 +8533,16 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
       } catch {
       }
-      y("info", "inline.inject", \`shots=\${placements.length}+enc\${encodeLater.length} placed=\${placed} pending=\${placements.filter((p) => p.pending).length}\`);
+      y("info", "inline.inject", \`shots=\${placements.length}+enc\${encodeLater.length} placed=\${placed} left=\${encodeLeft} pending=\${placements.filter((p) => p.pending).length}\`);
       t._inlinePaintScale = scaleNow;
+      // Per-call for notePainted; accumulated so the pass-level keep skip knows
+      // some bubble still owes an image.
+      t._inlineInjectEncodeLeft = encodeLeft;
+      t._inlineEncodeLeft = (Number(t._inlineEncodeLeft) || 0) + encodeLeft;
     } catch (err) {
+      // A throw is not a finished paint — leave debt so the next pass repaints.
+      t._inlineInjectEncodeLeft = 1;
+      t._inlineEncodeLeft = (Number(t._inlineEncodeLeft) || 0) + 1;
       y("warn", "inline.inject.fail", z(err?.message || err, 120));
     }
     } finally {
@@ -8725,8 +8760,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       // Cheap skip before any SafeDOM De/resolve — same bubble + same linked shots + same pending.
       // force: reply finished and Risu rewrote the bubble; keep-keys would skip a real wipe.
+      // encodeLeft: the last pass left a spinner without bytes. Selection did not
+      // move, so nothing else would ever bring us back to retry it.
+      const encodeLeftPrev = Number(t._inlineEncodeLeft) || 0;
       if (
         !force
+        && !encodeLeftPrev
         && fromCache
         && t._inlineKeepDoc === doc
         && Number(t._inlineKeepElsLen) === els.length
@@ -8744,6 +8783,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       // First session attach only — later clicks no-op inside showAttachToast.
       showAttachToast().catch(() => {});
+      // Debt is per pass: each inject below adds to it, and the next pass reads
+      // the total to decide whether the cheap keep skip is allowed.
+      t._inlineEncodeLeft = 0;
       const VC = globalThis.__INLAY_VIEWER_CORE__;
       const allRoles = !!t.backendSettings?.card?.generate_all_roles;
       const maxPerSide = Number(VC?.INLINE_KEEP_MAX_PER_SIDE) > 0
@@ -9076,6 +9118,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       const notePainted = async (idx, hash, key) => {
         if (!hash || !key) return;
+        // Spinner still owes an image: recording the fingerprint would let the
+        // next pass reuse this bubble and the spinner would never be swapped.
+        if (Number(t._inlineInjectEncodeLeft) > 0) return;
         const hasCards = typeof VC?.inlinePaintKeyHasCards == "function"
           ? VC.inlinePaintKeyHasCards(key)
           : /\|c=.+/.test(String(key));
@@ -15319,6 +15364,27 @@ const loadVendorUi = (): string => {
       if (!body.includes('runBoundedPool')) {
         throw new Error('[build] encodeLater must bake through runBoundedPool');
       }
+      // The spinner carries the card's own id, so the old id/count skip would
+      // report "already painted" and the bake loop would never run again.
+      if (body.includes('if (prev.length === wantIds.length && t._inlinePaintScale === scaleNow) {')) {
+        throw new Error('[build] inject skip must consult canSkipInlineInject, not ids alone');
+      }
+      if (!body.includes('VC.canSkipInlineInject({')) {
+        throw new Error('[build] inject skip must go through canSkipInlineInject');
+      }
+      if (!body.includes('encodeLeft += 1')) {
+        throw new Error('[build] a failed bake must be counted as encode debt');
+      }
+      // Unbounded debt would keep the cheap keep skip off for a card whose bytes
+      // are simply gone, so every scroll would pay the full host scan.
+      if (!body.includes('VC.trackInlineEncodeAttempt(')) {
+        throw new Error('[build] bake retries must be capped per card');
+      }
+      // Both caches above the inject call would otherwise hold a frozen spinner:
+      // the fingerprint reuse and the pass-level cheap keep skip.
+      assertOnce(out, 'if (Number(t._inlineInjectEncodeLeft) > 0) return;', 'unbaked bubble must not record a paint key');
+      assertOnce(out, '&& !encodeLeftPrev', 'cheap keep skip must yield to encode debt');
+      assertOnce(out, 't._inlineEncodeLeft = 0;', 'encode debt must reset once per pass');
       const applyByLine = body.indexOf('for (const [, shot] of byLine)');
       const bake = body.indexOf('ensureStickyCardImage');
       if (applyByLine < 0 || bake < 0 || applyByLine > bake) {

@@ -85,6 +85,7 @@ const MODULES = {
   'comic-tags': 'src/domain/comic/tags.ts',
   'comic-caption': 'src/domain/comic/caption.ts',
   'comic-params': 'src/domain/comic/params.ts',
+  'job-retention': 'src/domain/jobs/retention.ts',
 };
 
 await rm(outdir, { recursive: true, force: true });

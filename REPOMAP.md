@@ -123,6 +123,7 @@ main.ts                     entry: builds the bridge, publishes globals
 | How rows are saved | `src/storage/stores.ts` |
 | Image caching / data URLs | `src/storage/image-urls.ts` |
 | The job pipeline order | `src/services/jobs.ts` |
+| How many old jobs to keep | `src/domain/jobs/retention.ts` (`JOB_RETENTION_LIMIT`) |
 | Manual roster fill (페소에서 / 가져오기) | `src/services/char-import.ts` — lore uses `collectAssetNaiTags` + `buildCharacterLooksMessages`; no-meta → `collectBestLookAssets` + autotag then lore text; save via `mergeRosterFromTagged` |
 | Whether a message is already busy | `src/services/job-locks.ts` — shared by `jobs` and `cards`; do not re-derive it |
 | Gallery / explorer queries | `src/services/gallery.ts` |
@@ -161,7 +162,7 @@ On top of it we keep five logical row stores plus per-image blobs.
 | `inx_nxstore_meta` | prompts, toggles, favourites, reference/vibe metadata |
 | `inx_nxstore_cards` | generated image cards |
 | `inx_nxstore_characters` | roster rows, keyed `"<scope>\t<id>"` |
-| `inx_nxstore_jobs` | job rows |
+| `inx_nxstore_jobs` | job rows (newest 10 + any still running; see `src/domain/jobs/retention.ts`) |
 | `inx_nxstore_images` | image metadata (**not** bytes); may include `location.asset_path` |
 | `inx_nximg_<id>` | legacy / fallback bytes, base64 (new shots prefer the `inlay-gallery` module) |
 

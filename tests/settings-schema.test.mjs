@@ -176,6 +176,7 @@ test("toast_anchor and image_press_inspect migrate with safe defaults", () => {
   assert.equal(migrateSettings({ card: { image_press_inspect: "double-tap" } }).card.image_press_inspect, "two");
   assert.equal(migrateSettings({ card: { image_press_inspect: "off" } }).card.image_press_inspect, "off");
   assert.equal(migrateSettings({ card: { image_press_inspect: "both" } }).card.image_press_inspect, "both");
+  assert.equal(migrateSettings({ card: { image_press_inspect: "triple-tap" } }).card.image_press_inspect, "three");
 });
 
 test("comic tab defaults off and migrates enums", () => {

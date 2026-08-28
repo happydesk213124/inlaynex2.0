@@ -4572,10 +4572,13 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
         const mode = nxImagePressMode();
         return typeof VC?.imagePressAllowsHold == "function" ? VC.imagePressAllowsHold(mode) : mode === "hold" || mode === "both";
       };
-      const nxDoubleTapOk = () => {
+      const nxTapNeed = () => {
         const VC = globalThis.__INLAY_VIEWER_CORE__;
         const mode = nxImagePressMode();
-        return typeof VC?.imagePressAllowsDoubleTap == "function" ? VC.imagePressAllowsDoubleTap(mode) : mode === "two" || mode === "both";
+        if (typeof VC?.imagePressTapNeed == "function") return VC.imagePressTapNeed(mode);
+        if (mode === "three") return 3;
+        if (mode === "two" || mode === "both") return 2;
+        return 0;
       };
       const nxInspectAllowed = () => {
         if (!nxHoldOk()) return !1;
@@ -4586,26 +4589,33 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
           ? VC.shouldStartImagePressInspect({ mode, pointerCount: n })
           : n >= 1;
       };
-      const nxFireDoubleTap = (card) => {
-        if (!nxDoubleTapOk() || !card) return !1;
+      const nxFireTap = (card) => {
+        const need = nxTapNeed();
+        if (!need || !card) return !1;
         const VC = globalThis.__INLAY_VIEWER_CORE__;
         const now = Date.now();
         const prev = t._imageTap;
-        const hit = typeof VC?.imagePressDoubleTapHits == "function"
-          ? VC.imagePressDoubleTapHits({
+        const next = typeof VC?.imagePressTapHits == "function"
+          ? VC.imagePressTapHits({
             prevAt: prev?.at,
             prevX: prev?.x,
             prevY: prev?.y,
             prevCardId: prev?.cardId,
+            prevCount: prev?.count,
             now,
             x,
             y: I,
-            cardId: card.id
+            cardId: card.id,
+            need
           })
-          : !!(prev && String(prev.cardId || "") === String(card.id || "") && now - Number(prev.at) <= 450
-            && Math.hypot(x - Number(prev.x), I - Number(prev.y)) <= 28);
-        t._imageTap = { at: now, x, y: I, cardId: String(card.id || "") };
-        if (!hit) return !1;
+          : (() => {
+            const linked = !!(prev && String(prev.cardId || "") === String(card.id || "") && now - Number(prev.at) <= 450
+              && Math.hypot(x - Number(prev.x), I - Number(prev.y)) <= 28);
+            const count = linked ? Math.max(1, Math.floor(Number(prev?.count) || 0) + 1) : 1;
+            return { hit: count >= need, count };
+          })();
+        t._imageTap = { at: now, x, y: I, cardId: String(card.id || ""), count: next.count };
+        if (!next.hit) return !1;
         t._imageTap = null;
         if (typeof f.preventDefault == "function") f.preventDefault();
         cancelMobilePress();
@@ -4664,7 +4674,7 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
             }
             const card = (t.gallery || []).find((c) => String(c?.id || "") === String(cardId || ""));
             if (!card) continue;
-            if (nxFireDoubleTap(card)) return;
+            if (nxFireTap(card)) return;
             nxNotePressDown();
             // Long-press start: activate sticky image to this inline shot immediately.
             if (typeof nxActivateStickyByCardId == "function") nxActivateStickyByCardId(card.id).catch(() => {});
@@ -4737,7 +4747,7 @@ const VENDOR_STICKY_INSPECT_PRESS_NEEDLE =
 const VENDOR_STICKY_INSPECT_PRESS_PATCH =
   `          if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;
           if (!await hitEl(g.thumb, x, I)) continue;
-          if (nxFireDoubleTap(g.card)) return;
+          if (nxFireTap(g.card)) return;
           nxNotePressDown();
           if (mobilePress && (mobilePress.source === "inline-shot" || mobilePress.source === "sticky-thumb")) {
             if (typeof f.preventDefault == "function") f.preventDefault();
@@ -7845,7 +7855,7 @@ const VENDOR_INLINE_HELP_PATCH =
     "nx-inline-chat-scale": { title: "이미지 채팅 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
     "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트. 칩·샷을 꽂기 직전에는 조각 불러오는 중 스피너가 같은 자리에 뜹니다." },
     "nx-toast-anchor": { title: "토스트 위치", body: "진행·선택·알림·조각 로딩 토스트가 붙는 화면 모서리입니다. 기본은 중상단입니다." },
-    "nx-image-press": { title: "이미지 크게보기", body: "인라인·스티키 샷을 크게 봅니다. 사용안함 / 더블 탭(이미지 위 빠른 두 번) / 꾸욱 누르기 / 둘 다. 탐색기·메시지 선택 길게 누르기는 그대로입니다." },
+    "nx-image-press": { title: "이미지 크게보기", body: "인라인·스티키 샷을 크게 봅니다. 사용안함 / 더블 탭(이미지 위 빠른 두 번) / 트리플 탭(빠른 세 번) / 꾸욱 누르기 / 꾸욱 누르기 + 더블탭. 탐색기·메시지 선택 길게 누르기는 그대로입니다." },
     "nx-nai4-fallback": { title: "할당량 끝나면 NAI4 폴백", body: "V5 샷이 할당량(402)으로 실패하면 그 샷만 V4.5와 NAI4 프리셋으로 다시 뽑습니다. V5 자연어·대사는 빼입니다." },
     "nx-nai5-speech": { title: "NAI5 대사삽입", body: "V5 샷에서 말한 캐릭터의 캡션 끝에 말풍선을 넣습니다. 여러 명이 말하면 각자 자기 대사만 가집니다. 프리셋의 spoken bubble 억제는 그 샷에서 빼입니다." },`;
 
@@ -7878,8 +7888,9 @@ const VENDOR_INLINE_TOGGLE_PATCH =
               <select id="nx-image-press">
                 <option value="off" \${i.image_press_inspect === "off" ? "selected" : ""}>사용안함</option>
                 <option value="two" \${i.image_press_inspect === "two" ? "selected" : ""}>더블 탭</option>
+                <option value="three" \${i.image_press_inspect === "three" ? "selected" : ""}>트리플 탭</option>
                 <option value="hold" \${!i.image_press_inspect || i.image_press_inspect === "hold" ? "selected" : ""}>꾸욱 누르기</option>
-                <option value="both" \${i.image_press_inspect === "both" ? "selected" : ""}>둘 다 사용</option>
+                <option value="both" \${i.image_press_inspect === "both" ? "selected" : ""}>꾸욱 누르기 + 더블탭</option>
               </select>
             </label>
             <label class="toggle-row" data-nx-help-id="nx-nai4-fallback"><input type="checkbox" id="nx-nai4-fallback" \${i.nai4_fallback ? "checked" : ""}><span>할당량 끝나면 NAI4 폴백</span></label>
@@ -15191,10 +15202,15 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'select id="nx-toast-anchor"', 'toast position select landed');
     assertOnce(out, 'select id="nx-image-press"', 'image press select landed');
     assertOnce(out, '>더블 탭</option>', 'double-tap press option landed');
-    assertOnce(out, 'VC.imagePressDoubleTapHits({', 'image double-tap helper landed');
-    assertOnce(out, 'const nxFireDoubleTap = (card) => {', 'double-tap helper defined');
-    if ((out.match(/nxFireDoubleTap\(/g) || []).length !== 2) {
-      throw new Error('[build] double-tap must fire from both inline-shot and sticky hit-tests');
+    assertOnce(out, '>트리플 탭</option>', 'triple-tap press option landed');
+    assertOnce(out, '>꾸욱 누르기 + 더블탭</option>', 'hold plus double-tap option landed');
+    if (out.includes('>둘 다 사용</option>')) {
+      throw new Error('[build] both-option label must name hold + double-tap');
+    }
+    assertOnce(out, 'VC.imagePressTapHits({', 'image tap-streak helper landed');
+    assertOnce(out, 'const nxFireTap = (card) => {', 'tap-streak helper defined');
+    if ((out.match(/nxFireTap\(/g) || []).length !== 2) {
+      throw new Error('[build] tap-streak must fire from both inline-shot and sticky hit-tests');
     }
     if (out.includes('두손으로 꾸욱')) {
       throw new Error('[build] two-finger press label must not remain');

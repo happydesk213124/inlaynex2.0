@@ -130,10 +130,10 @@ fields when those controls are absent (`Ct()` + `assertOnce`).
 
 Dashboard also has `card.toast_anchor` (`tl` | `bl` | `tr` | `br` | `tc`,
 default `tc`) for progress / selection / host / attach toasts, and
-`card.image_press_inspect` (`off` | `hold` | `two` | `both`, default `hold`)
+`card.image_press_inspect` (`off` | `hold` | `two` | `three` | `both`, default `hold`)
 for enlarge on inline/sticky shots. `two` is a fast double-tap on the same
-shot (saved `two` / `double-tap` normalize here). `hold` is a long press.
-`both` accepts either. On plugin boot and the first enter of a chat session,
+shot (saved `two` / `double-tap` normalize here). `three` is a fast triple-tap
+(`triple` / `triple-tap`). `hold` is a long press. `both` is hold plus double-tap. On plugin boot and the first enter of a chat session,
 an attach toast reads `인레이 넥서스 조각 불러오는중..` until chips and shots
 land, or 10 seconds, whichever is first. Later message clicks do not raise it.
 Dashboard also has `card.nai4_fallback`, `card.nai5_speech`,

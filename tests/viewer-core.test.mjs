@@ -128,6 +128,9 @@ import {
   imagePressAllowsHold,
   imagePressAllowsSecondPointer,
   imagePressDoubleTapHits,
+  imagePressAllowsTripleTap,
+  imagePressTapNeed,
+  imagePressTapHits,
   imagePressMoveCancels,
   imagePressIgnorePointerCancel,
   imagePressOtherPointerUp,
@@ -1358,6 +1361,27 @@ test("shouldStartImagePressInspect is hold-only — two is double-tap", () => {
   assert.equal(imagePressAllowsDoubleTap("two"), true);
   assert.equal(imagePressAllowsDoubleTap("hold"), false);
   assert.equal(imagePressAllowsDoubleTap("both"), true);
+  assert.equal(normalizeImagePressInspect("triple-tap"), "three");
+  assert.equal(imagePressAllowsTripleTap("three"), true);
+  assert.equal(imagePressAllowsTripleTap("two"), false);
+  assert.equal(imagePressAllowsHold("three"), false);
+  assert.equal(imagePressAllowsDoubleTap("three"), false);
+  assert.equal(imagePressTapNeed("two"), 2);
+  assert.equal(imagePressTapNeed("both"), 2);
+  assert.equal(imagePressTapNeed("three"), 3);
+  assert.equal(imagePressTapNeed("hold"), 0);
+});
+
+test("imagePressTapHits counts a fast same-shot streak and fires at the need", () => {
+  const a = { prevAt: null, prevCount: 0, now: 1000, x: 40, y: 40, cardId: "shot-a", need: 3 };
+  assert.deepEqual(imagePressTapHits(a), { hit: false, count: 1 });
+  const b = { prevAt: 1000, prevX: 40, prevY: 40, prevCardId: "shot-a", prevCount: 1, now: 1300, x: 44, y: 42, cardId: "shot-a", need: 3 };
+  assert.deepEqual(imagePressTapHits(b), { hit: false, count: 2 });
+  const c = { ...b, prevAt: 1300, prevCount: 2, now: 1600 };
+  assert.deepEqual(imagePressTapHits(c), { hit: true, count: 3 });
+  assert.deepEqual(imagePressTapHits({ ...c, need: 2 }), { hit: true, count: 3 });
+  assert.deepEqual(imagePressTapHits({ ...c, now: 2200 }), { hit: false, count: 1 });
+  assert.deepEqual(imagePressTapHits({ ...c, cardId: "shot-b" }), { hit: false, count: 1 });
 });
 
 test("imagePressDoubleTapHits needs the same shot twice, fast and close", () => {

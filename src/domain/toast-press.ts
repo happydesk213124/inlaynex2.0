@@ -1,5 +1,5 @@
 export type ToastAnchor = 'tl' | 'bl' | 'tr' | 'br' | 'tc';
-export type ImagePressInspect = 'off' | 'hold' | 'two' | 'both';
+export type ImagePressInspect = 'off' | 'hold' | 'two' | 'three' | 'both';
 
 export function normalizeToastAnchor(value: unknown): ToastAnchor {
   const v = String(value ?? '').toLowerCase().trim();
@@ -18,6 +18,9 @@ export function normalizeImagePressInspect(value: unknown): ImagePressInspect {
     v === 'two' || v === 'twohand' || v === 'two-hand' || v === '2'
     || v === 'dbl' || v === 'double' || v === 'doubletap' || v === 'double-tap' || v === 'tap'
   ) return 'two';
+  if (
+    v === 'three' || v === 'triple' || v === 'tripletap' || v === 'triple-tap' || v === '3'
+  ) return 'three';
   if (v === 'both' || v === 'all' || v === 'any') return 'both';
   return 'hold';
 }
@@ -31,6 +34,18 @@ export function imagePressAllowsHold(mode: unknown): boolean {
 export function imagePressAllowsDoubleTap(mode: unknown): boolean {
   const m = normalizeImagePressInspect(mode);
   return m === 'two' || m === 'both';
+}
+
+export function imagePressAllowsTripleTap(mode: unknown): boolean {
+  return normalizeImagePressInspect(mode) === 'three';
+}
+
+/** How many fast taps on the same shot open enlarge. 0 = tap is not a gesture. */
+export function imagePressTapNeed(mode: unknown): 0 | 2 | 3 {
+  const m = normalizeImagePressInspect(mode);
+  if (m === 'three') return 3;
+  if (m === 'two' || m === 'both') return 2;
+  return 0;
 }
 
 /** Second simultaneous finger is not a gesture anymore. */
@@ -152,6 +167,31 @@ export function imagePressDoubleTapHits(opts: {
   const dy = Number(opts.y) - Number(opts.prevY);
   if (!Number.isFinite(dx) || !Number.isFinite(dy)) return false;
   return Math.hypot(dx, dy) <= slop;
+}
+
+/**
+ * Consecutive taps on the same shot. Each gap must itself be a double-tap hit
+ * so a slow third tap starts over instead of riding the first two.
+ */
+export function imagePressTapHits(opts: {
+  prevAt?: unknown;
+  prevX?: unknown;
+  prevY?: unknown;
+  prevCardId?: unknown;
+  prevCount?: unknown;
+  now?: unknown;
+  x?: unknown;
+  y?: unknown;
+  cardId?: unknown;
+  need?: unknown;
+  windowMs?: unknown;
+  slopPx?: unknown;
+} = {}): { hit: boolean; count: number } {
+  const linked = imagePressDoubleTapHits(opts);
+  const count = linked ? Math.max(1, Math.floor(Number(opts.prevCount) || 0) + 1) : 1;
+  const rawNeed = Math.floor(Number(opts.need));
+  const need = rawNeed === 3 ? 3 : rawNeed === 2 ? 2 : 0;
+  return { hit: Boolean(need) && count >= need, count };
 }
 
 /** Mobile pinch often pointercancel's the first finger — keep an in-progress hold. */

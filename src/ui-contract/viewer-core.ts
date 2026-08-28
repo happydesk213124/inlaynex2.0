@@ -723,7 +723,8 @@ export function inlinePaintKeyHasCards(key: unknown): boolean {
 /**
  * Empty desired is often "gallery not loaded yet", not "this bubble has no shots".
  * Live markers stay until a later pass actually finds cards — or the keep window
- * strips the bubble when it leaves. Confirmed-empty (hash miss) may still strip.
+ * strips the bubble when it leaves. Force retag unlinks first and sets
+ * confirmedEmpty so this pass may strip.
  */
 export function shouldStripEmptyInlineDesired(opts: {
   liveShotCount?: unknown;

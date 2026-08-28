@@ -84,7 +84,7 @@ import {
   refineShotsWithCuration,
   snapShotsSceneTags,
 } from './curation';
-import { deleteCard, rebindCardsHash, unlinkCardsForSession } from './gallery';
+import { deleteCard, rebindCardsHash, unlinkCardsForMessage } from './gallery';
 import { ACTIVE_JOB_STATES, busyReplyForRequest, jobKey } from './job-locks';
 import { getPrompt } from './settings';
 import {
@@ -502,7 +502,7 @@ export async function createJob(request: IncomingRequest): Promise<ApiResult> {
   // message. Only on force: a normal run must be additive.
   if (payload.force) {
     try {
-      await unlinkCardsForSession(sessionId);
+      await unlinkCardsForMessage(sessionId, cleanText(payload.content_hash || ''), payload.message_index);
     } catch {
       /* nothing to unlink */
     }
@@ -609,7 +609,7 @@ async function runJob(jobId: string): Promise<void> {
     // createJob already unlinked on force; repeated here because a job can also
     // be started by a retry path that skips createJob's unlink.
     if (request.force) {
-      await unlinkCardsForSession(sessionId);
+      await unlinkCardsForMessage(sessionId, cleanText(request.content_hash || ''), request.message_index);
     }
     if (await cancelJobIfStale(jobId, 'superseded before tagging')) return;
     await setJob(jobId, 'tagging', {

@@ -398,54 +398,6 @@ export async function rebindCardsHash(args: RebindArgs = {}): Promise<ApiResult>
   return { ok: true, rebound: rebound.length, ids: rebound, content_hash: toHash };
 }
 
-async function sessionCardRows(sid: string): Promise<CardRow[]> {
-  const byId = new Map<string, CardRow>();
-  for (const row of await cardsForSession(sid)) byId.set(row.id, row);
-  for (const row of await idbGetAll('cards')) {
-    if (byId.has(row.id)) continue;
-    if (cleanText(row.session_id, 200) !== sid) continue;
-    byId.set(row.id, row);
-  }
-  return [...byId.values()].sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
-}
-
-async function persistUnlinkedCard(row: CardRow, sid: string): Promise<void> {
-  const meta = parseMeta(row);
-  const existing = await readImageLocation(row.id);
-  await writeImageLocation(row.id, {
-    ...existing,
-    version: 1,
-    image_id: row.id,
-    session_id: sid,
-    content_hash: '',
-    message_index: -1,
-    character_id: '',
-    chat_id: '',
-    char_index: -1,
-    chat_index: -1,
-    unlinked_at: Date.now() / 1000,
-  });
-  meta.content_hash = '';
-  meta.assistant_preview = '';
-  meta.message_index = -1;
-  meta.unlinked_at = Date.now() / 1000;
-  row.meta_json = JSON.stringify(meta);
-  await idbPut('cards', row);
-}
-
-/** Force retag: drop every shot in this chat so a remount can empty the bubbles. */
-export async function unlinkCardsForSession(sessionId: string): Promise<ApiResult> {
-  const sid = cleanText(sessionId, 200);
-  if (!sid) return { ok: true, unlinked: 0, ids: [] };
-  const unlinkedIds: string[] = [];
-  for (const row of await sessionCardRows(sid)) {
-    await persistUnlinkedCard(row, sid);
-    unlinkedIds.push(row.id);
-  }
-  dbg('gallery.unlink.session', { n: unlinkedIds.length, session: sid.slice(0, 12) });
-  return { ok: true, unlinked: unlinkedIds.length, ids: unlinkedIds };
-}
-
 export async function unlinkCardsForMessage(
   sessionId: string,
   contentHash = '',
@@ -463,8 +415,16 @@ export async function unlinkCardsForMessage(
   }
   if (!sid || (!hash && msgIdx == null)) return { ok: true, unlinked: 0, ids: [] };
   // Session index plus a full scan: a late comic save can miss the index.
+  const byId = new Map<string, CardRow>();
+  for (const row of await cardsForSession(sid)) byId.set(row.id, row);
+  for (const row of await idbGetAll('cards')) {
+    if (byId.has(row.id)) continue;
+    if (cleanText(row.session_id, 200) !== sid) continue;
+    byId.set(row.id, row);
+  }
+  const rows = [...byId.values()].sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
   const unlinkedIds: string[] = [];
-  for (const row of await sessionCardRows(sid)) {
+  for (const row of rows) {
     const meta = parseMeta(row);
     const loc = await locationFieldsForCard(row.id, meta);
     const sidecar = await readImageLocation(row.id);
@@ -474,7 +434,27 @@ export async function unlinkCardsForMessage(
       wantHash: hash,
       wantMessageIndex: msgIdx,
     })) continue;
-    await persistUnlinkedCard(row, sid);
+    const existing = sidecar;
+    const cleared = {
+      ...existing,
+      version: 1,
+      image_id: row.id,
+      session_id: sid,
+      content_hash: '',
+      message_index: -1,
+      character_id: '',
+      chat_id: '',
+      char_index: -1,
+      chat_index: -1,
+      unlinked_at: Date.now() / 1000,
+    };
+    await writeImageLocation(row.id, cleared);
+    meta.content_hash = '';
+    meta.assistant_preview = '';
+    meta.message_index = -1;
+    meta.unlinked_at = Date.now() / 1000;
+    row.meta_json = JSON.stringify(meta);
+    await idbPut('cards', row);
     unlinkedIds.push(row.id);
   }
   return { ok: true, unlinked: unlinkedIds.length, ids: unlinkedIds };

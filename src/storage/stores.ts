@@ -29,6 +29,8 @@ import {
   LEGACY_IMAGE_KEY,
   LEGACY_REF_IMAGE_KEY,
   LEGACY_STORE_KEY,
+  MIGRATION_META_KEY,
+  MIGRATION_VERSION,
   REF_IMAGE_KEY,
   STORE_KEY,
   STORE_NAMES,
@@ -373,6 +375,57 @@ function stripImageLocationPreviewsUnlocked(): number {
   return n;
 }
 
+// ---------------------------------------------------------------------------
+// One-time migration stamp
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads the stamp from memory only, so `openDb` can consult it mid-load.
+ * `meta` is the first store loaded, so it is already populated by then.
+ */
+function migratedVersionUnlocked(): number {
+  const row = memStores.meta.get(MIGRATION_META_KEY);
+  return Number(row?.version ?? 0) || 0;
+}
+
+function stampMigratedUnlocked(version: number): void {
+  memStores.meta.set(MIGRATION_META_KEY, {
+    key: MIGRATION_META_KEY,
+    version,
+    at: Date.now(),
+  });
+}
+
+/** 0 when the storage migration has never run on this device. */
+export async function storageMigratedVersion(): Promise<number> {
+  await openDb();
+  return migratedVersionUnlocked();
+}
+
+export async function isStorageMigrated(): Promise<boolean> {
+  return (await storageMigratedVersion()) >= MIGRATION_VERSION;
+}
+
+/** Records the migration. Written through rather than debounced — it gates boot. */
+export async function stampStorageMigrated(version: number = MIGRATION_VERSION): Promise<number> {
+  await openDb();
+  stampMigratedUnlocked(version);
+  await persistStore('meta');
+  return version;
+}
+
+/**
+ * Writes one store snapshot immediately, ignoring both the debounce and the
+ * pause flag. The migration needs this: it pauses write-behind so a gallery
+ * walk cannot rewrite the index thousands of times, but must still checkpoint
+ * each batch — and a paused `runFlush` drops the write rather than deferring it.
+ */
+export async function persistStoreNow(store: StoreName): Promise<void> {
+  await openDb();
+  dirty.delete(store);
+  await persistStore(store);
+}
+
 /** Waits until every pending row write and image blob write has landed. */
 export async function flushPersist(): Promise<void> {
   if (flushTimer) {
@@ -459,7 +512,14 @@ async function hydrateImage(id: string, row: ImageMemRow): Promise<ArrayBuffer |
   const task = (async () => {
     const assetPath = String(row.asset_path || row.location?.asset_path || '');
     let png = assetPath ? await readShotAssetBytes(assetPath) : null;
-    if (!png) png = decodeStoredPng(await psGet(IMAGE_KEY(id), LEGACY_IMAGE_KEY(id)));
+    if (!png) {
+      // Once migrated there is no 1.x `nximg_*` row left to find, so asking the
+      // save file for one is a round-trip that can only ever miss.
+      const migrated = migratedVersionUnlocked() >= MIGRATION_VERSION;
+      png = decodeStoredPng(
+        migrated ? await psGet(IMAGE_KEY(id)) : await psGet(IMAGE_KEY(id), LEGACY_IMAGE_KEY(id)),
+      );
+    }
     row.png = png;
     row.hydrated = true;
     row.durable = true;
@@ -485,6 +545,9 @@ let storeReady: Promise<boolean> | null = null;
 export async function openDb(): Promise<boolean> {
   if (storeReady) return storeReady;
   storeReady = (async () => {
+    // Legacy sidecar rewrites found while loading. Deferred because the stamp
+    // row is written late in `meta` and so is not yet visible mid-loop.
+    const legacyWrites: Array<() => Promise<void>> = [];
     for (const store of STORE_NAMES) {
       const raw = await psGet(STORE_KEY(store), LEGACY_STORE_KEY(store));
       if (raw == null || raw === '') continue;
@@ -567,13 +630,13 @@ export async function openDb(): Promise<boolean> {
             png = legacyImageBytes(v.png);
             if (png) {
               const migrate = png;
-              imagePersistChain = imagePersistChain
-                .then(async () => {
+              legacyWrites.push(async () => {
+                try {
                   await psSet(charRefDiskImageKey(metaKey), await bytesToBase64Async(new Uint8Array(migrate)));
-                })
-                .catch((err: unknown) =>
-                  console.warn('[Inlay Nexus] char ref migrate failed', characterId, (err as Error)?.message || err),
-                );
+                } catch (err) {
+                  console.warn('[Inlay Nexus] char ref migrate failed', characterId, (err as Error)?.message || err);
+                }
+              });
             }
           }
           let data = await psGet(charRefDiskDataKey(metaKey));
@@ -599,15 +662,17 @@ export async function openDb(): Promise<boolean> {
             const enc = encoded;
             const model = (d.model as string) || (v.model as string) || '';
             const ie = (d.information_extracted ?? v.information_extracted ?? 1.0) as number;
-            imagePersistChain = imagePersistChain
-              .then(async () => {
+            legacyWrites.push(async () => {
+              try {
                 await psSet(charRefDiskDataKey(metaKey), {
                   encoded: enc,
                   model,
                   information_extracted: ie,
                 });
-              })
-              .catch(() => {});
+              } catch {
+                /* sidecar rewrite is best-effort */
+              }
+            });
           }
         } else if (store === 'cards') {
           const row = v as unknown as CardRow;
@@ -618,8 +683,28 @@ export async function openDb(): Promise<boolean> {
         }
       }
     }
-    // Drop leftover 1.x / uncapped job history on first open so the disk key
-    // shrinks before the UI starts polling.
+    if (migratedVersionUnlocked() >= MIGRATION_VERSION) return true;
+
+    if (legacyWrites.length) {
+      imagePersistChain = imagePersistChain
+        .then(async () => {
+          for (const write of legacyWrites) await write();
+        })
+        .catch(() => {});
+    }
+
+    const empty = STORE_NAMES.every((name) => (memStores[name] as Map<string, unknown>).size === 0);
+    if (empty) {
+      // Fresh install: there is no pre-2.5 data to find, so stamp now and never
+      // pay for a boot scan at all.
+      stampMigratedUnlocked(MIGRATION_VERSION);
+      schedulePersist('meta');
+      return true;
+    }
+
+    // Unmigrated install: keep doing the full-store cleanup every boot. These
+    // only ever find legacy rows, but a user who never presses the migrate
+    // button must not be worse off than before.
     if (pruneJobStoreUnlocked({ persist: false }) > 0) await persistStore('jobs');
     if (stripImageLocationPreviewsUnlocked() > 0) await persistStore('images');
     if (pruneCardPreviewsUnlocked({ persist: false }) > 0) await persistStore('cards');
@@ -951,6 +1036,68 @@ export async function imageLocation(id: string): Promise<Record<string, unknown>
   const row = memStores.images.get(String(id));
   const loc = row?.location;
   return loc && typeof loc === 'object' ? (loc as Record<string, unknown>) : {};
+}
+
+/** One unmigrated image: pixels exist but not in the gallery module. */
+export interface LegacyImageRow {
+  id: string;
+  png_bytes: number;
+}
+
+/**
+ * Images whose bytes still live in a legacy `inx_nximg_*` / `nximg_*` row.
+ *
+ * Reads the index only — the whole point of the migration is to move these
+ * without decoding the gallery twice.
+ */
+export async function legacyImageRows(): Promise<LegacyImageRow[]> {
+  await openDb();
+  const out: LegacyImageRow[] = [];
+  for (const row of memStores.images.values()) {
+    if (!row.has_png) continue;
+    if (String(row.asset_path || row.location?.asset_path || '')) continue;
+    out.push({ id: row.id, png_bytes: row.png_bytes });
+  }
+  return out;
+}
+
+/**
+ * Points a row at its new module asset and drops the in-memory copy.
+ *
+ * Releasing the bytes matters: a migration walks the whole gallery, and holding
+ * every decode would push the PNG cache to evict rows that are actually on
+ * screen. The next read fetches from the module, which is where they now live.
+ */
+export async function setImageAssetPath(id: string, path: string, name: string): Promise<boolean> {
+  await openDb();
+  const k = String(id);
+  const row = memStores.images.get(k);
+  if (!row || !path) return false;
+  row.asset_path = path;
+  row.asset_name = name;
+  if (row.png) {
+    pngCacheBytes -= row.png.byteLength;
+    row.png = null;
+    row.hydrated = false;
+  }
+  row.durable = true;
+  schedulePersist('images');
+  return true;
+}
+
+/**
+ * The retention passes that boot used to run unconditionally, as one call.
+ * Returns how many rows each pass touched so the migration can report it.
+ */
+export async function runRetentionCleanup(): Promise<{ jobs: number; images: number; cards: number }> {
+  await openDb();
+  const jobs = pruneJobStoreUnlocked({ persist: false });
+  const images = stripImageLocationPreviewsUnlocked();
+  const cards = pruneCardPreviewsUnlocked({ persist: false });
+  if (jobs > 0) await persistStore('jobs');
+  if (images > 0) await persistStore('images');
+  if (cards > 0) await persistStore('cards');
+  return { jobs, images, cards };
 }
 
 /**

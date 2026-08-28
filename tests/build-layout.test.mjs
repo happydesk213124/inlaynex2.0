@@ -83,10 +83,24 @@ test('character ref UI has refresh and library reset', () => {
   assert.match(source, /data-char-ref-refresh/);
   assert.match(source, /data-ce-ref-refresh/);
   assert.match(source, /id="nx-reset-char-refs"/);
-  assert.match(source, /id="nx-restore-chat-chrome"/);
   assert.match(source, /\/v1\/characters\/ref\/hydrate/);
   assert.match(source, /\/v1\/characters\/ref\/reset/);
-  assert.match(source, /\/v1\/chat\/restore-chrome/);
+});
+
+// 2.5 took the dashboard slot that used to hold 채팅 카드 복구. The route stays
+// (documented, still callable); only the button is gone, so assert both halves
+// or the next reader cannot tell an intentional swap from a lost patch.
+test('dashboard offers the 2.5 data migration in place of chat-card restore', () => {
+  const source = read('vite.config.ts');
+  assert.match(source, /id="nx-migrate-legacy"/);
+  assert.match(source, /id="nx-migrate-dot"/);
+  assert.match(source, /"nx-migrate-legacy":\s*\{\s*title:/);
+  assert.match(source, /\/v1\/storage\/migrate/);
+  assert.match(source, /\/v1\/storage\/migrate\/status/);
+  assert.match(source, /\/v1\/storage\/migrate\/cancel/);
+  assert.doesNotMatch(source, /id="nx-restore-chat-chrome"/);
+  const router = read('src', 'api', 'router.ts');
+  assert.match(router, /\/v1\/chat\/restore-chrome/);
 });
 
 test('manual character save and read never rewrite the appearance bucket', () => {

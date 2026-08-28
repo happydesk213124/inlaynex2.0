@@ -19,7 +19,7 @@ import { routeFetch } from '../api/router';
 import { getDeviceStore } from '../storage/device-store';
 import { ensureBlobUrl, pngToDataUrl, resolveImageUrl, warmImages, warmProgress, warmFocusProgress, onWarmProgress, pinImageUrls, retainImageUrls, dropImageUrl, prioritizeWarmFocus, clearWarmFocus } from '../storage/image-urls';
 import { loadSettingsFromStorage } from '../storage/settings-store';
-import { blobUrlCount, idbGet, openDb, storeSize } from '../storage/stores';
+import { blobUrlCount, idbGet, isStorageMigrated, openDb, storeSize } from '../storage/stores';
 import {
   getRefPreviewUrl,
   getVibePreviewUrl,
@@ -44,8 +44,12 @@ async function boot(): Promise<void> {
 
   setConfig(await loadSettingsFromStorage());
   await seedPrompts();
-  await migrateAppearanceToCharacters();
-  await migrateCharacterIdentity();
+  // Both only ever find pre-roster / schema-1 rows. Once the storage migration
+  // has run they are guaranteed to be no-ops, so skip the scans entirely.
+  if (!(await isStorageMigrated())) {
+    await migrateAppearanceToCharacters();
+    await migrateCharacterIdentity();
+  }
 
   // Both singletons are small and always visible in settings, so they are
   // encoded once here rather than on demand.

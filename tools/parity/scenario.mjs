@@ -741,6 +741,40 @@ export async function runScenario(N, handles) {
     return { events: Array.isArray(d?.events) ? d.events.length <= 2 : null };
   });
 
+  // ── 2.5 storage migration ─────────────────────────────────────────────
+  // Last, because it runs the retention passes and stamps the store — both of
+  // which would change what the steps above see.
+  //
+  // In this run there is nothing to move: every shot the scenario generated
+  // already went straight to the gallery module, so `total` is 0. What this
+  // asserts is the route plumbing and that a run with no failures stamps and
+  // stops offering itself. Moving actual bytes is covered by the unit tests,
+  // which can seed a legacy row directly.
+  await rec('storage.migrate_before', async () => {
+    const info = await get('/v1/storage/migrate/status');
+    return { ok: info?.ok, running: info?.status?.running, phase: info?.status?.phase };
+  });
+  await rec('storage.migrate_run', async () => {
+    const started = await post('/v1/storage/migrate', {});
+    let status = started?.status;
+    for (let i = 0; i < 200 && status?.running; i += 1) {
+      await new Promise((r) => setTimeout(r, 25));
+      status = (await get('/v1/storage/migrate/status'))?.status;
+    }
+    return {
+      started: started?.started === true,
+      total: started?.total ?? null,
+      phase: status?.phase ?? null,
+      failed: status?.failed ?? null,
+      running: status?.running ?? null,
+    };
+  });
+  await rec('storage.migrate_after', async () => {
+    const info = await get('/v1/storage/migrate/status');
+    return { migrated_version: info?.migrated_version ?? null, pending_images: info?.pending_images ?? null };
+  });
+  await rec('storage.migrate_cancel_idle', () => post('/v1/storage/migrate/cancel', {}));
+
   // ── outbound traffic assertions ───────────────────────────────────────
   transcript.push({
     step: step + 1,

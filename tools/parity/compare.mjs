@@ -562,6 +562,32 @@ const NEW_ONLY_STEPS = new Map([
       ? null
       : `restore-chrome must return ok+remounted, got ${JSON.stringify(v)}`),
   ],
+  // 2.5 storage migration. 1.x had no concept of moving pixels into a Risu
+  // module, so the old run 404s on all three routes.
+  [
+    'storage.migrate_before',
+    (v) => (v?.ok === true && v?.running === false
+      ? null
+      : `status must answer with an idle engine before the first run, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'storage.migrate_run',
+    (v) => (v?.started === true && v?.phase === 'done' && v?.failed === 0 && v?.running === false
+      ? null
+      : `migrate must start, finish as done, and report no failures, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'storage.migrate_after',
+    (v) => (v?.migrated_version === 3 && v?.pending_images === 0
+      ? null
+      : `a clean run must stamp version 3 and leave nothing pending, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'storage.migrate_cancel_idle',
+    (v) => (v?.ok === true && v?.cancelling === false
+      ? null
+      : `cancel with nothing running must report cancelling:false, got ${JSON.stringify(v)}`),
+  ],
   [
     'nai.quota',
     (v) => (v?.ok === true && Array.isArray(v?.keys)

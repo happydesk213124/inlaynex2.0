@@ -72,6 +72,15 @@ const MODULES = {
   'shot-assets': 'src/domain/gallery/shot-assets.ts',
   'shot-module': 'src/storage/shot-module.ts',
   stores: 'src/storage/stores.ts',
+  // One bundle per name means one *copy* of every module inside it, so a test
+  // that mixes two bundles gets two independent copies of the in-memory stores
+  // and cannot reset the one the code under test is using. An array here
+  // re-exports several modules into a single bundle to keep that state shared.
+  'storage-migrate': [
+    'src/services/storage-migrate.ts',
+    'src/storage/stores.ts',
+    'src/storage/device-store.ts',
+  ],
   'chat-chrome': 'src/services/chat-chrome.ts',
   'style-preset-io': 'src/domain/style-presets/io.ts',
   'composition-leaves': 'src/domain/composition/leaves.ts',
@@ -95,11 +104,21 @@ const MODULES = {
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
 
+/** Several modules in one bundle: a virtual entry that re-exports each. */
+const barrelFor = (entries) => ({
+  stdin: {
+    contents: entries.map((e) => `export * from ${JSON.stringify(`./${e}`)};`).join('\n'),
+    resolveDir: root,
+    sourcefile: 'test-barrel.ts',
+    loader: 'ts',
+  },
+});
+
 await Promise.all(
   Object.entries(MODULES).map(([name, entry]) =>
     build({
       absWorkingDir: root,
-      entryPoints: [entry],
+      ...(Array.isArray(entry) ? barrelFor(entry) : { entryPoints: [entry] }),
       outfile: path.join(outdir, `${name}.mjs`),
       bundle: true,
       format: 'esm',

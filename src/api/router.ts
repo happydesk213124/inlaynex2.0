@@ -36,6 +36,7 @@ import * as lorefilter from '../services/lorefilter';
 import * as charImport from '../services/char-import';
 import * as settings from '../services/settings';
 import * as curation from '../services/curation';
+import * as storageMigrate from '../services/storage-migrate';
 import { authorized, parseQuery, q, qAll, type Headers, type Query } from './http';
 
 export interface RouteResult {
@@ -127,6 +128,10 @@ const GET_ROUTES: readonly Route[] = [
   {
     match: exact('/v1/curation/catalog'),
     handler: async () => ok({ ok: true, catalog: await curation.loadCurationCatalog() }),
+  },
+  {
+    match: exact('/v1/storage/migrate/status'),
+    handler: async () => ok(await storageMigrate.storageMigrateInfo()),
   },
   { match: exact('/v1/prompts'), handler: async () => ok({ ok: true, prompts: await settings.listPrompts() }) },
   {
@@ -518,6 +523,14 @@ const WRITE_ROUTES: readonly Route[] = [
   {
     match: exact('/v1/chat/restore-chrome'),
     handler: async () => ok(await chatChrome.remountChatCardChrome()),
+  },
+  {
+    match: exact('/v1/storage/migrate/cancel'),
+    handler: () => ok(storageMigrate.cancelStorageMigration()),
+  },
+  {
+    match: exact('/v1/storage/migrate'),
+    handler: async () => ok(await storageMigrate.startStorageMigration()),
   },
   { match: exact('/v1/characters', '/v1/characters/update'), handler: ({ body }) => updateCharacters(body) },
   {

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.38';
+const PLUGIN_VERSION = '2.5.0';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -764,20 +764,20 @@ const VENDOR_CURATION_PANEL_PATCH =
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
         </div>
         <div class="card" style="margin-top:14px">
-          <strong>2.4.38</strong>
+          <strong>2.5.0</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>대시보드에 2.4 데이터 이전 버튼. 옛 이미지를 Risu 모듈로 옮기고 원본을 지웁니다 (되돌리기 불가)</li>
+            <li>이전을 끝내면 켤 때마다 하던 전체 점검이 사라집니다. 갤러리가 클수록 부팅이 빨라집니다</li>
+            <li>새로 만든 갤러리 샷도 Risu 모듈에 저장합니다. Risu 세이브파일이 가벼워집니다</li>
+            <li>채팅 안 이미지: 자리를 먼저 스피너로 잡고 준비된 것부터 차례대로 붙습니다</li>
+            <li>이미지를 못 받은 스피너는 다시 시도합니다</li>
+            <li>크게보기: 이미지를 세 번 톡톡톡, 길게 누르기는 라벨과 함께</li>
+            <li>리롤은 이미지 파일에 적힌 태그를 그대로 다시 씁니다. 카드에 메인·네거티브를 베끼지 않습니다</li>
+            <li>강제 재태그가 채팅 전체를 한 번에 정리하고 남은 조각을 치웁니다</li>
+            <li>작업 기록은 최신 3개, 카드 본문 사본은 최신 20장만 보관합니다</li>
             <li>만화 생성: 페이지 수 대신 비율(%), 작가의 프롬프트·선행·후행</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.4.37</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
             <li>만화 생성 탭: V5 칸 페이지, 별도 steps/샘플러/가이던스</li>
-          </ul>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.4.21</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>만화 작가의 프롬프트가 NAI 메인 프롬프트에 섞이지 않습니다</li>
             <li>통합 챗: 외형이 비어 있는 카드는 우선순위가 높아도 후순위입니다</li>
           </ul>
         </div>
@@ -7474,7 +7474,7 @@ const VENDOR_DASH_ACTIONS_HTML_NEEDLE =
   `          <div class="row" style="margin-top:12px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-run-now" class="secondary" data-nx-help-id="nx-run-now">지금 생성 (수동)</button><button id="nx-open-viewer" class="secondary" data-nx-help-id="nx-open-viewer">뷰어 앞으로</button></div>
           <div class="row" style="margin-top:8px"><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">모든 창 위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">모든 설정 초기화</button></div>`;
 const VENDOR_DASH_ACTIONS_HTML_PATCH =
-  `          <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">창위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">전체 초기화</button><button id="nx-reset-char-refs" class="secondary" type="button" data-nx-help-id="nx-reset-char-refs">레퍼런스 이미지 초기화</button><button id="nx-restore-chat-chrome" class="secondary" type="button" data-nx-help-id="nx-restore-chat-chrome">채팅 카드 복구</button></div>`;
+  `          <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">창위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">전체 초기화</button><button id="nx-reset-char-refs" class="secondary" type="button" data-nx-help-id="nx-reset-char-refs">레퍼런스 이미지 초기화</button><button id="nx-migrate-legacy" class="secondary" type="button" data-nx-help-id="nx-migrate-legacy">2.4 데이터 이전<span id="nx-migrate-dot" style="display:none;margin-left:6px;color:#fbbf24">●</span></button></div>`;
 
 const VENDOR_CHAR_IMPORT_EVT_NEEDLE =
   `    }), document.getElementById("nx-char-add-global")?.addEventListener("click", async () => {`;
@@ -7692,7 +7692,7 @@ const VENDOR_RESET_HELP_PATCH =
   `    "nx-reset-windows": { title: "창위치 초기화", body: "뷰어·접힘 아이콘·핀이 화면 밖으로 나가 안 보일 때 기본 위치로 되돌립니다." },
     "nx-reset-settings": { title: "전체 초기화", body: "카드·LLM·NAI 등 설정을 기본값으로 되돌립니다. API 키·창 위치·카드 프리셋은 유지됩니다." },
     "nx-reset-char-refs": { title: "레퍼런스 이미지 초기화", body: "모든 캐릭터 참고이미지 해시를 지우고, 기기 IDB와 Inlay 모듈 에셋을 삭제합니다. 설정은 유지됩니다." },
-    "nx-restore-chat-chrome": { title: "채팅 카드 복구", body: "카드 위쪽 이름·대표이미지가 HTML에서 안 보일 때, 그 칸만 다시 그립니다. 이미지 파일은 지우거나 덮지 않습니다." },`;
+    "nx-migrate-legacy": { title: "2.4 데이터 이전", body: "2.4까지 쓰던 이미지 저장 방식을 2.5 방식으로 옮깁니다. 켤 때마다 하던 전체 점검이 사라져 부팅이 빨라지고, Risu 세이브파일도 가벼워집니다. 옮긴 뒤 옛 원본은 지워지므로 2.4로는 되돌릴 수 없습니다. 남은 장수가 있으면 버튼에 점이 붙습니다." },`;
 
 const VENDOR_RESET_CHAR_REF_EVT_NEEDLE =
   `    }), document.getElementById("nx-reset-settings")?.addEventListener("click", async () => {
@@ -7712,16 +7712,73 @@ const VENDOR_RESET_CHAR_REF_EVT_PATCH =
         t.uiMessage = { type: "error", text: z(a?.message || a) };
       }
       await P();
-    }), document.getElementById("nx-restore-chat-chrome")?.addEventListener("click", async () => {
-      try {
-        const a = await K("/v1/chat/restore-chrome", { method: "POST", body: {} }, 15e3);
-        t.uiMessage = { type: "success", text: a?.remounted ? "채팅 카드 헤더를 다시 그렸습니다" : "다시 그릴 카드가 없습니다" };
-        $e("채팅 카드 복구");
-      } catch (a) {
-        t.uiMessage = { type: "error", text: z(a?.message || a) };
-      }
-      await P();
-    }), document.getElementById("nx-reset-settings")?.addEventListener("click", async () => {
+    }), (() => {
+      const btn = document.getElementById("nx-migrate-legacy");
+      if (!btn) return;
+      const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      const setDot = (n) => {
+        const dot = document.getElementById("nx-migrate-dot");
+        dot && (dot.style.display = n > 0 ? "" : "none", dot.title = n > 0 ? n + "장 남음" : "");
+      };
+      const PHASES = { idle: "대기", images: "이미지 이전", cleanup: "정리", purge: "옛 데이터 삭제", done: "완료", cancelled: "중단됨", error: "오류" };
+      const render = (st, note) => {
+        const box = document.getElementById("nx-migrate-body");
+        if (!box) return;
+        const total = Number(st?.total || 0), done = Number(st?.done || 0), failed = Number(st?.failed || 0);
+        const pct = total > 0 ? Math.round(100 * done / total) : st?.running ? 6 : 100;
+        const mb = (Number(st?.freed_bytes || 0) / 1048576).toFixed(1);
+        const bar = globalThis.__INLAY_VIEWER_CORE__?.composeSingleProgressBarHtml?.({
+          pct, busy: st?.running, error: st?.phase === "error", tone: "index",
+        }) || "";
+        box.innerHTML = '<div style="font-weight:700">' + esc(PHASES[String(st?.phase || "idle")] || st?.phase) + "</div>"
+          + '<div class="muted" style="font-size:12px;margin:4px 0">' + done + " / " + total + " 장"
+          + (failed ? " · 실패 " + failed : "") + " · 확보 " + mb + " MB</div>"
+          + '<div style="margin:8px 0">' + bar + "</div>"
+          + (st?.error ? '<div style="color:#f87171;font-size:12px">' + esc(st.error) + "</div>" : "")
+          + (note ? '<div class="muted" style="font-size:12px">' + esc(note) + "</div>" : "");
+      };
+      K("/v1/storage/migrate/status", { method: "GET" }, 15e3)
+        .then((r) => setDot(Number(r?.pending_images || 0)))
+        .catch(() => {});
+      btn.addEventListener("click", async () => {
+        if (!globalThis.confirm?.("2.4 데이터를 2.5 형식으로 옮길까요?\\n\\n옛 이미지 원본은 옮긴 뒤 삭제됩니다. 2.4로는 되돌릴 수 없습니다.")) return;
+        document.getElementById("nx-migrate-modal")?.remove?.();
+        const veil = document.createElement("div");
+        veil.id = "nx-migrate-modal";
+        veil.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px";
+        veil.innerHTML = '<div style="background:#1b2330;border-radius:14px;width:min(420px,100%);padding:16px;box-sizing:border-box">'
+          + '<div style="display:flex;gap:8px;align-items:center"><strong>2.4 데이터 이전</strong>'
+          + '<button type="button" class="secondary" data-mig-cancel style="margin-left:auto">중단</button>'
+          + '<button type="button" class="secondary" data-mig-close>닫기</button></div>'
+          + '<div id="nx-migrate-body" style="margin-top:12px"><div class="muted">준비 중…</div></div></div>';
+        document.body.appendChild(veil);
+        veil.querySelector("[data-mig-close]")?.addEventListener("click", () => veil.remove());
+        veil.querySelector("[data-mig-cancel]")?.addEventListener("click", () => {
+          K("/v1/storage/migrate/cancel", { method: "POST", body: {} }, 15e3).catch(() => {});
+        });
+        let st = null;
+        try {
+          st = (await K("/v1/storage/migrate", { method: "POST", body: {} }, 6e4))?.status || null;
+          render(st, "");
+          // Closing the modal only stops the polling; the run itself continues,
+          // which is why cancel is a separate button.
+          while (st?.running && document.getElementById("nx-migrate-modal")) {
+            await new Promise((r) => setTimeout(r, 400));
+            const info = await K("/v1/storage/migrate/status", { method: "GET" }, 15e3);
+            st = info?.status || st;
+            setDot(Number(info?.pending_images || 0));
+            render(st, "");
+          }
+          render(st, st?.failed ? "실패한 장은 옛 저장소에 그대로 있습니다. 다시 눌러 이어서 할 수 있습니다." : "");
+          t.uiMessage = st?.phase === "error"
+            ? { type: "error", text: z(st?.error || "데이터 이전 실패") }
+            : { type: "success", text: st?.phase === "done" ? "데이터 이전 완료" : "데이터 이전 " + (PHASES[String(st?.phase || "")] || "") };
+        } catch (a) {
+          t.uiMessage = { type: "error", text: z(a?.message || a) };
+        }
+        await P();
+      });
+    })(), document.getElementById("nx-reset-settings")?.addEventListener("click", async () => {
       if (!globalThis.confirm?.("정말로 모든 설정을 기본값으로 초기화할까요?`;
 
 const VENDOR_UNLOAD_SAVE_NEEDLE =
@@ -11103,8 +11160,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.4.21",
-    body: "통합 챗에서 외형이 빈 카드는 우선순위가 높아도 후순위입니다. 업데이트 내역 탭 참고."
+    title: "2.5.0",
+    body: "대시보드의 2.4 데이터 이전을 한 번 눌러 주세요. 옛 이미지를 Risu 모듈로 옮겨 부팅이 빨라지고 세이브파일이 가벼워집니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

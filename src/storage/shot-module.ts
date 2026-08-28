@@ -136,35 +136,32 @@ function copyBytes(bytes: BytesLike): ArrayBuffer {
   return u8ToArrayBuffer(asU8(bytes));
 }
 
-export async function putShotAsset(
+/** Saves bytes and proves they can be read back, or null. No DB write. */
+async function storeShotBytes(
   id: string,
   bytes: BytesLike,
 ): Promise<{ path: string; name: string } | null> {
-  if (!shotModuleAvailable()) return null;
-  const stored = copyBytes(bytes);
-  if (stored.byteLength < MIN_IMAGE_BYTES) return null;
-  await ensureDbAccess();
   const host = hostOrNull();
   if (!host || typeof host.saveAsset !== 'function') return null;
-  const db = await host.getDatabase!(['modules', 'enabledModules']);
-  if (!db) return null;
-  const modules = readModules(db);
-  let idx = findModuleIndex(modules);
-  const enabled = asShotAssetRows(db.enabledModules).map((row) => cleanText(row, 200)).filter(Boolean);
-  const moduleEnabled = enabled.includes(SHOT_MODULE_ID) || enabled.includes(SHOT_MODULE_NS);
-
-  const ext = storeExtFromBytes(stored);
-  const name = shotAssetName(id, ext);
+  const stored = copyBytes(bytes);
+  if (stored.byteLength < MIN_IMAGE_BYTES) return null;
+  const name = shotAssetName(id, storeExtFromBytes(stored));
   if (!name) return null;
-
   const path = normalizeAssetPath(await host.saveAsset(stored));
   if (!path) return null;
+  // The readback is what lets a caller drop its own copy of the bytes.
   const readBack = await readShotAssetBytes(path);
   if (!readBack || readBack.byteLength < MIN_IMAGE_BYTES) {
     dbg('shot.module.readback.fail', { id, path }, 'warn');
     return null;
   }
+  return { path, name };
+}
 
+/** Upserts asset tuples into the module array in place. Mutates `modules`. */
+function upsertShotTuples(modules: ModuleRow[], saved: ShotAssetSaved[]): void {
+  if (!saved.length) return;
+  let idx = findModuleIndex(modules);
   if (idx < 0) {
     modules.push({
       id: SHOT_MODULE_ID,
@@ -178,9 +175,13 @@ export async function putShotAsset(
     idx = modules.length - 1;
   }
   const assets = parseShotModuleAssets(modules[idx]!.assets);
-  const same = assets.findIndex((row) => idFromShotAssetName(row[0]) === sanitizeShotId(id) || row[0] === name);
-  if (same >= 0) assets[same] = [name, path, name];
-  else assets.push([name, path, name]);
+  for (const row of saved) {
+    const same = assets.findIndex(
+      (a) => idFromShotAssetName(a[0]) === sanitizeShotId(row.id) || a[0] === row.name,
+    );
+    if (same >= 0) assets[same] = [row.name, row.path, row.name];
+    else assets.push([row.name, row.path, row.name]);
+  }
   modules[idx] = {
     ...modules[idx],
     id: SHOT_MODULE_ID,
@@ -190,9 +191,56 @@ export async function putShotAsset(
     lorebook: Array.isArray(modules[idx]?.lorebook) ? modules[idx]!.lorebook : [],
     assets,
   };
+}
+
+export async function putShotAsset(
+  id: string,
+  bytes: BytesLike,
+): Promise<{ path: string; name: string } | null> {
+  const saved = await putShotAssetsBatch([{ id, bytes }]);
+  const hit = saved[0];
+  return hit ? { path: hit.path, name: hit.name } : null;
+}
+
+export type ShotAssetSaved = { id: string; path: string; name: string };
+
+/**
+ * Stores many shots against a single Risu DB commit.
+ *
+ * `getDatabase`/`setDatabase` rewrite the whole module array, so doing that per
+ * image is what makes migrating a full gallery slow — the bytes are the cheap
+ * part. Batching turns N DB round-trips into one.
+ *
+ * `saveAsset` stays sequential on purpose: it is a host call whose internals we
+ * do not own, and a one-time migration is not worth racing it.
+ */
+export async function putShotAssetsBatch(
+  entries: Array<{ id: string; bytes: BytesLike }>,
+): Promise<ShotAssetSaved[]> {
+  const list = (Array.isArray(entries) ? entries : []).filter((e) => e && cleanText(e.id, 80));
+  if (!list.length || !shotModuleAvailable()) return [];
+  await ensureDbAccess();
+  const host = hostOrNull();
+  if (!host || typeof host.saveAsset !== 'function') return [];
+
+  const saved: ShotAssetSaved[] = [];
+  for (const entry of list) {
+    const hit = await storeShotBytes(entry.id, entry.bytes);
+    if (hit) saved.push({ id: entry.id, path: hit.path, name: hit.name });
+  }
+  if (!saved.length) return [];
+
+  // Read the DB only after the bytes are in, so a long batch cannot commit a
+  // module array that went stale while we were writing assets.
+  const db = await host.getDatabase!(['modules', 'enabledModules']);
+  if (!db) return [];
+  const modules = readModules(db);
+  const enabled = asShotAssetRows(db.enabledModules).map((row) => cleanText(row, 200)).filter(Boolean);
+  const moduleEnabled = enabled.includes(SHOT_MODULE_ID) || enabled.includes(SHOT_MODULE_NS);
+  upsertShotTuples(modules, saved);
   if (!moduleEnabled) enabled.push(SHOT_MODULE_ID);
   await host.setDatabase!({ modules: modules as never, enabledModules: enabled as string[] });
-  return { path, name };
+  return saved;
 }
 
 export async function dropShotAsset(id: string): Promise<boolean> {

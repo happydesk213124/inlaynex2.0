@@ -8,7 +8,7 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.4.38';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.5.0';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
@@ -138,6 +138,16 @@ export const CHAR_REF_IMAGE_KEY = (characterId: string): string =>
 /** @deprecated Use charRefDiskDataKey(metaKey). */
 export const CHAR_REF_DATA_KEY = (characterId: string): string =>
   `inx_nxcrefd_${sanitizeCharRefPart(characterId)}`;
+
+/**
+ * Meta row recording that the one-time storage migration ran.
+ *
+ * Its presence is what lets boot skip the full-store scans that only ever find
+ * pre-2.5 data. Absent means "not migrated yet", so boot keeps the old
+ * behaviour and a user who never presses the button loses nothing.
+ */
+export const MIGRATION_META_KEY = 'storage:__migrated__';
+export const MIGRATION_VERSION = 3;
 
 // --- legacy save-file keys (one-time migration source) ---
 export const LEGACY_SETTINGS_KEY = 'native_settings';

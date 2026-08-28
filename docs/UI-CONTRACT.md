@@ -148,7 +148,8 @@ bubble-root `prepend`). Chip rows and shot wraps are skipped when
 collecting hosts (`isInlayPaintHost`). Each bubble keeps at most one
 top bar and one bottom bar (`x-inlay-msg-end`); overlapping paints
 drop extras. If a header vanishes after `legacy`, use
-`POST /v1/chat/restore-chrome` (채팅 카드 복구).
+`POST /v1/chat/restore-chrome`. The route stays, but 2.5 dropped its dashboard
+button in favour of 2.4 데이터 이전 (see Storage migration).
 The character chip POSTs the selected DOM message to
 `/v1/characters/triggered` with the same session / unified / source ids as
 `/v1/jobs/create`. That route uses the tagger roster (`rosterForSession` +
@@ -424,6 +425,34 @@ then persisted.
 Text-chunk Description can fill positive without `uc`; extractor then keeps
 looking in stealth so file-open and paste both get the negative when it is
 still in the pixels.
+
+### Storage migration (2.4 → 2.5)
+One-time move of pre-2.5 gallery pixels into the Risu gallery module, plus the
+retention passes boot used to run on every start. Dashboard button
+`nx-migrate-legacy` (2.4 데이터 이전) starts it and polls status.
+
+| Route | Notes |
+|---|---|
+| `GET /v1/storage/migrate/status` | `{ok, migrated_version, pending_images, status}` |
+| `POST /v1/storage/migrate` | starts and returns immediately: `{ok, started, total, status}` |
+| `POST /v1/storage/migrate/cancel` | `{ok, cancelling}` — stops after the current batch |
+
+`status` is `{running, phase, done, total, failed, freed_bytes, error,
+finished_at, migrated_version}`; `phase` is one of `idle · images · cleanup ·
+purge · done · cancelled · error`. Polling every ~400 ms is enough — the engine
+commits one Risu DB write per 25 images.
+
+Deleting the originals is irreversible. It happens per image and only after the
+bytes have been read back out of the module, so `failed > 0` means those images
+kept their legacy rows. The completion stamp is written only when
+`failed === 0` and the run was not cancelled; until then boot keeps scanning and
+the button stays useful. Pressing it again resumes (a row that already has an
+asset path is not rescanned). `pending_images` is what the button badge shows.
+
+Legacy save-file keys (`nxstore_*`, `native_settings`, `nxref_image`,
+`nximg_*`) are only removed when the device store is IndexedDB — see
+`src/storage/device-store.ts`. On a host where `pluginStorage` *is* the device
+store those keys are the live data.
 
 ### Debug
 `/v1/debug`, `POST /v1/debug/clear` → `{ events[], by_stage{}, env{} }`

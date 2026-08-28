@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   dropShotAsset,
   putShotAsset,
+  putShotAssetsBatch,
   readShotAssetBytes,
   shotModuleAvailable,
 } from "../.test-build/shot-module.mjs";
@@ -20,12 +21,14 @@ function createHost({ readback = true } = {}) {
   const stored = new Map();
   const host = {
     saveAssetCalls: 0,
+    setDatabaseCalls: 0,
     db: { modules: [], enabledModules: [] },
     async requestPluginPermission() {},
     async getDatabase() {
       return structuredClone(host.db);
     },
     async setDatabase(next) {
+      host.setDatabaseCalls += 1;
       host.db = structuredClone(next);
     },
     async saveAsset(bytes) {
@@ -106,6 +109,39 @@ test("same card id replaces the module tuple", async () => {
   assert.equal(host.db.modules[0].assets[0][1], second.path);
   assert.notEqual(second.path, first.path);
   assert.deepEqual(new Uint8Array(await readShotAssetBytes(second.path)), secondBytes);
+});
+
+// The whole point of the batch is that a gallery migration costs one DB
+// round-trip per batch, not one per image. A regression here is invisible
+// except as "migration takes forever", so assert the call count.
+test("putShotAssetsBatch commits every tuple with one setDatabase", async () => {
+  const host = createHost();
+  globalThis.risuai = host;
+
+  const saved = await putShotAssetsBatch([
+    { id: "card-1", bytes: webpBytes },
+    { id: "card-2", bytes: webpBytes },
+    { id: "card-3", bytes: webpBytes },
+  ]);
+
+  assert.equal(saved.length, 3);
+  assert.equal(host.setDatabaseCalls, 1);
+  assert.equal(host.saveAssetCalls, 3);
+  assert.equal(host.db.modules[0].assets.length, 3);
+  assert.deepEqual(saved.map((row) => row.name).sort(), [
+    "inxshot_card-1.webp",
+    "inxshot_card-2.webp",
+    "inxshot_card-3.webp",
+  ]);
+});
+
+test("putShotAssetsBatch skips unreadable shots and writes nothing", async () => {
+  const host = createHost({ readback: false });
+  globalThis.risuai = host;
+
+  assert.deepEqual(await putShotAssetsBatch([{ id: "card-1", bytes: webpBytes }]), []);
+  assert.equal(host.setDatabaseCalls, 0);
+  assert.equal(host.db.modules.length, 0);
 });
 
 test("dropShotAsset removes only that shot tuple", async () => {

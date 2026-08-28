@@ -71,6 +71,7 @@ const MODULES = {
   'char-ref-module': 'src/services/char-ref-module.ts',
   'shot-assets': 'src/domain/gallery/shot-assets.ts',
   'shot-module': 'src/storage/shot-module.ts',
+  stores: 'src/storage/stores.ts',
   'chat-chrome': 'src/services/chat-chrome.ts',
   'style-preset-io': 'src/domain/style-presets/io.ts',
   'composition-leaves': 'src/domain/composition/leaves.ts',

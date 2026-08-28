@@ -2,8 +2,8 @@
  * Gallery pixels in a dedicated Risu module.
  *
  * The images index still keys by card id. This module stores the bytes via
- * saveAsset and remembers the exact path in location.asset_path. Plugin
- * storage (`inx_nximg_*`) stays the fallback when the host has no asset API.
+ * saveAsset and remembers the exact path in location.asset_path. A miss is a
+ * missing image — plugin storage is not a pixel fallback.
  */
 import { dbg } from '../core/debug';
 import { hostHas, risuHost } from '../core/host';

@@ -8,7 +8,7 @@
  *  1. **Lazy PNG hydration.** 1.x decoded every stored PNG from base64 during
  *     boot, so start-up cost grew linearly with gallery size. Here the images
  *     store holds only metadata (`has_png` / `png_bytes`) and pixel data is
- *     fetched on first real use (module `readImage` or legacy `inx_nximg_*`),
+ *     fetched on first real use (module `readImage`, or a leftover `inx_nximg_*`),
  *     then held in a byte-budgeted LRU. Callers that only need a size use
  *     `imageMeta()` and never touch storage at all.
  *  2. **Coalesced persistence.** 1.x re-serialised an entire store on every
@@ -46,7 +46,7 @@ import { base64ToAb, bytesToBase64Async } from '../core/util/bytes';
 import type { CardRow, CharacterRecord, JobRow, MetaRow, StoreName } from '../core/types';
 import { cardIdsToStripPreview } from '../domain/gallery/preview-retention';
 import { jobIdsToPrune } from '../domain/jobs/retention';
-import { psGet, psRemove, psSet } from './device-store';
+import { psGet, psRemove, psSet, resetDeviceStore } from './device-store';
 import { blobUrlCache } from './blob-url-cache';
 import { dropShotAsset, putShotAsset, readShotAssetBytes } from './shot-module';
 
@@ -714,9 +714,18 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
             row.asset_name = saved.name;
             await psRemove(IMAGE_KEY(k));
             await persistStore('images');
-          } else {
-            const b64 = await bytesToBase64Async(new Uint8Array(png));
-            await psSet(IMAGE_KEY(k), b64);
+          } else if (memStores.images.get(k) === row) {
+            // One try at the gallery module. Plugin IDB is never a pixel store —
+            // a miss means the shot is gone, not parked as inx_nximg_*.
+            if (row.png) pngCacheBytes -= row.png.byteLength;
+            row.png = null;
+            row.has_png = false;
+            row.png_bytes = 0;
+            row.hydrated = true;
+            delete row.asset_path;
+            delete row.asset_name;
+            dropBlobUrl(k);
+            await persistStore('images');
           }
           // Only now may the cache reclaim these bytes.
           if (memStores.images.get(k) === row) row.durable = true;
@@ -1014,4 +1023,5 @@ export function resetStores(): void {
   dirty.clear();
   pngCacheBytes = 0;
   storeReady = null;
+  resetDeviceStore();
 }

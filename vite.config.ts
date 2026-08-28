@@ -8282,11 +8282,17 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         y("info", "inline.inject", "shots=0 stripped");
         return;
       }
+      // Every stage below is a SafeDOM round-trip, and the host scan asks per
+      // paragraph. Timing each stage separately is the only way to tell a slow
+      // scan apart from a slow data-URL insert — they look identical from here.
+      const tStart = Date.now();
       const html = String(await msgEl.getInnerHTML() || "");
+      const msHtml = Date.now() - tStart;
       const cleaned = typeof VC.stripInlayInlineHtml == "function" ? VC.stripInlayInlineHtml(html) : html;
       const plain = typeof VC.htmlToPlainLn == "function" ? VC.htmlToPlainLn(cleaned) : cleaned;
       const messageLines = typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(plain) : [];
       if (!messageLines.length) return;
+      const tScan = Date.now();
       const hostsRaw = await unwrapSafe(await msgEl.querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"));
       const hosts = [];
       const hostTags = [];
@@ -8345,6 +8351,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           hostTexts.push("");
         }
       }
+      const msScan = Date.now() - tScan;
       const byLine = new Map();
       for (const p of placements) {
         const line = typeof VC.clampShotLine == "function"
@@ -8455,9 +8462,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         return did;
       };
+      const tPlace = Date.now();
       for (const [, shot] of byLine) {
         await applyShot(shot);
       }
+      const msPlace = Date.now() - tPlace;
+      const tBake = Date.now();
       // Spinners for cache misses are already in byLine. Bake two at a time and
       // swap as each URL lands. Finish this bubble even if another refresh
       // queued — breaking here left half-placed shots that the follow-up then
@@ -8516,6 +8526,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       } else {
         for (const card of encodeLater) await bakeOne(card);
       }
+      const msBake = Date.now() - tBake;
+      const tLeft = Date.now();
       const keepIds = new Set(placedIds);
       for (const card of encodeLater) {
         const laterId = String(card?.id || "");
@@ -8544,7 +8556,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
       } catch {
       }
+      const msLeft = Date.now() - tLeft;
       y("info", "inline.inject", \`shots=\${placements.length}+enc\${encodeLater.length} placed=\${placed} left=\${encodeLeft} pending=\${placements.filter((p) => p.pending).length}\`);
+      y("info", "inline.inject.ms", \`total=\${Date.now() - tStart} html=\${msHtml} scan=\${msScan}(hosts=\${hosts.length}/\${hostsRaw.length}) place=\${msPlace} bake=\${msBake} left=\${msLeft}\`);
       t._inlinePaintScale = scaleNow;
       // Per-call for notePainted; accumulated so the pass-level keep skip knows
       // some bubble still owes an image.
@@ -8660,6 +8674,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     const sel = t.selectedMessage;
     if (!sel) return;
+    // Split the pass so "slow move" can be attributed: everything before the
+    // first inject (keep walk, card rebind, strip) versus the paints themselves.
+    const tPass = Date.now();
     // Only a run that reached (or knowingly skipped) the paint counts as attached.
     t._inlineAttachOk = 0;
     const nxRebind = async (msg, fallback) => {
@@ -9158,6 +9175,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         nextPaintedCounts[row.hash] = want;
       }
       if (reuseIdxs.size) y("info", "inline.paint.reuse", \`kept=\${[...reuseIdxs].join(",")} of \${paintRows.length}\`);
+      const msPre = Date.now() - tPass;
+      const tPaint = Date.now();
       try {
         if (typeof N?.prioritizeWarmFocus == "function" && warmHead.length) N.prioritizeWarmFocus(warmHead);
       } catch {
@@ -9185,6 +9204,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         const planned = paintRows.find((r) => r.idx === row.idx);
         if (planned) await notePainted(row.idx, planned.hash, planned.key);
       }
+      y("info", "inline.pass.ms", \`total=\${Date.now() - tPass} pre=\${msPre} paint=\${Date.now() - tPaint} bubbles=\${paintRows.length - reuseIdxs.size}/\${paintRows.length} DOM#\${selIdx}\`);
       t._inlinePaintedKeys = nextPaintedKeys;
       t._inlinePaintedCounts = nextPaintedCounts;
       t._inlineAttachOk = 1;

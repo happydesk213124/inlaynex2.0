@@ -466,7 +466,7 @@ export async function buildComicGenerationForShot(args: ShotArgs): Promise<Gener
     const char = slots[idx]!;
     const name = cleanText(char.name, 200);
     const stored = name ? resolveCharacter(name, roster) : null;
-    const prompt = joinTags(composeComicSlotCaption(stored, char)) || 'girl';
+    const prompt = composeComicSlotCaption(stored, char) || 'girl';
     const uc = cleanText(char.negative);
     const taggedX = readNaiCoord(char.center_x);
     const taggedY = readNaiCoord(char.center_y);

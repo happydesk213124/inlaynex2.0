@@ -136,7 +136,11 @@ test("strip comic/manga from positive and 4koma from UC", () => {
 test("comicSpeechCaption builds a bubble tag", () => {
   assert.equal(
     comicSpeechCaption("speech", "하아..."),
-    'speech bubble, korean text, "하아..."',
+    "speechbubble, korean text:하아...",
+  );
+  assert.equal(
+    comicSpeechCaption("thought", "안돼, 가지마"),
+    "thought bubble, korean text:안돼, 가지마",
   );
 });
 
@@ -159,7 +163,7 @@ test("composeComicSlotCaption keeps looks, costume, action, and korean text", ()
   assert.match(caption, /blonde hair/);
   assert.match(caption, /navy dress/);
   assert.match(caption, /walking/);
-  assert.match(caption, /korean text, "아\.\.\.\. 힘들다\.\.\."/);
+  assert.match(caption, /speechbubble, korean text:아\.\.\.\. 힘들다\.\.\./);
 });
 
 test("resolveComicNaiParams uses empty overrides as existing V5 values", () => {

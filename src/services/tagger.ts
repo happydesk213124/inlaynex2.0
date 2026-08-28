@@ -36,6 +36,7 @@ import {
 } from '../domain/lore/assemble';
 import { isCharacterImageExtraLore } from '../domain/lore/extra';
 import type { LlmContentPart, LlmMessage } from '../providers/llm/transform';
+import { applyComicKindGuard, comicGenOn } from '../domain/comic/kind';
 import { numberMessageLinesForTagger, repairLazyShotLines } from '../domain/tagging/shot-line';
 import { collectAssetNaiTags, setLastAssetWeightMap, type AssetLookPreview } from './asset-tags';
 import { loadTaggerRoster, rosterForSession } from './characters';
@@ -438,6 +439,7 @@ export async function buildTaggerMessages(
         : '',
       cardFlagOn(card.nai_use_coords, true) ? naiCoordsHowTo() : '',
       cardFlagOn(card.nai5_speech, false) ? naiSpeechHowTo() : '',
+      comicGenOn(card) ? comicKindHowTo(Number(card.comic_max_pages ?? 2)) : '',
       assetHow,
       placement,
     ].filter(Boolean).join('\n\n'),
@@ -555,7 +557,22 @@ export function flattenShots(tagged: unknown, messageText?: unknown): TaggedShot
     }
   }
   // Models often emit line=1,2,3 as shot order; remap from y_percent when that pattern appears.
-  return repairLazyShotLines(shots, messageText ?? '');
+  const repaired = repairLazyShotLines(shots, messageText ?? '');
+  applyComicKindGuard(repaired, comicGenOn(getConfig().card));
+  return repaired;
+}
+
+function comicKindHowTo(maxPages: number): string {
+  const cap = Math.max(0, Math.min(12, Math.floor(Number(maxPages) || 2)));
+  return [
+    'KIND: every shot MUST set `kind` to `illustration` or `comic`.',
+    'Use `comic` only when the moment needs two or more sequential panels (dialogue + continuous action). A single still scene is `illustration`.',
+    `At most ${cap} comic shot(s) in this message. Extra comic-worthy beats become illustration.`,
+    'For a comic shot: `line` is the start (image sits immediately above that line, same as illustration). Also set `comic_line_end` to the last prose line this page covers. The next illustration must pick a line after `comic_line_end`.',
+    'Do not infer a comic range from neighboring shot `line` values.',
+    'Ignore `<img>`, `┣ observation/insight/foreshadow ┫`, `<RP-Guide>`, `<AOS>`, HTML comments, and Upcoming lines — they are not scenes.',
+    'Comic shots still list `characters[].name` for who appears. Do not write panel layout here.',
+  ].join(' ');
 }
 
 function focusCharacterSystemMessage(

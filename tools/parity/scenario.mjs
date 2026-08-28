@@ -145,6 +145,11 @@ export async function runScenario(N, handles) {
       nai_use_coords: card.nai_use_coords !== false,
       v5_natural_lang: card.v5_natural_lang === 'ja' ? 'ja' : 'en',
       secondary_preset_id: String(card.secondary_preset_id || ''),
+      comic_gen: card.comic_gen === 'on',
+      comic_llm_batch: String(card.comic_llm_batch || 'once'),
+      comic_schedule: String(card.comic_schedule || 'overlap'),
+      comic_max_pages: Number(card.comic_max_pages ?? 2),
+      comic_coords: String(card.comic_coords || 'llm'),
     };
   });
   // 2.4.7: leftover human_focus is forced to none (1.x kept human_focus).

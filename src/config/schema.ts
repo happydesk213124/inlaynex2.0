@@ -4,6 +4,9 @@ import type { FocusCharacterMode, FocusPromptMode } from '../core/types.ts';
 import { parseStreamKeywords } from '../domain/prompt/stream-keywords.ts';
 import { normalizeLlmRolesSettings } from '../domain/llm/roles.ts';
 import { naiStepsForFamily, normalizeNaiSampler, optionalNaiSampler } from '../domain/nai/samplers.ts';
+import { normalizeComicCoordsMode } from '../domain/comic/coords.ts';
+import { comicGenOn } from '../domain/comic/kind.ts';
+import { normalizeComicLlmBatch, normalizeComicMaxPages, normalizeComicSchedule } from '../domain/comic/params.ts';
 import { normalizeInlineMsgActions } from '../domain/inline-msg-actions.ts';
 import { normalizeImagePressInspect, normalizeToastAnchor } from '../domain/toast-press.ts';
 
@@ -348,6 +351,25 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   card.nai_use_coords = card.nai_use_coords == null || card.nai_use_coords === ''
     ? true
     : flagOn(card.nai_use_coords, true);
+  card.comic_gen = comicGenOn(card) ? 'on' : 'off';
+  card.comic_author_note = String(card.comic_author_note ?? '').trim().slice(0, 8000);
+  card.comic_llm_batch = normalizeComicLlmBatch(card.comic_llm_batch);
+  card.comic_schedule = normalizeComicSchedule(card.comic_schedule);
+  card.comic_max_pages = normalizeComicMaxPages(card.comic_max_pages);
+  card.comic_coords = normalizeComicCoordsMode(card.comic_coords);
+  card.comic_prompt = String(card.comic_prompt ?? '').trim().slice(0, 8000);
+  card.comic_uc = String(card.comic_uc ?? '').trim().slice(0, 8000);
+  {
+    const optNum = (v: unknown): number | '' => {
+      if (v == null || v === '') return '';
+      const n = Number(v);
+      return Number.isFinite(n) ? n : '';
+    };
+    card.comic_steps = optNum(card.comic_steps);
+    card.comic_cfg_scale = optNum(card.comic_cfg_scale);
+    card.comic_cfg_rescale = optNum(card.comic_cfg_rescale);
+    card.comic_sampler = optionalNaiSampler(card.comic_sampler) || '';
+  }
   if (Array.isArray(card.presets)) {
     for (const raw of card.presets) {
       if (!raw || typeof raw !== 'object') continue;

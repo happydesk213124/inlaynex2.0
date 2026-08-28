@@ -52,6 +52,17 @@ test('NAI5 only wins over first and the selected model', () => {
   );
 });
 
+test('comic shots are always V5', () => {
+  assert.equal(
+    resolveShotFamily(
+      { nai5_first: true, nai5_only: false },
+      { model: 'nai-diffusion-4-5-full' },
+      { complexity: 'simple', kind: 'comic' },
+    ),
+    'v5',
+  );
+});
+
 test('NAI5 first on routes simple→V4 and dynamic/missing→V5', () => {
   const card = { nai5_first: true };
   const nai = { model: 'nai-diffusion-4-5-full' };

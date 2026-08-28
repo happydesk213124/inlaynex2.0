@@ -58,13 +58,17 @@ import {
 } from '../domain/nai/routing';
 import { callLlm } from '../providers/llm/client';
 import { resolveLlmRole } from '../domain/llm/roles';
+import { comicGenOn, clampComicPages } from '../domain/comic/kind';
+import { normalizeComicSchedule } from '../domain/comic/params';
+import { pickNextReadyShot } from '../domain/comic/schedule';
 import { characterHasAppearance, characterMaxLimit, applyWearContinuityToShots, applyCostumeContinuityToShots, applyCreatedCostumesToShots, collectCostumePairs, createdCostumeWearByName, ensureCostumes } from '../domain/character/tags';
 import { dedupeShotCharacters, matchCharactersInText, resolveCharacter } from '../domain/character/roster';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
 import { flushPersist, idbGet, idbPut } from '../storage/stores';
 import { getConfig, jobEpochByKey, jobRunMeta, requestMessageRerollStop } from './context';
 import { mergeRosterFromTagged, persistChatWearStates, rosterForSession } from './characters';
-import { buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage, readImageLocation } from './generation';
+import { fillComicPagesForShots } from './comic';
+import { buildComicGenerationForShot, buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage, isComicShot, readImageLocation } from './generation';
 import { buildCharacterLooksMessages, buildTaggerMessages, collectAssetTagsForTagger, extractTaggerChatContext, flattenShots } from './tagger';
 import {
   applyLorefilter,
@@ -824,6 +828,7 @@ async function runJob(jobId: string): Promise<void> {
     const card = getConfig().card || {};
     const imageMin = Math.max(1, Number(card.image_min ?? 1));
     const imageMax = Math.max(imageMin, Number(card.image_max ?? 3));
+    if (comicGenOn(card)) shots = clampComicPages(shots, card.comic_max_pages);
     shots = shots.slice(0, imageMax);
 
     const curationMode = getCurationMode();
@@ -895,6 +900,50 @@ async function runJob(jobId: string): Promise<void> {
       return costumes[active_costume]?.name ?? active_costume;
     });
 
+    const ready = new Set<number>();
+    const done = new Set<number>();
+    const inflight = new Set<number>();
+    const order = shots.map((_, i) => i);
+    for (let i = 0; i < shots.length; i += 1) {
+      if (!isComicShot(shots[i])) ready.add(i);
+    }
+    let comicFinished = !shots.some((s) => isComicShot(s));
+    let releaseComic: () => void = () => {};
+    const comicGate = new Promise<void>((resolve) => { releaseComic = resolve; });
+    const runComicLayout = async (): Promise<void> => {
+      if (comicFinished) {
+        releaseComic();
+        return;
+      }
+      try {
+        await setJob(jobId, 'tagging', {
+          phase: 'tagging',
+          progress: 0.48,
+          message: '만화 레이아웃 중…',
+          shot_count: shots.length,
+          shot_done: 0,
+          debug_stage: 'job.comic_layout',
+        });
+        if (await cancelJobIfStale(jobId, 'superseded during comic layout')) return;
+        const assigned = await fillComicPagesForShots({
+          shots,
+          roster,
+          assistantText: request.assistant_text,
+        });
+        for (const idx of assigned) ready.add(idx);
+        dbg('job.comic.done', { assigned: assigned.size, comics: shots.filter((s) => isComicShot(s)).length });
+      } catch (err) {
+        dbg('job.comic.fail', { message: String((err as Error)?.message || err) }, 'warn');
+      } finally {
+        comicFinished = true;
+        releaseComic();
+      }
+    };
+    if (normalizeComicSchedule(card.comic_schedule) === 'wait_taggers') {
+      await runComicLayout();
+    } else {
+      void runComicLayout();
+    }
 
     if (await cancelJobIfStale(jobId, 'superseded before generate')) return;
     const pendingMessageIndex =
@@ -936,7 +985,6 @@ async function runJob(jobId: string): Promise<void> {
 
     const naiTokens = allUniqueNaiTokens(getConfig().nai);
     const workerTokens = naiTokens.length ? naiTokens : [''];
-    const shotQueue = shots.map((_, i) => i);
     const runShot = async (idx: number, workerToken: string): Promise<void> => {
       if (shotSaveFailed) throw shotSaveFailed;
       // Prior saves must finish before discard so publishedIds is complete.
@@ -945,7 +993,11 @@ async function runJob(jobId: string): Promise<void> {
         if (await cancelJobIfStale(jobId, `superseded before shot ${idx + 1}`)) return;
       }
       const shot = shots[idx];
-      let { main, neg, captions, meta, route, use_coords } = await buildGenerationForShot({ shot, roster, sessionId });
+      if (isComicShot(shot) && !shot.comic_page) return;
+      const built = isComicShot(shot)
+        ? await buildComicGenerationForShot({ shot, roster, sessionId })
+        : await buildGenerationForShot({ shot, roster, sessionId });
+      let { main, neg, captions, meta, route, use_coords, cfg } = built;
       const cardId = uuid();
       const now = Date.now() / 1000;
       // Resolve hash at reveal time (below) so mid-job retarget/sibling rebind is fresh.
@@ -1038,6 +1090,7 @@ async function runJob(jobId: string): Promise<void> {
             model: route.model,
             preset: route.preset,
             use_coords,
+            cfg,
           },
           shot.aspect,
         );
@@ -1054,6 +1107,7 @@ async function runJob(jobId: string): Promise<void> {
         }
         const canFallback = cardFlagOn(card.nai4_fallback, false)
           && route.family === 'v5'
+          && !isComicShot(shot)
           && sawQuota;
         if (lastErr && canFallback) {
           dbg('job.shot.nai4_fallback', {
@@ -1224,9 +1278,25 @@ async function runJob(jobId: string): Promise<void> {
     await Promise.all(workerTokens.map(async (token) => {
       for (;;) {
         if (shotSaveFailed || !isJobCurrent(jobId)) return;
-        const idx = shotQueue.shift();
-        if (idx == null) return;
-        await runShot(idx, token);
+        const idx = pickNextReadyShot({ order, done, inflight, ready });
+        if (idx == null) {
+          if (!comicFinished) {
+            await Promise.race([
+              comicGate,
+              new Promise((resolve) => setTimeout(resolve, 80)),
+            ]);
+            continue;
+          }
+          return;
+        }
+        inflight.add(idx);
+        ready.delete(idx);
+        try {
+          await runShot(idx, token);
+          done.add(idx);
+        } finally {
+          inflight.delete(idx);
+        }
       }
     }));
     await drainSaves();

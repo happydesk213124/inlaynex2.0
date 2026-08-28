@@ -175,7 +175,7 @@ const normalize = (root) => {
           .filter((p) => {
             const k = String(p.key);
             if (k.startsWith('curation_')) return false;
-            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll' || k === 'lorefilter_scan' || k === 'asset_author_note') return false;
+            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll' || k === 'lorefilter_scan' || k === 'asset_author_note' || k === 'comic') return false;
             return true;
           })
           .map((v) => walk(v, key));
@@ -189,7 +189,7 @@ const normalize = (root) => {
         && node.includes('format')
       ) {
         return node
-          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll' && k !== 'lorefilter_scan' && k !== 'asset_author_note')
+          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll' && k !== 'lorefilter_scan' && k !== 'asset_author_note' && k !== 'comic')
           .map((v) => walk(v, key));
       }
       return node.map((v) => walk(v, key));
@@ -274,6 +274,25 @@ const normalize = (root) => {
           || k === 'sampler_v4'
           || k === 'steps_v5'
           || k === 'steps_v4'
+        ) continue;
+        // 2.0 comic tab. Default off → same job path as 1.x; unit tests assert
+        // kind/range/coords/schedule. Wire keys have no 1.x equivalent.
+        if (
+          k === 'comic_gen'
+          || k === 'comic_author_note'
+          || k === 'comic_llm_batch'
+          || k === 'comic_schedule'
+          || k === 'comic_max_pages'
+          || k === 'comic_coords'
+          || k === 'comic_steps'
+          || k === 'comic_sampler'
+          || k === 'comic_prompt'
+          || k === 'comic_uc'
+          || k === 'comic_cfg_scale'
+          || k === 'comic_cfg_rescale'
+          || k === 'comic_page'
+          || k === 'comic_line_end'
+          || k === 'kind'
         ) continue;
         // Sticky pin hover preview removed in 2.0 (force-off + default false).
         // 1.x defaulted true; comparing the wire value only hides the deletion.

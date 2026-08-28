@@ -161,6 +161,30 @@ export interface CardSettings {
   v5_natural_lang: 'en' | 'ja';
   /** Send v4_prompt centers when 2+ chars all have valid 0–1 coords. */
   nai_use_coords: boolean;
+  /** off | on — comic tab. Off → identical to today. */
+  comic_gen?: 'off' | 'on' | boolean;
+  /** Tone / world for the comic LLM. Not an artist stack. */
+  comic_author_note?: string;
+  /** one JSON for all comic shots vs one call per comic shot. */
+  comic_llm_batch?: 'once' | 'per_shot';
+  /** illustration NAI while comic LLM runs, or wait for both taggers. */
+  comic_schedule?: 'overlap' | 'wait_taggers';
+  /** Clamp first-tagger comic pages. */
+  comic_max_pages?: number;
+  /** Tab: AI choice / LLM per page / always position. */
+  comic_coords?: 'ai_choice' | 'llm' | 'position';
+  /** Empty → NAI V5 steps. */
+  comic_steps?: number | null | '';
+  /** Empty → NAI V5 sampler. */
+  comic_sampler?: string | null;
+  /** Extra positive joined into the comic main. */
+  comic_prompt?: string;
+  /** Extra UC joined into the comic negative. */
+  comic_uc?: string;
+  /** Empty → existing CFG. */
+  comic_cfg_scale?: number | null | '';
+  /** Empty → existing rescale. */
+  comic_cfg_rescale?: number | null | '';
   userchat: boolean;
   unified_chat_priority: boolean;
   /** Unified character tab: keep one row per name (priority, then newest). */
@@ -491,6 +515,10 @@ export interface TaggedShot {
   y_percent?: number;
   /** 1-based newline index for beta inline chat illustrations. */
   line?: number;
+  /** illustration | comic. Dropped when the comic tab is off. */
+  kind?: 'illustration' | 'comic' | string;
+  /** Inclusive end line for the comic LLM range. Start is `line`. */
+  comic_line_end?: number;
   camera?: string;
   situation?: string;
   place?: string;

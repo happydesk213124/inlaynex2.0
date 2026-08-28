@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.36';
+const PLUGIN_VERSION = '2.4.37';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -307,7 +307,19 @@ const VENDOR_NATURAL_BASE_CT_PATCH =
       v5_natural_lang: document.getElementById("nx-v5-natural-lang") ? (N("nx-v5-natural-lang") === "ja" ? "ja" : "en") : (e.v5_natural_lang === "ja" ? "ja" : "en"),
       nai_use_coords: document.getElementById("nx-nai-coords") ? ee("nx-nai-coords") : e.nai_use_coords !== !1,
       nai5_first: document.getElementById("nx-nai5-first") ? ee("nx-nai5-first") : !!e.nai5_first,
-      nai5_only: document.getElementById("nx-nai5-only") ? ee("nx-nai5-only") : !!e.nai5_only,`;
+      nai5_only: document.getElementById("nx-nai5-only") ? ee("nx-nai5-only") : !!e.nai5_only,
+      comic_gen: document.getElementById("nx-comic-gen") ? (N("nx-comic-gen") === "on" ? "on" : "off") : (e.comic_gen === "on" || e.comic_gen === !0 ? "on" : "off"),
+      comic_llm_batch: document.getElementById("nx-comic-llm-batch") ? (N("nx-comic-llm-batch") === "per_shot" ? "per_shot" : "once") : (e.comic_llm_batch === "per_shot" ? "per_shot" : "once"),
+      comic_schedule: document.getElementById("nx-comic-schedule") ? (N("nx-comic-schedule") === "wait_taggers" ? "wait_taggers" : "overlap") : (e.comic_schedule === "wait_taggers" ? "wait_taggers" : "overlap"),
+      comic_max_pages: document.getElementById("nx-comic-max-pages") ? Number(N("nx-comic-max-pages") || 2) : (e.comic_max_pages ?? 2),
+      comic_coords: document.getElementById("nx-comic-coords") ? (N("nx-comic-coords") || "llm") : (e.comic_coords || "llm"),
+      comic_steps: document.getElementById("nx-comic-steps") ? N("nx-comic-steps") : (e.comic_steps ?? ""),
+      comic_sampler: document.getElementById("nx-comic-sampler") ? N("nx-comic-sampler") : (e.comic_sampler || ""),
+      comic_cfg_scale: document.getElementById("nx-comic-cfg") ? N("nx-comic-cfg") : (e.comic_cfg_scale ?? ""),
+      comic_cfg_rescale: document.getElementById("nx-comic-cfg-rescale") ? N("nx-comic-cfg-rescale") : (e.comic_cfg_rescale ?? ""),
+      comic_prompt: document.getElementById("nx-comic-prompt") ? String(N("nx-comic-prompt") || "").slice(0, 8000) : String(e.comic_prompt || ""),
+      comic_uc: document.getElementById("nx-comic-uc") ? String(N("nx-comic-uc") || "").slice(0, 8000) : String(e.comic_uc || ""),
+      comic_author_note: document.getElementById("nx-comic-author-note") ? String(N("nx-comic-author-note") || "").slice(0, 8000) : String(e.comic_author_note || ""),`;
 
 /** Removed from original wide rows — re-homed next to Include Max (see PERSON_TAG_WEIGHT). */
 const VENDOR_NATURAL_BASE_CARD_NEEDLE =
@@ -341,7 +353,19 @@ const VENDOR_NATURAL_BASE_HELP_PATCH =
   "nx-v5-natural-lang": { title: "V5 자연어 태그", body: "V5로 뽑는 샷에만 씁니다. 언어만 고릅니다(English / 日本語). V4 샷은 왼쪽 자연어 base를 따릅니다." },
   "nx-nai-coords": { title: "NAI 위치 좌표 사용하기", body: "캐릭터가 2명 이상이고 전원에 0~1 좌표가 있을 때만 NovelAI에 좌표를 보냅니다. 한 명이라도 빠지면 켜지 않습니다. 혼자면 쓰지 않습니다." },
   "nx-nai5-first": { title: "LLM한테 NAI V4, V5 선택권주기", body: "켜면 샷마다 simple은 V4, dynamic은 V5로 나눕니다. LLM이 복잡도를 고른 대로 모델이 갈립니다. 꺼 두면 모델 탭에서 고른 모델로 전 샷을 뽑습니다." },
-  "nx-nai5-only": { title: "무조건 NAI V5한테만 요청하기", body: "켜면 모든 샷을 V5로만 뽑습니다. 모델 탭에서 V4를 고르거나 왼쪽 선택권을 켜도 V5가 이깁니다." }`;
+  "nx-nai5-only": { title: "무조건 NAI V5한테만 요청하기", body: "켜면 모든 샷을 V5로만 뽑습니다. 모델 탭에서 V4를 고르거나 왼쪽 선택권을 켜도 V5가 이깁니다." },
+  "nx-comic-gen": { title: "만화 생성", body: "켜면 태거가 연속 대사·액션을 만화 페이지로 고를 수 있습니다. 끄면 지금과 같습니다." },
+  "nx-comic-batch": { title: "만화 LLM", body: "메시지 1회는 그 메시지의 만화 페이지를 한 JSON으로 받습니다. 샷마다는 페이지마다 따로 부릅니다." },
+  "nx-comic-schedule": { title: "생성 순서", body: "겹쳐 생성은 삽화를 먼저 보내고 만화 LLM은 옆에서 돌립니다. 태거 전부 완료 후는 만화 태그가 끝난 뒤 번호 순으로만 보냅니다." },
+  "nx-comic-max-pages": { title: "최대 만화 페이지", body: "한 메시지에서 만화로 고를 수 있는 샷 수 상한입니다." },
+  "nx-comic-coords": { title: "위치", body: "LLM이 알아서: 페이지마다 position 또는 AI choice. Position: 좌표 필수, 하나라도 없으면 AI choice. AI choice: 좌표를 보내지 않습니다." },
+  "nx-comic-steps": { title: "Steps", body: "비우면 모델 탭 V5 steps를 씁니다. 만화만 이 값을 씁니다." },
+  "nx-comic-sampler": { title: "샘플러", body: "비우면 모델 탭 V5 샘플러를 씁니다." },
+  "nx-comic-cfg": { title: "가이던스", body: "비우면 기존 CFG를 씁니다." },
+  "nx-comic-rescale": { title: "리스케일", body: "비우면 기존 rescale을 씁니다." },
+  "nx-comic-prompt": { title: "프롬프트", body: "만화 메인에 추가로 붙습니다. 비우면 기존 스타일·고정 프롬프트만 씁니다." },
+  "nx-comic-uc": { title: "가디언 프롬프트", body: "만화 UC에 추가로 붙습니다. 비우면 기존 UC만 씁니다." },
+  "nx-comic-note": { title: "작가노트", body: "만화 LLM에게 주는 톤·세계관입니다. 아티스트 스택을 적지 마세요." }`;
 
 /** One 2×3 grid for the six gen-option toggles (coords / V4·V5 / V5-only / solo / costume / no humans). */
 const GEN_OPTION_TOGGLES_HTML =
@@ -649,6 +673,7 @@ const VENDOR_CURATION_TABS_NEEDLE = `S = {
 const VENDOR_CURATION_TABS_PATCH = `S = {
       dashboard: "대시보드",
       gen_options: "생성 옵션",
+      comic_gen: "만화 생성",
       style_presets: "스타일 프리셋",
       characters: "캐릭터",
       models: "모델 설정",
@@ -660,6 +685,7 @@ const VENDOR_CURATION_TABS_PATCH = `S = {
     }, E = [
       "dashboard",
       "gen_options",
+      "comic_gen",
       "style_presets",
       "characters",
       "models",
@@ -733,6 +759,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.4.37</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>만화 생성 탭: V5 칸 페이지, 별도 steps/샘플러/가이던스</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.4.21</strong>
@@ -2562,6 +2594,8 @@ const VENDOR_PRESET_SAVE_EVT_PATCH = `    }), (() => {
       };
       document.getElementById("nx-save-card")?.addEventListener("click", saveCard);
       document.getElementById("nx-save-card-head")?.addEventListener("click", saveCard);
+      document.getElementById("nx-save-gen-options")?.addEventListener("click", saveCard);
+      document.getElementById("nx-save-comic")?.addEventListener("click", saveCard);
       document.getElementById("nx-fixed-prompt-save")?.addEventListener("click", saveCard);
       document.getElementById("nx-fixed-prompt-export")?.addEventListener("click", () => {
         try {
@@ -2621,12 +2655,70 @@ const VENDOR_CARD_TAB_SPLIT_CLOSE_NEEDLE = `            <input id="nx-preset-fil
 const VENDOR_CARD_TAB_SPLIT_CLOSE_PATCH = `            <input id="nx-preset-file-input" type="file" accept=".json,application/json,text/plain" style="display:none">
           </div>
         </div>\`}\`;
+    } else if (t.uiTab === "comic_gen") {
+      const i = t.backendSettings?.card || {};
+      const comicOn = i.comic_gen === "on" || i.comic_gen === !0;
+      const comicBatch = i.comic_llm_batch === "per_shot" ? "per_shot" : "once";
+      const comicSched = i.comic_schedule === "wait_taggers" ? "wait_taggers" : "overlap";
+      const comicCoords = i.comic_coords === "ai_choice" || i.comic_coords === "position" ? i.comic_coords : "llm";
+      const comicSampler = String(i.comic_sampler || "");
+      u = \`
+        <div class="card model-card">
+          <div class="prompt-group-label">만화 생성</div>
+          <div class="muted" style="margin-top:8px">꺼 두면 지금과 같습니다. 켜면 태거가 연속 대사를 만화 페이지로 고를 수 있습니다.</div>
+          <div class="model-form" style="margin-top:12px">
+            <label data-nx-help-id="nx-comic-gen"><span>만화 생성</span>
+              <select id="nx-comic-gen">
+                <option value="off" \${!comicOn ? "selected" : ""}>끄기</option>
+                <option value="on" \${comicOn ? "selected" : ""}>켜기</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-comic-batch"><span>만화 LLM</span>
+              <select id="nx-comic-llm-batch">
+                <option value="once" \${comicBatch === "once" ? "selected" : ""}>메시지 1회</option>
+                <option value="per_shot" \${comicBatch === "per_shot" ? "selected" : ""}>샷마다</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-comic-schedule"><span>생성 순서</span>
+              <select id="nx-comic-schedule">
+                <option value="overlap" \${comicSched === "overlap" ? "selected" : ""}>겹쳐 생성</option>
+                <option value="wait_taggers" \${comicSched === "wait_taggers" ? "selected" : ""}>태거 전부 완료 후</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-comic-max-pages"><span>최대 만화 페이지</span><input id="nx-comic-max-pages" type="number" min="0" max="12" value="\${h(i.comic_max_pages ?? 2)}"></label>
+            <label data-nx-help-id="nx-comic-coords"><span>위치</span>
+              <select id="nx-comic-coords">
+                <option value="llm" \${comicCoords === "llm" ? "selected" : ""}>LLM이 알아서</option>
+                <option value="position" \${comicCoords === "position" ? "selected" : ""}>Position</option>
+                <option value="ai_choice" \${comicCoords === "ai_choice" ? "selected" : ""}>AI choice</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-comic-steps"><span>Steps</span><input id="nx-comic-steps" type="number" min="1" max="150" placeholder="기존" value="\${h(i.comic_steps ?? "")}"></label>
+            <label data-nx-help-id="nx-comic-sampler"><span>샘플러</span>
+              <select id="nx-comic-sampler">
+                <option value="" \${!comicSampler ? "selected" : ""}>기존</option>
+                <option value="k_euler_ancestral" \${comicSampler === "k_euler_ancestral" ? "selected" : ""}>Euler Ancestral</option>
+                <option value="k_euler" \${comicSampler === "k_euler" ? "selected" : ""}>Euler</option>
+                <option value="k_dpmpp_2s_ancestral" \${comicSampler === "k_dpmpp_2s_ancestral" ? "selected" : ""}>DPM++ 2S Ancestral</option>
+                <option value="k_dpmpp_2m_sde" \${comicSampler === "k_dpmpp_2m_sde" ? "selected" : ""}>DPM++ 2M SDE</option>
+                <option value="k_dpmpp_2m" \${comicSampler === "k_dpmpp_2m" ? "selected" : ""}>DPM++ 2M</option>
+                <option value="k_dpmpp_sde" \${comicSampler === "k_dpmpp_sde" ? "selected" : ""}>DPM++ SDE</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-comic-cfg"><span>가이던스</span><input id="nx-comic-cfg" type="number" step="0.1" placeholder="기존" value="\${h(i.comic_cfg_scale ?? "")}"></label>
+            <label data-nx-help-id="nx-comic-rescale"><span>리스케일</span><input id="nx-comic-cfg-rescale" type="number" step="0.01" placeholder="기존" value="\${h(i.comic_cfg_rescale ?? "")}"></label>
+            <label class="wide" data-nx-help-id="nx-comic-prompt"><span>프롬프트</span><textarea id="nx-comic-prompt" rows="3" maxlength="8000" placeholder="비우면 기존 스타일·고정 프롬프트">\${h(i.comic_prompt || "")}</textarea></label>
+            <label class="wide" data-nx-help-id="nx-comic-uc"><span>가디언 프롬프트</span><textarea id="nx-comic-uc" rows="3" maxlength="8000" placeholder="비우면 기존 UC">\${h(i.comic_uc || "")}</textarea></label>
+            <label class="wide" data-nx-help-id="nx-comic-note"><span>작가노트</span><textarea id="nx-comic-author-note" rows="4" maxlength="8000" placeholder="톤·세계관. 아티스트 스택 아님">\${h(i.comic_author_note || "")}</textarea></label>
+          </div>
+          <div class="row" style="margin-top:14px"><button type="button" id="nx-save-comic">만화 설정 저장</button></div>
+        </div>\`;
     } else if (t.uiTab === "characters") {`;
 
 const VENDOR_CT_GATE_NEEDLE = `  function Ct() {
     if (!document.getElementById("nx-mode") && !document.getElementById("nx-char-max")) return null;`;
 const VENDOR_CT_GATE_PATCH = `  function Ct() {
-    if (!document.getElementById("nx-mode") && !document.getElementById("nx-char-max") && !document.getElementById("nx-custom-pos") && !document.getElementById("nx-preset-select") && !document.getElementById("nx-fixed-prompt-prefix")) return null;`;
+    if (!document.getElementById("nx-mode") && !document.getElementById("nx-char-max") && !document.getElementById("nx-custom-pos") && !document.getElementById("nx-preset-select") && !document.getElementById("nx-fixed-prompt-prefix") && !document.getElementById("nx-comic-gen")) return null;`;
 
 const VENDOR_SHOW_CARD_TAB_NEEDLE = `        if (opts?.showCardTab) t.uiTab = "card";`;
 const VENDOR_SHOW_CARD_TAB_PATCH = `        if (opts?.showCardTab) t.uiTab = "style_presets";`;
@@ -14084,7 +14176,7 @@ const PROMPT_KEYS = [
   'author_note', 'asset_author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
   'char_inject', 'preprocess', 'prefill', 'preset_1', 'autotag',
   'curation_refine', 'curation_embed_hint', 'asset_tags_inject', 'char_looks',
-  'command_reroll', 'lorefilter_scan',
+  'command_reroll', 'lorefilter_scan', 'comic',
 ] as const;
 
 /**

@@ -42,7 +42,13 @@ import {
   appendNoHumansWhenNoCast,
 } from '../domain/character/tags';
 import { dimsForAspect } from '../domain/nai-meta/aspect.ts';
-import { shouldUseNaiCoords, readNaiCoord } from '../domain/nai/coords';
+import { composeComicSlotCaption } from '../domain/comic/caption';
+import { resolveComicUseCoords } from '../domain/comic/coords';
+import { normalizeShotKind } from '../domain/comic/kind';
+import { resolveComicNaiParams } from '../domain/comic/params';
+import { stripComicKomaFromUc, stripComicPageStyleTags, stripComicStyleWords } from '../domain/comic/tags';
+import type { ComicPage } from '../domain/comic/page';
+import { shouldUseNaiCoords, readNaiCoord, type CoordPair } from '../domain/nai/coords';
 import {
   captionWithSpeech,
   speechCaptionTagsForShot,
@@ -129,6 +135,13 @@ export interface GenerationPlan {
   meta: GenerationMeta;
   route: ShotNaiRoute;
   use_coords: boolean;
+  cfg?: {
+    cfg_scale?: number;
+    cfg_rescale?: number;
+    steps?: number;
+    sampler?: string;
+    scheduler?: string;
+  };
 }
 
 /**
@@ -154,6 +167,7 @@ export type ImageRequest = Pick<GenerationPlan, 'main' | 'neg' | 'captions'> & {
   model?: string;
   preset?: StylePreset | null;
   use_coords?: boolean;
+  cfg?: GenerationPlan['cfg'];
 };
 
 export interface GeneratedImage {
@@ -393,6 +407,106 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   };
 }
 
+/** Comic page → V5 plan. Costume is resolved per slot; layout is row/position text. */
+export async function buildComicGenerationForShot(args: ShotArgs): Promise<GenerationPlan> {
+  const { shot, roster } = args;
+  const card = getConfig().card;
+  const nai = getConfig().nai;
+  const page = (shot.comic_page || {}) as Partial<ComicPage>;
+  const charMax = Math.min(6, characterMaxLimit(card));
+  const slots = (Array.isArray(shot.characters) ? shot.characters : []).slice(0, charMax);
+  const n = Math.max(1, slots.length);
+  const personMode = normalizePersonTagMode(card.person_tag_mode, card.auto_person_tags);
+  const person = emphasizePersonTags(
+    personCountTagsForShot(slots, roster, personMode, null, card.person_tag_solo),
+    card.person_tag_weight,
+  );
+  const [filePos, fileNeg] = extractPreset(await getPrompt('preset_1'));
+  const route = args.route || resolveShotRoute(card, nai, { ...shot, kind: 'comic' });
+  const active = route.preset as (StylePreset & Record<string, unknown>) | null;
+  let stylePos: string;
+  let styleNeg: string;
+  if (active) {
+    stylePos = cleanText(active.positive || active.pos || '');
+    styleNeg = cleanText(active.negative || active.neg || '');
+  } else {
+    stylePos = joinTags(cleanText(card.custom_pos), filePos);
+    styleNeg = joinTags(cleanText(card.custom_neg), fileNeg);
+  }
+  stylePos = stripSpokenBubbleSuppression(stylePos);
+  styleNeg = stripComicKomaFromUc(styleNeg);
+  const koma = Math.max(1, Math.min(6, Math.floor(Number(page.koma) || slots.length || 1)));
+  const layout = stripComicStyleWords(page.layout || '');
+  const note = stripComicStyleWords(card.comic_author_note);
+  const extra = stripComicPageStyleTags(card.comic_prompt);
+  const lead = cleanText(card.fixed_prompt_prefix, 8000);
+  const trail = cleanText(card.fixed_prompt_suffix, 8000);
+  let body = joinTags(
+    stylePos,
+    `${koma}::${koma}koma::`,
+    note,
+    layout,
+    extra,
+  );
+  if (personMode !== 'off') body = stripPersonCountTags(body);
+  body = joinTags(lead, body, trail);
+  body = stripComicPageStyleTags(body);
+  let main = person ? (body ? `${person}, ${body}` : person) : body;
+  const naiaModel = modelToNaia(route.model || nai.model || 'nai-diffusion-5-full');
+  if (nai.apply_quality_tags !== false) main += QUALITY_TAGS[naiaModel] || '';
+  main = appendNoHumansWhenNoCast(main, slots.length, card.no_humans_when_no_char);
+  const extraUc = cleanText(card.comic_uc, 8000);
+  const neg = joinTags(styleNeg, extraUc);
+
+  const captions: NaiCaption[] = [];
+  const charMeta: GenerationCharacter[] = [];
+  const taggedPairs: Array<CoordPair | null> = [];
+  for (let idx = 0; idx < slots.length; idx++) {
+    const char = slots[idx]!;
+    const name = cleanText(char.name, 200);
+    const stored = name ? resolveCharacter(name, roster) : null;
+    const prompt = joinTags(composeComicSlotCaption(stored, char)) || 'girl';
+    const uc = cleanText(char.negative);
+    const taggedX = readNaiCoord(char.center_x);
+    const taggedY = readNaiCoord(char.center_y);
+    taggedPairs.push(taggedX != null && taggedY != null ? { x: taggedX, y: taggedY } : null);
+    const cx = taggedX ?? (n === 1 ? 0.5 : Math.round((0.1 + (0.8 * idx) / Math.max(1, n - 1)) * 10) / 10);
+    const cy = taggedY ?? 0.5;
+    captions.push({ prompt, uc, center_x: cx, center_y: cy });
+    charMeta.push({
+      name: stored?.name || name,
+      id: cleanText(stored?.id || '', 80) || undefined,
+      scope: charRefScopeForStored(stored, args.sessionId || ''),
+      prompt,
+      uc,
+      center_x: cx,
+      center_y: cy,
+      raw: char,
+    });
+  }
+  const use_coords = resolveComicUseCoords(card.comic_coords, page.coords, taggedPairs);
+  const cfg = resolveComicNaiParams(card, nai, route.preset);
+  return {
+    main,
+    neg,
+    captions,
+    meta: {
+      setup: layout,
+      person,
+      characters: charMeta,
+      paragraph: shot.paragraph,
+      complexity: 'dynamic',
+    },
+    route,
+    use_coords,
+    cfg,
+  };
+}
+
+export function isComicShot(shot: TaggedShot | null | undefined): boolean {
+  return normalizeShotKind(shot?.kind) === 'comic';
+}
+
 /** Runs one generation on the configured backend and returns the bytes and seed. */
 export async function generateImage(plan: ImageRequest, shotAspect?: unknown): Promise<GeneratedImage> {
   const nai: NaiSettings = getConfig().nai;
@@ -473,6 +587,13 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
     },
     activePreset,
   );
+  if (plan.cfg) {
+    if (plan.cfg.cfg_scale != null) cfgParams.cfg_scale = plan.cfg.cfg_scale;
+    if (plan.cfg.cfg_rescale != null) cfgParams.cfg_rescale = plan.cfg.cfg_rescale;
+    if (plan.cfg.steps != null) cfgParams.steps = plan.cfg.steps;
+    if (plan.cfg.sampler) cfgParams.sampler = plan.cfg.sampler;
+    if (plan.cfg.scheduler) cfgParams.scheduler = plan.cfg.scheduler;
+  }
 
   const vibes: VibeReference[] = [];
   let charRefStrength = Number(card.char_ref_strength ?? 0.6);

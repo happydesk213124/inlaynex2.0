@@ -111,6 +111,7 @@ main.ts                     entry: builds the bridge, publishes globals
 | Auth / query-string parsing | `src/api/http.ts` |
 | What the tagger LLM is told | `prompts/tagger.txt`, assembled in `src/services/tagger.ts` |
 | How a shot becomes an NAI prompt | `src/services/generation.ts` |
+| Comic kind / line range / V5 page build | `src/domain/comic/`, `src/services/comic.ts`, `buildComicGenerationForShot` |
 | V5/V4 shot routing, keys, coords, speech | `src/domain/nai/` |
 | Character name/alias matching | `src/domain/character/identity.ts` |
 | Session + global roster merging | `src/domain/character/roster.ts` |

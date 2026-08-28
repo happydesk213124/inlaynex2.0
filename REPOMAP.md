@@ -162,7 +162,7 @@ On top of it we keep five logical row stores plus per-image blobs.
 | `inx_nxstore_meta` | prompts, toggles, favourites, reference/vibe metadata |
 | `inx_nxstore_cards` | generated image cards |
 | `inx_nxstore_characters` | roster rows, keyed `"<scope>\t<id>"` |
-| `inx_nxstore_jobs` | job rows (newest 10 + any still running; see `src/domain/jobs/retention.ts`) |
+| `inx_nxstore_jobs` | job rows (newest 3 + any still running; see `src/domain/jobs/retention.ts`) |
 | `inx_nxstore_images` | image metadata (**not** bytes); may include `location.asset_path` |
 | `inx_nximg_<id>` | legacy / fallback bytes, base64 (new shots prefer the `inlay-gallery` module) |
 

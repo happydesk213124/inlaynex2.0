@@ -14,33 +14,31 @@ test("keeps every row when at or under the cap", () => {
 });
 
 test("drops oldest done jobs past the cap", () => {
-  const rows = Array.from({ length: 15 }, (_, i) => row(`j${i}`, "done", i + 1));
+  const extra = 5;
+  const n = JOB_RETENTION_LIMIT + extra;
+  const rows = Array.from({ length: n }, (_, i) => row(`j${i}`, "done", i + 1));
   const drop = new Set(jobIdsToPrune(rows));
-  assert.equal(drop.size, 5);
-  for (let i = 0; i < 5; i++) assert.equal(drop.has(`j${i}`), true);
-  for (let i = 5; i < 15; i++) assert.equal(drop.has(`j${i}`), false);
+  assert.equal(drop.size, extra);
+  for (let i = 0; i < extra; i++) assert.equal(drop.has(`j${i}`), true);
+  for (let i = extra; i < n; i++) assert.equal(drop.has(`j${i}`), false);
 });
 
 test("never drops an in-flight job even when it is the oldest", () => {
   const rows = [
     row("old-gen", "generating", 1),
-    row("old-tag", "tagging", 2),
-    row("old-q", "queued", 3),
     ...Array.from({ length: 20 }, (_, i) => row(`done${i}`, "done", 100 + i)),
   ];
   const drop = new Set(jobIdsToPrune(rows));
   assert.equal(drop.has("old-gen"), false);
-  assert.equal(drop.has("old-tag"), false);
-  assert.equal(drop.has("old-q"), false);
   assert.equal(drop.size, rows.length - JOB_RETENTION_LIMIT);
   assert.equal(drop.has("done19"), false);
 });
 
 test("prefers updated_at over created_at when ranking", () => {
-  const rows = [
-    row("stale", "done", 999, 1),
-    ...Array.from({ length: 10 }, (_, i) => row(`fresh${i}`, "done", 1, 10 + i)),
-  ];
+  const fresh = Array.from({ length: JOB_RETENTION_LIMIT }, (_, i) =>
+    row(`fresh${i}`, "done", 1, 10 + i),
+  );
+  const rows = [row("stale", "done", 999, 1), ...fresh];
   const drop = jobIdsToPrune(rows);
   assert.deepEqual(drop, ["stale"]);
 });

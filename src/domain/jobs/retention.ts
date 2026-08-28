@@ -6,7 +6,7 @@
  * rows are never dropped, even if that means the store briefly exceeds the cap.
  */
 
-export const JOB_RETENTION_LIMIT = 10;
+export const JOB_RETENTION_LIMIT = 3;
 
 /** Same set as `ACTIVE_JOB_STATES` in job-locks — in-flight rows must survive. */
 const ACTIVE_STATES = new Set(['queued', 'tagging', 'generating']);

@@ -15,7 +15,7 @@
  *     single row write, so a job that touched `meta` 47 times wrote 47 full
  *     snapshots. Writes now mark the store dirty and one flush covers the burst.
  *  3. **Session index for cards.** Per-session lookups were full scans.
- *  4. **Job retention.** Completed job rows are capped at the newest 10 so
+ *  4. **Job retention.** Completed job rows are capped at the newest 3 so
  *     `inx_nxstore_jobs` cannot grow without bound. In-flight rows stay.
  *
  * Row shapes on disk are unchanged, so 1.x data loads as-is and a downgrade

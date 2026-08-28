@@ -11972,6 +11972,18 @@ const VENDOR_REROLL_ALL_INLINE_PATCH =
         await C.setTextContent(failCount ? \`전체 재생성 부분 실패 · 성공 \${Number(B?.count || 0)} / 실패 \${failCount}\` : \`전체 재생성 완료 · \${Number(B?.count || 0)}장\`), y("info", "regen.all", \`count=\${B?.count || 0} failed=\${failCount} hash=\${String(A.hash || "").slice(0, 8)}\`);`;
 
 /** Tag regenerate (force): do not reuse the 2.2s gallery cache after unlink. */
+const VENDOR_UNLINK_PA_NEEDLE = `        body: {
+          session_id: e,
+          content_hash: n || "",
+          message_index: o
+        }`;
+const VENDOR_UNLINK_PA_PATCH = `        body: {
+          session_id: e,
+          content_hash: n || "",
+          message_index: o,
+          all: arguments.length > 3 && !!arguments[3]
+        }`;
+
 const VENDOR_FORCE_REGEN_GALLERY_NEEDLE =
   `    if (o) {
       await pa(e.sessionId, m, p);
@@ -11981,7 +11993,7 @@ const VENDOR_FORCE_REGEN_GALLERY_NEEDLE =
       }`;
 const VENDOR_FORCE_REGEN_GALLERY_PATCH =
   `    if (o) {
-      await pa(e.sessionId, m, p);
+      await pa(e.sessionId, m, p, !0);
       try {
         t._galleryCache = null;
         await ce(e.sessionId, !0);
@@ -12006,7 +12018,29 @@ const VENDOR_FORCE_REGEN_INLINE_PATCH =
         t._galleryCache = null;
         t._inlinePending = null;
         t._inlinePendingMsgIndex = -1;
+        t._msgElsCache = null;
+        t._inlineKeepIdxs = [];
+        await K("/v1/chat/restore-chrome", { method: "POST" }, 15e3).catch(() => null);
         if (e.sessionId) await ce(e.sessionId, !0);
+        const wipeDoc = await ue().catch(() => t.hostDoc);
+        const wipeEls = wipeDoc ? await getCachedMsgEls(wipeDoc).catch(() => []) : [];
+        const wipeVc = globalThis.__INLAY_VIEWER_CORE__;
+        for (const msgEl of wipeEls || []) {
+          try {
+            for (const sel of ["[data-inlay-inline-shot]", "[data-inlay-inline-pending]"]) {
+              const nodes = await unwrapSafe(await msgEl.querySelectorAll(sel));
+              for (const node of nodes || []) {
+                try { if (node && typeof node.remove == "function") await node.remove(); } catch {}
+              }
+            }
+            if (typeof msgEl.setInnerHTML == "function" && typeof wipeVc?.stripInlayInlineHtml == "function") {
+              const html = String(await msgEl.getInnerHTML() || "");
+              const cleaned = wipeVc.stripInlayInlineHtml(html);
+              if (cleaned !== html) await msgEl.setInnerHTML(cleaned);
+            }
+          } catch {}
+        }
+        y("info", "retag.chat.wipe", \`els=\${(wipeEls || []).length}\`);
         await refreshSelectedInlineImages(!0);
       } catch {
       }
@@ -14552,6 +14586,7 @@ const loadVendorUi = (): string => {
     [VENDOR_REROLL_LIVE_STOP_END_NEEDLE, 'reroll live soft-stop end'],
     [VENDOR_REROLL_IMAGE_INLINE_NEEDLE, 'reroll image inline refresh'],
     [VENDOR_REROLL_ALL_INLINE_NEEDLE, 'reroll all inline refresh'],
+    [VENDOR_UNLINK_PA_NEEDLE, 'unlink pa all flag'],
     [VENDOR_FORCE_REGEN_GALLERY_NEEDLE, 'force regen gallery reload'],
     [VENDOR_FORCE_REGEN_INLINE_NEEDLE, 'force regen inline clear'],
     [VENDOR_DE_STRIP_NEEDLE, 'De strip inline markers'],
@@ -14932,6 +14967,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_REROLL_LIVE_STOP_END_NEEDLE, VENDOR_REROLL_LIVE_STOP_END_PATCH)
     .replace(VENDOR_REROLL_IMAGE_INLINE_NEEDLE, VENDOR_REROLL_IMAGE_INLINE_PATCH)
     .replace(VENDOR_REROLL_ALL_INLINE_NEEDLE, VENDOR_REROLL_ALL_INLINE_PATCH)
+    .replace(VENDOR_UNLINK_PA_NEEDLE, VENDOR_UNLINK_PA_PATCH)
     .replace(VENDOR_FORCE_REGEN_GALLERY_NEEDLE, VENDOR_FORCE_REGEN_GALLERY_PATCH)
     .replace(VENDOR_FORCE_REGEN_INLINE_NEEDLE, VENDOR_FORCE_REGEN_INLINE_PATCH)
     .replace(VENDOR_DE_STRIP_NEEDLE, VENDOR_DE_STRIP_PATCH)
@@ -15250,6 +15286,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('t._galleryCache = null') || !out.includes('await ce(e.sessionId, !0)')) {
       throw new Error('[build] force retag must reload gallery after unlink');
+    }
+    if (!out.includes('await pa(e.sessionId, m, p, !0)') || !out.includes('retag.chat.wipe') || !out.includes('/v1/chat/restore-chrome')) {
+      throw new Error('[build] force retag must unlink the chat and remount once');
     }
     if (!out.includes('nx-nai-sampler-v5') || !out.includes('nx-nai-sampler-v4') || !out.includes('nx-nai-steps-v5')) {
       throw new Error('[build] NAI4/NAI5 must have separate sampler and steps');

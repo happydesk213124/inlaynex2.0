@@ -344,14 +344,14 @@ const WRITE_ROUTES: readonly Route[] = [
   },
   {
     match: exact('/v1/gallery/unlink', '/v1/cards/unlink'),
-    handler: async ({ body }) =>
-      ok(
-        await gallery.unlinkCardsForMessage(
-          String(body.session_id || ''),
-          String(body.content_hash || ''),
-          body.message_index,
-        ),
-      ),
+    handler: async ({ body }) => {
+      const sid = String(body.session_id || '');
+      const all = body.all === true || body.all === 1 || body.all === 'true';
+      if (all) return ok(await gallery.unlinkCardsForSession(sid));
+      return ok(
+        await gallery.unlinkCardsForMessage(sid, String(body.content_hash || ''), body.message_index),
+      );
+    },
   },
   {
     match: exact('/v1/gallery/rebind-hash', '/v1/cards/rebind-hash'),

@@ -1,5 +1,5 @@
 /**
- * Force retag unlinks every shot on a message — illustrations and comic pages.
+ * Force retag unlinks every shot in the chat — illustrations and comic pages.
  * Late-saved comic rows may keep the hash on meta while location already moved,
  * so both sides must count.
  */

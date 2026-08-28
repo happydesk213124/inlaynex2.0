@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 
 import {
   applyComicKindGuard,
+  clampComicByRatio,
   clampComicPages,
+  comicCapFromRatio,
   comicLineRange,
   comicGenOn,
   normalizeShotKind,
@@ -35,18 +37,33 @@ test("comicLineRange clamps and never uses a neighbor", () => {
   assert.deepEqual(comicLineRange(null, null, 8), [1, 1]);
 });
 
-test("clampComicPages keeps first N comics", () => {
+test("clampComicPages keeps first N comics and turns extras into illustration", () => {
   const shots = [
     { kind: "illustration" },
     { kind: "comic" },
     { kind: "comic" },
     { kind: "illustration" },
-    { kind: "comic" },
+    { kind: "comic", comic_line_end: 9 },
   ];
   const out = clampComicPages(shots, 2);
   assert.equal(out.filter((s) => s.kind === "comic").length, 2);
-  assert.equal(out.length, 4);
+  assert.equal(out.length, 5);
   assert.equal(out[out.length - 1].kind, "illustration");
+  assert.equal(out[out.length - 1].comic_line_end, undefined);
+});
+
+test("clampComicByRatio uses percent of the shot list", () => {
+  assert.equal(comicCapFromRatio(4, 50), 2);
+  assert.equal(comicCapFromRatio(1, 0), 0);
+  const shots = [
+    { kind: "comic" },
+    { kind: "comic" },
+    { kind: "comic" },
+    { kind: "illustration" },
+  ];
+  const out = clampComicByRatio(shots, 50);
+  assert.equal(out.filter((s) => s.kind === "comic").length, 2);
+  assert.equal(out.length, 4);
 });
 
 test("applyComicKindGuard drops kind when tab is off", () => {

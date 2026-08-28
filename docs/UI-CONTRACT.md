@@ -115,13 +115,18 @@ identical to today. On lets the tagger emit `kind: comic` with `line` (start /
 pin, same as illustration) and `comic_line_end` (inclusive prose end). Slots
 are people/text boxes, not panels. `card.comic_llm_batch` is `once` | `per_shot`
 (default `once`). `card.comic_schedule` is `overlap` | `wait_taggers` (default
-`overlap`). `card.comic_max_pages` clamps comic shots (default `2`).
-`card.comic_coords` is `ai_choice` | `llm` | `position` (default `llm`).
-Empty comic NAI overrides (`comic_steps`, `comic_sampler`, `comic_prompt`,
-`comic_uc`, `comic_cfg_scale`, `comic_cfg_rescale`) fall back to the existing
-NAI tab + style preset. `card.comic_author_note` is tone/world for the comic
-LLM, not an artist stack. Comic pages always use V5. Dashboard/tab save keeps
-stored comic fields when those controls are absent (`Ct()` + `assertOnce`).
+`overlap`). `card.comic_gen_ratio` is 0–100 (default `50`): share of this
+message's shots that may be `kind: comic`. Extra comic shots become
+illustration. `card.comic_max_pages` is kept for old saves (0 pages →
+ratio 0). `card.comic_coords` is `ai_choice` | `llm` | `position` (default
+`llm`). Empty comic NAI overrides (`comic_steps`, `comic_sampler`,
+`comic_cfg_scale`, `comic_cfg_rescale`) fall back to the existing NAI tab +
+style preset. `card.comic_prompt_prefix` / `comic_prompt_suffix` wrap the
+comic main like the gen-option fixed prompts. Legacy `comic_prompt` copies
+into prefix when prefix is absent; `comic_uc` is no longer shown.
+`card.comic_author_note` is tone/world for the comic LLM, not an artist
+stack. Comic pages always use V5. Dashboard/tab save keeps stored comic
+fields when those controls are absent (`Ct()` + `assertOnce`).
 
 Dashboard also has `card.toast_anchor` (`tl` | `bl` | `tr` | `br` | `tc`,
 default `tc`) for progress / selection / host / attach toasts, and

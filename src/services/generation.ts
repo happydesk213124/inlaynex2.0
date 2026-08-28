@@ -439,7 +439,8 @@ export async function buildComicGenerationForShot(args: ShotArgs): Promise<Gener
   const koma = Math.max(1, Math.min(6, Math.floor(Number(page.koma) || slots.length || 1)));
   const layout = stripComicStyleWords(page.layout || '');
   const note = stripComicStyleWords(card.comic_author_note);
-  const extra = stripComicPageStyleTags(card.comic_prompt);
+  const comicLead = stripComicPageStyleTags(card.comic_prompt_prefix);
+  const comicTrail = stripComicPageStyleTags(card.comic_prompt_suffix);
   const lead = cleanText(card.fixed_prompt_prefix, 8000);
   const trail = cleanText(card.fixed_prompt_suffix, 8000);
   let body = joinTags(
@@ -447,17 +448,15 @@ export async function buildComicGenerationForShot(args: ShotArgs): Promise<Gener
     `${koma}::${koma}koma::`,
     note,
     layout,
-    extra,
   );
   if (personMode !== 'off') body = stripPersonCountTags(body);
-  body = joinTags(lead, body, trail);
+  body = joinTags(lead, comicLead, body, comicTrail, trail);
   body = stripComicPageStyleTags(body);
   let main = person ? (body ? `${person}, ${body}` : person) : body;
   const naiaModel = modelToNaia(route.model || nai.model || 'nai-diffusion-5-full');
   if (nai.apply_quality_tags !== false) main += QUALITY_TAGS[naiaModel] || '';
   main = appendNoHumansWhenNoCast(main, slots.length, card.no_humans_when_no_char);
-  const extraUc = cleanText(card.comic_uc, 8000);
-  const neg = joinTags(styleNeg, extraUc);
+  const neg = styleNeg;
 
   const captions: NaiCaption[] = [];
   const charMeta: GenerationCharacter[] = [];
@@ -466,7 +465,7 @@ export async function buildComicGenerationForShot(args: ShotArgs): Promise<Gener
     const char = slots[idx]!;
     const name = cleanText(char.name, 200);
     const stored = name ? resolveCharacter(name, roster) : null;
-    const prompt = composeComicSlotCaption(stored, char) || 'girl';
+    const prompt = joinTags(composeComicSlotCaption(stored, char)) || 'girl';
     const uc = cleanText(char.negative);
     const taggedX = readNaiCoord(char.center_x);
     const taggedY = readNaiCoord(char.center_y);

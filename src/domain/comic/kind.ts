@@ -3,6 +3,7 @@
  * to invent a range — only `line` + `comic_line_end`.
  */
 import { cleanText } from '../../core/util/text.ts';
+import { normalizeComicGenRatio } from './params.ts';
 
 export type ShotKind = 'illustration' | 'comic';
 
@@ -35,27 +36,38 @@ export function comicLineRange(
   return [start, end];
 }
 
-export function clampComicPages<T extends { kind?: unknown }>(
+export function comicCapFromRatio(shotCount: number, ratioPct: unknown): number {
+  const n = Math.max(0, Math.floor(Number(shotCount) || 0));
+  const pct = normalizeComicGenRatio(ratioPct);
+  if (!n || !pct) return 0;
+  return Math.max(0, Math.min(n, Math.round((n * pct) / 100)));
+}
+
+/** Extra comic shots become illustration so image_max still fills. */
+export function clampComicPages<T extends { kind?: unknown; comic_line_end?: unknown }>(
   shots: readonly T[],
   maxPages: unknown,
 ): T[] {
   let max = Math.floor(Number(maxPages));
-  if (!Number.isFinite(max) || max < 0) max = 2;
-  max = Math.min(12, max);
-  if (!max) return shots.filter((s) => normalizeShotKind(s.kind) !== 'comic');
+  if (!Number.isFinite(max) || max < 0) max = 0;
   let kept = 0;
-  const out: T[] = [];
-  for (const shot of shots) {
-    if (normalizeShotKind(shot.kind) !== 'comic') {
-      out.push(shot);
-      continue;
-    }
+  return shots.map((shot) => {
+    if (normalizeShotKind(shot.kind) !== 'comic') return shot;
     if (kept < max) {
-      out.push(shot);
       kept += 1;
+      return shot;
     }
-  }
-  return out;
+    const next = { ...shot, kind: 'illustration' as const };
+    delete next.comic_line_end;
+    return next;
+  });
+}
+
+export function clampComicByRatio<T extends { kind?: unknown; comic_line_end?: unknown }>(
+  shots: readonly T[],
+  ratioPct: unknown,
+): T[] {
+  return clampComicPages(shots, comicCapFromRatio(shots.length, ratioPct));
 }
 
 export function applyComicKindGuard<T extends { kind?: unknown; comic_line_end?: unknown }>(

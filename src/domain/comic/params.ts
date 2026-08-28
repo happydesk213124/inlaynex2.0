@@ -59,3 +59,10 @@ export function normalizeComicMaxPages(raw: unknown): number {
   if (!Number.isFinite(n)) return 2;
   return Math.max(0, Math.min(12, n));
 }
+
+/** 0–100. Missing / NaN → 50. */
+export function normalizeComicGenRatio(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 50;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}

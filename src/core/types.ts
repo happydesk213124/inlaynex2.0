@@ -169,18 +169,24 @@ export interface CardSettings {
   comic_llm_batch?: 'once' | 'per_shot';
   /** illustration NAI while comic LLM runs, or wait for both taggers. */
   comic_schedule?: 'overlap' | 'wait_taggers';
-  /** Clamp first-tagger comic pages. */
+  /** Legacy page cap. Kept so old saves are not orphaned. */
   comic_max_pages?: number;
+  /** 0–100: share of this message's shots that may be comic. */
+  comic_gen_ratio?: number;
   /** Tab: AI choice / LLM per page / always position. */
   comic_coords?: 'ai_choice' | 'llm' | 'position';
   /** Empty → NAI V5 steps. */
   comic_steps?: number | null | '';
   /** Empty → NAI V5 sampler. */
   comic_sampler?: string | null;
-  /** Extra positive joined into the comic main. */
+  /** Extra positive joined into the comic main. Legacy; prefix is the UI field. */
   comic_prompt?: string;
-  /** Extra UC joined into the comic negative. */
+  /** Extra UC joined into the comic negative. Legacy; no longer in the tab. */
   comic_uc?: string;
+  /** Comic main: after person tags, before style / koma. */
+  comic_prompt_prefix?: string;
+  /** Comic main: after layout, before quality tags. */
+  comic_prompt_suffix?: string;
   /** Empty → existing CFG. */
   comic_cfg_scale?: number | null | '';
   /** Empty → existing rescale. */

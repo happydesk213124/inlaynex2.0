@@ -6,7 +6,7 @@ import { normalizeLlmRolesSettings } from '../domain/llm/roles.ts';
 import { naiStepsForFamily, normalizeNaiSampler, optionalNaiSampler } from '../domain/nai/samplers.ts';
 import { normalizeComicCoordsMode } from '../domain/comic/coords.ts';
 import { comicGenOn } from '../domain/comic/kind.ts';
-import { normalizeComicLlmBatch, normalizeComicMaxPages, normalizeComicSchedule } from '../domain/comic/params.ts';
+import { normalizeComicGenRatio, normalizeComicLlmBatch, normalizeComicMaxPages, normalizeComicSchedule } from '../domain/comic/params.ts';
 import { normalizeInlineMsgActions } from '../domain/inline-msg-actions.ts';
 import { normalizeImagePressInspect, normalizeToastAnchor } from '../domain/toast-press.ts';
 
@@ -356,9 +356,20 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   card.comic_llm_batch = normalizeComicLlmBatch(card.comic_llm_batch);
   card.comic_schedule = normalizeComicSchedule(card.comic_schedule);
   card.comic_max_pages = normalizeComicMaxPages(card.comic_max_pages);
+  if (card.comic_gen_ratio == null || card.comic_gen_ratio === '') {
+    card.comic_gen_ratio = card.comic_max_pages === 0 ? 0 : 50;
+  } else {
+    card.comic_gen_ratio = normalizeComicGenRatio(card.comic_gen_ratio);
+  }
   card.comic_coords = normalizeComicCoordsMode(card.comic_coords);
   card.comic_prompt = String(card.comic_prompt ?? '').trim().slice(0, 8000);
   card.comic_uc = String(card.comic_uc ?? '').trim().slice(0, 8000);
+  if (card.comic_prompt_prefix == null) {
+    card.comic_prompt_prefix = card.comic_prompt;
+  } else {
+    card.comic_prompt_prefix = String(card.comic_prompt_prefix).trim().slice(0, 8000);
+  }
+  card.comic_prompt_suffix = String(card.comic_prompt_suffix ?? '').trim().slice(0, 8000);
   {
     const optNum = (v: unknown): number | '' => {
       if (v == null || v === '') return '';

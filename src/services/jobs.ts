@@ -58,7 +58,7 @@ import {
 } from '../domain/nai/routing';
 import { callLlm } from '../providers/llm/client';
 import { resolveLlmRole } from '../domain/llm/roles';
-import { comicGenOn, clampComicPages } from '../domain/comic/kind';
+import { comicGenOn, clampComicByRatio } from '../domain/comic/kind';
 import { normalizeComicSchedule } from '../domain/comic/params';
 import { pickNextReadyShot } from '../domain/comic/schedule';
 import { characterHasAppearance, characterMaxLimit, applyWearContinuityToShots, applyCostumeContinuityToShots, applyCreatedCostumesToShots, collectCostumePairs, createdCostumeWearByName, ensureCostumes } from '../domain/character/tags';
@@ -828,8 +828,8 @@ async function runJob(jobId: string): Promise<void> {
     const card = getConfig().card || {};
     const imageMin = Math.max(1, Number(card.image_min ?? 1));
     const imageMax = Math.max(imageMin, Number(card.image_max ?? 3));
-    if (comicGenOn(card)) shots = clampComicPages(shots, card.comic_max_pages);
     shots = shots.slice(0, imageMax);
+    if (comicGenOn(card)) shots = clampComicByRatio(shots, card.comic_gen_ratio);
 
     const curationMode = getCurationMode();
     if (curationMode === 'two_stage') {

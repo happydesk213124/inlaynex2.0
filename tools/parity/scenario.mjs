@@ -149,6 +149,7 @@ export async function runScenario(N, handles) {
       comic_llm_batch: String(card.comic_llm_batch || 'once'),
       comic_schedule: String(card.comic_schedule || 'overlap'),
       comic_max_pages: Number(card.comic_max_pages ?? 2),
+      comic_gen_ratio: Number(card.comic_gen_ratio ?? 50),
       comic_coords: String(card.comic_coords || 'llm'),
     };
   });

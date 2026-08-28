@@ -438,15 +438,14 @@ export async function buildComicGenerationForShot(args: ShotArgs): Promise<Gener
   styleNeg = stripComicKomaFromUc(styleNeg);
   const koma = Math.max(1, Math.min(6, Math.floor(Number(page.koma) || slots.length || 1)));
   const layout = stripComicStyleWords(page.layout || '');
-  const note = stripComicStyleWords(card.comic_author_note);
   const comicLead = stripComicPageStyleTags(card.comic_prompt_prefix);
   const comicTrail = stripComicPageStyleTags(card.comic_prompt_suffix);
   const lead = cleanText(card.fixed_prompt_prefix, 8000);
   const trail = cleanText(card.fixed_prompt_suffix, 8000);
+  // Author note is comic-LLM instruction only (callComicLlm). NAI main uses prefix/suffix.
   let body = joinTags(
     stylePos,
     `${koma}::${koma}koma::`,
-    note,
     layout,
   );
   if (personMode !== 'off') body = stripPersonCountTags(body);

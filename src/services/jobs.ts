@@ -1203,6 +1203,7 @@ async function runJob(jobId: string): Promise<void> {
         if (runMeta) runMeta.publishedIds.push(cardId);
         const cardMeta = {
           ...cardMetaFromLocation(meta, location, raw?.byteLength || 0),
+          assistant_preview: assistantPreview,
           aspect: shot.aspect || undefined,
           ...(cleanText(shot.complexity, 20) ? { complexity: cleanText(shot.complexity, 20) } : {}),
         };

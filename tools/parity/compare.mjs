@@ -275,6 +275,11 @@ const normalize = (root) => {
           || k === 'steps_v5'
           || k === 'steps_v4'
         ) continue;
+        // Stream rematch keeps assistant_preview on the newest 20 card metas
+        // only; the images index no longer copies the prose. 1.x wrote it on
+        // every location, so listings/export/unlink sidecars are not comparable.
+        // Retention + Dice gate are unit-tested.
+        if (k === 'assistant_preview') continue;
         // 2.0 comic tab. Default off → same job path as 1.x; unit tests assert
         // kind/range/coords/schedule. Wire keys have no 1.x equivalent.
         if (

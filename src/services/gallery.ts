@@ -380,12 +380,12 @@ export async function rebindCardsHash(args: RebindArgs = {}): Promise<ApiResult>
     const existing = await readImageLocation(cardId);
     const already = cleanText(existing.content_hash || meta.content_hash || '', 128);
     if (already === toHash) continue;
-    const nextLoc = {
+    const nextLoc: Record<string, unknown> = {
       ...existing,
       image_id: cardId,
       content_hash: toHash,
-      assistant_preview: preview || existing.assistant_preview || '',
     };
+    delete nextLoc.assistant_preview;
     await writeImageLocation(cardId, nextLoc);
     meta.content_hash = toHash;
     if (preview) meta.assistant_preview = preview;

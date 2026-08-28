@@ -225,7 +225,6 @@ export type ImageLocation = {
   y_percent: number | null;
   line: number | null;
   content_hash: string;
-  assistant_preview: string;
 };
 
 /** The location fields a card response carries, resolved against its stored meta. */
@@ -733,7 +732,6 @@ export function buildImageLocation({
   yPercent,
   line = null,
   contentHash = '',
-  assistantPreview = '',
 }: LocationArgs): ImageLocation {
   const lineN = Math.floor(Number(line));
   return {
@@ -754,7 +752,6 @@ export function buildImageLocation({
     y_percent: yPercent,
     line: Number.isFinite(lineN) && lineN >= 1 ? lineN : null,
     content_hash: cleanText(contentHash || request.content_hash || '', 128),
-    assistant_preview: cleanText(assistantPreview || request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT),
   };
 }
 

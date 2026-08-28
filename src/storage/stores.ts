@@ -44,6 +44,7 @@ import {
 import { dbg } from '../core/debug';
 import { base64ToAb, bytesToBase64Async } from '../core/util/bytes';
 import type { CardRow, CharacterRecord, JobRow, MetaRow, StoreName } from '../core/types';
+import { cardIdsToStripPreview } from '../domain/gallery/preview-retention';
 import { jobIdsToPrune } from '../domain/jobs/retention';
 import { psGet, psRemove, psSet } from './device-store';
 import { blobUrlCache } from './blob-url-cache';
@@ -198,7 +199,7 @@ function snapshotOf(store: StoreName): Record<string, unknown> {
       const assetPath = String(v.asset_path || '');
       obj[k] = {
         id: v.id,
-        location: v.location || null,
+        location: locationWithoutPreview(v.location),
         has_png: v.has_png,
         png_bytes: v.png_bytes,
         storage: assetPath ? 'module' : 'indexeddb',
@@ -309,6 +310,67 @@ function pruneJobStoreUnlocked(opts: { persist?: boolean } = {}): number {
   if (opts.persist !== false) schedulePersist('jobs');
   dbg('jobs.prune', { message: `${drop.size} dropped`, dropped: drop.size, kept: memStores.jobs.size });
   return drop.size;
+}
+
+function locationWithoutPreview(
+  loc: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!loc || typeof loc !== 'object') return loc ?? null;
+  if (!Object.prototype.hasOwnProperty.call(loc, 'assistant_preview')) return loc;
+  const next = { ...loc };
+  delete next.assistant_preview;
+  return next;
+}
+
+function clearCardAssistantPreview(row: CardRow): boolean {
+  let changed = false;
+  if (row.assistant_preview) {
+    delete row.assistant_preview;
+    changed = true;
+  }
+  const raw = row.meta_json;
+  if (typeof raw !== 'string' || !raw.includes('assistant_preview')) return changed;
+  try {
+    const meta = JSON.parse(raw) as Record<string, unknown>;
+    if (!meta || typeof meta !== 'object' || !meta.assistant_preview) return changed;
+    delete meta.assistant_preview;
+    row.meta_json = JSON.stringify(meta);
+    return true;
+  } catch {
+    return changed;
+  }
+}
+
+/** Newest 20 cards keep preview for stream rematch; older cards drop the prose. */
+function pruneCardPreviewsUnlocked(opts: { persist?: boolean } = {}): number {
+  const rows = [...memStores.cards.values()].map((row) => ({
+    id: String(row.id || ''),
+    created_at: Number(row.created_at || 0),
+  }));
+  const drop = new Set(cardIdsToStripPreview(rows));
+  if (!drop.size) return 0;
+  let n = 0;
+  for (const [k, row] of memStores.cards) {
+    if (!drop.has(String(row.id || k))) continue;
+    if (clearCardAssistantPreview(row)) n += 1;
+  }
+  if (n && opts.persist !== false) schedulePersist('cards');
+  return n;
+}
+
+function stripImageLocationPreviewsUnlocked(): number {
+  let n = 0;
+  for (const row of memStores.images.values()) {
+    const loc = row.location;
+    if (!loc || typeof loc !== 'object' || !Object.prototype.hasOwnProperty.call(loc, 'assistant_preview')) {
+      continue;
+    }
+    const next = { ...loc };
+    delete next.assistant_preview;
+    row.location = next;
+    n += 1;
+  }
+  return n;
 }
 
 /** Waits until every pending row write and image blob write has landed. */
@@ -559,6 +621,8 @@ export async function openDb(): Promise<boolean> {
     // Drop leftover 1.x / uncapped job history on first open so the disk key
     // shrinks before the UI starts polling.
     if (pruneJobStoreUnlocked({ persist: false }) > 0) await persistStore('jobs');
+    if (stripImageLocationPreviewsUnlocked() > 0) await persistStore('images');
+    if (pruneCardPreviewsUnlocked({ persist: false }) > 0) await persistStore('cards');
     return true;
   })().catch((error: unknown) => {
     storeReady = null;
@@ -631,7 +695,7 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
     if (prev?.png) pngCacheBytes -= prev.png.byteLength;
     const row: ImageMemRow = {
       id: String(value.id),
-      location: (value.location as Record<string, unknown>) || {},
+      location: locationWithoutPreview(value.location as Record<string, unknown>) || {},
       ...(typeof value.mime === 'string' && value.mime ? { mime: value.mime } : {}),
       png,
       has_png: Boolean(png),
@@ -778,7 +842,8 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
     const row = value as unknown as CardRow;
     memStores.cards.set(k, row);
     indexCard(row);
-    if (persist) schedulePersist('cards');
+    const stripped = pruneCardPreviewsUnlocked({ persist: false });
+    if (persist || stripped > 0) schedulePersist('cards');
     return k;
   }
 
@@ -887,14 +952,15 @@ export async function putImageLocation(id: string, location: Record<string, unkn
   await openDb();
   const k = String(id);
   const row = memStores.images.get(k);
+  const loc = locationWithoutPreview(location) || {};
   if (row) {
-    row.location = location;
+    row.location = loc;
     schedulePersist('images');
     return;
   }
   memStores.images.set(k, {
     id: k,
-    location,
+    location: loc,
     png: null,
     has_png: false,
     png_bytes: 0,

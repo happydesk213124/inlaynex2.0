@@ -62,6 +62,7 @@ import { comicGenOn, clampComicByRatio } from '../domain/comic/kind';
 import { normalizeComicSchedule } from '../domain/comic/params';
 import { pickNextReadyShot } from '../domain/comic/schedule';
 import { characterHasAppearance, characterMaxLimit, applyWearContinuityToShots, applyCostumeContinuityToShots, applyCreatedCostumesToShots, collectCostumePairs, createdCostumeWearByName, ensureCostumes } from '../domain/character/tags';
+import { slimCardCharacters } from '../domain/gallery/slim-cast';
 import { dedupeShotCharacters, matchCharactersInText, resolveCharacter } from '../domain/character/roster';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
 import { flushPersist, idbGet, idbPut } from '../storage/stores';
@@ -1205,6 +1206,8 @@ async function runJob(jobId: string): Promise<void> {
           ...cardMetaFromLocation(meta, location, raw?.byteLength || 0),
           assistant_preview: assistantPreview,
           aspect: shot.aspect || undefined,
+          kind: isComicShot(shot) ? 'comic' : 'illustration',
+          characters: slimCardCharacters(meta.characters || []),
           ...(cleanText(shot.complexity, 20) ? { complexity: cleanText(shot.complexity, 20) } : {}),
         };
         cards[idx] = {
@@ -1225,7 +1228,7 @@ async function runJob(jobId: string): Promise<void> {
           assistant_preview: assistantPreview,
           main_prompt: main,
           negative_prompt: neg,
-          characters: meta.characters || [],
+          characters: slimCardCharacters(meta.characters || []),
           image_url: resolveImageUrl(cardId),
           seed,
           storage: 'indexeddb',
@@ -1255,9 +1258,9 @@ async function runJob(jobId: string): Promise<void> {
           session_id: sessionId,
           shot_index: idx,
           paragraph: Number(shot.paragraph || 0),
-          main_prompt: main,
-          negative_prompt: neg,
-          characters_json: JSON.stringify(meta.characters || []),
+          main_prompt: '',
+          negative_prompt: '',
+          characters_json: JSON.stringify(slimCardCharacters(meta.characters || [])),
           seed,
           meta_json: JSON.stringify(cardMeta),
           created_at: now,

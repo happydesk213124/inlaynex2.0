@@ -13,9 +13,10 @@
  */
 
 import { dbg, dbgSpan } from '../core/debug';
-import { abToBase64, bytesToDataUrlAsync, sniffImageMime } from '../core/util/bytes';
+import { abToBase64, asU8, bytesToDataUrlAsync, isPngBytes, sniffImageMime } from '../core/util/bytes';
 import { sleep } from '../core/util/async';
 import { encodeWebpQuality } from '../core/util/image';
+import { readPngTextChunks } from '../domain/nai-meta/png-text';
 import { dropBlobUrl, getBlobUrl, idbGet, idbPut, pinBlobUrls, retainBlobUrls, setBlobUrl } from './stores';
 
 /** Resolves an id to a display URL (`data:image`), reusing the cache. Returns '' when absent. */
@@ -68,14 +69,27 @@ export async function publishImage(
   dropBlobUrl(id);
   let bytes: ArrayBuffer = png;
   let mime = sniffImageMime(png);
+  // Canvas WebP drops PNG tEXt / stealth. Keep the NovelAI file so reroll and
+  // the shot-tag form can read sampler, size, and base from the image.
+  let keepNaiPng = false;
   try {
-    const webp = await encodeWebpQuality(png, 0.9);
-    if (webp) {
-      bytes = webp;
-      mime = 'image/webp';
+    if (isPngBytes(asU8(png))) {
+      const texts = await readPngTextChunks(png);
+      keepNaiPng = Boolean(texts.Comment || texts.comment || texts.Description || texts.Source);
     }
-  } catch (err) {
-    dbg('image.webp', { message: String((err as Error)?.message || err), id }, 'warn');
+  } catch {
+    keepNaiPng = false;
+  }
+  if (!keepNaiPng) {
+    try {
+      const webp = await encodeWebpQuality(png, 0.9);
+      if (webp) {
+        bytes = webp;
+        mime = 'image/webp';
+      }
+    } catch (err) {
+      dbg('image.webp', { message: String((err as Error)?.message || err), id }, 'warn');
+    }
   }
   await idbPut('images', { id, png: bytes, mime, location: location || {} });
 

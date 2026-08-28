@@ -4918,6 +4918,15 @@ const VENDOR_STICKY_OPEN_CARD_PATCH = `  async function openCardTagEdit(e) {
     await hideFloatingViewerForModal();
     if (typeof requestAnimationFrame == "function") await new Promise((res) => requestAnimationFrame(res));
     if (openGen !== t._editOpenGen) return;
+    try { await le(); } catch {}
+    try {
+      const nai = await K("/v1/cards/" + e.id + "/nai-prompt");
+      if (nai && nai.ok) {
+        if (typeof nai.main_prompt == "string") e.main_prompt = nai.main_prompt;
+        if (typeof nai.negative_prompt == "string") e.negative_prompt = nai.negative_prompt;
+        if (Array.isArray(nai.characters) && nai.characters.length) e.characters = nai.characters;
+      }
+    } catch {}
     if (!t._viewerRoster) void ensureViewerRosterLoaded().catch(() => null);`;
 
 /** Shot-tag modal was rebuilding char prompts from live roster + expression/action/sex,
@@ -5236,6 +5245,7 @@ const VENDOR_STICKY_OPEN_CHAR_PATCH = `  async function Ua(e) {
     await hideFloatingViewerForModal();
     if (typeof requestAnimationFrame == "function") await new Promise((res) => requestAnimationFrame(res));
     if (openGen !== t._editOpenGen) return;
+    try { await le(); } catch {}
     try {
       const hid = String(e.id || "").trim();
       if (hid) {
@@ -13286,6 +13296,16 @@ const VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE =
 const VENDOR_VIEWER_META_Y_CHIP_TOUCH_PATCH =
   `          await addChip(\`\${Math.round(Math.max(0, Math.min(100, yNum)))}%\`, "y", "padding:10px 14px;border-radius:999px;font-size:13px;line-height:1.2;min-height:44px;box-sizing:border-box;display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.12);background:rgba(15,23,42,.72);color:#94a3b8;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;pointer-events:none");`;
 
+const VENDOR_VIEWER_BASE_CHIP_NEEDLE =
+  `      await addChip("base", "base", chipStyle(!0, "rgba(124,108,255,.45)"));`;
+const VENDOR_VIEWER_BASE_CHIP_PATCH =
+  `      await addChip("수정", "base", chipStyle(!0, "rgba(124,108,255,.45)"));`;
+
+const VENDOR_INSPECT_BASE_CHIP_NEEDLE =
+  '      await addInspectBtn(chipRow, "base", "base", `${chipStyle};background:rgba(124,108,255,.22);color:#ddd6fe;border:1px solid rgba(124,108,255,.45)`);';
+const VENDOR_INSPECT_BASE_CHIP_PATCH =
+  '      await addInspectBtn(chipRow, "수정", "base", `${chipStyle};background:rgba(124,108,255,.22);color:#ddd6fe;border:1px solid rgba(124,108,255,.45)`);';
+
 const VENDOR_THUMBS_STATE_NEEDLE =
   `      preview: S,
       thumbs: E,
@@ -14614,6 +14634,8 @@ const loadVendorUi = (): string => {
     [VENDOR_META_SKIP_ROSTER_NEEDLE, 'viewer chips skip roster await'],
     [VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE, 'viewer meta chip touch'],
     [VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE, 'viewer meta y chip touch'],
+    [VENDOR_VIEWER_BASE_CHIP_NEEDLE, 'viewer base chip 수정'],
+    [VENDOR_INSPECT_BASE_CHIP_NEEDLE, 'inspect base chip 수정'],
     [VENDOR_THUMBS_STATE_NEEDLE, 'thumbs transform state'],
     [VENDOR_THUMBS_HELPERS_NEEDLE, 'thumbs transform helpers'],
     [VENDOR_THUMB_HIT_NEEDLE, 'thumb hit owned offset'],
@@ -14992,6 +15014,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_META_SKIP_ROSTER_NEEDLE, VENDOR_META_SKIP_ROSTER_PATCH)
     .replace(VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE, VENDOR_VIEWER_META_CHIP_TOUCH_PATCH)
     .replace(VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE, VENDOR_VIEWER_META_Y_CHIP_TOUCH_PATCH)
+    .replace(VENDOR_VIEWER_BASE_CHIP_NEEDLE, VENDOR_VIEWER_BASE_CHIP_PATCH)
+    .replace(VENDOR_INSPECT_BASE_CHIP_NEEDLE, VENDOR_INSPECT_BASE_CHIP_PATCH)
     .replace(VENDOR_THUMBS_STATE_NEEDLE, VENDOR_THUMBS_STATE_PATCH)
     .replace(VENDOR_THUMBS_HELPERS_NEEDLE, VENDOR_THUMBS_HELPERS_PATCH)
     .replace(VENDOR_THUMB_HIT_NEEDLE, VENDOR_THUMB_HIT_PATCH)
@@ -15154,6 +15178,9 @@ const loadVendorUi = (): string => {
         throw new Error('[build] attach toast must not hide behind job/index busy');
       }
     }
+    assertOnce(out, '/v1/cards/" + e.id + "/nai-prompt', 'card tag nai-prompt fill landed');
+    assertOnce(out, 'await addChip("수정", "base"', 'viewer base chip 수정 landed');
+    assertOnce(out, 'await addInspectBtn(chipRow, "수정", "base"', 'inspect base chip 수정 landed');
     assertOnce(out, 'async function nxStickyV2ApplyFromHt', 'sticky v2 apply landed');
     assertOnce(out, 'function nxReadyImg(src)', 'nxReadyImg display-url helper landed');
     if (out.includes('typeof fb == "string" && /^data:image')) {

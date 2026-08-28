@@ -201,7 +201,33 @@ const normalize = (root) => {
       // objects had neither; unit tests assert the key helper, not this wire.
       const isGenCaption =
         'center_x' in node && 'prompt' in node && ('uc' in node || 'raw' in node);
+      // 2.0 card rows no longer copy NAI main/neg or baked look tags. Those live
+      // on the image file + roster. 1.x still echoed the last generate — the
+      // strings are not comparable. GET /nai-prompt + reroll unit/scenario
+      // assert the new source.
+      const isCardShape =
+        typeof node.id === 'string'
+        && ('image_url' in node || 'png_bytes' in node)
+        && ('shot_index' in node || 'paragraph' in node);
+      // ZIP manifest `meta` still had 1.x main/neg + baked look tags.
+      const isStoredCardMeta =
+        Array.isArray(node.characters)
+        && ('main_prompt' in node || 'negative_prompt' in node);
       for (const k of Object.keys(node).sort()) {
+        if ((isCardShape || isStoredCardMeta) && (k === 'main_prompt' || k === 'negative_prompt' || k === 'setup')) continue;
+        if ((isCardShape || isStoredCardMeta) && k === 'characters' && Array.isArray(node.characters)) {
+          // 2.0 persists shot staging (action/expression/…) on the card; 1.x
+          // left those on the baked prompt only. Name is the comparable identity.
+          out[k] = walk(
+            node.characters.map((ch) => {
+              if (!ch || typeof ch !== 'object') return ch;
+              const name = typeof ch.name === 'string' ? ch.name : '';
+              return name ? { name } : {};
+            }),
+            k,
+          );
+          continue;
+        }
         if (isGenCaption && (k === 'id' || k === 'scope')) continue;
         // 2.0 curation tab settings have no 1.x equivalent. Drop from wire compare;
         // unit tests + scenario assert the new behaviour. composition_curation is
@@ -353,7 +379,7 @@ const diff = (a, b, at, into) => {
     // were evicted there that survive here. So the assertion worth making is that
     // no stage the old run recorded went missing; extra stages are the win.
     // Known 2.0 renames/drops (not regressions): allow these to disappear.
-    const ALLOW_GONE = new Set(['autotag.start', 'job.start', 'nai.read_bytes.done', 'nai.fetch.returned']);
+    const ALLOW_GONE = new Set(['autotag.start', 'job.start', 'nai.read_bytes.done', 'nai.fetch.returned', 'nai.generate.dims']);
     const gone = a.stages.filter((s) => !b.stages.includes(s) && !ALLOW_GONE.has(s));
     if (gone.length) into.push({ at: `${at}.stages`, old: gone.join(', '), new: '(absent)', note: 'stage no longer logged' });
     // An error appearing or disappearing is behaviour, so those match exactly.
@@ -387,6 +413,8 @@ const newRun = JSON.parse(fs.readFileSync(newPath, 'utf8'));
  * because that would force us to hide the new behaviour or break the suite.
  */
 const INTENTIONAL_DIFF_STEPS = new Set([
+  // Empty override characters[] no longer wipes the slim cast; 1.x sent zero chars.
+  'cards.reroll_with_overrides',
   'presets.reroll_after_swap',
   'presets.reroll_swaps_style',
   // Same preset-rebuild divergence as reroll_after_swap, plus 2.4.16: the reroll
@@ -478,6 +506,12 @@ const NEW_ONLY_STEPS = new Map([
       : `2.0 command-rewrite must keep look + apply action, got ${JSON.stringify(v)}`),
   ],
   [
+    'cards.nai_prompt',
+    (v) => (v?.ok === true && String(v?.main_prompt || '').includes('parity cafe')
+      ? null
+      : `2.0 nai-prompt must return image base tags, got ${JSON.stringify(v)}`),
+  ],
+  [
     'job.stop_idle',
     (v) => (v?.ok === true && Number(v?.stopped) === 0 && v?.reroll_stop === true
       ? null
@@ -554,13 +588,13 @@ for (const name of oldSteps.keys()) {
   if (INTENTIONAL_DIFF_STEPS.has(name)) {
     if (!oldStep.ok) findings.push({ at: name, old: 'failed', new: '(intentional)', note: 'old step errored' });
     if (!newStep.ok) findings.push({ at: name, old: '(intentional)', new: 'failed', note: 'new step errored' });
-    // 2.0 must actually perform the style swap — that is the point of the step.
-    if (name === 'presets.reroll_swaps_style' && newStep.value?.swapped !== true) {
+    // Reroll replays the image file. Settings presets must not rewrite base.
+    if (name === 'presets.reroll_swaps_style' && newStep.value?.kept_file !== true) {
       findings.push({
         at: name,
         old: String(oldStep.value?.swapped),
-        new: String(newStep.value?.swapped),
-        note: '2.0 must report swapped:true after preset change + reroll',
+        new: JSON.stringify(newStep.value),
+        note: '2.0 reroll must keep the file base and ignore the active preset',
       });
     }
     if (name === 'presets.reroll_keeps_v4_from_complexity'
@@ -573,12 +607,12 @@ for (const name of oldSteps.keys()) {
       });
     }
     if (name === 'presets.reroll_keeps_v5_model'
-      && (newStep.value?.v5 !== true || !(newStep.value?.sent >= 1))) {
+      && (newStep.value?.keeps_file !== true || !(newStep.value?.sent >= 1))) {
       findings.push({
         at: name,
         old: String(oldStep.value?.model),
         new: JSON.stringify(newStep.value),
-        note: 'with nai5_only on, a reroll must generate on the V5 model it built the prompt for',
+        note: 'reroll must send the file model, not nai5_only from settings',
       });
     }
     if (name === 'speech.bubble_on_caption'

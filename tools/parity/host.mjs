@@ -11,6 +11,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { crc32 } from 'node:zlib';
 
 export const FIXED_EPOCH = 1_760_000_000_000;
 
@@ -27,6 +28,61 @@ export const PNG_1X1 = Uint8Array.from([
   0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
   0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe, 0xd4, 0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
   0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
+function pngChunk(type, data) {
+  const body = Buffer.concat([Buffer.from(type, 'latin1'), Buffer.from(data)]);
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body) >>> 0);
+  return Buffer.concat([len, body, crc]);
+}
+
+/** Same pixels as PNG_1X1 plus NovelAI Comment/Source so reroll can replay the file. */
+const NAI_COMMENT = {
+  prompt: 'parity cafe, night',
+  uc: 'lowres, bad quality',
+  width: 832,
+  height: 1216,
+  steps: 28,
+  scale: 5,
+  sampler: 'k_euler_ancestral',
+  noise_schedule: 'karras',
+  model: 'nai-diffusion-4-5-full',
+  v4_prompt: {
+    caption: {
+      base_caption: 'parity cafe, night',
+      char_captions: [{ char_caption: 'boy, black hair', centers: [{ x: 0.5, y: 0.5 }] }],
+    },
+  },
+  v4_negative_prompt: {
+    caption: {
+      base_caption: 'lowres, bad quality',
+      char_captions: [{ char_caption: '' }],
+    },
+  },
+};
+const NAI_TEXT_SOURCE = Buffer.from('Source\0NAI Diffusion V4.5 Full', 'latin1');
+const NAI_TEXT_COMMENT = Buffer.from(`Comment\0${JSON.stringify(NAI_COMMENT)}`, 'latin1');
+const PNG_IEND = Buffer.from([0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
+function pngChunksBeforeIend(buf) {
+  let offset = 8;
+  let end = 8;
+  while (offset + 12 <= buf.length) {
+    const length = buf.readUInt32BE(offset);
+    const type = buf.subarray(offset + 4, offset + 8).toString('latin1');
+    if (type === 'IEND' || length > 1_000_000 || offset + 12 + length > buf.length) break;
+    end = offset + 12 + length;
+    offset = end;
+  }
+  return buf.subarray(0, end);
+}
+export const PNG_NAI_1X1 = Buffer.concat([
+  pngChunksBeforeIend(Buffer.from(PNG_1X1)),
+  pngChunk('tEXt', NAI_TEXT_SOURCE),
+  pngChunk('tEXt', NAI_TEXT_COMMENT),
+  PNG_IEND,
 ]);
 
 /** mulberry32 — small, fast, reproducible. */
@@ -214,7 +270,7 @@ export function installHost({ promptsDir, seed = 0x5eed }) {
     }
     if (u.includes('generate-image') || u.includes('novelai.net/ai')) {
       naiRequests.push({ kind: 'generate', body: readBody() });
-      return bytesResponse(200, zipStore('image_0.png', PNG_1X1));
+      return bytesResponse(200, zipStore('image_0.png', PNG_NAI_1X1));
     }
     if (u.includes('subscription')) {
       return jsonResponse(200, {

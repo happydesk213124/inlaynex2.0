@@ -47,6 +47,8 @@ const MODULES = {
   'nai-meta-prompt-tags': 'src/domain/nai-meta/prompt-tags.ts',
   'nai-meta-match': 'src/domain/nai-meta/match.ts',
   'nai-meta-from-metadata': 'src/domain/nai-meta/from-metadata.ts',
+  'nai-meta-replay': 'src/domain/nai-meta/replay.ts',
+  'slim-cast': 'src/domain/gallery/slim-cast.ts',
   'nai-meta-aspect': 'src/domain/nai-meta/aspect.ts',
   'nai-meta-style-preset': 'src/domain/nai-meta/style-preset.ts',
   'nai-meta-stealth': 'src/domain/nai-meta/stealth.ts',

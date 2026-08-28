@@ -363,8 +363,9 @@ lore_trigger_keys[], character_description, persona_description, force`.
 | `POST /v1/gallery/delete` | `{card_ids[]}` **or** `{folder_key}` |
 | `POST /v1/gallery/export` | `{all\|folder_key\|card_ids}` → `{ok, zip_base64, filename, count}` |
 | `POST /v1/gallery/import` | `{zip_base64, prefer_new_ids}` → `{ok, imported, report}` |
-| `POST /v1/cards/:id/tags` | `{main_prompt, negative_prompt, characters[]}` |
-| `POST /v1/cards/:id/reroll` | `{mode:"nai", overrides?}` → `{ok, card, replaced?}` |
+| `GET /v1/cards/:id/nai-prompt` | image NovelAI tags for the shot-tag form: `{ok, main_prompt, negative_prompt, characters[]}` — pixels of that one card |
+| `POST /v1/cards/:id/tags` | `{main_prompt, negative_prompt, characters[]}` — persist slim cast only; main/neg stay on the file |
+| `POST /v1/cards/:id/reroll` | `{mode:"nai", overrides?}` → `{ok, card, replaced?}` — replay file sampler/size/base + new seed; illustration char captions from roster + costume pick / action |
 | `POST /v1/messages/reroll` | `{session_id, content_hash, message_index}` |
 | `/v1/images/:id`, `/v1/images/:id.json` | raw bytes / placement sidecar |
 

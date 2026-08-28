@@ -3,13 +3,11 @@
  *
  * Two things here are easy to get wrong.
  *
- * **A reroll does not replay the stored prompt verbatim.** It re-runs prompt
- * assembly against the *current* roster and the *current* style preset, so a
- * card regenerated after the user swapped the active preset (or fixed a
- * character's appearance) picks those up. Scene tags stay pinned via
- * `meta.setup` when that field is still scene-only; hand-edited cards that
- * mirrored the full `main_prompt` into `meta.setup` keep the edited main and
- * only rebuild per-character captions. Explicit overrides always win.
+ * **A reroll replays the saved image's NAI metadata** (sampler, size, base,
+ * model) with a new seed. Illustration char captions are rebuilt from the
+ * current roster + the card's costume pick / action / speech. Comic pages
+ * keep the file captions. Tag-popup overrides replace base (and char prompts
+ * when the form sent them). The settings tab is not applied.
  *
  * **A reroll allocates a new card id** and deletes the old row, so callers must
  * follow `replaced` rather than assume the id survived. The image location
@@ -22,10 +20,12 @@
  * message while it works.
  */
 
-import type { ApiResult, CardRow, ShotCharacter, TaggedShot } from '../core/types';
+import type { ApiResult, CardRow } from '../core/types';
+import { QUALITY_TAGS } from '../config/defaults';
 import {
   ASSISTANT_PREVIEW_LIMIT,
   cleanText,
+  joinTags,
   splitTagTokens,
   stripCbs,
   toInt,
@@ -33,18 +33,25 @@ import {
   unifiedSessionIdForCharacter,
   uuid,
 } from '../core/util/text';
-import { characterMaxLimit, normalizeCharacterCaptionTags, stripPersonCountTags } from '../domain/character/tags';
+import { characterMaxLimit, composeCharacterCaptionTags, stripPersonCountTags } from '../domain/character/tags';
+import { collectStylePositives } from '../domain/prompt/reroll-setup';
+import { modelToNaia } from '../providers/nai/payload';
+import { resolveCharacter } from '../domain/character/roster';
+import { slimCardCharacters } from '../domain/gallery/slim-cast';
+import { extractNaiMetadata } from '../domain/nai-meta';
 import {
-  collectStylePositives,
-  resolveRerollLockedSetup,
-} from '../domain/prompt/reroll-setup';
+  isComicNaiScene,
+  randomNaiSeed,
+  sceneFromNaiMetadata,
+  t2iRequestFromScene,
+  type NaiScene,
+} from '../domain/nai-meta/replay';
 import {
   commandRewriteHasDeltas,
   mergeCommandRewriteCharacters,
   mergeCommandRewriteDeltas,
   mergeCommandRewriteMain,
 } from '../domain/prompt/command-rewrite';
-import { QUALITY_TAGS } from '../config/defaults';
 import { dbg } from '../core/debug';
 import { parseJsonLoose } from '../core/util/object';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
@@ -54,33 +61,90 @@ import type { LlmMessage } from '../providers/llm/transform';
 import { rosterForSession } from './characters';
 import { getConfig, messageBusyKeys, clearMessageRerollStop, isMessageRerollStopRequested } from './context';
 import {
-  buildGenerationForShot,
   cardMetaFromLocation,
-  generateImage,
+  generateFromNaiReplay,
   locationFieldsForCard,
   readImageLocation,
 } from './generation';
-import type { NaiCaption } from './generation';
-import { deleteCard } from './gallery';
+import { deleteCard, getImageBytes } from './gallery';
 import { busyReplyForRequest, jobKey } from './job-locks';
 import { createJob } from './jobs';
 import { getPrompt } from './settings';
-import { modelToNaia } from '../providers/nai/payload';
-import { resolveShotRoute } from '../domain/nai/routing';
-import type { ShotNaiRoute } from '../domain/nai/routing';
-import { captionWithSpeech, speechCaptionTagsForShot } from '../domain/nai/speech';
-import type { SpeechCharacter } from '../domain/nai/speech';
-
-/** Serialised card columns are user data; a malformed one must not fail the request. */
-function storedComplexity(meta: Record<string, unknown>): string {
-  return cleanText(meta.complexity, 20);
-}
+import { speechCaptionTag } from '../domain/nai/speech';
 
 function parseJsonOr(raw: unknown, fallback: unknown): unknown {
   try {
     return JSON.parse(raw as string);
   } catch {
     return fallback;
+  }
+}
+
+async function loadCardImageScene(cardId: string): Promise<NaiScene> {
+  const bytes = await getImageBytes(cardId);
+  if (!bytes?.byteLength) throw new Error('이미지를 읽지 못했습니다.');
+  const naiMeta = await extractNaiMetadata(bytes);
+  if (!naiMeta) throw new Error('이미지에서 NovelAI 메타데이터를 읽지 못했습니다.');
+  const scene = sceneFromNaiMetadata(naiMeta);
+  if (!cleanText(scene.main) && !scene.characters.length) {
+    throw new Error('메타데이터에 프롬프트가 없습니다.');
+  }
+  return scene;
+}
+
+function illustrationCaptionsFromCast(
+  chars: unknown,
+  roster: Parameters<typeof resolveCharacter>[1],
+): NaiScene['characters'] {
+  const slots = slimCardCharacters(chars);
+  return slots.map((slot) => {
+    const name = cleanText(slot.name, 200);
+    const stored = name ? resolveCharacter(name, roster) : null;
+    const raw = slot.raw && typeof slot.raw === 'object' ? slot.raw as Record<string, unknown> : {};
+    const shot = { ...raw, ...slot };
+    let prompt = joinTags(composeCharacterCaptionTags(stored, shot)) || 'girl';
+    const tag = speechCaptionTag(shot.speech, shot.speech_lang);
+    if (tag && !/speechbubble/i.test(prompt)) prompt = `${prompt}, ${tag}`;
+    return {
+      prompt,
+      uc: cleanText(shot.uc, 4000),
+      center_x: Number(slot.center_x ?? 0.5),
+      center_y: Number(slot.center_y ?? 0.5),
+    };
+  });
+}
+
+/** Image NAI tags for the shot-tag popup (one card — pixels are OK). */
+export async function readCardNaiPrompts(cardId: string): Promise<ApiResult> {
+  const id = cleanText(cardId, 80);
+  const row = await idbGet('cards', id);
+  if (!row) return { ok: false, error: { code: 'not_found', message: 'card not found' } };
+  try {
+    const scene = await loadCardImageScene(id);
+    const slim = slimCardCharacters(parseJsonOr(row.characters_json || '[]', []));
+    const characters = scene.characters.map((c, i) => ({
+      ...(slim[i] || {}),
+      prompt: c.prompt,
+      uc: c.uc,
+      center_x: c.center_x,
+      center_y: c.center_y,
+    }));
+    if (!characters.length) {
+      for (const slot of slim) {
+        characters.push({ ...slot, prompt: '', uc: '', center_x: 0.5, center_y: 0.5 });
+      }
+    }
+    return {
+      ok: true,
+      main_prompt: scene.main,
+      negative_prompt: scene.negative,
+      characters,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: { code: 'no_meta', message: String((err as Error)?.message || err) },
+    };
   }
 }
 
@@ -147,17 +211,16 @@ export async function updateCardTags(cardId: string, body: Record<string, unknow
     }
   }
 
-  row.main_prompt = main;
-  row.negative_prompt = neg;
-  row.characters_json = JSON.stringify(chars);
-  // Mirror into meta so a plain /reroll with no overrides reuses the saved tags
-  // instead of falling back to the LLM's original scene.
+  const slim = slimCardCharacters(chars);
+  row.main_prompt = '';
+  row.negative_prompt = '';
+  row.characters_json = JSON.stringify(slim);
   try {
     let meta = parseJsonOr(row.meta_json || '{}', {});
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) meta = {};
     const metaRec = meta as Record<string, unknown>;
-    metaRec.setup = main;
-    metaRec.characters = chars;
+    metaRec.characters = slim;
+    delete metaRec.setup;
     row.meta_json = JSON.stringify(metaRec);
   } catch {
     /* the mirror is best-effort; the card columns are already correct */
@@ -311,212 +374,62 @@ export async function rerollCard(
     return createJob(request);
   }
 
-  let main: string;
-  let neg: string;
-  let captions: NaiCaption[];
-  let charList: unknown;
-  let genMetaExtra: Record<string, unknown> = {};
-  // The prompt is built for one family (V5 speech, natural, family preset). Send
-  // that family's model with it, or a V5 prompt lands on the model-tab V4 model.
-  let route: ShotNaiRoute | null = null;
-
-  const ov = overrides as Record<string, unknown> | null;
-  if (ov && ('main_prompt' in ov || 'negative_prompt' in ov || 'characters' in ov)) {
-    main = 'main_prompt' in ov ? cleanText(ov.main_prompt || '') : cleanText(row.main_prompt);
-    neg = 'negative_prompt' in ov ? cleanText(ov.negative_prompt || '') : cleanText(row.negative_prompt);
-    charList = 'characters' in ov ? ov.characters : null;
-    if (charList == null) charList = parseJsonOr(row.characters_json || '[]', []);
-    captions = ((charList || []) as Array<Record<string, unknown>>)
-      .slice(0, characterMaxLimit(getConfig().card || {}))
-      .map((ch) => ({
-        prompt: normalizeCharacterCaptionTags(ch.prompt || 'girl') || 'girl',
-        uc: cleanText(ch.uc),
-        center_x: Number(ch.center_x ?? 0.5),
-        center_y: Number(ch.center_y ?? 0.5),
-      }));
-    route = resolveShotRoute(
-      getConfig().card,
-      getConfig().nai,
-      { complexity: storedComplexity(meta) } as TaggedShot,
-    );
-    // Hand-edited captions come back without the bubble, because the tag editor is
-    // never shown the dialogue. Re-derive it from the stored cast or a tag edit
-    // would silently drop the speech on the next reroll.
-    if (route.useSpeech) {
-      const speechCaps = speechCaptionTagsForShot(
-        {},
-        rawCharactersFromMeta(meta) as SpeechCharacter[],
-      );
-      for (let i = 0; i < captions.length; i++) {
-        const tag = speechCaps[i];
-        if (!tag) continue;
-        captions[i] = { ...captions[i]!, prompt: captionWithSpeech(captions[i]!.prompt, tag) };
-      }
-    }
-  } else if (cleanText(row.main_prompt || '')) {
-    const parsedStored = parseJsonOr(row.characters_json || '[]', []);
-    const storedChars: unknown[] = Array.isArray(parsedStored) ? parsedStored : [];
-    const rawFromMeta = rawCharactersFromMeta(meta);
-    const rawFromStored: unknown[] = storedChars
-      .map((item) => {
-        if (!item || typeof item !== 'object') return null;
-        const c = item as Record<string, unknown>;
-        if (c.raw && typeof c.raw === 'object') {
-          const inner = c.raw as Record<string, unknown>;
-          return { ...inner, name: cleanText(inner.name || c.name, 200) };
-        }
-        return {
-          name: cleanText(c.name, 200),
-          action: c.action,
-          expression: c.expression,
-          sex: c.sex,
-          label: c.label,
-          age: c.age,
-          original: c.original || c.original_tag,
-          costume: c.costume,
-          attire: c.attire,
-          accessories: c.accessories,
-          wear_state: c.wear_state,
-          nude: c.nude,
-          weapon: c.weapon,
-        };
-      })
-      .filter(Boolean);
-    const cardCfg = (getConfig().card || {}) as Record<string, unknown>;
-    const naiaModel = modelToNaia(getConfig().nai?.model || 'nai-diffusion-4-5-full');
-    const qualitySuffixes = Object.values(QUALITY_TAGS).filter(Boolean);
-    if (QUALITY_TAGS[naiaModel]) qualitySuffixes.unshift(QUALITY_TAGS[naiaModel]);
-    const decision = resolveRerollLockedSetup({
-      setup: meta.setup,
-      main: row.main_prompt,
-      person: meta.person,
-      stylePositives: collectStylePositives(cardCfg),
-      qualitySuffixes,
-    });
-    const shot: TaggedShot = {
-      characters: (rawFromMeta.length ? rawFromMeta : rawFromStored) as ShotCharacter[],
-      paragraph: row.paragraph,
-      camera: decision.rebuildMain && decision.lockedSetup ? '' : cleanText(meta.camera || ''),
-      situation:
-        decision.rebuildMain && decision.lockedSetup
-          ? ''
-          : cleanText(meta.situation || meta.scene || ''),
-      place: decision.rebuildMain && decision.lockedSetup ? '' : cleanText(meta.place || ''),
-      action: decision.rebuildMain && decision.lockedSetup ? '' : cleanText(meta.action || ''),
-      focus: meta.focus,
-      complexity: storedComplexity(meta),
-    };
-    // Never pass the full main_prompt as lockedSetup: joinTags would re-append
-    // person/style/quality tags that are already baked into it.
-    const plan = await buildGenerationForShot({
-      shot,
-      roster,
-      sessionId,
-      lockedSetup: decision.rebuildMain ? decision.lockedSetup : undefined,
-    });
-    route = plan.route;
-    if (decision.rebuildMain) {
-      main = plan.main;
-      neg = plan.neg;
-      captions = plan.captions;
-      charList = plan.meta.characters;
-      genMetaExtra = {
-        setup: plan.meta.setup,
-        person: plan.meta.person,
-        characters: charList,
-        focus: plan.meta.focus ?? meta.focus,
-        complexity: plan.meta.complexity || storedComplexity(meta),
-      };
-    } else {
-      // Hand-edited main (setup mirrored the full prompt): keep tags, refresh cast.
-      main = cleanText(row.main_prompt);
-      neg = cleanText(row.negative_prompt) || plan.neg;
-      captions = plan.captions;
-      charList = plan.meta.characters;
-      genMetaExtra = {
-        setup: main,
-        person: plan.meta.person,
-        characters: charList,
-        focus: plan.meta.focus ?? meta.focus,
-        complexity: plan.meta.complexity || storedComplexity(meta),
-      };
-    }
-  } else {
-    const storedChars = parseJsonOr(row.characters_json || '[]', []);
-    const rawFromMeta = rawCharactersFromMeta(meta);
-    const rawFromStored: unknown[] = ((storedChars || []) as unknown[])
-      .map((item) => {
-        if (!item || typeof item !== 'object') return null;
-        const c = item as Record<string, unknown>;
-        return c.raw || { name: c.name, action: c.action, expression: c.expression };
-      })
-      .filter(Boolean);
-    const lockedSetup = cleanText(meta.setup || '');
-    const shot: TaggedShot = {
-      characters: (rawFromMeta.length ? rawFromMeta : rawFromStored) as ShotCharacter[],
-      paragraph: row.paragraph,
-      camera: lockedSetup ? '' : cleanText(meta.camera || ''),
-      situation: lockedSetup ? '' : cleanText(meta.situation || meta.scene || ''),
-      place: lockedSetup ? '' : cleanText(meta.place || ''),
-      action: lockedSetup ? '' : cleanText(meta.action || ''),
-      focus: meta.focus,
-      complexity: storedComplexity(meta),
-    };
-    const plan = await buildGenerationForShot({ shot, roster, sessionId, lockedSetup });
-    route = plan.route;
-    main = plan.main;
-    neg = plan.neg;
-    captions = plan.captions;
-    charList = plan.meta.characters;
-    genMetaExtra = {
-      setup: plan.meta.setup,
-      person: plan.meta.person,
-      characters: charList,
-      focus: plan.meta.focus ?? meta.focus,
-      complexity: plan.meta.complexity || storedComplexity(meta),
-    };
+  let scene: NaiScene;
+  try {
+    scene = await loadCardImageScene(cardId);
+  } catch (err) {
+    return { ok: false, error: { code: 'no_meta', message: String((err as Error)?.message || err) } };
   }
 
-  if (!captions.length && !(ov && 'characters' in ov)) {
-    const shot: TaggedShot = {
-      characters: ((meta.characters || []) as unknown[]).map(
-        (c) => (c as Record<string, unknown>).raw || c,
-      ) as ShotCharacter[],
-      camera: meta.setup as string,
-      focus: meta.focus,
-      complexity: storedComplexity(meta),
-    };
-    const plan = await buildGenerationForShot({ shot, roster, sessionId });
-    route = plan.route;
-    main = plan.main;
-    neg = plan.neg;
-    captions = plan.captions;
-    charList = plan.meta.characters;
-    genMetaExtra = {
-      setup: plan.meta.setup,
-      person: plan.meta.person,
-      characters: charList,
-      focus: plan.meta.focus ?? meta.focus,
-      complexity: plan.meta.complexity || storedComplexity(meta),
-    };
+  const ov = overrides as Record<string, unknown> | null;
+  if (ov && 'main_prompt' in ov) {
+    const ovMain = cleanText(ov.main_prompt || '', 8000);
+    if (ovMain) scene.main = ovMain;
+  }
+  if (ov && 'negative_prompt' in ov && cleanText(ov.negative_prompt || '', 8000)) {
+    scene.negative = cleanText(ov.negative_prompt || '', 8000);
+  }
+
+  const ovChars = ov && Array.isArray(ov.characters) ? ov.characters : null;
+  const ovHasCharPrompts = Boolean(
+    ovChars?.some((ch) => ch && typeof ch === 'object' && cleanText((ch as Record<string, unknown>).prompt)),
+  );
+  const comic = cleanText(meta.kind, 20) === 'comic' || isComicNaiScene(scene);
+  if (ovHasCharPrompts && ovChars) {
+    const limit = characterMaxLimit(getConfig().card || {});
+    scene.characters = ovChars.slice(0, limit).map((ch, i) => {
+      const c = (ch && typeof ch === 'object' ? ch : {}) as Record<string, unknown>;
+      const prev = scene.characters[i];
+      return {
+        prompt: cleanText(c.prompt, 8000) || prev?.prompt || 'girl',
+        uc: cleanText(c.uc, 4000) || prev?.uc || '',
+        center_x: Number(c.center_x ?? prev?.center_x ?? 0.5),
+        center_y: Number(c.center_y ?? prev?.center_y ?? 0.5),
+      };
+    });
+  } else if (!comic) {
+    const stored = parseJsonOr(row.characters_json || '[]', []);
+    const fromMeta = slimCardCharacters(meta.characters);
+    scene.characters = illustrationCaptionsFromCast(fromMeta.length ? fromMeta : stored, roster);
+  }
+
+  if (!cleanText(scene.model)) {
+    return { ok: false, error: { code: 'no_model', message: '이미지 메타에 모델이 없습니다.' } };
   }
 
   const ovSeed = ov && 'seed' in ov ? Number(ov.seed) : NaN;
   const seedOverride = Number.isFinite(ovSeed) && ovSeed > 0 ? Math.floor(ovSeed) : undefined;
-  const { bytes, seed } = await generateImage(
-    {
-      main,
-      neg,
-      captions,
-      seed: seedOverride,
-      characters: Array.isArray(charList)
-        ? (charList as Array<{ id?: string; name?: string }>)
-        : undefined,
-      model: route?.model,
-      preset: route?.preset ?? undefined,
-    },
-    meta.aspect ?? ov?.aspect,
+  const { bytes, seed } = await generateFromNaiReplay(
+    t2iRequestFromScene(scene, seedOverride || randomNaiSeed()),
   );
+  const slimCast = slimCardCharacters(parseJsonOr(row.characters_json || '[]', []));
+  const charList = slimCast;
+  const main = scene.main;
+  const neg = scene.negative;
+  const genMetaExtra: Record<string, unknown> = {
+    kind: comic ? 'comic' : cleanText(meta.kind, 20) || 'illustration',
+    characters: slimCast,
+  };
   const newId = uuid();
   const now = Date.now() / 1000;
   let prevLoc = await readImageLocation(row.id);
@@ -553,9 +466,9 @@ export async function rerollCard(
     session_id: sessionId,
     shot_index: row.shot_index,
     paragraph: row.paragraph,
-    main_prompt: main,
-    negative_prompt: neg,
-    characters_json: JSON.stringify(charList),
+    main_prompt: '',
+    negative_prompt: '',
+    characters_json: JSON.stringify(slimCast),
     seed,
     meta_json: JSON.stringify(genMeta),
     created_at: now,
@@ -607,8 +520,12 @@ export async function commandRewriteCard(cardId: string, body: CommandRewriteBod
   const row = await idbGet('cards', cardId);
   if (!row) return { ok: false, error: { code: 'not_found', message: 'card not found' } };
 
-  const currentMain = cleanText(body.main_prompt ?? row.main_prompt, 8000);
-  const currentNeg = cleanText(body.negative_prompt ?? row.negative_prompt, 8000);
+  let currentMain = 'main_prompt' in body
+    ? cleanText(body.main_prompt, 8000)
+    : cleanText(row.main_prompt, 8000);
+  let currentNeg = 'negative_prompt' in body
+    ? cleanText(body.negative_prompt, 8000)
+    : cleanText(row.negative_prompt, 8000);
   let currentChars: Array<Record<string, unknown>> = [];
   if (Array.isArray(body.characters)) {
     currentChars = body.characters.filter((c) => c && typeof c === 'object') as Array<Record<string, unknown>>;
@@ -619,6 +536,22 @@ export async function commandRewriteCard(cardId: string, body: CommandRewriteBod
       : [];
   }
   currentChars = currentChars.slice(0, characterMaxLimit(getConfig().card || {}));
+  if (!('main_prompt' in body) || !('negative_prompt' in body) || !Array.isArray(body.characters)) {
+    try {
+      const scene = await loadCardImageScene(cardId);
+      if (!('main_prompt' in body) && !currentMain) currentMain = scene.main;
+      if (!('negative_prompt' in body) && !currentNeg) currentNeg = scene.negative;
+      if (!Array.isArray(body.characters) && currentChars.every((c) => !cleanText(c.prompt))) {
+        currentChars = scene.characters.map((c, i) => ({
+          ...(currentChars[i] || {}),
+          prompt: c.prompt,
+          uc: c.uc,
+        }));
+      }
+    } catch {
+      /* form sent fields, or the image has no NovelAI metadata */
+    }
+  }
 
   const lookLockedRaw = Array.isArray(body.look_locked) ? body.look_locked : [];
   const lookLocked = currentChars.map((_, i) => lookLockedRaw[i] === true);
@@ -826,12 +759,4 @@ export async function rerollMessageCards({
   } finally {
     messageBusyKeys.delete(key);
   }
-}
-
-/** `meta.characters` entries keep the tagger's original shot under `raw`. */
-function rawCharactersFromMeta(meta: Record<string, unknown>): unknown[] {
-  if (!Array.isArray(meta.characters)) return [];
-  return (meta.characters as unknown[])
-    .map((c) => (c && typeof c === 'object' ? (c as Record<string, unknown>).raw || c : null))
-    .filter(Boolean);
 }

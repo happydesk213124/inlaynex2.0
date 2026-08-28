@@ -386,6 +386,7 @@ export async function runScenario(N, handles) {
   // 2.0-only soft-stop route (1.x 404 → NEW_ONLY_STEPS). Idle session → stopped:0.
   await rec('job.stop_idle', () => post('/v1/jobs/stop', { session_id: 'sess_stop_idle' }));
 
+  await rec('cards.nai_prompt', () => get(`/v1/cards/${cardId}/nai-prompt`));
   await rec('cards.tags', () => post(`/v1/cards/${cardId}/tags`, {
     main_prompt: 'PARITY EDITED PROMPT',
     negative_prompt: 'parity negative',
@@ -554,9 +555,8 @@ export async function runScenario(N, handles) {
   }));
   await rec('presets.after_save', () => get('/v1/settings'));
 
-  // Distinctive style markers (not quality-tag vocabulary) so the swap is
-  // unambiguous. Intentional 2.0 behaviour: plain reroll rebuilds main against
-  // the active preset. 1.x kept main_prompt verbatim — see INTENTIONAL_DIFF_STEPS.
+  // Reroll replays the saved image (mock PNG base is "parity cafe"). The
+  // active preset must not replace that base — see INTENTIONAL_DIFF_STEPS.
   await rec('presets.save_swap_markers', () => put('/v1/settings', {
     card: {
       presets: [
@@ -582,10 +582,9 @@ export async function runScenario(N, handles) {
   }));
   const styleJobResult = await rec('presets.style_job_wait', () => waitForJob(styleJob?.job_id));
   const styleCardId = styleJobResult?.result?.cards?.[0]?.id;
-  const styleBefore = await rec('presets.style_before_swap', () => (
+  await rec('presets.style_before_swap', () => (
     styleCardId ? get(`/v1/gallery?session_id=sess_style&limit=5`) : { items: [] }
   ));
-  const beforeMain = String(styleBefore?.items?.[0]?.main_prompt || '');
   await rec('presets.activate_alpha', () => put('/v1/settings', {
     card: { active_preset_id: 'p1' },
   }));
@@ -594,12 +593,9 @@ export async function runScenario(N, handles) {
   ));
   const afterMain = String(styleReroll?.card?.main_prompt || '');
   await rec('presets.reroll_swaps_style', () => ({
-    had_beta: beforeMain.includes('parity_style_beta'),
-    has_alpha: afterMain.includes('parity_style_alpha'),
-    dropped_beta: !afterMain.includes('parity_style_beta'),
-    swapped: beforeMain.includes('parity_style_beta')
-      && afterMain.includes('parity_style_alpha')
-      && !afterMain.includes('parity_style_beta'),
+    kept_file: afterMain.includes('parity cafe'),
+    ignored_preset: !afterMain.includes('parity_style_alpha'),
+    swapped: false,
   }));
 
   // A reroll builds its prompt for one family (V5 natural / speech / family
@@ -614,7 +610,12 @@ export async function runScenario(N, handles) {
   await rec('presets.reroll_keeps_v5_model', () => {
     const sent = handles.naiRequests.filter((r) => r.kind === 'generate').slice(naiGenBefore);
     const model = String(sent[sent.length - 1]?.body?.model || '');
-    return { sent: sent.length, model, v5: model.includes('nai-diffusion-5') };
+    return {
+      sent: sent.length,
+      model,
+      v5: model.includes('nai-diffusion-5'),
+      keeps_file: model.includes('nai-diffusion-4-5') && !model.includes('nai-diffusion-5'),
+    };
   });
   await rec('presets.nai5_only_off', () => put('/v1/settings', { card: { nai5_only: false } }));
 

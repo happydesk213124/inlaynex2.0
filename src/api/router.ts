@@ -226,6 +226,10 @@ const GET_ROUTES: readonly Route[] = [
     handler: async ({ param }) => ok(await characters.getCharactersPayload(param)),
   },
   {
+    match: wrapped('/v1/cards/', '/nai-prompt'),
+    handler: async ({ param }) => ok(await cards.readCardNaiPrompts(param)),
+  },
+  {
     match: under('/v1/images/'),
     handler: async ({ param }) => {
       let cardId = param.replace(/^\/+|\/+$/g, '');

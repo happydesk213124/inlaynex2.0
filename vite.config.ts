@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.0';
+const PLUGIN_VERSION = '2.5.1';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -762,6 +762,17 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.1</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>채팅 안 이미지: 자리를 한 번에 다 잡고, 그림은 준비되는 것부터 그 칸에만 들어옵니다. 챗을 바꾼 뒤 여러 번 눌러야 나오던 문제가 사라집니다</li>
+            <li>새 메시지가 와도 옆 말풍선이 다시 그려지지 않습니다. 깜빡임이 줄어듭니다</li>
+            <li>스크롤 중에는 보고 있는 말풍선만 먼저 그리고, 멈춘 뒤에 위아래를 채웁니다</li>
+            <li>첫 로딩에서 말풍선 이미지가 뷰어 띠·마커보다 먼저 붙습니다</li>
+            <li>챗을 바꿀 때 갤러리를 두 번 받던 것을 한 번으로 줄였습니다</li>
+            <li>말풍선 한 개를 그릴 때 하던 중복 DOM 조회를 걷어냈습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.0</strong>
@@ -11358,8 +11369,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.0",
-    body: "대시보드의 2.4 데이터 이전을 한 번 눌러 주세요. 옛 이미지를 Risu 모듈로 옮겨 부팅이 빨라지고 세이브파일이 가벼워집니다. 업데이트 내역 탭 참고."
+    title: "2.5.1",
+    body: "채팅 안 이미지가 자리를 먼저 잡고 준비되는 것부터 그 칸에 들어옵니다. 챗을 바꾼 뒤 여러 번 눌러야 나오던 문제가 사라졌습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

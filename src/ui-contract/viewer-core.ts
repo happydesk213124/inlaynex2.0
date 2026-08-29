@@ -3489,7 +3489,8 @@ export function inlineChatFrameStyle(
   const maxHPx = Math.max(120, Math.round(900 * s));
   const { width, height } = inlineFrameDimensions(input);
   const ratioPx = Math.max(1, Math.round(maxHPx * width / height));
-  return `position:relative;display:inline-grid;place-items:center;width:min(${maxW}%,calc(${maxHVh}vh * ${width}/${height}),${ratioPx}px);max-width:100%;max-height:min(${maxHVh}vh,${maxHPx}px);aspect-ratio:${width}/${height};overflow:hidden;border-radius:8px;vertical-align:top;background:rgba(124,108,255,.08);border:1px solid rgba(196,181,253,.22)`;
+  const ratioVh = Math.round(maxHVh * width / height * 100) / 100;
+  return `position:relative;display:inline-grid;place-items:center;width:min(${maxW}%,${ratioVh}vh,${ratioPx}px);max-width:100%;max-height:min(${maxHVh}vh,${maxHPx}px);aspect-ratio:${width}/${height};overflow:hidden;border-radius:8px;vertical-align:top;background:rgba(124,108,255,.08);border:1px solid rgba(196,181,253,.22)`;
 }
 
 /** Image fills the pre-sized shell; changing src cannot alter bubble height. */

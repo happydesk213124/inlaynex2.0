@@ -346,6 +346,16 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
 });
 
 test("markerBlockHtml reserves one aspect-sized frame for pending and ready image", () => {
+  const portrait = markerBlockHtml({
+    line: 2,
+    src: "",
+    shotIndex: 0,
+    pending: true,
+    cardId: "pending-portrait",
+    aspect: "portrait",
+  });
+  assert.match(portrait, /width:min\(78%,47\.89vh,616px\)/);
+  assert.doesNotMatch(portrait, /calc\([^)]*vh\s*\*/);
   const pending = markerBlockHtml({
     line: 2,
     src: "",

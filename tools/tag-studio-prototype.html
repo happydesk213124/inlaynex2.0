@@ -416,20 +416,27 @@
     .foldbar { display: block; }
     .right {
       position: absolute;
-      top: 0; right: 0; bottom: auto;
+      top: 0; right: 0; bottom: 0;
       z-index: 12;
       width: 200px;
-      height: calc(100% - 62vh);
+      height: auto;
       margin: 0;
       box-shadow: var(--shadow);
     }
-    .stage.left-folded .right { height: calc(100% - 36px); }
     .right.collapsed {
       transform: translateX(100%);
       margin-right: 0;
       pointer-events: none;
     }
-    .handle.r { display: none; }
+    .handle.r {
+      display: grid;
+      top: 8px;
+      width: 28px;
+      height: 40px;
+      left: -28px;
+      font-size: 18px;
+    }
+    .right.collapsed .handle.r { display: none; }
     .rhead .hclose { display: inline-grid; place-items: center; }
     .floor .tools { display: flex; }
     .floor .tools .btn { height: 36px; display: inline-flex; align-items: center; justify-content: center; }
@@ -1906,7 +1913,6 @@ function addCharTab(rosterId) {
 
 function syncLeftFold() {
   const folded = $("#left").classList.contains("collapsed");
-  $("#stage").classList.toggle("left-folded", folded);
   const bar = $("#leftFold");
   if (bar) bar.textContent = folded ? "▲" : "▼";
   const hL = $("#hL");

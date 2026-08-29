@@ -113,7 +113,7 @@ import {
   desiredInlinePaintKey,
   pendingInlineKey,
   INLINE_FRAME_LAYOUT_VERSION,
-  INLINE_PLACEHOLDER_SRC,
+  inlinePlaceholderSrc,
   reconcileInlineShot,
   shouldStripLeftoverInlineId,
   shouldScanInlineLeftovers,
@@ -347,7 +347,7 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   assert.equal(htmlToPlainLn(stripped), htmlToPlainLn(rich));
 });
 
-test("markerBlockHtml uses a tiny placeholder then natural image size, not a reserved frame", () => {
+test("markerBlockHtml parks a sized SVG then swaps it for the real image", () => {
   const pending = markerBlockHtml({
     line: 2,
     src: "",
@@ -356,12 +356,15 @@ test("markerBlockHtml uses a tiny placeholder then natural image size, not a res
     cardId: "pending-0",
     aspect: "landscape",
   });
+  const placeholder = inlinePlaceholderSrc({ aspect: "landscape" });
   assert.match(pending, /data-inlay-inline-pending="1"/);
-  assert.match(pending, /animateTransform/);
-  assert.ok(pending.includes(`src="${INLINE_PLACEHOLDER_SRC}"`));
+  assert.ok(pending.includes(`src="${placeholder}"`));
+  assert.match(decodeURIComponent(placeholder), /width="1216"/);
+  assert.match(decodeURIComponent(placeholder), /height="832"/);
+  assert.match(pending, /width:auto;height:auto;max-width:min\(78%,100%\)/);
   assert.match(pending, new RegExp(`data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}"`));
   assert.doesNotMatch(pending, /data-inlay-inline-frame=/);
-  assert.doesNotMatch(pending, /aspect-ratio:/);
+  assert.doesNotMatch(pending, /data-inlay-inline-spin=/);
   assert.doesNotMatch(pending, /overflow:hidden/);
   const ready = markerBlockHtml({
     line: 2,
@@ -699,7 +702,7 @@ test("sticky v2 shot counts and pure-image html", () => {
 test("isReadyImageSrc accepts data and blob; htmlSafeImageSrc drops blob", () => {
   assert.equal(isReadyImageSrc("data:image/png;base64,xx"), true);
   assert.equal(isReadyImageSrc("blob:https://host/abc"), true);
-  assert.equal(isReadyImageSrc(INLINE_PLACEHOLDER_SRC), false);
+  assert.equal(isReadyImageSrc(inlinePlaceholderSrc({ aspect: "portrait" })), false);
   assert.equal(isReadyImageSrc(""), false);
   assert.equal(isReadyImageSrc("https://x/a.png"), false);
   assert.equal(htmlSafeImageSrc("data:image/webp;base64,yy"), "data:image/webp;base64,yy");

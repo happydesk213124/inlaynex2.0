@@ -2221,11 +2221,13 @@ export function stickyV2CornerLayout(opts: {
  * Display URLs the UI can point an <img> at. `blob:` is valid on setAttribute
  * but SafeDOM/DOMPurify strips it from setInnerHTML — never embed those in HTML.
  */
-export const INLINE_PLACEHOLDER_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+export function isPlaceholderImageSrc(src: unknown): boolean {
+  return /^data:image\/svg\+xml/i.test(String(src || ''));
+}
 
 export function isReadyImageSrc(src: unknown): boolean {
   const s = String(src || '');
-  if (!s || s === INLINE_PLACEHOLDER_SRC) return false;
+  if (!s || isPlaceholderImageSrc(s)) return false;
   return /^data:image\//i.test(s) || /^blob:/i.test(s);
 }
 
@@ -3076,7 +3078,7 @@ export function stickySegmentForInlineChat(opts: {
 // ── beta: chat-bubble inline images at newline lines ──────────────────────
 
 const INLAY_INLINE_ATTR = 'data-inlay-inline-shot';
-export const INLINE_FRAME_LAYOUT_VERSION = '3';
+export const INLINE_FRAME_LAYOUT_VERSION = '4';
 /**
  * Content hash of the bubble this marker was placed into.
  *
@@ -3478,6 +3480,32 @@ export function inlineChatImgStyle(scalePct: unknown = 100): string {
   return `width:auto;height:auto;max-width:min(${maxW}%,100%);max-height:min(${maxHVh}vh,${maxHPx}px);object-fit:contain;border-radius:8px;display:inline-block;vertical-align:top`;
 }
 
+type InlinePlaceholderInput = {
+  aspect?: unknown;
+  width?: unknown;
+  height?: unknown;
+};
+
+/** Intrinsic SVG size so the pending img already matches the coming shot. */
+export function inlinePlaceholderSize(input: InlinePlaceholderInput | null | undefined): { width: number; height: number } {
+  const width = Math.floor(finiteNumber(input?.width, 0));
+  const height = Math.floor(finiteNumber(input?.height, 0));
+  if (width > 0 && height > 0) return { width, height };
+  const aspect = String(input?.aspect || '').trim().toLowerCase();
+  if (aspect === 'square') return { width: 1024, height: 1024 };
+  if (aspect === 'landscape') return { width: 1216, height: 832 };
+  return { width: 832, height: 1216 };
+}
+
+/** Cheap SVG data URL used as the pending img src until real bytes arrive. */
+export function inlinePlaceholderSrc(input: InlinePlaceholderInput | null | undefined = null): string {
+  const { width, height } = inlinePlaceholderSize(input);
+  const cx = Math.round(width / 2);
+  const cy = Math.round(height / 2);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#7c6cff" fill-opacity=".08"/><g transform="translate(${cx} ${cy})"><circle r="22" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="6"/><circle r="22" fill="none" stroke="#c4b5fd" stroke-width="6" stroke-linecap="round" stroke-dasharray="36 104"><animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur=".75s" repeatCount="indefinite"/></circle></g></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 type MappedChar = { ch: string; htmlIndex: number };
 
 function escapeHtmlAttr(s: string): string {
@@ -3761,14 +3789,10 @@ export function markerBlockHtml(
   const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box';
   const imgStyle = inlineChatImgStyle(scalePct);
   if (p.pending || !isReadyImageSrc(p.src)) {
-    const spin = '<svg width="28" height="28" viewBox="0 0 28 28" style="display:inline-block;vertical-align:middle" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="#c4b5fd" stroke-width="3" stroke-linecap="round" stroke-dasharray="18 52"><animateTransform attributeName="transform" type="rotate" from="0 14 14" to="360 14 14" dur="0.75s" repeatCount="indefinite"/></circle></svg>';
-    // Tiny placeholder keeps a real <img> in the tree so a later URL is only a
-    // src swap. The 1×1 gif is excluded from isReadyImageSrc so it never counts
-    // as a finished illustration.
+    const placeholder = inlinePlaceholderSrc(p);
     return (
       `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-      + `<br><br><span data-inlay-inline-spin="1" style="display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:48px;padding:10px;border-radius:12px;background:rgba(124,108,255,.12);border:1px solid rgba(196,181,253,.35)">${spin}</span>`
-      + `<img data-inlay-inline-img="1" src="${INLINE_PLACEHOLDER_SRC}" alt="" style="display:none" loading="eager" decoding="async"><br><br>`
+      + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(placeholder)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
       + `</div>`
     );
   }

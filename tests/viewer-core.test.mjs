@@ -73,6 +73,7 @@ import {
   stickyPinEdgeBox,
   stickyPinOverImage,
   stickyV2AnchorSide,
+  stickyV2CountCluster,
   stickyV2FreeLayout,
   stickyV2CornerLayout,
   stickyV2ShotCounts,
@@ -616,9 +617,11 @@ test("sticky v2 free layout: past midline uses left-center, before uses right-ce
   assert.equal(leftHalf.side, "right");
   assert.equal(leftHalf.image.left, 80 - 120);
   assert.equal(leftHalf.image.top, 200 - 90);
-  // ▲▼ meet at attachment Y with no blank pin gap.
-  assert.equal(leftHalf.aboveBadge.top + leftHalf.aboveBadge.size, leftHalf.belowBadge.top);
-  assert.equal(leftHalf.aboveBadge.top + leftHalf.aboveBadge.size, 200);
+  // ▲N | expand | ▼N in one row; expand hit covers both columns.
+  assert.equal(leftHalf.aboveBadge.top, leftHalf.belowBadge.top);
+  assert.ok(leftHalf.belowBadge.left > leftHalf.aboveBadge.left);
+  assert.ok(leftHalf.pin.left <= leftHalf.aboveBadge.left);
+  assert.ok(leftHalf.pin.left + (leftHalf.pin.w || leftHalf.pin.size) >= leftHalf.belowBadge.left + leftHalf.belowBadge.size);
   const rightHalf = stickyV2FreeLayout({
     pinX: 300, pinY: 200, imgW: 120, imgH: 180, pinSize: 28, viewportW: 400, viewportH: 800,
   });
@@ -626,14 +629,22 @@ test("sticky v2 free layout: past midline uses left-center, before uses right-ce
   assert.equal(rightHalf.image.left, 300);
 });
 
-test("sticky v2 corner layout stacks ▲▼ flush at viewport top-center", () => {
+test("sticky v2 count cluster is two columns with a wide expand hit", () => {
+  const c = stickyV2CountCluster(200, 100, 28);
+  assert.equal(c.aboveBadge.top, c.belowBadge.top);
+  assert.equal(c.aboveBadge.left + c.aboveBadge.size, 200 - 14);
+  assert.equal(c.belowBadge.left, 200 + 14);
+  assert.ok(c.pin.w >= c.belowBadge.left + c.belowBadge.size - c.aboveBadge.left);
+  assert.ok(c.pin.h >= c.aboveBadge.size);
+});
+
+test("sticky v2 corner layout puts ▲▼ in two columns at viewport top-center", () => {
   const top = stickyV2CornerLayout({
     corner: "top-right", imgW: 100, imgH: 150, viewportW: 400, viewportH: 800, pad: 12, pinSize: 28, gap: 6,
   });
-  assert.equal(top.aboveBadge.left, Math.round(400 / 2 - 14));
   assert.equal(top.aboveBadge.top, 12);
-  assert.equal(top.belowBadge.top, 12 + 28);
-  assert.equal(top.aboveBadge.top + top.aboveBadge.size, top.belowBadge.top);
+  assert.equal(top.belowBadge.top, 12);
+  assert.ok(top.belowBadge.left > top.aboveBadge.left);
   assert.equal(top.leftBadge, null);
   assert.equal(top.rightBadge, null);
   assert.ok(top.image.left > 200);

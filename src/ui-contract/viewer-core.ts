@@ -1942,6 +1942,36 @@ export interface StickyV2PinBox {
   left: number;
   top: number;
   size: number;
+  /** Hit target width. Defaults to `size` when omitted (square pin). */
+  w?: number;
+  /** Hit target height. Defaults to `size` when omitted. */
+  h?: number;
+}
+
+/**
+ * ▲N | expand | ▼N in one row. The expand pin is transparent and oversized so
+ * either count badge is still a hit — badges themselves do not take pointers.
+ */
+export function stickyV2CountCluster(cx: unknown, cy: unknown, pinSize: unknown): {
+  pin: StickyV2PinBox;
+  aboveBadge: StickyV2PinBox;
+  belowBadge: StickyV2PinBox;
+} {
+  const s = Math.max(12, Math.round(finiteNumber(pinSize, 28)));
+  const x = finiteNumber(cx, 0);
+  const y = finiteNumber(cy, 0);
+  const top = Math.round(y - s / 2);
+  return {
+    pin: {
+      left: Math.round(x - s * 2),
+      top: Math.round(y - s),
+      size: s * 4,
+      w: s * 4,
+      h: s * 2,
+    },
+    aboveBadge: { left: Math.round(x - s * 1.5), top, size: s },
+    belowBadge: { left: Math.round(x + s * 0.5), top, size: s },
+  };
 }
 
 export interface StickyV2Layout {
@@ -1964,7 +1994,8 @@ export interface StickyV2Layout {
  * Free (non-corner) layout: attachment point = pin % position.
  * Image left-center or right-center glued to that point so landscape
  * does not swing into the chat column the way a center-anchor would.
- * ▲ / ▼ stack flush on the attachment point (no blank pin gap between).
+ * ▲N / ▼N sit in two columns around the attachment point; expand fills the
+ * gap (and the badges) as one wide transparent hit target.
  */
 export function stickyV2FreeLayout(opts: {
   pinX: unknown;
@@ -1987,19 +2018,15 @@ export function stickyV2FreeLayout(opts: {
   // side 'left' → pin on left edge of image; 'right' → pin on right edge
   const left = Math.round(side === 'left' ? cx : cx - w);
   const top = Math.round(cy - h / 2);
-  const badgeLeft = Math.round(cx - pinSize / 2);
-  // ▲ sits just above cy, ▼ just below — edges meet (no empty pin slot).
   void opts.badgeGap;
   void vh;
-  const aboveTop = Math.round(cy - pinSize);
-  const belowTop = Math.round(cy);
+  const cluster = stickyV2CountCluster(cx, cy, pinSize);
   return {
     side,
     image: { left, top, w, h },
-    // Invisible hit target covering the ▲▼ stack for pin gestures.
-    pin: { left: badgeLeft, top: aboveTop, size: pinSize * 2 },
-    aboveBadge: { left: badgeLeft, top: aboveTop, size: pinSize },
-    belowBadge: { left: badgeLeft, top: belowTop, size: pinSize },
+    pin: cluster.pin,
+    aboveBadge: cluster.aboveBadge,
+    belowBadge: cluster.belowBadge,
     leftBadge: null,
     rightBadge: null,
     pinBelowImage: false,
@@ -2008,7 +2035,7 @@ export function stickyV2FreeLayout(opts: {
 
 /**
  * Corner layout: image parked at corner with pad.
- * ▲ / ▼ stack flush at viewport top-center (no blank pin gap), for any corner.
+ * ▲N / ▼N in two columns at viewport top-center, for any corner.
  */
 export function stickyV2CornerLayout(opts: {
   corner: StickyCorner | null | undefined;
@@ -2033,15 +2060,13 @@ export function stickyV2CornerLayout(opts: {
     { width: vw, height: vh },
     pad,
   );
-  const badgeLeft = Math.round(vw / 2 - pinSize / 2);
-  const aboveTop = pad;
-  const belowTop = pad + pinSize;
+  const cluster = stickyV2CountCluster(vw / 2, pad + pinSize / 2, pinSize);
   return {
     side: 'corner',
     image: { left: box.left, top: box.top, w: box.w, h: box.h },
-    pin: { left: badgeLeft, top: aboveTop, size: pinSize * 2 },
-    aboveBadge: { left: badgeLeft, top: aboveTop, size: pinSize },
-    belowBadge: { left: badgeLeft, top: belowTop, size: pinSize },
+    pin: cluster.pin,
+    aboveBadge: cluster.aboveBadge,
+    belowBadge: cluster.belowBadge,
     leftBadge: null,
     rightBadge: null,
     pinBelowImage: false,

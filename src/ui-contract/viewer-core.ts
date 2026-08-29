@@ -1523,23 +1523,13 @@ export function resolveClickSelectionAction({
 }
 
 /**
- * Scroll delta after a click select. Visible bubbles stay put — the user
- * already pointed at them. Only a fully off-screen rect is nudged nearest
- * (no 45% recenter).
+ * Click select must not move the chat. Spinner boxes hold height, so there
+ * is nothing left to compensate for.
  */
 export function messageClickScrollDelta(
-  rect: { top?: unknown; bottom?: unknown } | null | undefined,
-  viewportH: unknown,
+  _rect?: { top?: unknown; bottom?: unknown } | null,
+  _viewportH?: unknown,
 ): number {
-  const top = finiteNumber(rect?.top, Number.NaN);
-  const bottom = finiteNumber(rect?.bottom, Number.NaN);
-  const vh = Math.max(1, finiteNumber(viewportH, 0));
-  if (!Number.isFinite(top) || !Number.isFinite(bottom)) return 0;
-  if (bottom > 0 && top < vh) return 0;
-  const viewTop = 72;
-  const viewBot = vh - 48;
-  if (top >= vh) return Math.round(top - viewBot);
-  if (bottom <= 0) return Math.round(bottom - viewTop);
   return 0;
 }
 

@@ -451,15 +451,20 @@ test('bind pointer repaint keeps boot scheduling and queues a delayed fallback',
   assert.equal(timers.get(t._pointerSelectBindTimer)?.delay, 1000);
 });
 
-test('click select scroll uses nearest-offscreen delta, not 45% recenter', () => {
+test('click select does not scroll the chat', () => {
   const source = read('vite.config.ts');
-  assert.match(source, /VENDOR_ENSURE_IN_VIEW_PATCH/);
-  assert.match(source, /messageClickScrollDelta/);
   const patch = source.slice(
     source.indexOf('const VENDOR_ENSURE_IN_VIEW_PATCH'),
     source.indexOf('const VENDOR_INLINE_CALL_NEEDLE'),
   );
+  assert.match(patch, /return;/);
   assert.doesNotMatch(patch, /n\.height \* 0\.5 - o \* 0\.45/);
+  assert.doesNotMatch(patch, /setScrollTopSafe/);
+  const call = source.slice(
+    source.indexOf('const VENDOR_INLINE_CALL_PATCH'),
+    source.indexOf('const VENDOR_INLINE_SAME_NEEDLE'),
+  );
+  assert.doesNotMatch(call, /ensureMessageInView/);
 });
 
 test('in-message action bar uses the same H+prepend host path as inline shots', () => {

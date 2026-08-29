@@ -516,20 +516,10 @@ test("click selection action supports provisional then confirm in double mode", 
   assert.equal(resolveClickSelectionAction({ gesture: "longpress", detail: 1, targetDomIndex: 1 }).action, "ignore");
 });
 
-test("messageClickScrollDelta leaves a visible clicked bubble alone", () => {
-  // Old logic recentered anything not fully inside 72 / vh-48. A 100–780 box
-  // on an 800px screen would jump; a click already proved it is on screen.
+test("messageClickScrollDelta never moves the chat", () => {
   assert.equal(messageClickScrollDelta({ top: 100, bottom: 780 }, 800), 0);
-  assert.equal(messageClickScrollDelta({ top: 40, bottom: 400 }, 800), 0);
-  assert.equal(messageClickScrollDelta({ top: 200, bottom: 500 }, 800), 0);
-});
-
-test("messageClickScrollDelta only nudges a fully off-screen bubble", () => {
-  const below = messageClickScrollDelta({ top: 900, bottom: 1100 }, 800);
-  assert.ok(below > 0);
-  assert.notEqual(below, 900 + 100 - 800 * 0.45);
-  const above = messageClickScrollDelta({ top: -200, bottom: -20 }, 800);
-  assert.ok(above < 0);
+  assert.equal(messageClickScrollDelta({ top: 900, bottom: 1100 }, 800), 0);
+  assert.equal(messageClickScrollDelta({ top: -200, bottom: -20 }, 800), 0);
 });
 
 test("text drag selects message only after real drag with selection", () => {

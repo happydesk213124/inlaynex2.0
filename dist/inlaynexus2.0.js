@@ -16216,7 +16216,7 @@ ${Ye(250)}`;
     return ["position:fixed", `left:${pin.left}px`, `top:${pin.top}px`, `width:${pw}px`, `height:${ph}px`, `z-index:${z}`, "border-radius:0", "display:block", "pointer-events:auto", "user-select:none", "background:transparent", "border:none", "box-shadow:none", "color:transparent", "font-size:0", "line-height:0", "opacity:" + (on ? "1" : "0")].join(";");
   }
   function nxStickyV2BadgeStyle(pin, z) {
-    return ["position:fixed", `left:${pin.left}px`, `top:${pin.top}px`, `min-width:${pin.size}px`, `height:${pin.size}px`, "padding:0 6px", `z-index:${z}`, "border-radius:6px", "display:flex", "align-items:center", "justify-content:center", "font-size:11px", "font-weight:700", "line-height:1", "pointer-events:none", "user-select:none", "background:rgba(15,23,42,.75)", "color:#e2e8f0", "border:1px solid rgba(255,255,255,.22)", "box-sizing:border-box"].join(";");
+    return ["position:fixed", `left:${pin.left}px`, `top:${pin.top}px`, `min-width:${pin.size}px`, `height:${pin.size}px`, "padding:0 6px", `z-index:${z}`, "border-radius:6px", "display:flex", "align-items:center", "justify-content:center", "font-size:11px", "font-weight:700", "line-height:1", "pointer-events:none", "user-select:none", "opacity:.45", "background:rgba(15,23,42,.2)", "color:rgba(226,232,240,.7)", "border:1px solid rgba(255,255,255,.1)", "box-sizing:border-box"].join(";");
   }
   function nxStickyV2BadgeHideStyle(pinSize, z) {
     return nxStickyV2BadgeStyle({ left: -9999, top: -9999, size: pinSize }, z);

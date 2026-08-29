@@ -12,7 +12,7 @@ import {
 } from "../.test-build/comic-kind.mjs";
 import { pickNextReadyShot } from "../.test-build/comic-schedule.mjs";
 import { comicPairsUsable, resolveComicUseCoords } from "../.test-build/comic-coords.mjs";
-import { resolveComicSlotCostume } from "../.test-build/comic-costume.mjs";
+import { formatComicNowWearingBlock, resolveComicSlotCostume } from "../.test-build/comic-costume.mjs";
 import { assignComicPagesToShots, parseComicPages } from "../.test-build/comic-page.mjs";
 import { stripComicKomaFromUc, stripComicPageStyleTags, stripComicStyleWords } from "../.test-build/comic-tags.mjs";
 import { comicSpeechCaption, composeComicSlotCaption } from "../.test-build/comic-caption.mjs";
@@ -119,6 +119,21 @@ test("resolveComicSlotCostume expands a name and keeps raw tags", () => {
   const empty = resolveComicSlotCostume(stored, "");
   assert.equal(empty.mode, "fallback");
   assert.equal(empty.attire, "shirt");
+});
+
+test("formatComicNowWearingBlock tells the LLM the live costume and accessory on/off", () => {
+  const on = formatComicNowWearingBlock({
+    costumeName: "maid",
+    wearState: "clothed",
+    accessories: "hair ribbon, holster",
+  });
+  assert.match(on, /now_wearing: maid/);
+  assert.match(on, /wear_state: clothed/);
+  assert.match(on, /accessories: on \(hair ribbon, holster\)/);
+  const off = formatComicNowWearingBlock({ wearState: "nude" });
+  assert.match(off, /now_wearing: default/);
+  assert.match(off, /wear_state: nude/);
+  assert.match(off, /accessories: off/);
 });
 
 test("parseComicPages + assign fills unmatched comics in order", () => {

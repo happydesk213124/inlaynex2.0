@@ -5,6 +5,7 @@
 import type { CharacterRecord } from '../../core/types.ts';
 import { cleanText } from '../../core/util/text.ts';
 import { ensureCostumes, resolveCostumeIndex } from '../character/costume.ts';
+import { formatWearStateForPrompt } from '../character/wear-state.ts';
 
 export type ComicCostumeMode = 'named' | 'raw' | 'fallback';
 
@@ -41,6 +42,26 @@ export function resolveComicSlotCostume(
     mode: 'fallback',
     name: fallback?.name || 'default',
   };
+}
+
+/**
+ * What this cast member is wearing right now (previous shot / continuity).
+ * Catalog stays reference-only; the LLM should keep `costume` = now_wearing
+ * unless the prose changes clothes.
+ */
+export function formatComicNowWearingBlock(opts: {
+  costumeName?: unknown;
+  wearState?: unknown;
+  accessories?: unknown;
+} = {}): string {
+  const costume = cleanText(opts.costumeName, 200) || 'default';
+  const wear = formatWearStateForPrompt(opts.wearState);
+  const acc = cleanText(opts.accessories, 400);
+  return [
+    `now_wearing: ${costume}`,
+    `wear_state: ${wear}`,
+    `accessories: ${acc ? `on (${acc})` : 'off'}`,
+  ].join('\n');
 }
 
 /** Full catalog for the comic LLM (reference only — not pasted into NAI). */

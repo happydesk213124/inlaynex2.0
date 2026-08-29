@@ -6,8 +6,11 @@ import { cleanText } from '../core/util/text.ts';
 import { parseJsonLoose } from '../core/util/object.ts';
 import { resolveLlmRole } from '../domain/llm/roles.ts';
 import { resolveCharacter } from '../domain/character/roster.ts';
-import { ensureCostumes } from '../domain/character/costume.ts';
-import { formatComicCostumeCatalog } from '../domain/comic/costume.ts';
+import {
+  formatComicCostumeCatalog,
+  formatComicNowWearingBlock,
+  resolveComicSlotCostume,
+} from '../domain/comic/costume.ts';
 import { comicLineRange } from '../domain/comic/kind.ts';
 import { normalizeComicLlmBatch } from '../domain/comic/params.ts';
 import { assignComicPagesToShots, parseComicPages, type ComicPage } from '../domain/comic/page.ts';
@@ -25,6 +28,7 @@ function sliceLines(text: unknown, start: unknown, end: unknown): string {
 function rosterBlock(
   names: string[],
   roster: CharacterRecord[],
+  shotChars: Array<{ name?: unknown; costume?: unknown; wear_state?: unknown }> = [],
 ): string {
   const blocks: string[] = [];
   const seen = new Set<string>();
@@ -33,12 +37,17 @@ function rosterBlock(
     if (!name || seen.has(name.toLowerCase())) continue;
     seen.add(name.toLowerCase());
     const rec = resolveCharacter(name, roster);
+    const shot = shotChars.find((c) => cleanText(c?.name, 200).toLowerCase() === name.toLowerCase());
     const looks = cleanText(rec?.appearance || rec?.original || '', 800);
     const catalog = formatComicCostumeCatalog(rec || {});
-    const { costumes, active_costume } = ensureCostumes(rec || {});
-    const active = costumes[active_costume]?.name || 'default';
+    const wear = resolveComicSlotCostume(rec || {}, shot?.costume);
+    const now = formatComicNowWearingBlock({
+      costumeName: wear.name,
+      wearState: shot?.wear_state ?? rec?.wear_state,
+      accessories: wear.accessories,
+    });
     blocks.push(
-      `## ${name}\nlooks: ${looks || '(none)'}\nactive_costume: ${active}\ncostumes (reference only):\n${catalog || '(none)'}`,
+      `## ${name}\nlooks: ${looks || '(none)'}\n${now}\ncostumes (reference only):\n${catalog || '(none)'}`,
     );
   }
   return blocks.join('\n\n');
@@ -84,7 +93,7 @@ export async function fillComicPagesForShots(args: {
       `shot_index: ${i}`,
       `line: ${shot.line ?? ''}–${shot.comic_line_end ?? shot.line ?? ''}`,
       `cast: ${names.join(', ') || '(none)'}`,
-      rosterBlock(names, roster),
+      rosterBlock(names, roster, shot.characters || []),
       `## prose\n${prose || '(empty)'}`,
     ].join('\n');
   };

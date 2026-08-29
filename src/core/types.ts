@@ -209,6 +209,8 @@ export interface CardSettings {
   inline_msg_actions?: 'off' | 'legacy' | 'compat' | boolean;
   /** Insert shot images into chat bubbles at LLM `line`. */
   inline_chat_images?: boolean;
+  /** Eligible message bubbles retained on each side of the selection. */
+  inline_chat_dom_radius?: number;
   /** Screen corner for progress / selection / host / attach toasts. */
   toast_anchor?: 'tl' | 'bl' | 'tr' | 'br' | 'tc';
   /** How a long-press on an inline/sticky shot opens the enlarge sheet. */

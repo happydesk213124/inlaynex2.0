@@ -125,6 +125,7 @@
     "inline_chat_images": false,
     "inline_msg_actions": "off",
     "inline_chat_scale_pct": 100,
+    "inline_chat_dom_radius": 4,
     "progress_toast": false,
     "toast_anchor": "tc",
     "image_press_inspect": "hold",

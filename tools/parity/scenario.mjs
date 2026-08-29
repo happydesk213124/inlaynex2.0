@@ -135,6 +135,7 @@ export async function runScenario(N, handles) {
     return {
       inline_chat_images: card.inline_chat_images === true,
       inline_msg_actions: card.inline_msg_actions === true,
+      inline_chat_dom_radius: Number(card.inline_chat_dom_radius ?? 4),
       progress_toast: card.progress_toast === true,
       viewer_minimize_mode: String(card.viewer_minimize_mode || 'icon'),
       llm_json_retry: card.llm_json_retry === true,

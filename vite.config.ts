@@ -8100,9 +8100,10 @@ const VENDOR_INLINE_HELP_NEEDLE =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },`;
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
-    "nx-inline-chat": { title: "이미지 채팅에", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저·라이트보드(본문 30자 이하)는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
+    "nx-inline-chat": { title: "이미지 채팅에", body: "선택 기준에서 설정한 탐색 숫자만큼 위·아래의 char 말풍선을 유지합니다. 유저·라이트보드(본문 30자 이하)는 건너뜁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "사용안함 / 편의성(오류율 있음 · 2.4.7, 칩을 본문 위에 붙임) / 호환성(2.4.9, 본문 문단에만 붙임). 헤더가 비면 채팅 카드 복구를 쓰세요. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
     "nx-inline-chat-scale": { title: "이미지 채팅 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
+    "nx-inline-dom-radius": { title: "스피너 DOM 탐색 숫자", body: "선택한 메시지 기준으로 위·아래에서 유지할 적격 말풍선 수입니다. 기본 4, 범위 3–20입니다. 유저와 본문 30자 이하 메시지는 건너뜁니다." },
     "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트. 칩·샷을 꽂기 직전에는 조각 불러오는 중 스피너가 같은 자리에 뜹니다." },
     "nx-toast-anchor": { title: "토스트 위치", body: "진행·선택·알림·조각 로딩 토스트가 붙는 화면 모서리입니다. 기본은 중상단입니다." },
     "nx-image-press": { title: "이미지 크게보기", body: "인라인·스티키 샷을 크게 봅니다. 사용안함 / 더블 탭(이미지 위 빠른 두 번) / 트리플 탭(빠른 세 번) / 꾸욱 누르기 / 꾸욱 누르기 + 더블탭. 탐색기·메시지 선택 길게 누르기는 그대로입니다." },
@@ -8123,6 +8124,9 @@ const VENDOR_INLINE_TOGGLE_PATCH =
             </label>
             <label data-nx-help-id="nx-inline-chat-scale"><span>이미지 채팅 배율 (%)</span>
               <input id="nx-inline-chat-scale" type="number" min="25" max="200" step="5" value="\${h(i.inline_chat_scale_pct ?? 100)}">
+            </label>
+            <label data-nx-help-id="nx-inline-dom-radius"><span>스피너 DOM 탐색 숫자</span>
+              <input id="nx-inline-dom-radius" type="number" min="3" max="20" step="1" value="\${h(i.inline_chat_dom_radius ?? 4)}">
             </label>
             <label class="toggle-row" data-nx-help-id="nx-progress-toast"><input type="checkbox" id="nx-progress-toast" \${i.progress_toast ? "checked" : ""}><span>진행 토스트</span></label>
             <label data-nx-help-id="nx-toast-anchor"><span>토스트 위치</span>
@@ -8153,6 +8157,7 @@ const VENDOR_INLINE_SAVE_PATCH =
       inline_chat_images: ee("nx-inline-chat"),
       inline_msg_actions: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeInlineMsgActions == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeInlineMsgActions(N("nx-inline-msg-actions")) : String(N("nx-inline-msg-actions") || "off")),
       inline_chat_scale_pct: Math.max(25, Math.min(200, Math.round(Ne(N("nx-inline-chat-scale"), 100)) || 100)),
+      inline_chat_dom_radius: Math.max(3, Math.min(20, Math.round(Ne(N("nx-inline-dom-radius"), 4)) || 4)),
       progress_toast: ee("nx-progress-toast"),
       toast_anchor: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeToastAnchor == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeToastAnchor(N("nx-toast-anchor")) : String(N("nx-toast-anchor") || "tc")),
       image_press_inspect: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeImagePressInspect == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeImagePressInspect(N("nx-image-press")) : String(N("nx-image-press") || "hold")),
@@ -8415,16 +8420,18 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     return Promise.all(nodes.map(async (node) => {
       let id = "";
       let src = "";
+      let layoutVersion = "";
       try {
         if (node && typeof node.getAttribute == "function") {
           id = String(await node.getAttribute("data-inlay-inline-shot") || "");
+          layoutVersion = String(await node.getAttribute("data-inlay-inline-layout") || "");
         }
         const imgs = await unwrapSafe(await node.querySelectorAll("img"));
         const img = imgs[0];
         if (img && typeof img.getAttribute == "function") src = String(await img.getAttribute("src") || "");
       } catch {
       }
-      return { node, id, src };
+      return { node, id, src, layoutVersion };
     }));
   }
   /** Ids this bubble is still waiting on. Empty when nothing is watching it. */
@@ -8739,16 +8746,18 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const watching = nxInlineSubIds(lockKey);
       const awaiting = prevProbe.filter((row) => !nxReadyImg(row.src) && row.id && watching.has(row.id)).length;
       const liveUniqueCount = new Set(prevProbe.map((row) => row.id).filter(Boolean)).size;
+      const frameVersion = String(VC.INLINE_FRAME_LAYOUT_VERSION || "");
+      const layoutMatches = !!frameVersion && prevProbe.every((row) => row.layoutVersion === frameVersion);
       const skipOk = typeof VC.canSkipInlineInject == "function"
         ? VC.canSkipInlineInject({
-          scaleMatches: t._inlinePaintScale === scaleNow,
+          scaleMatches: t._inlinePaintScale === scaleNow && layoutMatches,
           liveShotCount: prev.length,
           liveUniqueCount,
           wantIdCount: wantIds.length,
           readyImgCount: readyImgs,
           awaitingCount: awaiting
         })
-        : prev.length === wantIds.length && liveUniqueCount === prev.length && t._inlinePaintScale === scaleNow && readyImgs + awaiting >= wantIds.length;
+        : prev.length === wantIds.length && liveUniqueCount === prev.length && t._inlinePaintScale === scaleNow && layoutMatches && readyImgs + awaiting >= wantIds.length;
       if (skipOk) {
         if (!wantIds.length) {
           y("info", "inline.inject.skip", "shots=0 already");
@@ -8910,9 +8919,11 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         const info = await Promise.all(raw.map(async (mark) => {
           let markId = "";
           let src = "";
+          let layoutVersion = "";
           try {
             if (mark && typeof mark.getAttribute == "function") {
               markId = String(await mark.getAttribute("data-inlay-inline-shot") || "");
+              layoutVersion = String(await mark.getAttribute("data-inlay-inline-layout") || "");
             }
             const imgs = await unwrapSafe(await mark.querySelectorAll("img"));
             const img = imgs[0];
@@ -8923,7 +8934,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           // Pending is whether the cell actually shows bytes, not what the
           // attribute says: a subscription fills the <img> in place and cannot
           // rewrite a data- attribute through SafeDOM.
-          return { node: mark, id: markId, pending: !nxReadyImg(src) };
+          return { node: mark, id: markId, pending: !nxReadyImg(src), layoutVersion };
         }));
         hostMarks.set(idx, info);
         return info;
@@ -8942,7 +8953,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             const id = String(shot.cardId || "");
             if (id) shotNodes.set(id, wrap);
             const marks = hostMarks.get(hostIdx);
-            if (Array.isArray(marks)) marks.unshift({ node: wrap, id, pending: !nxReadyImg(shot.src) });
+            if (Array.isArray(marks)) marks.unshift({ node: wrap, id, pending: !nxReadyImg(shot.src), layoutVersion: String(VC.INLINE_FRAME_LAYOUT_VERSION || "") });
             if (shot.src && !shot.pending) await patchShotSrc(wrap, shot.src);
             return !0;
           }
@@ -8964,7 +8975,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         let mark = id ? marks.find((m) => m.id === id) : null;
         if (!mark) mark = marks.find((m) => !m.id || !placedIds.has(m.id));
         const node = mark?.node || null;
-        const live = mark ? { cardId: mark.id, pending: mark.pending } : null;
+        const live = mark ? { cardId: mark.id, pending: mark.pending, layoutVersion: mark.layoutVersion } : null;
         const action = typeof VC.reconcileInlineShot == "function"
           ? VC.reconcileInlineShot(shot, live)
           : live ? { op: "swap", placement: shot } : { op: "prepend", placement: shot };
@@ -9282,9 +9293,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       showAttachToast().catch(() => {});
       const VC = globalThis.__INLAY_VIEWER_CORE__;
       const allRoles = !!t.backendSettings?.card?.generate_all_roles;
-      const maxPerSide = Number(VC?.INLINE_KEEP_MAX_PER_SIDE) > 0
-        ? Number(VC.INLINE_KEEP_MAX_PER_SIDE)
-        : 4;
+      const maxPerSide = Math.max(3, Math.min(20, Math.round(Number(t.backendSettings?.card?.inline_chat_dom_radius) || 4)));
       const scope = await Za().catch(() => null);
       const msgs = scope?.messages || [];
       const roleCache = new Map();
@@ -9389,14 +9398,14 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (isSkipBodyAt(idx)) return !1;
         return allRoles ? !0 : isCharAtSync(idx);
       };
-      // First wave: sel ±4 in parallel. The role-aware walk may continue past
-      // users and short bodies until it finds four eligible bubbles per side.
+      // First wave: configured DOM radius in parallel. The role-aware walk may
+      // continue past users and short bodies until it finds enough eligible bubbles.
       const prefetchIdxs = typeof VC?.prefetchInlineRoleDomIndices == "function"
-        ? VC.prefetchInlineRoleDomIndices({ selIdx, length: els.length })
+        ? VC.prefetchInlineRoleDomIndices({ selIdx, length: els.length, radius: maxPerSide })
         : (() => {
           const out = [];
-          const lo = Math.max(0, selIdx - 4);
-          const hi = Math.min(els.length - 1, selIdx + 4);
+          const lo = Math.max(0, selIdx - maxPerSide);
+          const hi = Math.min(els.length - 1, selIdx + maxPerSide);
           for (let i = lo; i <= hi; i += 1) out.push(i);
           return out;
         })();

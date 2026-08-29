@@ -269,8 +269,9 @@ const normalize = (root) => {
         // 2.0 always-on fixed prompt wrappers around style/scene. No 1.x fields;
         // empty-string defaults; generation + card UI assert merge behaviour.
         if (k === 'fixed_prompt_prefix' || k === 'fixed_prompt_suffix') continue;
-        // 2.0 bubble inline scale % — no 1.x field; default 100.
-        if (k === 'inline_chat_scale_pct') continue;
+        // 2.0 bubble inline sizing/window controls — no 1.x fields. Scenario
+        // `settings.card_flags_2x` asserts the radius default instead.
+        if (k === 'inline_chat_scale_pct' || k === 'inline_chat_dom_radius') continue;
         // 2.0 character-tab "승자만 보기". 1.x folded winners into unified_chat_priority;
         // unit tests + unify listing assert the split toggle.
         if (k === 'unified_winners_only') continue;

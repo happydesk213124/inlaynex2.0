@@ -3073,6 +3073,7 @@ export function stickySegmentForInlineChat(opts: {
 // ── beta: chat-bubble inline images at newline lines ──────────────────────
 
 const INLAY_INLINE_ATTR = 'data-inlay-inline-shot';
+export const INLINE_FRAME_LAYOUT_VERSION = '2';
 /**
  * Content hash of the bubble this marker was placed into.
  *
@@ -3210,6 +3211,7 @@ export type InlinePendingInput = {
 export type InlineLiveMarker = {
   cardId: string;
   pending?: boolean;
+  layoutVersion?: unknown;
 };
 
 export type InlineReconcileAction =
@@ -3407,6 +3409,9 @@ export function reconcileInlineShot(
   const livePending = live.pending === true;
   const wantPending = desired.pending === true;
 
+  if (String(live.layoutVersion || '') !== INLINE_FRAME_LAYOUT_VERSION) {
+    return { op: 'swap', placement: desired };
+  }
   if (wantPending) {
     if (livePending) return { op: 'keep' };
     return { op: 'swap', placement: desired };
@@ -3791,7 +3796,7 @@ export function markerBlockHtml(
     // empty, which is exactly what the subscription exists to avoid. No `src`
     // attribute at all — an empty one renders the broken-image icon.
     return (
-      `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
+      `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
       + `<br>${frameStart}<span data-inlay-inline-spin="1" style="${spinStyle}">${spin}</span>`
       + `<img data-inlay-inline-img="1" alt="" style="${imgStyle};display:none" loading="eager" decoding="async"></span><br>`
       + `</div>`
@@ -3799,7 +3804,7 @@ export function markerBlockHtml(
   }
   const embed = htmlSafeImageSrc(p.src);
   return (
-    `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
+    `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
     + `<br>${frameStart}<img data-inlay-inline-img="1" src="${escapeHtmlAttr(embed)}" alt="" style="${imgStyle}" loading="eager" decoding="async"></span><br>`
     + `</div>`
   );

@@ -293,6 +293,12 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
       ? Math.max(25, Math.min(200, Math.round(raw)))
       : 100;
   }
+  {
+    const raw = Number(card.inline_chat_dom_radius);
+    card.inline_chat_dom_radius = Number.isFinite(raw) && raw > 0
+      ? Math.max(3, Math.min(20, Math.round(raw)))
+      : 4;
+  }
   if (card.progress_toast == null) card.progress_toast = false;
   else card.progress_toast = card.progress_toast === true || card.progress_toast === 'true' || card.progress_toast === 1 || card.progress_toast === '1';
   card.toast_anchor = normalizeToastAnchor(card.toast_anchor);

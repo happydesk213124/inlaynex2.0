@@ -138,6 +138,8 @@ fields when those controls are absent (`Ct()` + `assertOnce`).
 
 Dashboard also has `card.toast_anchor` (`tl` | `bl` | `tr` | `br` | `tc`,
 default `tc`) for progress / selection / host / attach toasts, and
+`card.inline_chat_dom_radius` (integer 3–20, default `4`) controls how many
+eligible bubbles on each side are prefetched and retained for inline frames.
 `card.image_press_inspect` (`off` | `hold` | `two` | `three` | `both`, default `hold`)
 for enlarge on inline/sticky shots. `two` is a fast double-tap on the same
 shot (saved `two` / `double-tap` normalize here). `three` is a fast triple-tap

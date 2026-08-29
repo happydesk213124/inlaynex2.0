@@ -112,6 +112,7 @@ import {
   canSkipInlineInject,
   desiredInlinePaintKey,
   pendingInlineKey,
+  INLINE_FRAME_LAYOUT_VERSION,
   reconcileInlineShot,
   shouldStripLeftoverInlineId,
   shouldScanInlineLeftovers,
@@ -356,6 +357,7 @@ test("markerBlockHtml reserves one aspect-sized frame for pending and ready imag
   });
   assert.match(portrait, /width:min\(78%,47\.89vh,616px\)/);
   assert.doesNotMatch(portrait, /calc\([^)]*vh\s*\*/);
+  assert.match(portrait, new RegExp(`data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}"`));
   const pending = markerBlockHtml({
     line: 2,
     src: "",
@@ -1374,7 +1376,23 @@ test("reconcileInlineShot ready card replaces a spinner", () => {
 
 test("reconcileInlineShot same ready id stays put", () => {
   const ready = { line: 1, src: "data:image/png;base64,xx", cardId: "c3", pending: false };
-  assert.equal(reconcileInlineShot(ready, { cardId: "c3", pending: false }).op, "keep");
+  assert.equal(reconcileInlineShot(ready, {
+    cardId: "c3",
+    pending: false,
+    layoutVersion: INLINE_FRAME_LAYOUT_VERSION,
+  }).op, "keep");
+});
+
+test("reconcileInlineShot replaces a same-card marker from an older frame layout", () => {
+  const ready = { line: 1, src: "data:image/png;base64,xx", cardId: "c3", pending: false };
+  assert.deepEqual(reconcileInlineShot(ready, {
+    cardId: "c3",
+    pending: false,
+    layoutVersion: "",
+  }), {
+    op: "swap",
+    placement: ready,
+  });
 });
 
 test("reconcileInlineShot strips a live marker when nothing is desired", () => {
@@ -1396,8 +1414,9 @@ test("reconcileInlineShot swaps an unread live marker instead of stacking a seco
 
 test("reconcileInlineShot keeps an existing spinner even when ids do not match", () => {
   const pending = { line: 1, src: "", cardId: "pending-0", pending: true };
-  assert.equal(reconcileInlineShot(pending, { cardId: "", pending: true }).op, "keep");
-  assert.equal(reconcileInlineShot(pending, { cardId: "pending-1", pending: true }).op, "keep");
+  const layoutVersion = INLINE_FRAME_LAYOUT_VERSION;
+  assert.equal(reconcileInlineShot(pending, { cardId: "", pending: true, layoutVersion }).op, "keep");
+  assert.equal(reconcileInlineShot(pending, { cardId: "pending-1", pending: true, layoutVersion }).op, "keep");
 });
 
 test("reconcileInlineShot holds a linked card that still has no bytes", () => {

@@ -166,6 +166,14 @@ test("inline_msg_actions migrates checkbox and aliases", () => {
   assert.equal(migrateSettings({ card: { inline_msg_actions: "2.4.9" } }).card.inline_msg_actions, "compat");
 });
 
+test("inline_chat_dom_radius defaults to 4 and clamps to 3–20", () => {
+  assert.equal(migrateSettings({ card: {} }).card.inline_chat_dom_radius, 4);
+  assert.equal(migrateSettings({ card: { inline_chat_dom_radius: 2 } }).card.inline_chat_dom_radius, 3);
+  assert.equal(migrateSettings({ card: { inline_chat_dom_radius: "5" } }).card.inline_chat_dom_radius, 5);
+  assert.equal(migrateSettings({ card: { inline_chat_dom_radius: 8.6 } }).card.inline_chat_dom_radius, 9);
+  assert.equal(migrateSettings({ card: { inline_chat_dom_radius: 99 } }).card.inline_chat_dom_radius, 20);
+});
+
 test("toast_anchor and image_press_inspect migrate with safe defaults", () => {
   const empty = migrateSettings({ card: {} });
   assert.equal(empty.card.toast_anchor, "tc");

@@ -88,11 +88,14 @@
     display: flex; flex-direction: column; min-height: 0;
     transition: margin-left .22s ease;
   }
-  .side.collapsed { margin-left: -340px; }
+  .side:not(.right).collapsed { margin-left: -340px; }
   .right {
     width: 216px; flex: 0 0 216px;
     border-right: 0; border-left: 1px solid var(--line);
-    transition: margin-right .22s ease;
+    position: relative;
+    overflow: visible;
+    transition: margin-right .22s ease, transform .22s ease;
+    z-index: 12;
   }
   .right.collapsed { margin-right: -216px; }
 
@@ -108,7 +111,11 @@
   }
   .handle:hover { color: var(--ink); background: var(--head); }
   .handle.l { left: 0; border-left: 0; border-radius: 0 8px 8px 0; }
-  .handle.r { right: 0; border-right: 0; border-radius: 8px 0 0 8px; }
+  .handle.r {
+    left: -18px; right: auto;
+    border-right: 0; border-radius: 8px 0 0 8px;
+    z-index: 13;
+  }
 
   /* tab strip */
   .tabs {
@@ -233,11 +240,12 @@
   .drop.on { opacity: 1; }
 
   .peek {
-    position: absolute; right: 10px; top: 56px; z-index: 6;
-    width: min(360px, calc(100% - 20px)); max-height: calc(100% - 76px);
+    position: absolute; right: 28px; top: 48px; z-index: 10;
+    width: min(360px, calc(100% - 48px)); max-height: calc(100% - 64px);
     overflow: auto;
-    background: rgba(20,22,29,.95); border: 1px solid var(--line);
+    background: rgba(20,22,29,.52); border: 1px solid rgba(255,255,255,.12);
     border-radius: 12px; padding: 10px; box-shadow: var(--shadow);
+    backdrop-filter: blur(8px);
     display: none;
   }
   .peek.on { display: block; }
@@ -256,7 +264,7 @@
   .hitem img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .hitem.on { border-color: var(--accent-2); box-shadow: 0 0 0 2px rgba(183,164,255,.25); }
   .hitem b { position: absolute; left: 5px; bottom: 4px; font-size: 10px; padding: 1px 5px; border-radius: 999px; background: rgba(8,9,13,.7); color: #dcd8ee; font-weight: 600; }
-  .rfoot { padding: 8px; border-top: 1px solid var(--line); }
+  .rfoot { padding: 8px; border-top: 1px solid var(--line); flex: 0 0 auto; background: var(--panel); }
 
   /* 생성 단. 모바일 툴바는 이 바로 위에 붙는다. */
   .floor { display: flex; flex-direction: column; background: #12141b; }
@@ -292,13 +300,48 @@
 
   .foot .mobset { display: none; }
 
+  .stepper { display: flex; align-items: center; gap: 5px; }
+  .stepper input { flex: 1; min-width: 0; height: 32px; }
+  .stepper .btn { height: 32px; padding: 0 8px; flex: 0 0 auto; }
+
+  .spinveil {
+    position: absolute; inset: 0; z-index: 9;
+    display: none; place-items: center;
+    background: rgba(8,9,13,.38);
+    pointer-events: none;
+  }
+  .spinveil.on { display: grid; }
+  .spin {
+    width: 54px; height: 54px;
+    border: 4px solid rgba(183,164,255,.22);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .ask {
+    position: fixed; inset: 0; z-index: 70;
+    display: grid; place-items: center;
+    background: rgba(8,9,13,.55);
+  }
+  .ask[hidden] { display: none; }
+  .askbox {
+    width: min(360px, calc(100vw - 28px));
+    background: var(--panel); border: 1px solid var(--line-2);
+    border-radius: 14px; padding: 16px; box-shadow: var(--shadow);
+  }
+  .askbox p { margin: 0 0 14px; font-size: 14px; }
+  .askbox .inline { justify-content: flex-end; }
+  .askbox .btn { height: 36px; min-width: 72px; }
+
   @media (max-width: 1023px) {
     .cbar { display: none; }
     .top { display: none; }
     .handle.l { display: none; }
     .stage { flex-direction: column; }
     .center { order: 1; flex: 1 1 auto; min-height: 0; }
-    .side {
+    .side:not(.right) {
       order: 2;
       width: 100%;
       flex: 0 0 auto;
@@ -307,19 +350,20 @@
       border-top: 1px solid var(--line);
       margin-left: 0;
     }
-    .side.collapsed { height: 34px; }
-    .side.collapsed .tabs,
-    .side.collapsed .body { display: none; }
+    .side:not(.right).collapsed { height: 34px; }
+    .side:not(.right).collapsed .tabs,
+    .side:not(.right).collapsed .body { display: none; }
     .foldbar { display: block; }
     .right {
       position: absolute;
       top: 0; right: 0; bottom: 0;
       z-index: 12;
       width: 200px;
-      margin-right: 0;
+      height: auto;
+      margin: 0;
       box-shadow: var(--shadow);
     }
-    .right.collapsed { margin-right: -200px; }
+    .right.collapsed { transform: translateX(calc(100% - 18px)); }
     .handle.r { display: grid; }
     .floor .tools { display: flex; }
     .floor .tools .btn { height: 36px; }
@@ -398,12 +442,14 @@
         <span class="hint">지금 열린 칸이 그 이미지 값으로 바뀝니다</span>
       </div>
 
+      <div class="spinveil" id="spinveil"><div class="spin" aria-hidden="true"></div></div>
+
       <button class="handle l" id="hL" type="button">접기펼치기</button>
-      <button class="handle r" id="hR" type="button">접기펼치기</button>
     </main>
 
     <!-- ── RIGHT ────────────────────────────────────────── -->
     <aside class="side right" id="rightPane">
+      <button class="handle r" id="hR" type="button">접기펼치기</button>
       <div class="rhead">
         <span>이미지 히스토리</span>
         <span class="count" id="hcount">0</span>
@@ -432,6 +478,16 @@
       <button class="btn" id="save" type="button">저장</button>
       <button class="btn" id="cancel" type="button">취소</button>
     </footer>
+  </div>
+</div>
+
+<div class="ask" id="ask" hidden>
+  <div class="askbox">
+    <p id="askMsg">삭제할까요?</p>
+    <div class="inline">
+      <button class="btn" id="askNo" type="button">아니오</button>
+      <button class="btn warn" id="askYes" type="button">예</button>
+    </div>
   </div>
 </div>
 
@@ -494,9 +550,9 @@ const ROSTER = [
 ];
 
 const LLM_PRESETS = [
-  { id: "", name: "" },
-  { id: "c1", name: "옷만 갈아입히기" },
-  { id: "c2", name: "구도만 바꾸기" },
+  { id: "", name: "", cmd: "", cmdPost: "" },
+  { id: "c1", name: "옷만 갈아입히기", cmd: "옷만 교복으로 바꾸고 구도는 그대로.", cmdPost: "" },
+  { id: "c2", name: "구도만 바꾸기", cmd: "구도만 바꾸고 옷과 얼굴은 그대로.", cmdPost: "" },
 ];
 
 const MODELS = [["", ""], ["nai-diffusion-4-5-full", "V4.5"], ["nai-diffusion-5-full", "V5"]];
@@ -551,12 +607,14 @@ const state = {
   active: "main",
   tabs: [],
   main: {
-    presetId: "", presetPrompt: "", post: "", neg: "",
+    presetId: "", presetName: "", presetPrompt: "", post: "", neg: "",
+    presetPane: "pos",
     autoPerson: false, personMode: "", personWeight: "", personSolo: false,
     quality: true,
   },
   gen: { model: "", w: 832, h: 1216, steps: "", cfg: 5, rescale: 0, sampler: "", scheduler: "", seed: 0, seedLock: false },
-  llm: { presetId: "", cmd: "", cmdPost: "" },
+  llm: { presetId: "", presetName: "", cmd: "", cmdPost: "" },
+  busy: 0,
   chars: {},
   fold: {},
   history: [],
@@ -573,7 +631,9 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const preset = (id) => PRESETS.find((p) => p.id === id);
+const llmPreset = (id) => LLM_PRESETS.find((p) => p.id === id);
 const roster = (id) => ROSTER.find((r) => r.id === id);
+const namedPresets = (list) => list.filter((p) => p.id);
 
 function joinTags(...parts) {
   return parts
@@ -625,9 +685,11 @@ function loadSample(key) {
 
   state.main = {
     presetId: a.id,
+    presetName: a.id ? (preset(a.id)?.name || "") : "",
     presetPrompt: a.id ? preset(a.id).positive : "",
     post: c.rest,
-    neg: s.negative,
+    neg: a.id ? (preset(a.id)?.negative || s.negative) : s.negative,
+    presetPane: "pos",
     autoPerson: !!b.person,
     personMode: b.person ? (/people/i.test(b.person) ? "people" : /girls?|boys?/i.test(b.person) ? "gender" : "gender") : "",
     personWeight: b.weight,
@@ -700,9 +762,8 @@ function personTag() {
 
 function assemble() {
   const m = state.main;
-  const p = preset(m.presetId);
-  const main = joinTags(personTag(), m.presetPrompt, m.post, m.quality ? QUALITY : "");
-  const neg = joinTags(p?.negative, m.neg);
+  const main = joinTags(personTag(), m.presetPrompt, m.post);
+  const neg = m.neg;
   const chars = charList().map((c) => {
     const r = roster(c.rosterId);
     const cos = r?.costumes.find((x) => x.name === c.costume);
@@ -730,31 +791,37 @@ function sec(id, head, bodyHtml) {
   </section>`;
 }
 
+function stepper(kind, name, placeholder) {
+  return `<div class="stepper">
+    <button class="btn sm" data-act="${kind}Prev" type="button">◀</button>
+    <input type="text" ${kind === "style" ? 'data-m="presetName"' : 'data-l="presetName"'} value="${esc(name)}" placeholder="${esc(placeholder)}" />
+    <button class="btn sm" data-act="${kind}Next" type="button">▶</button>
+    <button class="btn sm" data-act="${kind}Save" type="button">저장</button>
+    <button class="btn sm warn" data-act="${kind}Del" type="button">삭제</button>
+  </div>`;
+}
+
 function panelMain() {
   const m = state.main;
-  const a = assemble();
-  const hit = !!m.presetId;
+  const negPane = m.presetPane === "neg";
   return [
     `<div class="chips">
-      ${chip("이미지 메타", true)}
-      ${chip(hit ? `선행 프리셋 · ${preset(m.presetId).name}` : "선행 프리셋 없음", hit)}
+      ${chip(m.presetName || "선행 프리셋 없음", !!m.presetId)}
       ${chip(m.autoPerson ? "인원수 자동" : "인원수 수동", m.autoPerson)}
-      ${chip(m.post.trim() ? "main 후행" : "후행 비움", !!m.post.trim())}
       ${chip(`캐릭터 ${charList().length}`, charList().length > 0)}
-    </div>
-    <p class="hint">${hit
-      ? "메타데이터를 뜯어봤더니 우리 프리셋을 통째로 가지고 있어서 선행 프리셋으로 뺐습니다. 남은 건 main 후행에 있습니다."
-      : "우리 프리셋을 통째로 가진 게 없어서 전부 main 후행에 뒀습니다. 선행 프리셋을 고르면 앞에 붙습니다."}</p>`,
+    </div>`,
 
     sec("preset", `<span class="name">선행 프리셋</span>
       <span class="grow"></span>
       <button class="btn sm ${m.autoPerson ? "on" : ""}" data-act="autoPerson" type="button">인원수 자동넣기 ${m.autoPerson ? "켬" : "끔"}</button>`,
-      `<label class="k">프리셋 1
-        <select data-m="presetId">${opts(PRESETS.map((p) => [p.id, p.name]), m.presetId)}</select>
-      </label>
-      <label class="k">프리셋 프롬프트 <span class="hint">메타데이터에서 뽑힌 값</span>
-        <textarea class="t" data-m="presetPrompt" placeholder="비우면 스타일을 안 넣습니다.">${esc(m.presetPrompt)}</textarea>
-      </label>
+      `${stepper("style", m.presetName, "프리셋 이름")}
+      <div class="seg">
+        <button class="${negPane ? "" : "on"}" data-act="presetPos" type="button">선행 프리셋</button>
+        <button class="${negPane ? "on" : ""}" data-act="presetNeg" type="button">네거티브</button>
+      </div>
+      ${negPane
+        ? `<textarea class="t big" data-m="neg" placeholder="이 샷의 네거티브.">${esc(m.neg)}</textarea>`
+        : `<textarea class="t big" data-m="presetPrompt" placeholder="선행으로 붙일 태그.">${esc(m.presetPrompt)}</textarea>`}
       <div class="g2">
         <label class="k">인원 태그<select data-m="personMode">${opts(PERSON_MODES, m.personMode)}</select></label>
         <label class="k">강조<select data-m="personWeight">${opts(WEIGHTS, m.personWeight)}</select></label>
@@ -762,17 +829,9 @@ function panelMain() {
       <label class="chk"><input type="checkbox" data-m="personSolo" ${m.personSolo ? "checked" : ""}/> 1명이면 solo</label>`),
 
     sec("post", `<span class="name">main 후행</span>`,
-      `<textarea class="t big" data-m="post" placeholder="장면·구도·배경. 프리셋에 없는 것들.">${esc(m.post)}</textarea>
-       <label class="chk"><input type="checkbox" data-m="quality" ${m.quality ? "checked" : ""}/> 퀄리티 태그 붙이기</label>`),
-
-    sec("neg", `<span class="name">네거티브</span>`,
-      `<textarea class="t" data-m="neg" placeholder="이 샷만의 네거티브. 프리셋 네거는 따로 붙습니다.">${esc(m.neg)}</textarea>
-       <p class="hint">${preset(m.presetId)?.negative ? `프리셋 네거: ${esc(preset(m.presetId).negative)}` : "프리셋 네거 없음"}</p>`),
+      `<textarea class="t big" data-m="post" placeholder="장면·구도·배경. 프리셋에 없는 것들.">${esc(m.post)}</textarea>`),
 
     sec("gset", `<span class="name">설정</span>`, genSettings()),
-
-    sec("prev", `<span class="name">조립 결과</span>`,
-      `<pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-size:11.5px;color:#c8c6d6">${esc(`MAIN\n${a.main || "(빈 칸)"}\n\nNEG\n${a.neg || "(빈 칸)"}`)}</pre>`),
   ].join("");
 }
 
@@ -809,15 +868,23 @@ function genSettings() {
     <p class="hint">빈 칸은 이미지에 있던 값을 그대로 씁니다.</p>`;
 }
 
+function assembleText() {
+  const a = assemble();
+  return [
+    `MAIN\n${a.main || "(빈 칸)"}`,
+    ``,
+    `NEG\n${a.neg || "(빈 칸)"}`,
+    ``,
+    a.chars.map((c) => `CHAR ${c.no} ${c.name} [${c.pos}]\n${c.prompt}${c.uc ? `\nUC ${c.uc}` : ""}`).join("\n\n") || "CHAR\n(없음)",
+  ].join("\n");
+}
+
 function panelLlm() {
   const l = state.llm;
-  return `<div class="sec"><div class="h" style="cursor:default"><span class="name">LLM 명령 프리셋</span></div>
+  return [
+    `<div class="sec"><div class="h" style="cursor:default"><span class="name">LLM 명령 프리셋</span></div>
     <div class="c">
-      <div class="inline">
-        <select data-l="presetId" style="flex:1">${opts(LLM_PRESETS.map((p) => [p.id, p.name]), l.presetId)}</select>
-        <button class="btn sm" data-act="llmSave" type="button">저장</button>
-        <button class="btn sm warn" data-act="llmDel" type="button">삭제</button>
-      </div>
+      ${stepper("llm", l.presetName, "명령 프리셋 이름")}
       <label class="k">명령어
         <textarea class="t big" data-l="cmd" placeholder="예: 옷만 교복으로 바꾸고 구도는 그대로.">${esc(l.cmd)}</textarea>
       </label>
@@ -826,7 +893,10 @@ function panelLlm() {
       </label>
       <button class="btn" data-act="llmRun" type="button" style="width:100%;height:38px">LLM 호출</button>
       <p class="hint">LLM은 프롬프트 칸만 고칩니다. 이미지는 만들지 않습니다.</p>
-    </div></div>`;
+    </div></div>`,
+    sec("llmPeek", `<span class="name">조립 미리보기</span>`,
+      `<pre id="assembledLlm" style="margin:0;white-space:pre-wrap;word-break:break-word;font-size:11.5px;color:#c8c6d6;background:rgba(20,22,29,.45);border-radius:8px;padding:8px">${esc(assembleText())}</pre>`),
+  ].join("");
 }
 
 function panelChar(tabId) {
@@ -900,14 +970,11 @@ function renderHistory() {
 }
 
 function renderPeek() {
-  const a = assemble();
-  $("#assembled").textContent = [
-    `MAIN\n${a.main || "(빈 칸)"}`,
-    ``,
-    `NEG\n${a.neg || "(빈 칸)"}`,
-    ``,
-    a.chars.map((c) => `CHAR ${c.no} ${c.name} [${c.pos}]\n${c.prompt}${c.uc ? `\nUC ${c.uc}` : ""}`).join("\n\n") || "CHAR\n(없음)",
-  ].join("\n");
+  const text = assembleText();
+  const overlay = $("#assembled");
+  if (overlay) overlay.textContent = text;
+  const side = $("#assembledLlm");
+  if (side) side.textContent = text;
   $("#peek").classList.toggle("on", state.showPeek);
   $$("[data-act=peek]").forEach((b) => b.classList.toggle("on", state.showPeek));
 }
@@ -1141,20 +1208,31 @@ function fakeImage() {
   return { url: t.toDataURL(), seed };
 }
 
+function setBusy(on) {
+  state.busy += on ? 1 : -1;
+  if (state.busy < 0) state.busy = 0;
+  $("#spinveil")?.classList.toggle("on", state.busy > 0);
+}
+
 function generate(opts = {}) {
   if (state.coordMode === "ai" && !opts.quiet) {
     toast("생성 요청에 NAI AI choice 좌표를 넣습니다.");
   }
-  const out = fakeImage();
-  if (!state.gen.seedLock) state.gen.seed = out.seed;
-  const img = new Image();
-  img.onload = () => {
-    loaded = img;
-    drawStage();
-    pushHistory(out.url, `seed ${out.seed}`);
-    renderAll();
-  };
-  img.src = out.url;
+  setBusy(true);
+  window.setTimeout(() => {
+    const out = fakeImage();
+    if (!state.gen.seedLock) state.gen.seed = out.seed;
+    const img = new Image();
+    img.onload = () => {
+      loaded = img;
+      drawStage();
+      pushHistory(out.url, `seed ${out.seed}`);
+      renderAll();
+      setBusy(false);
+    };
+    img.onerror = () => setBusy(false);
+    img.src = out.url;
+  }, 900);
 }
 
 function pushHistory(url, tag) {
@@ -1171,6 +1249,110 @@ function toast(msg) {
   n.textContent = msg;
   document.body.appendChild(n);
   setTimeout(() => n.remove(), 2600);
+}
+
+function askYesNo(msg) {
+  return new Promise((resolve) => {
+    const box = $("#ask");
+    $("#askMsg").textContent = msg;
+    box.hidden = false;
+    const done = (ok) => {
+      box.hidden = true;
+      $("#askYes").onclick = null;
+      $("#askNo").onclick = null;
+      box.onclick = null;
+      resolve(ok);
+    };
+    $("#askYes").onclick = () => done(true);
+    $("#askNo").onclick = () => done(false);
+    box.onclick = (e) => { if (e.target === box) done(false); };
+  });
+}
+
+function stepList(list, id, dir) {
+  const named = namedPresets(list);
+  if (!named.length) return null;
+  let i = named.findIndex((p) => p.id === id);
+  if (i < 0) i = dir > 0 ? -1 : 0;
+  i = (i + dir + named.length) % named.length;
+  return named[i];
+}
+
+function applyStylePreset(p) {
+  state.main.presetId = p.id;
+  state.main.presetName = p.name;
+  state.main.presetPrompt = p.positive || "";
+  state.main.neg = p.negative || "";
+  renderPanel();
+  renderPeek();
+}
+
+function applyLlmPreset(p) {
+  state.llm.presetId = p.id;
+  state.llm.presetName = p.name;
+  state.llm.cmd = p.cmd || "";
+  state.llm.cmdPost = p.cmdPost || "";
+  renderPanel();
+}
+
+function saveStylePreset() {
+  const name = String(state.main.presetName || "").trim();
+  if (!name) return toast("프리셋 이름을 적어 주세요.");
+  const cur = preset(state.main.presetId);
+  if (cur && cur.id) {
+    cur.name = name;
+    cur.positive = state.main.presetPrompt;
+    cur.negative = state.main.neg;
+  } else {
+    const id = nextId("p");
+    PRESETS.push({ id, name, positive: state.main.presetPrompt, negative: state.main.neg });
+    state.main.presetId = id;
+    state.main.presetName = name;
+  }
+  toast("선행 프리셋을 저장했습니다.");
+  renderPanel();
+}
+
+async function deleteStylePreset() {
+  const cur = preset(state.main.presetId);
+  if (!cur?.id) return toast("고른 프리셋이 없습니다.");
+  if (!await askYesNo(`「${cur.name}」 프리셋을 삭제할까요?`)) return;
+  const i = PRESETS.findIndex((p) => p.id === cur.id);
+  if (i >= 0) PRESETS.splice(i, 1);
+  state.main.presetId = "";
+  state.main.presetName = "";
+  toast("선행 프리셋을 지웠습니다.");
+  renderPanel();
+}
+
+function saveLlmPreset() {
+  const name = String(state.llm.presetName || "").trim();
+  if (!name) return toast("명령 프리셋 이름을 적어 주세요.");
+  const cur = llmPreset(state.llm.presetId);
+  if (cur && cur.id) {
+    cur.name = name;
+    cur.cmd = state.llm.cmd;
+    cur.cmdPost = state.llm.cmdPost;
+  } else {
+    const id = nextId("l");
+    LLM_PRESETS.push({ id, name, cmd: state.llm.cmd, cmdPost: state.llm.cmdPost });
+    state.llm.presetId = id;
+    state.llm.presetName = name;
+  }
+  toast("명령 프리셋을 저장했습니다.");
+  renderPanel();
+}
+
+async function deleteLlmPreset() {
+  const cur = llmPreset(state.llm.presetId);
+  if (!cur?.id) return toast("고른 명령 프리셋이 없습니다.");
+  if (!await askYesNo(`「${cur.name}」 명령 프리셋을 삭제할까요?`)) return;
+  const i = LLM_PRESETS.findIndex((p) => p.id === cur.id);
+  if (i >= 0) LLM_PRESETS.splice(i, 1);
+  state.llm.presetId = "";
+  state.llm.presetName = "";
+  toast("명령 프리셋을 지웠습니다.");
+  renderPanel();
 }
 
 function act(name) {
@@ -1192,6 +1374,7 @@ function act(name) {
       break;
     case "history":
       $("#rightPane").classList.toggle("collapsed");
+      syncRightFold();
       renderDots();
       setTimeout(fitView, 240);
       break;
@@ -1209,9 +1392,33 @@ function act(name) {
     }
     case "autoPerson": state.main.autoPerson = !state.main.autoPerson; renderPanel(); renderPeek(); break;
     case "seedLock": g.seedLock = !g.seedLock; renderPanel(); break;
+    case "presetPos": state.main.presetPane = "pos"; renderPanel(); break;
+    case "presetNeg": state.main.presetPane = "neg"; renderPanel(); break;
+    case "stylePrev": {
+      const p = stepList(PRESETS, state.main.presetId, -1);
+      if (p) applyStylePreset(p);
+      break;
+    }
+    case "styleNext": {
+      const p = stepList(PRESETS, state.main.presetId, 1);
+      if (p) applyStylePreset(p);
+      break;
+    }
+    case "styleSave": saveStylePreset(); break;
+    case "styleDel": void deleteStylePreset(); break;
+    case "llmPrev": {
+      const p = stepList(LLM_PRESETS, state.llm.presetId, -1);
+      if (p) applyLlmPreset(p);
+      break;
+    }
+    case "llmNext": {
+      const p = stepList(LLM_PRESETS, state.llm.presetId, 1);
+      if (p) applyLlmPreset(p);
+      break;
+    }
     case "llmRun": toast("도화지라서 LLM은 안 붙습니다. 칸 구조만 보세요."); break;
-    case "llmSave": toast("명령 프리셋 저장은 아직 안 붙습니다."); break;
-    case "llmDel": toast("명령 프리셋 삭제는 아직 안 붙습니다."); break;
+    case "llmSave": saveLlmPreset(); break;
+    case "llmDel": void deleteLlmPreset(); break;
   }
 }
 
@@ -1287,10 +1494,6 @@ function onEdit(e) {
   if (el.dataset.m) {
     const k = el.dataset.m;
     state.main[k] = el.type === "checkbox" ? el.checked : el.value;
-    if (k === "presetId") {
-      state.main.presetPrompt = preset(el.value)?.positive || "";
-      renderPanel();
-    }
     renderPeek();
     return;
   }
@@ -1382,6 +1585,12 @@ function syncLeftFold() {
   if (hL) hL.textContent = folded ? "펼치기" : "접기펼치기";
 }
 
+function syncRightFold() {
+  const folded = $("#rightPane").classList.contains("collapsed");
+  const hR = $("#hR");
+  if (hR) hR.textContent = folded ? "펼치기" : "접기펼치기";
+}
+
 function setLoopUi(on) {
   ["#loop", "#loopDesk"].forEach((sel) => {
     const b = $(sel);
@@ -1422,6 +1631,7 @@ $("#hL").addEventListener("click", () => {
 });
 $("#hR").addEventListener("click", () => {
   $("#rightPane").classList.toggle("collapsed");
+  syncRightFold();
   renderDots();
   setTimeout(fitView, 240);
 });
@@ -1458,6 +1668,7 @@ if (window.matchMedia("(max-width: 1023px)").matches) {
   $("#rightPane").classList.add("collapsed");
 }
 syncLeftFold();
+syncRightFold();
 loadSample("peel");
 </script>
 </body>

@@ -617,7 +617,7 @@ test("sticky v2 free layout: past midline uses left-center, before uses right-ce
   assert.equal(leftHalf.side, "right");
   assert.equal(leftHalf.image.left, 80 - 120);
   assert.equal(leftHalf.image.top, 200 - 90);
-  // ▲N | expand | ▼N in one row; expand hit covers both columns.
+  // ▲N ▼N side by side; pin hit covers both chips.
   assert.equal(leftHalf.aboveBadge.top, leftHalf.belowBadge.top);
   assert.ok(leftHalf.belowBadge.left > leftHalf.aboveBadge.left);
   assert.ok(leftHalf.pin.left <= leftHalf.aboveBadge.left);
@@ -629,12 +629,13 @@ test("sticky v2 free layout: past midline uses left-center, before uses right-ce
   assert.equal(rightHalf.image.left, 300);
 });
 
-test("sticky v2 count cluster is two columns with a wide expand hit", () => {
+test("sticky v2 count cluster is two columns with a tight gap", () => {
   const c = stickyV2CountCluster(200, 100, 28);
   assert.equal(c.aboveBadge.top, c.belowBadge.top);
-  assert.equal(c.aboveBadge.left + c.aboveBadge.size, 200 - 14);
-  assert.equal(c.belowBadge.left, 200 + 14);
-  assert.ok(c.pin.w >= c.belowBadge.left + c.belowBadge.size - c.aboveBadge.left);
+  assert.equal(c.belowBadge.left - (c.aboveBadge.left + c.aboveBadge.size), 4);
+  assert.ok(c.belowBadge.left - (c.aboveBadge.left + c.aboveBadge.size) < 8);
+  assert.ok(c.pin.left <= c.aboveBadge.left);
+  assert.ok(c.pin.left + (c.pin.w || c.pin.size) >= c.belowBadge.left + c.belowBadge.size);
   assert.ok(c.pin.h >= c.aboveBadge.size);
 });
 

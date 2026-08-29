@@ -3436,13 +3436,13 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
   }
   function nxStickyV2PinStyle(pin, on, z) {
     // Blank hit target — no fill, no glyph (counts live on badge nodes).
-    // Wide/tall when the cluster is two columns so either ▲/▼ still expands.
+    // Tight hit over both ▲/▼ chips.
     const pw = Math.max(1, Math.round(Number(pin.w || pin.size) || 0));
     const ph = Math.max(1, Math.round(Number(pin.h || pin.size) || 0));
     return ["position:fixed", \`left:\${pin.left}px\`, \`top:\${pin.top}px\`, \`width:\${pw}px\`, \`height:\${ph}px\`, \`z-index:\${z}\`, "border-radius:0", "display:block", "pointer-events:auto", "user-select:none", "background:transparent", "border:none", "box-shadow:none", "color:transparent", "font-size:0", "line-height:0", "opacity:" + (on ? "1" : "0")].join(";");
   }
   function nxStickyV2BadgeStyle(pin, z) {
-    return ["position:fixed", \`left:\${pin.left}px\`, \`top:\${pin.top}px\`, \`min-width:\${pin.size}px\`, \`height:\${pin.size}px\`, "padding:0 6px", \`z-index:\${z}\`, "border-radius:6px", "display:flex", "align-items:center", "justify-content:center", "font-size:11px", "font-weight:700", "line-height:1", "pointer-events:none", "user-select:none", "opacity:.45", "background:rgba(15,23,42,.2)", "color:rgba(226,232,240,.7)", "border:1px solid rgba(255,255,255,.1)", "box-sizing:border-box"].join(";");
+    return ["position:fixed", \`left:\${pin.left}px\`, \`top:\${pin.top}px\`, \`min-width:\${pin.size}px\`, \`height:\${pin.size}px\`, "padding:0 4px", \`z-index:\${z}\`, "border-radius:6px", "display:flex", "align-items:center", "justify-content:center", "font-size:11px", "font-weight:700", "line-height:1", "pointer-events:auto", "user-select:none", "opacity:.45", "background:rgba(15,23,42,.2)", "color:rgba(226,232,240,.7)", "border:1px solid rgba(255,255,255,.1)", "box-sizing:border-box"].join(";");
   }
   function nxStickyV2BadgeHideStyle(pinSize, z) {
     return nxStickyV2BadgeStyle({ left: -9999, top: -9999, size: pinSize }, z);
@@ -4558,21 +4558,14 @@ const VENDOR_STICKY_CLICK_PATCH = `      if (fPress.source === "sticky-thumb") {
       }
       if (fPress.source === "sticky-pin") {
         await hidePressFill();
+        if (fPress.openedInspect) return;
         const ov = t.overlayUi;
-        const now = Date.now();
-        const prev = t._stickyPinTap;
-        const dbl = !!(prev && now - Number(prev.at || 0) < 400);
-        t._stickyPinTap = { at: now };
-        const card = fPress.card || (ov?.markers || []).find((m) => m?.active)?.card;
-        if (dbl && card && typeof showStickyInspect == "function") {
-          t._stickyPinTap = null;
-          showStickyInspect(card).catch(() => {});
-          return;
-        }
-        if (ov) ov._stickyThumbCollapsed = !1;
-        try {
-          await Ht();
-        } catch {
+        if (ov && ov._stickyThumbCollapsed) {
+          ov._stickyThumbCollapsed = !1;
+          try {
+            await Ht();
+          } catch {
+          }
         }`;
 
 
@@ -4752,8 +4745,26 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
       // Sticky always-image: pin/chips expand or inspect; the image only folds.
       if (Nt() && !inspectOpen) {
         const stickyPins = t.overlayUi?.markers || [];
+        const activePin = stickyPins.find((m) => m?.active) || null;
         for (const g of stickyPins) {
-          if (!g?.el || typeof hitEl != "function" || !await hitEl(g.el, x, I)) continue;
+          if (!g?.el || !g.active && !g.mini) continue;
+          if (typeof hitEl != "function" || !await hitEl(g.el, x, I)) continue;
+          const card = activePin?.card || g.card;
+          const now = Date.now();
+          const prev = t._stickyPinTap;
+          const dbl = !!(prev && now - Number(prev.at || 0) < 550);
+          if (dbl && card && typeof showStickyInspect == "function") {
+            t._stickyPinTap = null;
+            if (mobilePress) cancelMobilePress();
+            showStickyInspect(card).catch(() => {});
+            mobilePress = {
+              x, y: I, card, source: "sticky-pin", pointerId: f.pointerId,
+              long: !1, timer: null, openedInspect: !0
+            };
+            pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
+            return;
+          }
+          t._stickyPinTap = { at: now };
           if (mobilePress) {
             cancelMobilePress();
             return;
@@ -4761,7 +4772,7 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
           mobilePress = {
             x,
             y: I,
-            card: g.card,
+            card,
             source: "sticky-pin",
             pointerId: f.pointerId,
             long: !1,
@@ -15595,6 +15606,8 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'const pw = Math.max(1, Math.round(Number(pin.w || pin.size) || 0));', 'sticky expand hit uses cluster width');
     assertOnce(out, '"opacity:.45", "background:rgba(15,23,42,.2)"', 'sticky count badges stay translucent over the image');
     assertOnce(out, 'if (dbl && card && typeof showStickyInspect == "function") {', 'count-chip double-click opens inspect');
+    assertOnce(out, 'openedInspect: !0', 'count-chip inspect fires on the second pointerdown');
+    assertOnce(out, 'if (ov && ov._stickyThumbCollapsed) {', 'count-chip single tap only expands when folded');
     assertOnce(out, 'const stickyPins = t.overlayUi?.markers || [];', 'count-chip / pin hit is tested before the sticky image');
     if (out.includes('if (nxFireTap(g.card)) return;')) {
       throw new Error('[build] sticky image must not fire tap-inspect');

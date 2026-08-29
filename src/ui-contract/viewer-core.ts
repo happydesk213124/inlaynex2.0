@@ -1948,9 +1948,12 @@ export interface StickyV2PinBox {
   h?: number;
 }
 
+/** Gap between the two count chips. Keep tiny — a pin-sized hole looked broken. */
+export const STICKY_V2_COUNT_GAP = 4;
+
 /**
- * ▲N | expand | ▼N in one row. The pin is a transparent hit over both chips:
- * one click expands, two opens inspect. Badges do not take pointers.
+ * ▲N ▼N side by side. The pin is a tight transparent hit over both chips:
+ * one click expands, two opens inspect.
  */
 export function stickyV2CountCluster(cx: unknown, cy: unknown, pinSize: unknown): {
   pin: StickyV2PinBox;
@@ -1960,17 +1963,21 @@ export function stickyV2CountCluster(cx: unknown, cy: unknown, pinSize: unknown)
   const s = Math.max(12, Math.round(finiteNumber(pinSize, 28)));
   const x = finiteNumber(cx, 0);
   const y = finiteNumber(cy, 0);
+  const gap = STICKY_V2_COUNT_GAP;
+  const hit = 6;
   const top = Math.round(y - s / 2);
+  const aboveLeft = Math.round(x - s - gap / 2);
+  const belowLeft = Math.round(x + gap / 2);
   return {
     pin: {
-      left: Math.round(x - s * 2),
-      top: Math.round(y - s),
-      size: s * 4,
-      w: s * 4,
-      h: s * 2,
+      left: aboveLeft - hit,
+      top: top - hit,
+      size: s * 2 + gap + hit * 2,
+      w: s * 2 + gap + hit * 2,
+      h: s + hit * 2,
     },
-    aboveBadge: { left: Math.round(x - s * 1.5), top, size: s },
-    belowBadge: { left: Math.round(x + s * 0.5), top, size: s },
+    aboveBadge: { left: aboveLeft, top, size: s },
+    belowBadge: { left: belowLeft, top, size: s },
   };
 }
 
@@ -1994,8 +2001,8 @@ export interface StickyV2Layout {
  * Free (non-corner) layout: attachment point = pin % position.
  * Image left-center or right-center glued to that point so landscape
  * does not swing into the chat column the way a center-anchor would.
- * ▲N / ▼N sit in two columns around the attachment point; expand fills the
- * gap (and the badges) as one wide transparent hit target.
+ * ▲N / ▼N sit side by side at the attachment point; the pin is a tight
+ * transparent hit over both chips.
  */
 export function stickyV2FreeLayout(opts: {
   pinX: unknown;

@@ -1162,6 +1162,29 @@ test("inject skip needs a live img src, not just leftover wrappers", () => {
   );
 });
 
+test("inject skip refuses a bubble that already has two copies of one shot", () => {
+  assert.equal(
+    canSkipInlineInject({
+      scaleMatches: true,
+      liveShotCount: 2,
+      liveUniqueCount: 1,
+      wantIdCount: 2,
+      readyImgCount: 2,
+    }),
+    false,
+  );
+  assert.equal(
+    canSkipInlineInject({
+      scaleMatches: true,
+      liveShotCount: 2,
+      liveUniqueCount: 2,
+      wantIdCount: 2,
+      readyImgCount: 2,
+    }),
+    true,
+  );
+});
+
 test("inject skip still needs matching scale and marker count", () => {
   assert.equal(
     canSkipInlineInject({ scaleMatches: false, liveShotCount: 1, wantIdCount: 1, readyImgCount: 1 }),
@@ -1268,6 +1291,13 @@ test("leftover strip never deletes a just-placed marker with an unread id", () =
   assert.equal(shouldStripLeftoverInlineId("", ["pending-0"], true), false);
   assert.equal(shouldStripLeftoverInlineId("pending-0", ["pending-0"], true), false);
   assert.equal(shouldStripLeftoverInlineId("old-card", ["pending-0"], true), true);
+});
+
+test("leftover strip drops a second wrapper that repeats a keep id", () => {
+  const seen = new Set();
+  assert.equal(shouldStripLeftoverInlineId("c3", ["c3"], false, seen), false);
+  assert.equal(shouldStripLeftoverInlineId("c3", ["c3"], false, seen), true);
+  assert.equal(shouldStripLeftoverInlineId("c4", ["c3", "c4"], false, seen), false);
 });
 
 test("rawMessageRole reads API fields like Archive (never invents from body)", () => {

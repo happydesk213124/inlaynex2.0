@@ -620,7 +620,8 @@ test('character editor header omits char slot when picker row has no finite inde
   assert.match(source, /\.replace\(VENDOR_CHAR_EDIT_HEADER_NEEDLE, VENDOR_CHAR_EDIT_HEADER_PATCH\)/);
 
   const bundle = read('dist', 'inlaynexus2.0.js');
-  const title = bundle.indexOf('>캐릭터 태그 수정</div><div style=');
+  const finiteAt = bundle.indexOf('Number.isFinite(e.index)');
+  const title = finiteAt >= 0 ? bundle.lastIndexOf('>캐릭터 태그 수정</div><div style=', finiteAt) : -1;
   const tail = bundle.indexOf('data-ce-x', title);
   assert.ok(title >= 0 && tail > title, 'built character editor header not found');
   const header = bundle.slice(title, tail);

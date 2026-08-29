@@ -8603,17 +8603,25 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     // otherwise the newer selection would silently lose its turn.
     const lockKey = String(opts?.lockKey || \`dom\${opts?.domIndex ?? "?"}\`);
     if (!(t._inlineInjectLocks instanceof Map)) t._inlineInjectLocks = new Map();
+    if (!(t._inlineInjectTicket instanceof Map)) t._inlineInjectTicket = new Map();
     const held = t._inlineInjectLocks.get(lockKey);
+    const ticket = (Number(t._inlineInjectTicket.get(lockKey)) || 0) + 1;
+    t._inlineInjectTicket.set(lockKey, ticket);
+    let release = () => {};
+    const mine = new Promise((r) => {
+      release = r;
+    });
+    t._inlineInjectLocks.set(lockKey, held ? held.then(() => mine, () => mine) : mine);
     if (held) {
       try {
         await held;
       } catch {
       }
     }
-    let release = () => {};
-    t._inlineInjectLocks.set(lockKey, new Promise((r) => {
-      release = r;
-    }));
+    if (t._inlineInjectTicket.get(lockKey) !== ticket) {
+      release();
+      return;
+    }
     try {
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     if (typeof VC?.findElementIndexForLineWithFallback != "function" || typeof VC?.markerBlockHtml != "function") return;
@@ -8681,15 +8689,17 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // that id — it fills in place the moment the encode lands.
       const watching = nxInlineSubIds(lockKey);
       const awaiting = prevProbe.filter((row) => !nxReadyImg(row.src) && row.id && watching.has(row.id)).length;
+      const liveUniqueCount = new Set(prevProbe.map((row) => row.id).filter(Boolean)).size;
       const skipOk = typeof VC.canSkipInlineInject == "function"
         ? VC.canSkipInlineInject({
           scaleMatches: t._inlinePaintScale === scaleNow,
           liveShotCount: prev.length,
+          liveUniqueCount,
           wantIdCount: wantIds.length,
           readyImgCount: readyImgs,
           awaitingCount: awaiting
         })
-        : prev.length === wantIds.length && t._inlinePaintScale === scaleNow && readyImgs + awaiting >= wantIds.length;
+        : prev.length === wantIds.length && liveUniqueCount === prev.length && t._inlinePaintScale === scaleNow && readyImgs + awaiting >= wantIds.length;
       if (skipOk) {
         if (!wantIds.length) {
           y("info", "inline.inject.skip", "shots=0 already");
@@ -8957,6 +8967,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           : !0;
         if (scanLeftovers) {
         const leftovers = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+        const seenInlineIds = new Set();
         for (const node of leftovers) {
           let leftId = "";
           try {
@@ -8967,8 +8978,11 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             leftId = "";
           }
           if (typeof VC.shouldStripLeftoverInlineId == "function"
-            ? !VC.shouldStripLeftoverInlineId(leftId, keepIds)
-            : !leftId || keepIds.has(leftId)) continue;
+            ? !VC.shouldStripLeftoverInlineId(leftId, keepIds, !1, seenInlineIds)
+            : !leftId || keepIds.has(leftId) && !seenInlineIds.has(leftId)) {
+            if (leftId) seenInlineIds.add(leftId);
+            continue;
+          }
           await removeNode(node);
         }
         }
@@ -8985,8 +8999,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       y("warn", "inline.inject.fail", z(err?.message || err, 120));
     }
     } finally {
-      t._inlineInjectLocks.delete(lockKey);
       release();
+      if (t._inlineInjectTicket.get(lockKey) === ticket) t._inlineInjectLocks.delete(lockKey);
     }
   }
   // No attach retry ladder. A pass used to re-run itself up to five times
@@ -15950,6 +15964,15 @@ const loadVendorUi = (): string => {
       // Global would put the bubble under the cursor behind its own neighbours.
       if (!body.includes('t._inlineInjectLocks.get(lockKey)')) {
         throw new Error('[build] the inject lock must be per bubble');
+      }
+      if (!body.includes('t._inlineInjectTicket.set(lockKey, ticket)')) {
+        throw new Error('[build] a newer inject must supersede waiters on the same bubble');
+      }
+      if (!body.includes('shouldStripLeftoverInlineId(leftId, keepIds, !1, seenInlineIds)')) {
+        throw new Error('[build] leftover strip must drop a second copy of the same shot');
+      }
+      if (!body.includes('liveUniqueCount')) {
+        throw new Error('[build] inject skip must refuse duplicate wrappers');
       }
       // The scan and the line matching depend only on the bubble text, which
       // lockKey hashes. Recomputing them per repaint was a round-trip per

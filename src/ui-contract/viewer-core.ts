@@ -3187,6 +3187,7 @@ export async function runBoundedPool<T>(
 export function canSkipInlineInject(opts: {
   scaleMatches?: unknown;
   liveShotCount?: unknown;
+  liveUniqueCount?: unknown;
   wantIdCount?: unknown;
   readyImgCount?: unknown;
   awaitingCount?: unknown;
@@ -3195,6 +3196,11 @@ export function canSkipInlineInject(opts: {
   const live = Math.max(0, Math.floor(finiteNumber(opts.liveShotCount, 0)));
   const want = Math.max(0, Math.floor(finiteNumber(opts.wantIdCount, 0)));
   if (live !== want) return false;
+  // Two wrappers with the same card id still count as live===want.
+  if (opts.liveUniqueCount != null) {
+    const unique = Math.max(0, Math.floor(finiteNumber(opts.liveUniqueCount, live)));
+    if (unique !== live) return false;
+  }
   if (want === 0) return true;
   if (opts.readyImgCount == null) return true;
   const ready = Math.max(0, Math.floor(finiteNumber(opts.readyImgCount, 0)));
@@ -3268,16 +3274,22 @@ export function shouldScanInlineLeftovers(_keepCount: unknown = 0): boolean {
   return true;
 }
 
-/** Unreadable id stays. Only a known stale id is leftover. */
+/** Unreadable id stays. Stale ids and a second copy of a keep id are leftover. */
 export function shouldStripLeftoverInlineId(
   leftId: unknown,
   keepIds: Iterable<string> | null | undefined,
   _stripUnread = false,
+  seenIds?: Set<string>,
 ): boolean {
   const id = String(leftId || '');
   if (!id) return false;
   const keep = keepIds instanceof Set ? keepIds : new Set(Array.isArray(keepIds) ? keepIds : [...(keepIds || [])]);
-  return !keep.has(id);
+  if (!keep.has(id)) return true;
+  if (seenIds) {
+    if (seenIds.has(id)) return true;
+    seenIds.add(id);
+  }
+  return false;
 }
 
 export interface InlineInjectOptions {

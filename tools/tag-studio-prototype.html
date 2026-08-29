@@ -1459,9 +1459,10 @@ function applyLlmPreset(p) {
   renderPanel();
 }
 
-function saveStylePreset() {
+async function saveStylePreset() {
   const name = String(state.main.presetName || "").trim();
   if (!name) return toast("프리셋 이름을 적어 주세요.");
+  if (!await askYesNo(`「${name}」 선행 프리셋을 저장할까요?`)) return;
   const cur = preset(state.main.presetId);
   if (cur && cur.id) {
     cur.name = name;
@@ -1489,9 +1490,10 @@ async function deleteStylePreset() {
   renderPanel();
 }
 
-function saveLlmPreset() {
+async function saveLlmPreset() {
   const name = String(state.llm.presetName || "").trim();
   if (!name) return toast("명령 프리셋 이름을 적어 주세요.");
+  if (!await askYesNo(`「${name}」 명령 프리셋을 저장할까요?`)) return;
   const cur = llmPreset(state.llm.presetId);
   if (cur && cur.id) {
     cur.name = name;
@@ -1563,12 +1565,13 @@ function importLlmPresets() {
   inp.click();
 }
 
-function saveChar() {
+async function saveChar() {
   const id = activeCharId();
   const c = state.chars[id];
   if (!c) return;
   const name = String(c.charName || roster(c.rosterId)?.name || "").trim();
   if (!name) return toast("캐릭터 이름을 적어 주세요.");
+  if (!await askYesNo(`「${name}」 캐릭터를 저장할까요?`)) return;
   const cur = roster(c.rosterId);
   if (cur && cur.id) {
     cur.name = name;
@@ -1606,13 +1609,14 @@ async function deleteChar() {
   renderAll();
 }
 
-function saveCostume() {
+async function saveCostume() {
   const id = activeCharId();
   const c = state.chars[id];
   const r = roster(c?.rosterId);
   if (!r?.id) return toast("먼저 캐릭터를 저장하세요.");
   const name = String(c.costumeName || "").trim();
   if (!name) return toast("코스튬 이름을 적어 주세요.");
+  if (!await askYesNo(`「${name}」 코스튬을 저장할까요?`)) return;
   if (!Array.isArray(r.costumes)) r.costumes = [{ name: "", attire: "", note: "" }];
   let slot = r.costumes.find((x) => x.name === c.costume);
   if (!slot || !c.costume) {
@@ -1780,16 +1784,16 @@ function act(name) {
     case "seedLock": g.seedLock = !g.seedLock; renderPanel(); break;
     case "presetPos": state.main.presetPane = "pos"; renderPanel(); break;
     case "presetNeg": state.main.presetPane = "neg"; renderPanel(); break;
-    case "styleSave": saveStylePreset(); break;
+    case "styleSave": void saveStylePreset(); break;
     case "styleDel": void deleteStylePreset(); break;
     case "llmRun": toast("도화지라서 LLM은 안 붙습니다. 칸 구조만 보세요."); break;
-    case "llmSave": saveLlmPreset(); break;
+    case "llmSave": void saveLlmPreset(); break;
     case "llmDel": void deleteLlmPreset(); break;
     case "llmExport": exportLlmPresets(); break;
     case "llmImport": importLlmPresets(); break;
-    case "charSave": saveChar(); break;
+    case "charSave": void saveChar(); break;
     case "charDel": void deleteChar(); break;
-    case "costumeSave": saveCostume(); break;
+    case "costumeSave": void saveCostume(); break;
     case "costumeDel": void deleteCostume(); break;
     case "costumeDefault": costumeDefault(); break;
   }

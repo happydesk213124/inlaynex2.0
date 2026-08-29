@@ -669,7 +669,6 @@ export function inlinePaintKey(opts: {
   scalePct?: unknown;
   msgActions?: unknown;
   pending?: unknown;
-  domIndex?: unknown;
 } = {}): string {
   const ids = Array.isArray(opts.cardIds)
     ? [...new Set(opts.cardIds.map((v) => String(v ?? '')).filter(Boolean))].sort()
@@ -677,10 +676,12 @@ export function inlinePaintKey(opts: {
   const scale = Math.max(25, Math.min(200, Math.round(finiteNumber(opts.scalePct, 100)) || 100));
   const acts = String(opts.msgActions ?? '');
   const pending = opts.pending ? '1' : '0';
-  // The DOM slot is baked into the chip bar as `x-inlay-msg-index`, so a bubble
-  // that shifted slots must repaint even though its content is identical.
-  const dom = Number.isInteger(Number(opts.domIndex)) ? String(Number(opts.domIndex)) : '';
-  return `s${scale}|a=${acts}|p=${pending}|d=${dom}|c=${ids.join(',')}`;
+  // Deliberately no DOM index. The chat DOM is newest-first, so one new message
+  // shifts every slot, and a slot in the key made the whole keep window repaint
+  // — visibly, because re-inserting through SafeDOM flashes empty first. The
+  // only thing that really depends on the slot is the chip bar's
+  // `x-inlay-msg-index`, and that is a one-round-trip attribute update.
+  return `s${scale}|a=${acts}|p=${pending}|c=${ids.join(',')}`;
 }
 
 /**
@@ -3026,6 +3027,7 @@ export type InlineReconcileAction =
   | { op: 'keep' }
   | { op: 'strip' }
   | { op: 'prepend'; placement: InlineImagePlacement }
+  | { op: 'fill'; placement: InlineImagePlacement }
   | { op: 'swap'; placement: InlineImagePlacement };
 
 /**
@@ -3130,72 +3132,31 @@ export async function runBoundedPool<T>(
 /**
  * Cheap "bubble is already correct" gate for the inject pass.
  *
- * A cache-miss card owns a spinner marker under its *own* id, so matching ids
- * and marker counts no longer proves the paint finished — anything still in
- * `encodeLater` has to reach the bake loop or its spinner never becomes an image.
+ * A shot with no bytes yet is not a failure: its marker is in place and a live
+ * `subscribeImageUrl` watcher will fill that one cell when the encode lands.
+ * `awaitingCount` is how many of the wanted ids are in exactly that state, so
+ * ready + awaiting covering the want set means there is nothing left to do.
  *
- * Cached cards are worse: leftover wrappers keep the count/id match after Risu
- * (or a chat hop) strips the `<img src>`. Skipping then leaves chips on an
- * empty slot. `readyImgCount` is how many wrappers actually show a display URL.
+ * Leftover wrappers are the case this must still catch: after Risu (or a chat
+ * hop) strips the `<img src>`, ids and counts still match but nothing is
+ * watching those cells, so the bubble has to be repainted.
  */
 export function canSkipInlineInject(opts: {
   scaleMatches?: unknown;
   liveShotCount?: unknown;
   wantIdCount?: unknown;
-  encodeLaterCount?: unknown;
   readyImgCount?: unknown;
+  awaitingCount?: unknown;
 } = {}): boolean {
   if (!opts.scaleMatches) return false;
-  if (Math.max(0, Math.floor(finiteNumber(opts.encodeLaterCount, 0))) > 0) return false;
   const live = Math.max(0, Math.floor(finiteNumber(opts.liveShotCount, 0)));
   const want = Math.max(0, Math.floor(finiteNumber(opts.wantIdCount, 0)));
   if (live !== want) return false;
+  if (want === 0) return true;
   if (opts.readyImgCount == null) return true;
   const ready = Math.max(0, Math.floor(finiteNumber(opts.readyImgCount, 0)));
-  return want === 0 || ready === want;
-}
-
-/**
- * First-pass attach is not done when chips landed on an empty shot slot.
- * Session switch retries until this is true, or the bounded backoff runs out.
- */
-export function inlineAttachSucceeded(opts: {
-  wantCards?: unknown;
-  readyImgCount?: unknown;
-  skipHold?: unknown;
-} = {}): boolean {
-  if (opts.skipHold) return false;
-  if (!opts.wantCards) return true;
-  return Math.max(0, Math.floor(finiteNumber(opts.readyImgCount, 0))) > 0;
-}
-
-export const INLINE_ENCODE_RETRY_MAX = 3;
-
-/**
- * Bounded bake retries per card, and the answer to "is this still worth
- * retrying?".
- *
- * A card whose bytes are genuinely gone would otherwise keep the pass-level
- * cheap skip disabled forever, so every scroll would pay the full host scan —
- * the exact cost that skip exists to avoid. A success forgets the card, because
- * the URL cache is an LRU and the same id may legitimately need baking again.
- */
-export function trackInlineEncodeAttempt(
-  attempts: Map<string, number> | null | undefined,
-  cardId: unknown,
-  ok: boolean,
-  max: unknown = INLINE_ENCODE_RETRY_MAX,
-): boolean {
-  const id = String(cardId || '');
-  if (!attempts || !id) return false;
-  if (ok) {
-    attempts.delete(id);
-    return false;
-  }
-  const cap = Math.max(1, Math.floor(finiteNumber(max, INLINE_ENCODE_RETRY_MAX)));
-  const n = (Number(attempts.get(id)) || 0) + 1;
-  attempts.set(id, n);
-  return n < cap;
+  const awaiting = Math.max(0, Math.floor(finiteNumber(opts.awaitingCount, 0)));
+  return ready + awaiting >= want;
 }
 
 /** Cheap skip key: line + pending/image + id. Bytes themselves stay out. */
@@ -3246,7 +3207,12 @@ export function reconcileInlineShot(
     if (livePending) return { op: 'keep' };
     return { op: 'swap', placement: desired };
   }
-  if (!livePending && liveId === wantId) return { op: 'keep' };
+  if (liveId === wantId) {
+    // Same card, marker already mounted: the bytes belong in the <img> that is
+    // already there. Swapping would tear the node out and flash the bubble
+    // empty, which is the whole reason the spinner ships with an <img>.
+    return livePending ? { op: 'fill', placement: desired } : { op: 'keep' };
+  }
   return { op: 'swap', placement: desired };
 }
 
@@ -3572,9 +3538,15 @@ export function markerBlockHtml(p: InlineImagePlacement, scalePct: unknown = 100
   const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box';
   if (p.pending || !isReadyImageSrc(p.src)) {
     const spin = '<svg width="28" height="28" viewBox="0 0 28 28" style="display:inline-block;vertical-align:middle" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="#c4b5fd" stroke-width="3" stroke-linecap="round" stroke-dasharray="18 52"><animateTransform attributeName="transform" type="rotate" from="0 14 14" to="360 14 14" dur="0.75s" repeatCount="indefinite"/></circle></svg>';
+    // The <img> ships with the spinner even though it has no bytes yet, so a URL
+    // arriving later is `setAttribute('src')` + `setStyleAttribute` on nodes that
+    // are already mounted. Re-inserting the marker instead would flash the bubble
+    // empty, which is exactly what the subscription exists to avoid. No `src`
+    // attribute at all — an empty one renders the broken-image icon.
     return (
       `<div ${INLAY_INLINE_ATTR}="${id}" data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-      + `<br><br><span style="display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:48px;padding:10px;border-radius:12px;background:rgba(124,108,255,.12);border:1px solid rgba(196,181,253,.35)">${spin}</span><br><br>`
+      + `<br><br><span data-inlay-inline-spin="1" style="display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:48px;padding:10px;border-radius:12px;background:rgba(124,108,255,.12);border:1px solid rgba(196,181,253,.35)">${spin}</span>`
+      + `<img data-inlay-inline-img="1" alt="" style="display:none" loading="eager" decoding="async"><br><br>`
       + `</div>`
     );
   }

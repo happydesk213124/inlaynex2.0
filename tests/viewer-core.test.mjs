@@ -102,9 +102,6 @@ import {
   desiredInlinePlacements,
   runBoundedPool,
   canSkipInlineInject,
-  inlineAttachSucceeded,
-  trackInlineEncodeAttempt,
-  INLINE_ENCODE_RETRY_MAX,
   desiredInlinePaintKey,
   pendingInlineKey,
   reconcileInlineShot,
@@ -861,13 +858,14 @@ test("prefetchInlineRoleDomIndices asks sel ±2 and clamps to the chat", () => {
   assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: -1, length: 5 }), []);
 });
 
-test("inlinePaintKey ignores card order but not scale, chips, pending or slot", () => {
+test("inlinePaintKey ignores card order and DOM slot, but not scale, chips or pending", () => {
   const base = { cardIds: ["b", "a"], scalePct: 100, msgActions: "on", pending: false, domIndex: 3 };
   assert.equal(inlinePaintKey(base), inlinePaintKey({ ...base, cardIds: ["a", "b"] }));
   assert.equal(inlinePaintKey(base), inlinePaintKey({ ...base, cardIds: ["a", "b", "a"] }));
-  // The chip bar bakes the DOM slot in as x-inlay-msg-index — a shifted bubble
-  // must repaint or its chips act on the wrong message.
-  assert.notEqual(inlinePaintKey(base), inlinePaintKey({ ...base, domIndex: 4 }));
+  // A new message renumbers every slot in a newest-first chat. Keying on the
+  // slot repainted the whole keep window, and every repaint flashes. The chip
+  // bar's x-inlay-msg-index is updated with one setAttribute instead.
+  assert.equal(inlinePaintKey(base), inlinePaintKey({ ...base, domIndex: 4 }));
   assert.notEqual(inlinePaintKey(base), inlinePaintKey({ ...base, scalePct: 120 }));
   assert.notEqual(inlinePaintKey(base), inlinePaintKey({ ...base, msgActions: "off" }));
   assert.notEqual(inlinePaintKey(base), inlinePaintKey({ ...base, pending: true }));
@@ -1096,54 +1094,31 @@ test("runBoundedPool caps concurrency at the limit", async () => {
   assert.deepEqual(finished, [1, 2, 0]);
 });
 
-test("inject may not skip while a spinner still owes bytes", () => {
-  // The spinner carries the card's own id, so an id/count match is not proof the
-  // bubble is done — skipping here is what left spinners frozen after a scroll.
-  assert.equal(
-    canSkipInlineInject({ scaleMatches: true, liveShotCount: 1, wantIdCount: 1, encodeLaterCount: 1 }),
-    false,
-  );
-  assert.equal(
-    canSkipInlineInject({ scaleMatches: true, liveShotCount: 1, wantIdCount: 1, encodeLaterCount: 0 }),
-    true,
-  );
-});
-
-test("bake retries are bounded so a dead card stops disabling the cheap skip", () => {
-  const attempts = new Map();
-  assert.equal(INLINE_ENCODE_RETRY_MAX, 3);
-  assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), true);
-  assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), true);
-  assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), false);
-  assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), false);
-});
-
-test("a successful bake clears the miss count so a later eviction retries", () => {
-  const attempts = new Map();
-  trackInlineEncodeAttempt(attempts, "c1", false);
-  trackInlineEncodeAttempt(attempts, "c1", false);
-  assert.equal(trackInlineEncodeAttempt(attempts, "c1", true), false);
-  assert.equal(attempts.has("c1"), false);
-  assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), true);
-});
-
-test("attach is not done when cards exist but no img src landed", () => {
-  assert.equal(inlineAttachSucceeded({ wantCards: true, readyImgCount: 0 }), false);
-  assert.equal(inlineAttachSucceeded({ wantCards: true, readyImgCount: 1 }), true);
-  assert.equal(inlineAttachSucceeded({ wantCards: false, readyImgCount: 0 }), true);
-  assert.equal(inlineAttachSucceeded({ wantCards: true, readyImgCount: 0, skipHold: true }), false);
-});
-
-test("inject skip needs a live img src, not just leftover wrappers", () => {
-  // Chat hop / Risu rewrite can keep data-inlay-inline-shot wrappers after the
-  // <img src> is gone. Count/id match used to skip — chips stayed, picture did not.
+test("a cell a live subscription owns counts as finished work", () => {
+  // The marker is placed and its <img> is empty, but the id has a watcher that
+  // fills it when the encode lands. Repainting would only flash the bubble.
   assert.equal(
     canSkipInlineInject({
       scaleMatches: true,
       liveShotCount: 1,
       wantIdCount: 1,
-      encodeLaterCount: 0,
       readyImgCount: 0,
+      awaitingCount: 1,
+    }),
+    true,
+  );
+});
+
+test("inject skip needs a live img src, not just leftover wrappers", () => {
+  // Chat hop / Risu rewrite can keep data-inlay-inline-shot wrappers after the
+  // <img src> is gone. Nothing is watching those cells, so they must repaint.
+  assert.equal(
+    canSkipInlineInject({
+      scaleMatches: true,
+      liveShotCount: 1,
+      wantIdCount: 1,
+      readyImgCount: 0,
+      awaitingCount: 0,
     }),
     false,
   );
@@ -1152,8 +1127,8 @@ test("inject skip needs a live img src, not just leftover wrappers", () => {
       scaleMatches: true,
       liveShotCount: 1,
       wantIdCount: 1,
-      encodeLaterCount: 0,
       readyImgCount: 1,
+      awaitingCount: 0,
     }),
     true,
   );
@@ -1161,15 +1136,15 @@ test("inject skip needs a live img src, not just leftover wrappers", () => {
 
 test("inject skip still needs matching scale and marker count", () => {
   assert.equal(
-    canSkipInlineInject({ scaleMatches: false, liveShotCount: 1, wantIdCount: 1, encodeLaterCount: 0 }),
+    canSkipInlineInject({ scaleMatches: false, liveShotCount: 1, wantIdCount: 1, readyImgCount: 1 }),
     false,
   );
   assert.equal(
-    canSkipInlineInject({ scaleMatches: true, liveShotCount: 0, wantIdCount: 1, encodeLaterCount: 0 }),
+    canSkipInlineInject({ scaleMatches: true, liveShotCount: 0, wantIdCount: 1, readyImgCount: 0 }),
     false,
   );
   assert.equal(
-    canSkipInlineInject({ scaleMatches: true, liveShotCount: 0, wantIdCount: 0, encodeLaterCount: 0 }),
+    canSkipInlineInject({ scaleMatches: true, liveShotCount: 0, wantIdCount: 0 }),
     true,
   );
 });

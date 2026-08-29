@@ -233,17 +233,20 @@ test('new chat/reply schedules a pointer-near message select', () => {
   assert.match(source, /schedulePointerSelect\("boot"\)/);
   assert.match(source, /schedulePointerSelect\("reply"\)/);
   assert.match(source, /source: "provisional"/);
-  // A switch polls for the newest bubble, then retries exactly once at 700ms.
+  // A switch awaits the newest bubble once. There is no retry ladder after it:
+  // the paint places every marker and each image arrives on its own
+  // subscription, so a pass can no longer end "attached but empty".
   assert.match(source, /async function nxWaitNewestDom/);
-  assert.match(source, /freshBoot \|\| freshReply \|\| freshSession \? 0 : rawWait/);
+  assert.match(source, /fresh \? 0 : rawWait/);
   assert.match(source, /t\._inlineHeadFirst = 1/);
-  assert.match(source, /schedulePointerSelect\("session", 7e2\)/);
-  assert.match(source, /schedulePointerSelect\("boot", 200\)/);
   assert.match(source, /async function dtNewest/);
-  // The fast path takes the full char±1 attach and seeds the bounded retry;
-  // the old self-only one-shot is what made shots/chips wait for a click.
-  assert.match(source, /nxResetAttachRetry\(\);\s*\n\s*await Da\(0, newest, \{ source: "provisional", auto: 1 \}\);/);
-  assert.match(source, /if \(!t\._inlineAttachOk\) nxScheduleAttachRetry\(why\);/);
+  assert.match(source, /await Da\(0, newest, \{ source: "provisional", auto: 1 \}\);/);
+  // Absence is checked against the shipped bundle, not this file: vite.config.ts
+  // names the removed symbols on purpose, in the guards that keep them out.
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.doesNotMatch(bundle, /schedulePointerSelect\("session", 7e2\)/);
+  assert.doesNotMatch(bundle, /schedulePointerSelect\("boot", 200\)/);
+  assert.doesNotMatch(bundle, /nxScheduleAttachRetry/);
 });
 
 test('inline paint puts chips before shots so the bar is not blocked by encode', () => {
@@ -258,30 +261,61 @@ test('inline paint puts chips before shots so the bar is not blocked by encode',
   );
 });
 
-test('a spinner without bytes is retried instead of cached as painted', () => {
+test('a shot without bytes gets its marker now and its image by subscription', () => {
   const source = read('vite.config.ts');
-  const start = source.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows) {');
+  const start = source.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
   const end = source.indexOf('async function refreshSelectedInlineImages(force) {', start);
   assert.ok(start >= 0 && end > start, 'inject body not found');
   const inject = source.slice(start, end);
-  // Ids alone would match the spinner the previous pass placed under the card's
-  // own id, and the bake loop below would never run again.
   assert.match(inject, /VC\.canSkipInlineInject\(\{/);
   assert.match(inject, /readyImgCount:\s*readyImgs/);
-  assert.doesNotMatch(inject, /if \(prev\.length === wantIds\.length && t\._inlinePaintScale === scaleNow\) \{/);
-  assert.ok(inject.includes('encodeLeft += 1'), 'failed bake must count as debt');
-  assert.match(inject, /VC\.trackInlineEncodeAttempt\(t\._inlineEncodeMiss/);
+  // A cell nobody is watching still has to be repainted; one that a live
+  // subscription owns is finished work even with an empty <img>.
+  assert.match(inject, /awaitingCount:\s*awaiting/);
+  // Placing the marker must never wait on the bytes, and the pass must not
+  // await an encode — that was the bake loop the retries existed to rescue.
+  assert.doesNotMatch(inject, /ensureStickyCardImage/);
+  assert.doesNotMatch(inject, /runBoundedPool/);
+  assert.ok(
+    inject.indexOf('const tPlace') < inject.indexOf('nxWatchInlineShots(lockKey'),
+    'markers must be placed before the subscription is registered',
+  );
 
-  const refresh = source.slice(end);
-  assert.match(refresh, /if \(Number\(t\._inlineInjectEncodeLeft\) > 0\) return;/);
-  assert.match(refresh, /&& !encodeLeftPrev/);
-  assert.match(refresh, /VC\.inlineAttachSucceeded\(\{/);
-  assert.match(refresh, /t\._inlineAttachOk = attachOk \? 1 : 0/);
-  // Reset must land before the paint calls, or the debt of this pass is read as
-  // the debt of the previous one.
-  const reset = refresh.indexOf('t._inlineEncodeLeft = 0;');
-  const firstInject = refresh.indexOf('await injectChatInlineImages(els[paintIdx]');
-  assert.ok(reset >= 0 && firstInject > reset, 'encode debt must reset before painting');
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.doesNotMatch(bundle, /_inlineEncodeLeft/);
+  assert.doesNotMatch(bundle, /inlineAttachSucceeded/);
+  // A pass that has been superseded stops instead of painting the old selection.
+  assert.match(source.slice(end), /if \(stale\(\)\) \{/);
+});
+
+test('the bubble host scan is shared by chips and inline shots', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.equal(
+    (bundle.match(/querySelectorAll\("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"\)/g) || []).length,
+    1,
+    'the per-paragraph scan must exist once, not once per consumer',
+  );
+  assert.match(bundle, /async function nxScanBubbleHosts\(msgEl\)/);
+  assert.equal((bundle.match(/await nxScanBubbleHosts\(msgEl\)/g) || []).length, 2);
+});
+
+test('the inject lock is per bubble so neighbours do not serialize', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.doesNotMatch(bundle, /_inlineInjectBusy/);
+  assert.doesNotMatch(bundle, /_inlineInjectQueued/);
+  assert.match(bundle, /t\._inlineInjectLocks\.get\(lockKey\)/);
+  // Mid-scroll only the selected bubble is worth painting; the ±1 window is a
+  // convenience and would be aimed at a selection that already moved.
+  assert.match(bundle, /t\._scrollPhaseBus && t\._scrollPhaseBus\.pendingSettle/);
+});
+
+test('keep window and paint keys survive a DOM index shift', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  // The chat is newest-first, so a new message renumbers every slot. Neither the
+  // keep list nor the paint fingerprint may be keyed on that number.
+  assert.doesNotMatch(bundle, /_inlineKeepIdxs/);
+  assert.match(bundle, /t\._inlineKeepEls = nextKeep;/);
+  assert.match(bundle, /setAttribute\("x-inlay-msg-index", String\(msgIdx\)\)/);
 });
 
 test('auto select paints inline shots and chips without a click', () => {
@@ -389,8 +423,10 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(body, /prependBar/);
   assert.match(body, /msgActionMountKind/);
   assert.match(body, /canMountMsgActionOnParent/);
-  assert.match(body, /isInlayPaintHost/);
-  assert.match(body, /isMessageBodyHostTag/);
+  // Host eligibility moved into the scan the bars now share with inline shots.
+  assert.match(body, /nxScanBubbleHosts\(msgEl\)/);
+  assert.match(source, /isInlayPaintHost/);
+  assert.match(source, /isMessageBodyHostTag/);
   assert.match(body, /getParent/);
   assert.match(body, /x-inlay-msg-end/);
   assert.match(body, /keepMsgActionBarIndexes/);
@@ -451,27 +487,17 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   // paintIdx must carry the cards of the bubble it paints, not the selection's:
   // selCards is [] on a user turn and [] strips the remapped char's shots.
   assert.match(source, /injectChatMsgActions\(els\[paintIdx\], paintPlan\.cards, paintIdx\)/);
-  assert.match(source, /injectChatInlineImages\(els\[paintIdx\], paintPlan\.cards, t\._inlinePending\)/);
+  assert.match(source, /injectChatInlineImages\(els\[paintIdx\], paintPlan\.cards, t\._inlinePending, \{/);
   assert.match(source, /resolveInlinePaintCards\(\{ selIdx, paintIdx, selCards, paintCards \}\)/);
   assert.doesNotMatch(source, /injectChatInlineImages\(els\[paintIdx\], selCards,/);
   assert.match(source, /injectChatMsgActions\(els\[row\.idx\], row\.cards, row\.idx\)/);
-  // Automatic selection must take the same char±1 path a click takes, and the
-  // bounded retry must stay a retry: no force (keeps the cheap skip) and no
-  // rebind POST per attempt.
+  // Automatic selection must take the same char±1 path a click takes. Nothing
+  // reschedules it any more — the images come to the markers, not the other way.
   const bundle = read('dist', 'inlaynexus2.0.js');
   assert.doesNotMatch(bundle, /_inlineSelfOnly/);
-  assert.match(bundle, /const NX_ATTACH_BACKOFF = \[200, 400, 800\];/);
-  assert.match(bundle, /const NX_SESSION_ATTACH_BACKOFF = \[200, 400, 800, 1500, 2500\];/);
-  const retryStart = bundle.indexOf('function nxScheduleAttachRetry(why)');
-  const retryEnd = bundle.indexOf('async function refreshSelectedInlineImages(force)', retryStart);
-  assert.ok(retryStart >= 0 && retryEnd > retryStart, 'attach retry section not found');
-  const retry = bundle.slice(retryStart, retryEnd);
-  assert.match(retry, /const waits = nxAttachWaits\(why\)/);
-  assert.match(retry, /if \(n >= waits\.length \|\| t\._inlineAttachTimer\)/);
-  assert.match(retry, /t\._inlineNoRebind = 1;/);
-  assert.match(retry, /refreshSelectedInlineImages\(\)\.then/);
-  assert.doesNotMatch(retry, /refreshSelectedInlineImages\(!0\)/);
-  assert.doesNotMatch(retry, /setInterval/);
+  assert.doesNotMatch(bundle, /nxScheduleAttachRetry/);
+  assert.doesNotMatch(bundle, /NX_SESSION_ATTACH_BACKOFF/);
+  assert.match(bundle, /subscribeImageUrl/);
   assert.match(body, /Da\(idx, els, \{ source: "provisional" \}\)/);
   assert.doesNotMatch(body, /<span x-inlay-msg-chip=/);
   assert.doesNotMatch(body, /getAttribute\("data-inlay-msg-/);

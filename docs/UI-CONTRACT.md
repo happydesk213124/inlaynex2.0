@@ -16,12 +16,13 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 | `fetch` | `(path, {method, body}, timeoutMs) => Promise<any>` | `body` is a **plain object**, not a JSON string. Resolves with the parsed response; throws on error with `.status`/`.data` |
 | `resolveImageUrl` | `(cardOrId) => string` | Synchronous cache hit, else `""` |
 | `ensureImageUrl` | `(id) => Promise<string>` | Loads and caches |
+| `subscribeImageUrl` | `(ids: string[], cb: (id, url) => void) => () => void` | Fires per id as it becomes displayable; replays ids already cached. Caller **must** run the returned unsubscribe |
 | `warmImages` | `(ids: string[]) => Promise<void>` | Fire-and-forget prefetch |
 | `pinImageUrls` | `(ids: string[]) => void` | Pin sticky-window ids against data-URL LRU eviction; prioritizes their warm queue |
 | `warmProgress` | `() => { pending, active, done, total, pct, busy }` | Full background warm wave (viewer status) |
 | `warmFocusProgress` | `() => { pending, active, done, total, pct, busy }` | Selection-focus warm only — mint progress toast |
-| `prioritizeWarmFocus` | `(ids: string[]) => void` | Selection monopoly: encode these ids first; park others until done / `clearWarmFocus` |
-| `clearWarmFocus` | `() => void` | End selection monopoly and resume parked warm work |
+| `prioritizeWarmFocus` | `(ids: string[]) => void` | Move these ids to the front of the encode queue and scope `warmFocusProgress` to them. Priority only — nothing else is parked |
+| `clearWarmFocus` | `() => void` | End the selection-scoped progress readout |
 | `refPreviewUrl` | `() => string` | Reference-image preview `src` |
 | `vibePreviewUrl` | `() => string` | Vibe-image preview `src` |
 | `VERSION` | `string` | Not read by the UI; kept for diagnostics |

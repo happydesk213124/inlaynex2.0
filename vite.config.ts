@@ -8227,18 +8227,194 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     if (raw === true || raw === "compat" || raw === "true" || raw === 1) return "compat";
     return "off";
   }
-  async function injectChatInlineImages(msgEl, cards, pendingRows) {
+  /** Batched read of every inline marker in a bubble: node, card id, current src. */
+  async function nxProbeInlineShots(msgEl, unwrapSafe) {
+    let nodes = [];
+    try {
+      nodes = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+    } catch {
+      nodes = [];
+    }
+    return Promise.all(nodes.map(async (node) => {
+      let id = "";
+      let src = "";
+      try {
+        if (node && typeof node.getAttribute == "function") {
+          id = String(await node.getAttribute("data-inlay-inline-shot") || "");
+        }
+        const imgs = await unwrapSafe(await node.querySelectorAll("img"));
+        const img = imgs[0];
+        if (img && typeof img.getAttribute == "function") src = String(await img.getAttribute("src") || "");
+      } catch {
+      }
+      return { node, id, src };
+    }));
+  }
+  /** Ids this bubble is still waiting on. Empty when nothing is watching it. */
+  function nxInlineSubIds(lockKey) {
+    const row = t._inlineSubs instanceof Map ? t._inlineSubs.get(String(lockKey)) : null;
+    return row?.ids instanceof Set ? row.ids : new Set();
+  }
+  /** Drops a bubble's watcher. Every repaint must call this before it re-registers. */
+  function nxDropInlineSubs(lockKey) {
+    if (!(t._inlineSubs instanceof Map)) return;
+    const key = String(lockKey);
+    const row = t._inlineSubs.get(key);
+    if (!row) return;
+    t._inlineSubs.delete(key);
+    try {
+      if (typeof row.stop == "function") row.stop();
+    } catch {
+    }
+  }
+  /**
+   * Waits for the bytes of every card that had none, and fills that one cell.
+   *
+   * This replaces the bake loop that used to run inside the paint: waiting there
+   * made the pass as slow as the slowest encode, and anything that missed became
+   * debt for a retry pass to pick up. Here the paint is already finished and the
+   * cells arrive independently.
+   */
+  function nxWatchInlineShots(lockKey, cards, shotNodes, patchShotSrc) {
+    nxDropInlineSubs(lockKey);
+    const N = globalThis.__INLAY_NATIVE__;
+    const ids = [];
+    for (const card of Array.isArray(cards) ? cards : []) {
+      const id = String(card?.id || "");
+      if (id && shotNodes.has(id) && !ids.includes(id)) ids.push(id);
+    }
+    if (!ids.length || typeof N?.subscribeImageUrl != "function") return;
+    if (!(t._inlineSubs instanceof Map)) t._inlineSubs = new Map();
+    const left = new Set(ids);
+    const row = { ids: left, stop: () => {} };
+    t._inlineSubs.set(String(lockKey), row);
+    row.stop = N.subscribeImageUrl(ids, (id, url) => {
+      const wrap = shotNodes.get(id);
+      if (!wrap) return;
+      Promise.resolve(patchShotSrc(wrap, url)).then((ok) => {
+        if (!ok) return;
+        left.delete(id);
+        if (!left.size) nxDropInlineSubs(lockKey);
+      }).catch(() => {
+      });
+    });
+    // A subscriber alone never triggers an encode — it only listens. Kick the
+    // ones that are not cached yet, respecting the selection's warm priority.
+    try {
+      if (typeof N?.warmImages == "function") N.warmImages(ids).catch(() => {});
+    } catch {
+    }
+  }
+  /**
+   * One host scan per bubble, shared by the chip bars and the inline shots.
+   *
+   * SafeDOM charges an IPC round-trip per call, and the two consumers used to
+   * walk the same \`p,h1..h6,li,blockquote,div\` list separately — four sequential
+   * reads each, plus a third pass for the paragraph text. All of it is
+   * independent per element, so it batches.
+   *
+   * The cache is scoped to one pass generation: reusing a scan across passes
+   * would hand out element handles for a bubble Risu already rebuilt.
+   */
+  async function nxScanBubbleHosts(msgEl) {
+    const gen = Number(t._inlinePassGen) || 0;
+    const mode = nxMsgAct();
+    const hit = t._inlineHostScan;
+    if (hit && hit.el === msgEl && hit.gen === gen && hit.mode === mode) return hit;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const unwrapSafe = async (arr) => {
+      if (!arr) return [];
+      if (typeof k.unwarpSafeArray == "function") {
+        try {
+          const u = await k.unwarpSafeArray(arr);
+          return Array.isArray(u) ? u : u ? [u] : [];
+        } catch {
+          return [];
+        }
+      }
+      return Array.isArray(arr) ? arr : [arr];
+    };
+    let hostsRaw = [];
+    try {
+      hostsRaw = await unwrapSafe(await msgEl.querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"));
+    } catch {
+      hostsRaw = [];
+    }
+    const probed = await Promise.all(hostsRaw.map(async (el) => {
+      if (!el) return null;
+      let name = "";
+      try {
+        name = typeof el.nodeName == "function" ? String(await el.nodeName() || "").toUpperCase() : "";
+      } catch {
+        name = "";
+      }
+      let nested = null;
+      if (name === "DIV") {
+        try {
+          nested = typeof el.querySelector == "function"
+            ? await el.querySelector("p,h1,h2,h3,h4,h5,h6,li,blockquote")
+            : null;
+        } catch {
+          nested = null;
+        }
+      }
+      let isActionBar = !1;
+      let isInlineShot = !1;
+      let text = "";
+      try {
+        const jobs = [];
+        jobs.push(typeof el.getAttribute == "function" ? el.getAttribute("x-inlay-msg-actions") : "");
+        jobs.push(typeof el.getAttribute == "function" ? el.getAttribute("x-inlay-inline-shot") : "");
+        jobs.push(typeof el.innerText == "function"
+          ? el.innerText()
+          : typeof el.textContent == "function" ? el.textContent() : "");
+        const [bar, shot, txt] = await Promise.all(jobs);
+        isActionBar = String(bar || "") !== "";
+        isInlineShot = String(shot || "") !== "";
+        text = String(txt || "");
+      } catch {
+      }
+      return { el, name: name || "DIV", nested: !!nested, isActionBar, isInlineShot, text };
+    }));
+    const rows = [];
+    for (const row of probed) {
+      if (!row) continue;
+      if (row.name === "DIV" && row.nested) continue;
+      const skipPaint = typeof VC?.isInlayPaintHost == "function"
+        ? VC.isInlayPaintHost({ isActionBar: row.isActionBar, isInlineShot: row.isInlineShot })
+        : (row.isActionBar || row.isInlineShot);
+      if (skipPaint) continue;
+      const bodyHost = typeof VC?.isMessageBodyHostTag == "function"
+        ? VC.isMessageBodyHostTag(row.name)
+        : /^(P|H[1-6]|LI|BLOCKQUOTE)$/.test(row.name);
+      if (mode !== "legacy" && !bodyHost) continue;
+      rows.push(row);
+    }
+    const scan = { el: msgEl, gen, mode, rows, raw: hostsRaw.length };
+    t._inlineHostScan = scan;
+    return scan;
+  }
+  async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {
     if (!msgEl || t.backendSettings?.card?.inline_chat_images !== !0) return;
     if (typeof msgEl.querySelectorAll != "function" || typeof msgEl.getInnerHTML != "function") return;
-    if (t._inlineInjectBusy) {
-      t._inlineInjectQueued = !0;
-      return;
+    // Per bubble, not global. The lock only exists so two passes cannot
+    // double-prepend into the same bubble; a global one made the bubble the user
+    // is looking at queue behind its own neighbours during a scroll. A second
+    // caller waits for the in-flight paint instead of dropping its request,
+    // otherwise the newer selection would silently lose its turn.
+    const lockKey = String(opts?.lockKey || \`dom\${opts?.domIndex ?? "?"}\`);
+    if (!(t._inlineInjectLocks instanceof Map)) t._inlineInjectLocks = new Map();
+    const held = t._inlineInjectLocks.get(lockKey);
+    if (held) {
+      try {
+        await held;
+      } catch {
+      }
     }
-    t._inlineInjectBusy = !0;
-    t._inlineInjectQueued = !1;
-    // Cleared up front so an early return cannot leave a previous bubble's debt
-    // attached to this one.
-    t._inlineInjectEncodeLeft = 0;
+    let release = () => {};
+    t._inlineInjectLocks.set(lockKey, new Promise((r) => {
+      release = r;
+    }));
     try {
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     if (typeof VC?.findElementIndexForLineWithFallback != "function" || typeof VC?.markerBlockHtml != "function") return;
@@ -8295,41 +8471,34 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         ...encodeLater.map((c) => String(c?.id || ""))
       ].filter(Boolean).sort();
       const scaleNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
-      let prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+      // One batched probe answers everything the skip gate needs: how many
+      // markers exist, which ids they carry, and which of them actually show a
+      // display URL. Sequential per-wrapper reads were two IPC hops per shot.
+      const prevProbe = await nxProbeInlineShots(msgEl, unwrapSafe);
+      let prev = prevProbe.map((row) => row.node);
       let htmlProbe = "n/a";
-      let readyImgs = 0;
-      for (const wrap of prev) {
-        try {
-          const imgs = await unwrapSafe(await wrap.querySelectorAll("img"));
-          const img = imgs[0];
-          if (!img || typeof img.getAttribute != "function") continue;
-          const src = String(await img.getAttribute("src") || "");
-          if (nxReadyImg(src)) readyImgs += 1;
-        } catch {
-        }
-      }
+      const readyImgs = prevProbe.filter((row) => nxReadyImg(row.src)).length;
+      // A marker with no bytes is still finished work when a live watcher owns
+      // that id — it fills in place the moment the encode lands.
+      const watching = nxInlineSubIds(lockKey);
+      const awaiting = prevProbe.filter((row) => !nxReadyImg(row.src) && row.id && watching.has(row.id)).length;
       const skipOk = typeof VC.canSkipInlineInject == "function"
         ? VC.canSkipInlineInject({
           scaleMatches: t._inlinePaintScale === scaleNow,
           liveShotCount: prev.length,
           wantIdCount: wantIds.length,
-          encodeLaterCount: encodeLater.length,
-          readyImgCount: readyImgs
+          readyImgCount: readyImgs,
+          awaitingCount: awaiting
         })
-        : prev.length === wantIds.length && t._inlinePaintScale === scaleNow && !encodeLater.length && readyImgs === wantIds.length;
+        : prev.length === wantIds.length && t._inlinePaintScale === scaleNow && readyImgs + awaiting >= wantIds.length;
       if (skipOk) {
         if (!wantIds.length) {
           y("info", "inline.inject.skip", "shots=0 already");
           return;
         }
-        let htmlNow = "";
-        try {
-          htmlNow = String(await msgEl.getInnerHTML() || "");
-        } catch {
-          htmlNow = "";
-        }
-        if (wantIds.every((id) => htmlNow.includes(\`data-inlay-inline-shot="\${id}"\`))) {
-          y("info", "inline.inject.skip", \`shots=\${wantIds.length} already\`);
+        const liveIds = new Set(prevProbe.map((row) => row.id).filter(Boolean));
+        if (wantIds.every((id) => liveIds.has(id))) {
+          y("info", "inline.inject.skip", \`shots=\${wantIds.length} already ready=\${readyImgs} wait=\${awaiting}\`);
           return;
         }
         htmlProbe = "miss";
@@ -8338,12 +8507,27 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // is visible to the user. Name the reason — count, scale or marker id.
       y("info", "inline.inject.repaint", \`prev=\${prev.length} want=\${wantIds.length} scale=\${t._inlinePaintScale}/\${scaleNow} html=\${htmlProbe}\`);
       const patchShotSrc = async (wrap, src) => {
-        if (!wrap || !src || !nxReadyImg(src)) return;
+        if (!wrap || !src || !nxReadyImg(src)) return !1;
         try {
           const imgs = await unwrapSafe(await wrap.querySelectorAll("img"));
           const img = imgs[0];
-          if (img && typeof img.setAttribute == "function") await img.setAttribute("src", src);
+          if (!img || typeof img.setAttribute != "function") return !1;
+          await img.setAttribute("src", src);
+          // The spinner marker ships its <img> hidden. Reveal it and drop the
+          // spinner in place — re-inserting the marker is what flashes.
+          if (typeof img.setStyleAttribute == "function" && typeof VC.inlineChatImgStyle == "function") {
+            await img.setStyleAttribute(VC.inlineChatImgStyle(t.backendSettings?.card?.inline_chat_scale_pct ?? 100));
+          }
+          const spins = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-spin]"));
+          for (const spin of spins) {
+            try {
+              if (spin && typeof spin.remove == "function") await spin.remove();
+            } catch {
+            }
+          }
+          return !0;
         } catch {
+          return !1;
         }
       };
       const removeAllMarkers = async () => {
@@ -8397,64 +8581,19 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const messageLines = typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(plain) : [];
       if (!messageLines.length) return;
       const tScan = Date.now();
-      const hostsRaw = await unwrapSafe(await msgEl.querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"));
+      // Shared with injectChatMsgActions, which normally ran moments earlier on
+      // this same bubble. The text came back with the scan, so no second read.
+      const scan = await nxScanBubbleHosts(msgEl);
       const hosts = [];
       const hostTags = [];
-      for (const el of hostsRaw) {
-        if (!el) continue;
-        let name = "";
-        try {
-          name = typeof el.nodeName == "function" ? String(await el.nodeName() || "").toUpperCase() : "";
-        } catch {
-          name = "";
-        }
-        if (name === "DIV") {
-          let nested = null;
-          try {
-            nested = typeof el.querySelector == "function"
-              ? await el.querySelector("p,h1,h2,h3,h4,h5,h6,li,blockquote")
-              : null;
-          } catch {
-            nested = null;
-          }
-          if (nested) continue;
-        }
-        let text = "";
-        try {
-          if (typeof el.innerText == "function") text = String(await el.innerText() || "");
-          else if (typeof el.textContent == "function") text = String(await el.textContent() || "");
-        } catch {
-          text = "";
-        }
-        if (!(typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(text) : []).length) continue;
-        let isActionBar = !1;
-        let isInlineShot = !1;
-        try {
-          if (typeof el.getAttribute == "function") {
-            isActionBar = String(await el.getAttribute("x-inlay-msg-actions") || "") !== "";
-            isInlineShot = String(await el.getAttribute("x-inlay-inline-shot") || "") !== "";
-          }
-        } catch {
-        }
-        if (typeof VC.isInlayPaintHost == "function" ? VC.isInlayPaintHost({ isActionBar, isInlineShot }) : (isActionBar || isInlineShot)) continue;
-        const bodyHost = typeof VC.isMessageBodyHostTag == "function"
-          ? VC.isMessageBodyHostTag(name)
-          : /^(P|H[1-6]|LI|BLOCKQUOTE)$/.test(name);
-        if (nxMsgAct() !== "legacy" && !bodyHost) continue;
-        hosts.push(el);
-        hostTags.push(name || "DIV");
+      const hostTexts = [];
+      for (const row of scan.rows) {
+        if (!(typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(row.text) : []).length) continue;
+        hosts.push(row.el);
+        hostTags.push(row.name || "DIV");
+        hostTexts.push(row.text);
       }
       if (!hosts.length) return;
-      const hostTexts = [];
-      for (const el of hosts) {
-        try {
-          if (typeof el.innerText == "function") hostTexts.push(String(await el.innerText() || ""));
-          else if (typeof el.textContent == "function") hostTexts.push(String(await el.textContent() || ""));
-          else hostTexts.push("");
-        } catch {
-          hostTexts.push("");
-        }
-      }
       const msScan = Date.now() - tScan;
       const byLine = new Map();
       for (const p of placements) {
@@ -8474,7 +8613,42 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         } catch {
         }
       };
-      const prependShot = async (host, shot) => {
+      // Marker nodes by card id, so a URL arriving later knows which cell to fill
+      // without another query.
+      const shotNodes = new Map();
+      // Host marker lists, read once per host instead of once per shot. Kept in
+      // sync as this pass prepends and removes, since it is the only writer.
+      const hostMarks = new Map();
+      const marksFor = async (idx, host) => {
+        if (hostMarks.has(idx)) return hostMarks.get(idx);
+        let raw = [];
+        try {
+          raw = await unwrapSafe(await host.querySelectorAll("[data-inlay-inline-shot]"));
+        } catch {
+          raw = [];
+        }
+        const info = await Promise.all(raw.map(async (mark) => {
+          let markId = "";
+          let src = "";
+          try {
+            if (mark && typeof mark.getAttribute == "function") {
+              markId = String(await mark.getAttribute("data-inlay-inline-shot") || "");
+            }
+            const imgs = await unwrapSafe(await mark.querySelectorAll("img"));
+            const img = imgs[0];
+            if (img && typeof img.getAttribute == "function") src = String(await img.getAttribute("src") || "");
+          } catch {
+            markId = "";
+          }
+          // Pending is whether the cell actually shows bytes, not what the
+          // attribute says: a subscription fills the <img> in place and cannot
+          // rewrite a data- attribute through SafeDOM.
+          return { node: mark, id: markId, pending: !nxReadyImg(src) };
+        }));
+        hostMarks.set(idx, info);
+        return info;
+      };
+      const prependShot = async (host, hostIdx, shot) => {
         const markerHtml = VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100);
         if (!markerHtml || !host || typeof host.prepend != "function") return !1;
         try {
@@ -8483,6 +8657,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           const wrap = kids[0];
           if (wrap) {
             await host.prepend(wrap);
+            const id = String(shot.cardId || "");
+            if (id) shotNodes.set(id, wrap);
+            const marks = hostMarks.get(hostIdx);
+            if (Array.isArray(marks)) marks.unshift({ node: wrap, id, pending: !nxReadyImg(shot.src) });
             if (shot.src && !shot.pending) await patchShotSrc(wrap, shot.src);
             return !0;
           }
@@ -8500,65 +8678,34 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (!hit || hit.elementIndex < 0 || hit.elementIndex >= hosts.length) return !1;
         const host = hosts[hit.elementIndex];
         if (!host) return !1;
-        let marks = [];
-        try {
-          marks = await unwrapSafe(await host.querySelectorAll("[data-inlay-inline-shot]"));
-        } catch {
-          marks = [];
-        }
-        let node = null;
-        let live = null;
-        for (const mark of marks) {
-          let markId = "";
-          let pendingMark = !1;
-          try {
-            if (mark && typeof mark.getAttribute == "function") {
-              markId = String(await mark.getAttribute("data-inlay-inline-shot") || "");
-              pendingMark = String(await mark.getAttribute("data-inlay-inline-pending") || "") === "1";
-            }
-          } catch {
-            markId = "";
-          }
-          if (id && markId === id) {
-            node = mark;
-            live = { cardId: markId, pending: pendingMark };
-            break;
-          }
-        }
-        if (!node) {
-          for (const mark of marks) {
-            let markId = "";
-            let pendingMark = !1;
-            try {
-              if (mark && typeof mark.getAttribute == "function") {
-                markId = String(await mark.getAttribute("data-inlay-inline-shot") || "");
-                pendingMark = String(await mark.getAttribute("data-inlay-inline-pending") || "") === "1";
-              }
-            } catch {
-              markId = "";
-            }
-            if (markId && placedIds.has(markId)) continue;
-            node = mark;
-            live = { cardId: markId, pending: pendingMark };
-            break;
-          }
-        }
+        const marks = await marksFor(hit.elementIndex, host);
+        let mark = id ? marks.find((m) => m.id === id) : null;
+        if (!mark) mark = marks.find((m) => !m.id || !placedIds.has(m.id));
+        const node = mark?.node || null;
+        const live = mark ? { cardId: mark.id, pending: mark.pending } : null;
         const action = typeof VC.reconcileInlineShot == "function"
           ? VC.reconcileInlineShot(shot, live)
           : live ? { op: "swap", placement: shot } : { op: "prepend", placement: shot };
-        if (action.op === "keep") {
-          if (shot.src && !shot.pending && node) await patchShotSrc(node, shot.src);
+        if (action.op === "keep" || action.op === "fill") {
+          if (shot.src && !shot.pending && node && await patchShotSrc(node, shot.src)) {
+            if (mark) mark.pending = !1;
+          }
+          if (id && node) shotNodes.set(id, node);
           placedHosts.add(hit.elementIndex);
           if (id) placedIds.add(id);
-          return !1;
+          return action.op === "fill";
         }
         if (action.op === "strip") {
           await removeNode(node);
+          if (mark) marks.splice(marks.indexOf(mark), 1);
           placedHosts.add(hit.elementIndex);
           return !0;
         }
-        if (action.op === "swap") await removeNode(node);
-        const did = await prependShot(host, action.placement || shot);
+        if (action.op === "swap") {
+          await removeNode(node);
+          if (mark) marks.splice(marks.indexOf(mark), 1);
+        }
+        const did = await prependShot(host, hit.elementIndex, action.placement || shot);
         if (did) {
           placed += 1;
           placedHosts.add(hit.elementIndex);
@@ -8571,66 +8718,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         await applyShot(shot);
       }
       const msPlace = Date.now() - tPlace;
-      const tBake = Date.now();
-      // Spinners for cache misses are already in byLine. Bake two at a time and
-      // swap as each URL lands. Finish this bubble even if another refresh
-      // queued — breaking here left half-placed shots that the follow-up then
-      // stripped as "empty".
-      const applyReady = (() => {
-        let tail = Promise.resolve();
-        return (shot) => {
-          const run = tail.then(() => applyShot(shot));
-          tail = run.catch(() => {});
-          return run;
-        };
-      })();
-      // Bytes that never arrived. The bubble is not a finished paint while this
-      // is above zero — the fingerprint must not be recorded and the next pass
-      // has to come back and retry, or the spinner is frozen for good. Retries
-      // are capped per card so a dead id cannot disable the cheap skip forever.
-      let encodeLeft = 0;
-      if (!(t._inlineEncodeMiss instanceof Map)) t._inlineEncodeMiss = new Map();
-      const noteBake = (cardId, ok) => {
-        if (typeof VC.trackInlineEncodeAttempt != "function") return !ok;
-        return VC.trackInlineEncodeAttempt(t._inlineEncodeMiss, cardId, ok);
-      };
-      const bakeOne = async (card) => {
-        const cardId = String(card?.id || "");
-        let src = "";
-        try {
-          src = await ensureStickyCardImage(card) || "";
-        } catch {
-        }
-        const line0 = Number(card?.line);
-        const usable = Boolean(src) && nxReadyImg(src) && Number.isFinite(line0) && line0 >= 1;
-        if (!usable) {
-          if (noteBake(cardId, !1)) encodeLeft += 1;
-          return;
-        }
-        const line = typeof VC.clampShotLine == "function"
-          ? VC.clampShotLine(line0, messageLines.length)
-          : Math.floor(line0);
-        if (!line) {
-          if (noteBake(cardId, !1)) encodeLeft += 1;
-          return;
-        }
-        noteBake(cardId, !0);
-        const shot = {
-          line,
-          src,
-          shotIndex: card.shot_index,
-          cardId,
-          pending: !1
-        };
-        byLine.set(line, shot);
-        await applyReady(shot);
-      };
-      if (typeof VC.runBoundedPool == "function") {
-        await VC.runBoundedPool(encodeLater, 2, bakeOne);
-      } else {
-        for (const card of encodeLater) await bakeOne(card);
-      }
-      const msBake = Date.now() - tBake;
+      const tWatch = Date.now();
+      // Every linked card now owns a marker, so the paint is finished. The bytes
+      // are a separate story: watch each missing id and drop its URL into the
+      // <img> that is already mounted. No retry pass, no debt counter, and no
+      // "did the attach succeed" question — the cell fills whenever it fills.
+      nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc);
+      const msWatch = Date.now() - tWatch;
       const tLeft = Date.now();
       const keepIds = new Set(placedIds);
       for (const card of encodeLater) {
@@ -8661,35 +8755,25 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       } catch {
       }
       const msLeft = Date.now() - tLeft;
-      y("info", "inline.inject", \`shots=\${placements.length}+enc\${encodeLater.length} placed=\${placed} left=\${encodeLeft} pending=\${placements.filter((p) => p.pending).length}\`);
-      y("info", "inline.inject.ms", \`total=\${Date.now() - tStart} html=\${msHtml} scan=\${msScan}(hosts=\${hosts.length}/\${hostsRaw.length}) place=\${msPlace} bake=\${msBake} left=\${msLeft}\`);
+      y("info", "inline.inject", \`shots=\${placements.length}+enc\${encodeLater.length} placed=\${placed} watch=\${nxInlineSubIds(lockKey).size} pending=\${placements.filter((p) => p.pending).length}\`);
+      y("info", "inline.inject.ms", \`total=\${Date.now() - tStart} html=\${msHtml} scan=\${msScan}(hosts=\${hosts.length}/\${scan.raw}) place=\${msPlace} watch=\${msWatch} left=\${msLeft}\`);
       t._inlinePaintScale = scaleNow;
-      // Per-call for notePainted; accumulated so the pass-level keep skip knows
-      // some bubble still owes an image.
-      t._inlineInjectEncodeLeft = encodeLeft;
-      t._inlineEncodeLeft = (Number(t._inlineEncodeLeft) || 0) + encodeLeft;
     } catch (err) {
-      // A throw is not a finished paint — leave debt so the next pass repaints.
-      t._inlineInjectEncodeLeft = 1;
-      t._inlineEncodeLeft = (Number(t._inlineEncodeLeft) || 0) + 1;
+      // A throw leaves the bubble half-painted; drop any watcher it registered so
+      // the next pass rebuilds from a known state instead of double-filling.
+      nxDropInlineSubs(lockKey);
       y("warn", "inline.inject.fail", z(err?.message || err, 120));
     }
     } finally {
-      t._inlineInjectBusy = !1;
-      if (t._inlineInjectQueued) {
-        t._inlineInjectQueued = !1;
-        refreshSelectedInlineImages().catch(() => {
-        });
-      }
+      t._inlineInjectLocks.delete(lockKey);
+      release();
     }
   }
-  // Attach retry budget. Automatic selection lands before Risu has swapped the
-  // chat DOM, so the first paint can find nothing and there is no click coming
-  // to try again. Retries are event-seeded and bounded — never a poll.
-  const NX_ATTACH_BACKOFF = [200, 400, 800];
-  // Session hop waits for gallery/encode after the first chip-only paint.
-  // Event-seeded, not a poll — five gaps, ~5.4s worst case.
-  const NX_SESSION_ATTACH_BACKOFF = [200, 400, 800, 1500, 2500];
+  // No attach retry ladder. A pass used to re-run itself up to five times
+  // because it could finish with chips and no image; now the markers land in one
+  // shot and each image arrives on its own subscription, so there is nothing to
+  // retry. The one remaining wait is nxWaitNewestDom, and it is an await in the
+  // sequence rather than a driver.
   // Session listing window. Wide enough for the viewer strip (8) plus the inline
   // window and normal browsing; older cards arrive by hash, not by raising this.
   const NX_GALLERY_WINDOW = 120;
@@ -8749,68 +8833,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const n = Number(res?.total);
     return Number.isFinite(n) ? n : 0;
   }
-  function nxAttachWaits(why) {
-    const w = String(why || "");
-    return w === "session" || w === "ledger" ? NX_SESSION_ATTACH_BACKOFF : NX_ATTACH_BACKOFF;
-  }
-  async function nxReadyInlineImgCount(el) {
-    if (!el || typeof el.querySelectorAll != "function") return 0;
-    const unwrap = async (arr) => {
-      if (!arr) return [];
-      if (typeof k.unwarpSafeArray == "function") {
-        try {
-          const u = await k.unwarpSafeArray(arr);
-          return Array.isArray(u) ? u : u ? [u] : [];
-        } catch {
-          return [];
-        }
-      }
-      return Array.isArray(arr) ? arr : [arr];
-    };
-    try {
-      const wraps = await unwrap(await el.querySelectorAll("[data-inlay-inline-shot]"));
-      let n = 0;
-      for (const wrap of wraps) {
-        if (!wrap || typeof wrap.querySelectorAll != "function") continue;
-        const imgs = await unwrap(await wrap.querySelectorAll("img"));
-        const img = imgs[0];
-        if (!img || typeof img.getAttribute != "function") continue;
-        if (nxReadyImg(String(await img.getAttribute("src") || ""))) n += 1;
-      }
-      return n;
-    } catch {
-      return 0;
-    }
-  }
-  function nxResetAttachRetry() {
-    t._inlineAttachTries = 0;
-    if (t._inlineAttachTimer) {
-      clearTimeout(t._inlineAttachTimer);
-      t._inlineAttachTimer = null;
-    }
-  }
-  function nxScheduleAttachRetry(why) {
-    const waits = nxAttachWaits(why);
-    const n = Number(t._inlineAttachTries || 0);
-    if (n >= waits.length || t._inlineAttachTimer) {
-      if (n >= waits.length) hideAttachToast({ done: 1 }).catch(() => {});
-      return;
-    }
-    t._inlineAttachTries = n + 1;
-    const wait = waits[n];
-    y("info", "inline.attach.retry", \`\${why} try=\${n + 1}/\${waits.length} in=\${wait}ms\`);
-    t._inlineAttachTimer = setTimeout(() => {
-      t._inlineAttachTimer = null;
-      // No force (keeps the cheap skip alive) and no rebind (no POST per retry).
-      t._inlineNoRebind = 1;
-      refreshSelectedInlineImages().then(() => {
-        t._inlineNoRebind = 0;
-        if (!t._inlineAttachOk) nxScheduleAttachRetry(why);
-      }).catch(() => {
-        t._inlineNoRebind = 0;
-      });
-    }, wait);
-  }
   async function refreshSelectedInlineImages(force) {
     if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") {
       hideAttachToast().catch(() => {});
@@ -8821,10 +8843,14 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     // Split the pass so "slow move" can be attributed: everything before the
     // first inject (keep walk, card rebind, strip) versus the paints themselves.
     const tPass = Date.now();
-    // Only a run that reached (or knowingly skipped) the paint counts as attached.
-    t._inlineAttachOk = 0;
+    // Generation, not a queue flag. During a scroll the selection keeps moving,
+    // and the old design re-ran the whole pass from the top each time, so paints
+    // trailed the actual scroll position. A newer pass simply invalidates this
+    // one, which then stops wherever it is.
+    const gen = (Number(t._inlinePassGen) || 0) + 1;
+    t._inlinePassGen = gen;
+    const stale = () => Number(t._inlinePassGen) !== gen;
     const nxRebind = async (msg, fallback) => {
-      if (t._inlineNoRebind) return fallback;
       // Cheap first: the cards may exist but sit below the loaded window edge.
       try {
         if (await nxEnsureCardsForHash(msg?.hash)) {
@@ -8908,6 +8934,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         return kept;
       })();
       const probeLinkedKey = probeIdx === selIdx ? linkedKey : String(t._inlineKeepPaintLinkedKey || "");
+      const probeHash = probeIdx === selIdx ? String(sel.hash || "") : String(t._inlineKeepPaintHash || "");
       const inlineGoneFromSel = async () => {
         const wantActions = nxMsgAct() !== "off";
         if (!probeLinkedKey && !pendingKey && !wantActions) return !1;
@@ -8926,19 +8953,20 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           if (probeLinkedKey || pendingKey) {
             const wraps = await unwrapGone("[data-inlay-inline-shot],[data-inlay-inline-pending]");
             if (!wraps.length) return !0;
-            let ready = 0;
-            for (const wrap of wraps) {
+            const srcs = await Promise.all(wraps.map(async (wrap) => {
               try {
                 const rawImgs = wrap && typeof wrap.querySelectorAll == "function" ? await wrap.querySelectorAll("img") : null;
                 const imgs = typeof k.unwarpSafeArray == "function" && rawImgs ? await k.unwarpSafeArray(rawImgs) : [];
                 const img = Array.isArray(imgs) ? imgs[0] : imgs;
-                if (!img || typeof img.getAttribute != "function") continue;
-                const src = String(await img.getAttribute("src") || "");
-                if (nxReadyImg(src)) ready += 1;
+                if (!img || typeof img.getAttribute != "function") return "";
+                return String(await img.getAttribute("src") || "");
               } catch {
+                return "";
               }
-            }
-            if (!ready) return !0;
+            }));
+            // Empty wrappers are only "gone" when nothing is coming for them. A
+            // bubble still on its subscription is mid-fill, not wiped.
+            if (!srcs.some((src) => nxReadyImg(src)) && !nxInlineSubIds(probeHash).size) return !0;
           }
           if (wantActions && !(await unwrapGone("[x-inlay-msg-actions]")).length) return !0;
           return !1;
@@ -8948,32 +8976,24 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       // Cheap skip before any SafeDOM De/resolve — same bubble + same linked shots + same pending.
       // force: reply finished and Risu rewrote the bubble; keep-keys would skip a real wipe.
-      // encodeLeft: the last pass left a spinner without bytes. Selection did not
-      // move, so nothing else would ever bring us back to retry it.
-      const encodeLeftPrev = Number(t._inlineEncodeLeft) || 0;
       if (
         !force
-        && !encodeLeftPrev
         && fromCache
         && t._inlineKeepDoc === doc
         && Number(t._inlineKeepElsLen) === els.length
         && Number(t._inlineKeepSelIdx) === selIdx
         && String(t._inlineKeepPendingKey || "") === pendingKey
         && String(t._inlineKeepLinkedKey || "") === linkedKey
-        && Array.isArray(t._inlineKeepIdxs)
-        && t._inlineKeepIdxs.length
+        && Array.isArray(t._inlineKeepHashList)
+        && t._inlineKeepHashList.length
         && !(await inlineGoneFromSel())
       ) {
-        y("info", "inline.keep.skip", \`DOM#\${selIdx} cheap keep=\${t._inlineKeepIdxs.join(",")}\`);
-        t._inlineAttachOk = 1;
+        y("info", "inline.keep.skip", \`DOM#\${selIdx} cheap keep=\${t._inlineKeepHashList.length}\`);
         hideAttachToast({ done: 1 }).catch(() => {});
         return;
       }
       // First session attach only — later clicks no-op inside showAttachToast.
       showAttachToast().catch(() => {});
-      // Debt is per pass: each inject below adds to it, and the next pass reads
-      // the total to decide whether the cheap keep skip is allowed.
-      t._inlineEncodeLeft = 0;
       const VC = globalThis.__INLAY_VIEWER_CORE__;
       const allRoles = !!t.backendSettings?.card?.generate_all_roles;
       const maxPerSide = Number(VC?.INLINE_KEEP_MAX_PER_SIDE) > 0
@@ -9153,9 +9173,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         return Array.isArray(arr) ? arr : [arr];
       };
-      const stripInlineMarkersAt = async (idx) => {
-        if (!Number.isFinite(idx) || idx < 0 || idx >= els.length || keep.has(idx)) return;
-        const el = els[idx];
+      const stripInlineMarkersIn = async (el) => {
         if (!el || typeof el.querySelectorAll != "function") return;
         try {
           let nodes = [];
@@ -9176,19 +9194,27 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       // Diff strip only: drop markers leaving the keep window. Never wipe the
       // whole chat when els.length grows (new user msg remounts last 6 bodies).
-      const prevKeep = Array.isArray(t._inlineKeepIdxs) ? t._inlineKeepIdxs : [];
-      const nextKeepArr = [...keep].sort((a, b) => a - b);
+      //
+      // Remembered by hash and element handle, never by DOM index. The chat is
+      // newest-first, so one new message renumbers every slot and the old index
+      // list then pointed at the wrong bubbles — stripping shots that should have
+      // stayed and leaving ones that should have gone.
+      const bubbleHashAt = (idx) => idx === selIdx
+        ? String(sel.hash || "")
+        : String(msgCache.get(idx)?.msg?.hash || "");
+      const prevKeep = Array.isArray(t._inlineKeepEls) ? t._inlineKeepEls : [];
+      const nextKeep = [...keep].sort((a, b) => a - b).map((idx) => ({ hash: bubbleHashAt(idx), el: els[idx] }));
+      const nextKeepHashes = new Set(nextKeep.map((row) => row.hash).filter(Boolean));
       const listChanged = !fromCache || t._inlineKeepDoc !== doc || Number(t._inlineKeepElsLen) !== els.length;
       const sameKeep = !listChanged
         && Number(t._inlineKeepSelIdx) === selIdx
-        && prevKeep.length === nextKeepArr.length
-        && prevKeep.every((v, i) => Number(v) === Number(nextKeepArr[i]))
+        && prevKeep.length === nextKeep.length
+        && prevKeep.every((row, i) => String(row?.hash || "") === String(nextKeep[i]?.hash || ""))
         && String(t._inlineKeepPendingKey || "") === pendingKey
         && String(t._inlineKeepLinkedKey || "") === linkedKey
         && String(t._inlineKeepMsgActions || "") === nxMsgAct();
       if (!force && sameKeep && !(await inlineGoneFromSel())) {
-        y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeepArr.join(",")}\`);
-        t._inlineAttachOk = 1;
+        y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeep.length}\`);
         hideAttachToast({ done: 1 }).catch(() => {});
         return;
       }
@@ -9200,10 +9226,16 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         fromCache = !1;
       }
-      for (const i of prevKeep) {
-        if (!keep.has(Number(i))) await stripInlineMarkersAt(i);
+      for (const row of prevKeep) {
+        const hash = String(row?.hash || "");
+        if (hash && nextKeepHashes.has(hash)) continue;
+        // The element handle is what makes this shift-proof: the bubble is
+        // whatever node we painted last time, wherever it moved to.
+        await stripInlineMarkersIn(row?.el);
+        if (hash) nxDropInlineSubs(hash);
       }
-      t._inlineKeepIdxs = nextKeepArr;
+      t._inlineKeepEls = nextKeep;
+      t._inlineKeepHashList = [...nextKeepHashes];
       t._inlineKeepDoc = doc;
       t._inlineKeepElsLen = els.length;
       t._inlineKeepSelIdx = selIdx;
@@ -9211,7 +9243,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       t._inlineKeepLinkedKey = linkedKey;
       t._inlineKeepMsgActions = nxMsgAct();
       const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
-      y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=diff\`);
+      y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${[...keep].sort((a, b) => a - b).join(",")}/\${els.length} strip=diff\`);
       const N = globalThis.__INLAY_NATIVE__;
       let selCards = [];
       try {
@@ -9244,6 +9276,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             : { cards: [], skipInline: !0, source: "unresolved" };
       const paintIds = paintPlan.cards.map((card) => String(card?.id || "")).filter(Boolean);
       t._inlineKeepPaintIdx = paintIdx;
+      t._inlineKeepPaintHash = bubbleHashAt(paintIdx);
       t._inlineKeepPaintLinkedKey = [...paintIds].sort().join("|");
       const neighborCardLists = [];
       for (const row of neighborMsgs) {
@@ -9276,25 +9309,24 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // Fingerprint each one so an unchanged bubble costs one query instead of a
       // full host scan — the scan is ~4 bridge round-trips per paragraph.
       const scalePctNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
-      const paintKeyOf = (cards, pendingOn, domIndex) => typeof VC?.inlinePaintKey == "function"
+      const paintKeyOf = (cards, pendingOn) => typeof VC?.inlinePaintKey == "function"
         ? VC.inlinePaintKey({
           cardIds: (Array.isArray(cards) ? cards : []).map((card) => String(card?.id || "")),
           scalePct: scalePctNow,
           msgActions: nxMsgAct(),
-          pending: pendingOn,
-          domIndex
+          pending: pendingOn
         })
         : "";
       const paintRows = [];
       if (keep.has(paintIdx) && els[paintIdx] && !paintPlan.skipInline) {
         paintRows.push({
           idx: paintIdx,
-          hash: paintIdx === selIdx ? String(sel.hash || "") : String(msgCache.get(paintIdx)?.msg?.hash || ""),
-          key: paintKeyOf(paintPlan.cards, !!pendingKey, paintIdx)
+          hash: bubbleHashAt(paintIdx),
+          key: paintKeyOf(paintPlan.cards, !!pendingKey)
         });
       }
       for (const row of neighborCardLists) {
-        paintRows.push({ idx: row.idx, hash: row.hash, key: paintKeyOf(row.cards, !1, row.idx) });
+        paintRows.push({ idx: row.idx, hash: row.hash, key: paintKeyOf(row.cards, !1) });
       }
       const prevPaintedKeys = !force && t._inlinePaintedKeys && typeof t._inlinePaintedKeys == "object" ? t._inlinePaintedKeys : {};
       const prevPaintedCounts = !force && t._inlinePaintedCounts && typeof t._inlinePaintedCounts == "object" ? t._inlinePaintedCounts : {};
@@ -9312,27 +9344,19 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       const notePainted = async (idx, hash, key) => {
         if (!hash || !key) return;
-        // Spinner still owes an image: recording the fingerprint would let the
-        // next pass reuse this bubble and the spinner would never be swapped.
-        if (Number(t._inlineInjectEncodeLeft) > 0) return;
         const hasCards = typeof VC?.inlinePaintKeyHasCards == "function"
           ? VC.inlinePaintKeyHasCards(key)
           : /\|c=.+/.test(String(key));
         if (!hasCards) return;
         const n = await markerCount(els[idx]);
         if (n < 0) return;
-        // Wrappers/chips alone are not a finished paint — the next hop would
-        // reuse this bubble and never patch the stripped <img src>.
+        // Wrappers alone are not a finished paint unless something is coming for
+        // them. With a live watcher on this bubble the empty cells fill on their
+        // own, so the fingerprint is honest; without one they are stripped
+        // leftovers and the next pass must repaint.
         try {
-          const wraps = await unwrapSafe(await els[idx].querySelectorAll("[data-inlay-inline-shot]"));
-          let ready = 0;
-          for (const wrap of wraps) {
-            const imgs = await unwrapSafe(await wrap.querySelectorAll("img"));
-            const img = imgs[0];
-            if (!img || typeof img.getAttribute != "function") continue;
-            if (nxReadyImg(String(await img.getAttribute("src") || ""))) ready += 1;
-          }
-          if (!ready) return;
+          const shots = await nxProbeInlineShots(els[idx], unwrapSafe);
+          if (shots.length && !shots.some((row) => nxReadyImg(row.src)) && !nxInlineSubIds(hash).size) return;
         } catch {
           return;
         }
@@ -9367,10 +9391,19 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (paintPlan.skipInline) {
           y("info", "inline.paint.hold", \`DOM#\${paintIdx} remap unresolved — leaving shots\`);
         } else {
-          await injectChatInlineImages(els[paintIdx], paintPlan.cards, t._inlinePending);
           const row = paintRows.find((r) => r.idx === paintIdx);
+          await injectChatInlineImages(els[paintIdx], paintPlan.cards, t._inlinePending, {
+            lockKey: row?.hash || \`dom\${paintIdx}\`
+          });
           if (row) await notePainted(paintIdx, row.hash, row.key);
         }
+      }
+      // The selected bubble is painted. Everything after this is the ±1 window,
+      // which is a convenience and not what the user is looking at, so a newer
+      // selection wins outright.
+      if (stale()) {
+        y("info", "inline.pass.stale", \`DOM#\${selIdx} superseded after head\`);
+        return;
       }
       if (headFirst) {
         y("info", "inline.head.first", \`DOM#\${paintIdx} then neighbours\`);
@@ -9396,7 +9429,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           })
           : keepIdxs;
         for (const idx of laterKeep) keep.add(Number(idx));
-        t._inlineKeepIdxs = [...keep].sort((a, b) => a - b);
         neighborMsgs.length = 0;
         for (const idx of keep) {
           if (idx === paintIdx) continue;
@@ -9418,7 +9450,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             hash: String(row.msg?.hash || ""),
             cards: nbCards
           });
-          paintRows.push({ idx: row.idx, hash: String(row.msg?.hash || ""), key: paintKeyOf(nbCards, !1, row.idx) });
+          paintRows.push({ idx: row.idx, hash: String(row.msg?.hash || ""), key: paintKeyOf(nbCards, !1) });
         }
         neighborIds.length = 0;
         for (const row of neighborCardLists) {
@@ -9434,23 +9466,34 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
       } catch {
       }
-      for (const row of neighborCardLists) {
-        if (reuseIdxs.has(row.idx)) continue;
-        await injectChatMsgActions(els[row.idx], row.cards, row.idx);
-        await injectChatInlineImages(els[row.idx], row.cards, []);
-        const planned = paintRows.find((r) => r.idx === row.idx);
-        if (planned) await notePainted(row.idx, planned.hash, planned.key);
+      // Mid-scroll the selection is still moving, so the neighbours would be
+      // painted for a bubble that is already off target. Let the scroll settle
+      // (the phase bus fires at 160ms) and paint them from the pass that follows.
+      const scrolling = !!(t._scrollPhaseBus && t._scrollPhaseBus.pendingSettle);
+      if (scrolling) {
+        y("info", "inline.paint.defer", \`DOM#\${selIdx} neighbours wait for scroll settle\`);
+      } else {
+        for (const row of neighborCardLists) {
+          if (reuseIdxs.has(row.idx)) continue;
+          if (stale()) {
+            y("info", "inline.pass.stale", \`DOM#\${selIdx} superseded mid-neighbours\`);
+            break;
+          }
+          await injectChatMsgActions(els[row.idx], row.cards, row.idx);
+          const planned = paintRows.find((r) => r.idx === row.idx);
+          await injectChatInlineImages(els[row.idx], row.cards, [], {
+            lockKey: planned?.hash || \`dom\${row.idx}\`
+          });
+          if (planned) await notePainted(row.idx, planned.hash, planned.key);
+        }
       }
       y("info", "inline.pass.ms", \`total=\${Date.now() - tPass} pre=\${msPre} paint=\${Date.now() - tPaint} bubbles=\${paintRows.length - reuseIdxs.size}/\${paintRows.length} DOM#\${selIdx}\`);
       t._inlinePaintedKeys = nextPaintedKeys;
       t._inlinePaintedCounts = nextPaintedCounts;
-      const wantCards = !!(paintPlan && !paintPlan.skipInline && Array.isArray(paintPlan.cards) && paintPlan.cards.length);
-      const readyImgs = els[paintIdx] ? await nxReadyInlineImgCount(els[paintIdx]) : 0;
-      const attachOk = typeof VC?.inlineAttachSucceeded == "function"
-        ? VC.inlineAttachSucceeded({ wantCards, readyImgCount: readyImgs, skipHold: !!paintPlan?.skipInline })
-        : !paintPlan?.skipInline && (!wantCards || readyImgs > 0);
-      t._inlineAttachOk = attachOk ? 1 : 0;
-      if (attachOk) hideAttachToast({ done: 1 }).catch(() => {});
+      // The paint is complete by construction: every linked card has a marker and
+      // every marker without bytes has a watcher. There is nothing to declare
+      // failed and nothing to schedule a retry for.
+      hideAttachToast({ done: 1 }).catch(() => {});
       try {
         if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
       } catch {
@@ -9795,72 +9838,39 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     // wanted signature, both ends and this slot can only be a finished paint.
     const earlyBars = await readBars();
     if (earlyBars.length === 2) {
-      const ends = new Set();
-      let intact = !0;
-      for (const bar of earlyBars) {
-        let sig = "";
-        let end = "";
-        let at = "";
+      const probed = await Promise.all(earlyBars.map(async (bar) => {
         try {
-          if (typeof bar?.getAttribute != "function") throw new Error("no getAttribute");
-          sig = String(await bar.getAttribute("x-inlay-msg-sig") || "");
-          end = String(await bar.getAttribute("x-inlay-msg-end") || "");
-          at = String(await bar.getAttribute("x-inlay-msg-index") || "");
+          if (typeof bar?.getAttribute != "function") return null;
+          const [sig, end, at] = await Promise.all([
+            bar.getAttribute("x-inlay-msg-sig"),
+            bar.getAttribute("x-inlay-msg-end"),
+            bar.getAttribute("x-inlay-msg-index")
+          ]);
+          return { bar, sig: String(sig || ""), end: String(end || ""), at: String(at || "") };
         } catch {
-          intact = !1;
-          break;
+          return null;
         }
-        if (sig !== wantSig || at !== String(msgIdx)) {
-          intact = !1;
-          break;
-        }
-        if (end) ends.add(end);
-      }
+      }));
+      const ends = new Set();
+      let intact = probed.every((row) => row && row.sig === wantSig);
+      if (intact) for (const row of probed) if (row.end) ends.add(row.end);
       if (intact && ends.has("top") && ends.has("bot")) {
-        y("info", "msgact.skip", \`bars=2 already DOM#\${msgIdx}\`);
+        // The slot may have shifted under an unchanged bubble — the chat is
+        // newest-first, so one new message renumbers everything. That is a one
+        // attribute write, not a reason to tear the bars down and flash.
+        const shifted = probed.filter((row) => row.at !== String(msgIdx));
+        for (const row of shifted) {
+          try {
+            if (typeof row.bar.setAttribute == "function") await row.bar.setAttribute("x-inlay-msg-index", String(msgIdx));
+          } catch {
+          }
+        }
+        y("info", "msgact.skip", \`bars=2 already DOM#\${msgIdx}\${shifted.length ? " reindexed" : ""}\`);
         return;
       }
     }
-    const hostsRaw = await unwrapSafe(await msgEl.querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"));
-    const hosts = [];
-    for (const el of hostsRaw) {
-      if (!el) continue;
-      let name = "";
-      try {
-        name = typeof el.nodeName == "function" ? String(await el.nodeName() || "").toUpperCase() : "";
-      } catch {
-        name = "";
-      }
-      if (name === "DIV") {
-        let nested = null;
-        try {
-          nested = typeof el.querySelector == "function"
-            ? await el.querySelector("p,h1,h2,h3,h4,h5,h6,li,blockquote")
-            : null;
-        } catch {
-          nested = null;
-        }
-        if (nested) continue;
-      }
-      let isActionBar = !1;
-      let isInlineShot = !1;
-      try {
-        if (typeof el.getAttribute == "function") {
-          isActionBar = String(await el.getAttribute("x-inlay-msg-actions") || "") !== "";
-          isInlineShot = String(await el.getAttribute("x-inlay-inline-shot") || "") !== "";
-        }
-      } catch {
-      }
-      const skipPaint = typeof globalThis.__INLAY_VIEWER_CORE__?.isInlayPaintHost == "function"
-        ? globalThis.__INLAY_VIEWER_CORE__.isInlayPaintHost({ isActionBar, isInlineShot })
-        : (isActionBar || isInlineShot);
-      if (skipPaint) continue;
-      const bodyHost = typeof globalThis.__INLAY_VIEWER_CORE__?.isMessageBodyHostTag == "function"
-        ? globalThis.__INLAY_VIEWER_CORE__.isMessageBodyHostTag(name)
-        : /^(P|H[1-6]|LI|BLOCKQUOTE)$/.test(name);
-      if (nxMsgAct() !== "legacy" && !bodyHost) continue;
-      hosts.push(el);
-    }
+    const scan = await nxScanBubbleHosts(msgEl);
+    const hosts = scan.rows.map((row) => row.el);
     if (!hosts.length) {
       await removeBars(await readBars());
       return;
@@ -10995,10 +11005,13 @@ const VENDOR_SCROLL_GALLERY_NEW_NEEDLE = `    if (source !== "scroll") {
     }`;
 
 const VENDOR_SCROLL_GALLERY_NEW_PATCH = `    {
+      // Not force on the non-scroll path either. A chat switch already had oa()
+      // force-fetch the session, so forcing here was a second /v1/gallery round
+      // trip awaited before the first paint — for cards we already had.
       const galleryStale = !Array.isArray(t.gallery) || !t.gallery.length || t._galleryCache?.sessionId !== r.sessionId;
       if (source !== "scroll" || galleryStale) {
         try {
-          await ce(r.sessionId, galleryStale || source !== "scroll");
+          await ce(r.sessionId, galleryStale);
         } catch {
         }
       }
@@ -11272,17 +11285,17 @@ const VENDOR_BOOT_MOUNT_FIRST_PATCH = `    if (!t.backendSettings || Date.now() 
     // Gallery + characters after the shells exist. Neither mount reads t.gallery,
     // and ce() does not paint on its own, so repaint once it resolves.
     if (n?.sessionId) ce(n.sessionId).then(async () => {
+      // Bubbles before chrome. The first attach ran with an empty ledger and had
+      // nothing to link, so this is the pass that actually shows the images — and
+      // it is what the user is looking at. The gallery strip and the overlay used
+      // to go first, which put two encodes ahead of the bubble in the queue.
+      try {
+        await refreshSelectedInlineImages();
+      } catch {
+      }
       try {
         t.galleryUi?.renderGal && await t.galleryUi.renderGal();
         invalidateOverlayLayoutCache(), await he(), Ce();
-      } catch {
-      }
-      // The first attach ran with an empty ledger, so it had nothing to link.
-      // One pass now that cards exist — the cheap keep-skip makes it free when
-      // the earlier attempt already landed.
-      try {
-        await refreshSelectedInlineImages();
-        if (!t._inlineAttachOk) nxScheduleAttachRetry("ledger");
       } catch {
       }
     }).catch(() => {
@@ -12525,39 +12538,18 @@ const VENDOR_POINTER_SELECT_PATCH =
     }
     if (t._pointerSelectTimer) clearTimeout(t._pointerSelectTimer);
     t._pointerSelectReason = String(reason || "");
-    // A switch only needs the new chat DOM to exist, so try early and retry once
-    // rather than always paying the full second. The retry re-enters with 700 and
-    // is therefore not "fresh", which is what stops it from looping.
+    // A switch only needs the new chat DOM to exist, so start immediately and let
+    // runPointerSelect await it. There is no retry ladder: the wait lives in
+    // nxWaitNewestDom, and once the bubble is found the paint cannot come back
+    // half-done — markers land in one pass and images arrive by subscription.
     const rawWait = Math.max(0, Number(delayMs) || 0);
-    const freshSession = t._pointerSelectReason === "session" && rawWait === 1e3;
-    const freshBoot = t._pointerSelectReason === "boot" && rawWait === 1e3;
-    const freshReply = t._pointerSelectReason === "reply" && rawWait === 1e3;
-    if (freshSession || freshReply) t._pointerSelectRetried = 0;
-    if (freshBoot) t._pointerSelectBootTries = 0;
+    const fresh = rawWait === 1e3
+      && (t._pointerSelectReason === "session" || t._pointerSelectReason === "boot" || t._pointerSelectReason === "reply");
     t._pointerSelectTimer = setTimeout(() => {
       t._pointerSelectTimer = null;
-      const why = t._pointerSelectReason;
-      runPointerSelect(why).then((selected) => {
-        if (selected) return;
-        if (why === "session" && !t._pointerSelectRetried) {
-          t._pointerSelectRetried = 1;
-          schedulePointerSelect("session", 7e2);
-          return;
-        }
-        if (why === "reply" && !t._pointerSelectRetried) {
-          t._pointerSelectRetried = 1;
-          schedulePointerSelect("reply", 200);
-          return;
-        }
-        if (why === "boot") {
-          const n = Number(t._pointerSelectBootTries || 0) + 1;
-          t._pointerSelectBootTries = n;
-          if (n < 5) schedulePointerSelect("boot", 200);
-          return;
-        }
-      }).catch(() => {
+      runPointerSelect(t._pointerSelectReason).catch(() => {
       });
-    }, freshBoot || freshReply || freshSession ? 0 : rawWait);
+    }, fresh ? 0 : rawWait);
   }
   async function runPointerSelect(reason) {
     if (t.uiOpen || t._hostChromeBlocked) return !1;
@@ -12576,12 +12568,11 @@ const VENDOR_POINTER_SELECT_PATCH =
       // Head first: this chat's DOM#0, then neighbours. Previous keep/paint
       // fingerprints belong to the last session and would strip or skip wrong.
       t._inlineHeadFirst = 1;
-      t._inlineKeepIdxs = [];
+      t._inlineKeepEls = [];
+      t._inlineKeepHashList = [];
       t._inlinePaintedKeys = {};
       t._inlinePaintedCounts = {};
-      nxResetAttachRetry();
       await Da(0, newest, { source: "provisional", auto: 1 });
-      if (!t._inlineAttachOk) nxScheduleAttachRetry(why);
       return !0;
     }
     const vh = typeof window < "u" && window.innerHeight || 800;
@@ -12597,9 +12588,7 @@ const VENDOR_POINTER_SELECT_PATCH =
     if (!(pick >= 0)) return !1;
     y("info", "select.pointer", \`reason=\${reason || ""} DOM#\${pick} x=\${Math.round(px)} y=\${Math.round(py)}\`);
     // Auto-select paints inline shots + chips; a click is no longer required after a switch.
-    nxResetAttachRetry();
     await Da(pick, els, { source: "provisional", auto: 1 });
-    if (!t._inlineAttachOk) nxScheduleAttachRetry(why || "pointer");
     return !0;
   }`;
 
@@ -15415,8 +15404,32 @@ const loadVendorUi = (): string => {
     if (out.includes('_inlineSelfOnly')) {
       throw new Error('[build] _inlineSelfOnly survived — automatic selection would attach once and give up');
     }
-    assertOnce(out, 'const NX_ATTACH_BACKOFF = [200, 400, 800];', 'bounded attach retry budget landed');
-    assertOnce(out, 'if (t._inlineNoRebind) return fallback;', 'retry rebind gate landed');
+    // The retry ladder is gone: markers land in one pass and each image arrives
+    // on its own subscription, so a pass can no longer finish "half attached".
+    // Anything below reappearing means the ladder crept back in.
+    for (const dead of [
+      'nxScheduleAttachRetry',
+      'nxResetAttachRetry',
+      'nxAttachWaits',
+      'NX_ATTACH_BACKOFF',
+      'NX_SESSION_ATTACH_BACKOFF',
+      'inlineAttachSucceeded',
+      'nxReadyInlineImgCount',
+      '_inlineAttachOk',
+      '_inlineEncodeLeft',
+      'trackInlineEncodeAttempt',
+      '_inlineNoRebind',
+      '_pointerSelectRetried',
+      '_pointerSelectBootTries',
+      '_inlineInjectBusy',
+      '_inlineInjectQueued',
+      '_inlineKeepIdxs',
+    ]) {
+      if (out.includes(dead)) {
+        throw new Error(`[build] ${dead} survived — the inline retry ladder is back`);
+      }
+    }
+    assertOnce(out, 'subscribeImageUrl != "function"', 'inline fill must go through the subscription channel');
     {
       // A retry must never fan out POST /v1/jobs/retarget-hash per neighbour.
       const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
@@ -15642,62 +15655,61 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'confirmedEmpty: !!t._inlineConfirmedEmpty', 'force retag may confirm empty desired');
     assertOnce(out, 't._inlineConfirmedEmpty = !0', 'force retag sets confirmed-empty before inject');
     assertOnce(out, 'VC.inlinePaintKeyHasCards(key)', 'empty paint keys must not be reused');
-    assertOnce(out, 'Wrappers/chips alone are not a finished paint', 'reuse must require a live img src');
-    assertOnce(out, 'if (!ready) return !0;', 'cheap keep must treat empty-src wrappers as gone');
     {
-      const from = out.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows) {');
+      const from = out.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
       const to = out.indexOf('async function refreshSelectedInlineImages(force) {', from);
       const body = from >= 0 && to > from ? out.slice(from, to) : '';
       if (!body) throw new Error('[build] injectChatInlineImages body not found');
-      if (body.includes('_inlineInjectQueued) break') || body.includes('_inlineInjectQueued) break;')) {
-        throw new Error('[build] encodeLater must finish the bubble even when another refresh queued');
+      // Placing a marker must never be conditional on the bytes existing — that
+      // is what made a chat hop paint chips only and wait for a retry.
+      if (body.includes('nxWatchInlineShots') && body.indexOf('nxWatchInlineShots') < body.indexOf('const tPlace')) {
+        throw new Error('[build] markers must be placed before the subscription is registered');
       }
-      if (body.includes('if (!line || byLine.has(line)) continue')) {
-        throw new Error('[build] encodeLater must not skip a line the spinner already claimed');
+      if (!body.includes('nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc)')) {
+        throw new Error('[build] cards without bytes must be filled by subscription, not a bake loop');
       }
-      if (!body.includes('runBoundedPool')) {
-        throw new Error('[build] encodeLater must bake through runBoundedPool');
-      }
-      // The spinner carries the card's own id, so the old id/count skip would
-      // report "already painted" and the bake loop would never run again.
-      if (body.includes('if (prev.length === wantIds.length && t._inlinePaintScale === scaleNow) {')) {
-        throw new Error('[build] inject skip must consult canSkipInlineInject, not ids alone');
+      if (body.includes('ensureStickyCardImage')) {
+        throw new Error('[build] the inject pass must not await encodes — that was the bake loop');
       }
       if (!body.includes('VC.canSkipInlineInject({')) {
         throw new Error('[build] inject skip must go through canSkipInlineInject');
       }
-      if (!body.includes('readyImgCount: readyImgs')) {
-        throw new Error('[build] inject skip must count live img srcs, not just wrappers');
+      if (!body.includes('awaitingCount: awaiting')) {
+        throw new Error('[build] inject skip must count cells a live subscription owns');
       }
-      if (!body.includes('encodeLeft += 1')) {
-        throw new Error('[build] a failed bake must be counted as encode debt');
+      // A bubble repainted without dropping its watcher would keep filling nodes
+      // that are no longer mounted, and the watcher would never be released.
+      if (!body.includes('nxDropInlineSubs(lockKey)')) {
+        throw new Error('[build] a failed inject must release the bubble subscription');
       }
-      // Unbounded debt would keep the cheap keep skip off for a card whose bytes
-      // are simply gone, so every scroll would pay the full host scan.
-      if (!body.includes('VC.trackInlineEncodeAttempt(')) {
-        throw new Error('[build] bake retries must be capped per card');
-      }
-      // Both caches above the inject call would otherwise hold a frozen spinner:
-      // the fingerprint reuse and the pass-level cheap keep skip.
-      assertOnce(out, 'if (Number(t._inlineInjectEncodeLeft) > 0) return;', 'unbaked bubble must not record a paint key');
-      assertOnce(out, '&& !encodeLeftPrev', 'cheap keep skip must yield to encode debt');
-      assertOnce(out, 't._inlineEncodeLeft = 0;', 'encode debt must reset once per pass');
-      assertOnce(out, 'const NX_SESSION_ATTACH_BACKOFF = [200, 400, 800, 1500, 2500];', 'session attach waits for a live img');
-      assertOnce(out, 'VC.inlineAttachSucceeded({', 'chip-only attach must not count as done');
-      const applyByLine = body.indexOf('for (const [, shot] of byLine)');
-      const bake = body.indexOf('ensureStickyCardImage');
-      if (applyByLine < 0 || bake < 0 || applyByLine > bake) {
-        throw new Error('[build] spinner applyShot must run before encodeLater bake');
+      // Global would put the bubble under the cursor behind its own neighbours.
+      if (!body.includes('t._inlineInjectLocks.get(lockKey)')) {
+        throw new Error('[build] the inject lock must be per bubble');
       }
     }
+    assertOnce(out, 'nxDropInlineSubs(lockKey);\n    const N = globalThis.__INLAY_NATIVE__;', 'a re-registered watcher must replace the old one');
+    // Two checks: after the selected bubble, and inside the neighbour loop.
+    if ((out.match(/if \(stale\(\)\) \{/g) || []).length !== 2) {
+      throw new Error('[build] a superseded pass must stop after the head and between neighbours');
+    }
+    assertOnce(out, 'const scrolling = !!(t._scrollPhaseBus && t._scrollPhaseBus.pendingSettle);\n      if (scrolling) {', 'neighbours must wait for the scroll to settle');
     {
-      // The bar check is only worth anything ahead of the host scan — that scan is
-      // ~4 bridge round-trips per paragraph and it is what the exit is dodging.
+      // One scan, two consumers. Two separate walks were ~4 IPC round-trips per
+      // paragraph each, on the same element list, moments apart.
+      const scans = (out.match(/querySelectorAll\("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"\)/g) || []).length;
+      if (scans !== 1) {
+        throw new Error(`[build] the bubble host scan must exist once, found ${scans}`);
+      }
       const from = out.indexOf('async function injectChatMsgActions(msgEl, cards, msgIndex) {');
       const early = out.indexOf('const earlyBars = await readBars();', from);
-      const scan = out.indexOf('querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div")', from);
+      const scan = out.indexOf('const scan = await nxScanBubbleHosts(msgEl);', from);
       if (from < 0 || early < 0 || scan < 0 || early > scan) {
-        throw new Error('[build] chip bar early-exit must run before the per-paragraph host scan');
+        throw new Error('[build] chip bar early-exit must run before the shared host scan');
+      }
+      // A slot shift under an unchanged bubble is one attribute write. Tearing
+      // the bars down instead is a visible flash on every new message.
+      if (!out.includes('setAttribute("x-inlay-msg-index", String(msgIdx))')) {
+        throw new Error('[build] a shifted chip bar must be reindexed in place');
       }
     }
     if (!out.includes('inlineGoneFromSel') || !out.includes('refreshSelectedInlineImages(!0)')) {
@@ -15733,8 +15745,13 @@ const loadVendorUi = (): string => {
     if ((out.match(/nxScopeCheckSoon\(\);/g) || []).length !== 3) {
       throw new Error('[build] scope recheck must ride the existing pointermove/capture/scroll handlers');
     }
-    if (!out.includes('nxWaitNewestDom(doc, 2000)') || !out.includes('schedulePointerSelect("session", 7e2)')) {
-      throw new Error('[build] session pointer select must wait for the newest bubble and retry once');
+    // The wait is the sequence, not a retry driver: await the newest bubble once
+    // and paint. There is no second attempt because the paint cannot half-fail.
+    if (!out.includes('nxWaitNewestDom(doc, 2000)')) {
+      throw new Error('[build] session pointer select must await the newest bubble');
+    }
+    if (out.includes('schedulePointerSelect("session", 7e2)') || out.includes('schedulePointerSelect("boot", 200)')) {
+      throw new Error('[build] pointer select must not reschedule itself');
     }
     if (!out.includes('_paintStatusKey') || !out.includes('_seFp') || !out.includes('_deTextCache')) {
       throw new Error('[build] missing same-feel skip caches (status/Se/De)');

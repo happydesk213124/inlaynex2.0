@@ -46,6 +46,11 @@ export function normalizeShotAspect(value: unknown): ShotAspect | null {
   return null;
 }
 
+/** First-tagger canvas. Missing or unknown JSON falls back to portrait. */
+export function resolveShotAspect(value: unknown): ShotAspect {
+  return normalizeShotAspect(value) || 'portrait';
+}
+
 export function dimsForAspect(
   aspect: unknown,
   nai: Pick<NaiSettings, 'width' | 'height'>,

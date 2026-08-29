@@ -215,6 +215,9 @@ const normalize = (root) => {
         && ('main_prompt' in node || 'negative_prompt' in node);
       for (const k of Object.keys(node).sort()) {
         if ((isCardShape || isStoredCardMeta) && (k === 'main_prompt' || k === 'negative_prompt' || k === 'setup')) continue;
+        // 2.0 always persists the first-tagger canvas (portrait when omitted).
+        // 1.x left the field off the card row. Scenario asserts the new value.
+        if (isCardShape && k === 'aspect') continue;
         if ((isCardShape || isStoredCardMeta) && k === 'characters' && Array.isArray(node.characters)) {
           // 2.0 persists shot staging (action/expression/…) on the card; 1.x
           // left those on the baked prompt only. Name is the comparable identity.
@@ -464,6 +467,12 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (v === 'data'
       ? null
       : `2.x gallery image_url must be a data:image URL — SafeDOM strips blob: and cannot setAttribute src, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'gallery.card_aspect',
+    (v) => (v?.first === 'portrait' && v?.all_canvas === true
+      ? null
+      : `2.0 cards persist the first-tagger canvas (portrait when the tagger omits it), got ${JSON.stringify(v)}`),
   ],
   [
     'gallery.window_reports_total',

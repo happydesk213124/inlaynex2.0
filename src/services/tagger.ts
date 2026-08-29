@@ -37,6 +37,7 @@ import {
 import { isCharacterImageExtraLore } from '../domain/lore/extra';
 import type { LlmContentPart, LlmMessage } from '../providers/llm/transform';
 import { applyComicKindGuard, comicGenOn } from '../domain/comic/kind';
+import { resolveShotAspect } from '../domain/nai-meta/aspect';
 import { normalizeComicGenRatio } from '../domain/comic/params';
 import { numberMessageLinesForTagger, repairLazyShotLines } from '../domain/tagging/shot-line';
 import { collectAssetNaiTags, setLastAssetWeightMap, type AssetLookPreview } from './asset-tags';
@@ -423,9 +424,7 @@ export async function buildTaggerMessages(
       charMax,
       normalizeFocusPromptMode(card.focus_prompt),
     ),
-    card.auto_aspect
-      ? 'ASPECT (required on every shot): set `aspect` to exactly one of `portrait` (832×1216 vertical), `square` (1024×1024), or `landscape` (1216×832 horizontal). Pick from the scene framing — tall full-body / standing → portrait; equal crop / face close-up square → square; wide group / side-by-side / scenic → landscape. Like NovelAI size presets 1/5/2.'
-      : '',
+    'ASPECT (required on every shot, including comic): set `aspect` to exactly one of `portrait` (832×1216 vertical), `square` (1024×1024), or `landscape` (1216×832 horizontal). Pick from the scene framing — tall full-body / standing → portrait; equal crop / face close-up square → square; wide group / side-by-side / scenic → landscape. Comic shots use this same canvas; the comic layout pass must copy it. Omit or unknown → portrait.',
   ].filter(Boolean).join('\n');
 
   const messages: LlmMessage[] = [{
@@ -552,6 +551,7 @@ export function flattenShots(tagged: unknown, messageText?: unknown): TaggedShot
       const item: TaggedShot = {
         ...shot,
         place,
+        aspect: resolveShotAspect(shot.aspect),
         characters: dedupeShotCharacters(shot.characters || [], [], charMax).slice(0, charMax),
       };
       shots.push(item);

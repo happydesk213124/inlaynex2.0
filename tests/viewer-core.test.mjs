@@ -114,6 +114,7 @@ import {
   pendingInlineKey,
   INLINE_FRAME_LAYOUT_VERSION,
   inlinePlaceholderSrc,
+  inlinePlaceholderSize,
   reconcileInlineShot,
   shouldStripLeftoverInlineId,
   shouldScanInlineLeftovers,
@@ -345,6 +346,12 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   // duplicate plain "커피를 마셨다" still gets line-3 marker (not string search of first)
   const stripped = stripInlayInlineHtml(out);
   assert.equal(htmlToPlainLn(stripped), htmlToPlainLn(rich));
+});
+
+test("inlinePlaceholderSize follows the first-tagger aspect aliases", () => {
+  assert.deepEqual(inlinePlaceholderSize({ aspect: "horizontal" }), { width: 1216, height: 832 });
+  assert.deepEqual(inlinePlaceholderSize({ aspect: "1:1" }), { width: 1024, height: 1024 });
+  assert.deepEqual(inlinePlaceholderSize({}), { width: 832, height: 1216 });
 });
 
 test("markerBlockHtml parks a sized SVG then swaps it for the real image", () => {

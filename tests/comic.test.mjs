@@ -159,6 +159,37 @@ test("parseComicPages + assign fills unmatched comics in order", () => {
   assert.equal(shots[1].comic_page.koma, 4);
 });
 
+test("assignComicPagesToShots keeps the first tagger aspect over the comic page", () => {
+  const pages = parseComicPages({
+    pages: [{
+      koma: 2,
+      aspect: "landscape",
+      layout: "the first row is a wide hall",
+      slots: [{ name: "테아", action: "stand", costume: "maid" }],
+    }],
+  });
+  const shots = [
+    { kind: "comic", aspect: "portrait", characters: [] },
+  ];
+  assignComicPagesToShots(shots, pages);
+  assert.equal(shots[0].aspect, "portrait");
+  assert.equal(shots[0].comic_page.aspect, "portrait");
+});
+
+test("assignComicPagesToShots fills a missing first-tagger aspect as portrait", () => {
+  const pages = parseComicPages({
+    pages: [{
+      koma: 2,
+      aspect: "landscape",
+      layout: "the first row is a wide hall",
+      slots: [{ name: "테아", action: "stand", costume: "maid" }],
+    }],
+  });
+  const shots = [{ kind: "comic", characters: [] }];
+  assignComicPagesToShots(shots, pages);
+  assert.equal(shots[0].aspect, "portrait");
+});
+
 test("strip comic/manga from positive and 4koma from UC", () => {
   assert.equal(stripComicPageStyleTags("comic, manga, 3::5koma::, best quality"), "3::5koma::, best quality");
   assert.equal(stripComicKomaFromUc("lowres, 4koma, 2koma, blurry"), "lowres, blurry");

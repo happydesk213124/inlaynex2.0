@@ -14,6 +14,7 @@ import {
 import { comicLineRange } from '../domain/comic/kind.ts';
 import { normalizeComicLlmBatch } from '../domain/comic/params.ts';
 import { assignComicPagesToShots, parseComicPages, type ComicPage } from '../domain/comic/page.ts';
+import { resolveShotAspect } from '../domain/nai-meta/aspect.ts';
 import { splitTaggerMessageLines } from '../domain/tagging/shot-line.ts';
 import { callLlm } from '../providers/llm/client.ts';
 import { getConfig } from './context.ts';
@@ -92,6 +93,7 @@ export async function fillComicPagesForShots(args: {
     return [
       `shot_index: ${i}`,
       `line: ${shot.line ?? ''}–${shot.comic_line_end ?? shot.line ?? ''}`,
+      `aspect: ${resolveShotAspect(shot.aspect)} (locked by the first tagger — copy this, do not change it)`,
       `cast: ${names.join(', ') || '(none)'}`,
       rosterBlock(names, roster, shot.characters || []),
       `## prose\n${prose || '(empty)'}`,

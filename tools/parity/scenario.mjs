@@ -331,6 +331,13 @@ export async function runScenario(N, handles) {
 
   // ── gallery ───────────────────────────────────────────────────────────
   const gallery = await rec('gallery.list', () => get('/v1/gallery?session_id=sess_main&limit=40'));
+  await rec('gallery.card_aspect', () => {
+    const aspects = (gallery?.items || []).map((row) => String(row?.aspect || ''));
+    return {
+      first: aspects[0] || '',
+      all_canvas: aspects.every((a) => a === 'portrait' || a === 'square' || a === 'landscape'),
+    };
+  });
   const cardId = gallery?.items?.[0]?.id;
   await rec('gallery.first_card_is_data_url', () => String(gallery?.items?.[0]?.image_url ?? '').slice(0, 22));
   await rec('gallery.display_url_scheme', () => {

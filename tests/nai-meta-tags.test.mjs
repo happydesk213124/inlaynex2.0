@@ -10,7 +10,7 @@ import {
 } from '../.test-build/nai-meta-prompt-tags.mjs';
 import { assetMatchTriggers, assetNameTokens, scoreAssetName, assetPriorityForTrigger, pickAssetsPerTrigger, filterAssetTriggersForUnfilledLooks, loreKeysByCompactTrigger, originalTagFromPlains, matchFoundLooksToRoster } from '../.test-build/nai-meta-match.mjs';
 import { naiMetaHasPrompt, pickNaiMeta, promptFromNaiMetadata } from '../.test-build/nai-meta-from-metadata.mjs';
-import { dimsForAspect, normalizeShotAspect } from '../.test-build/nai-meta-aspect.mjs';
+import { dimsForAspect, normalizeShotAspect, resolveShotAspect } from '../.test-build/nai-meta-aspect.mjs';
 import { filterStylePresetPositive, styleFieldsFromNaiMetadata } from '../.test-build/nai-meta-style-preset.mjs';
 import {
   extractStealthFromRgba,
@@ -330,6 +330,14 @@ test('normalizeShotAspect and dimsForAspect', () => {
     aspect: 'landscape',
   });
   assert.equal(dimsForAspect('portrait', { width: 900, height: 900 }, false).aspect, 'settings');
+});
+
+test('resolveShotAspect defaults missing or unknown values to portrait', () => {
+  assert.equal(resolveShotAspect(undefined), 'portrait');
+  assert.equal(resolveShotAspect(''), 'portrait');
+  assert.equal(resolveShotAspect('comic'), 'portrait');
+  assert.equal(resolveShotAspect('horizontal'), 'landscape');
+  assert.equal(resolveShotAspect('1:1'), 'square');
 });
 
 test('filterStylePresetPositive keeps artist and quality with emphasis', () => {

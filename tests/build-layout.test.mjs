@@ -543,6 +543,10 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   // selCards is [] on a user turn and [] strips the remapped char's shots.
   assert.match(source, /injectChatMsgActions\(els\[paintIdx\], paintPlan\.cards, paintIdx\)/);
   assert.match(source, /injectChatInlineImages\(els\[paintIdx\], paintPlan\.cards, t\._inlinePending, \{/);
+  assert.match(source, /role: roleAt\(paintIdx\)/);
+  assert.match(source, /VC\.roleForInlineBubble\(\{/);
+  assert.match(source, /VC\.cardsForInlineBubble\(\{/);
+  assert.match(source, /forceStrip: denyRole/);
   assert.match(source, /resolveInlinePaintCards\(\{ selIdx, paintIdx, selCards, paintCards \}\)/);
   assert.doesNotMatch(source, /injectChatInlineImages\(els\[paintIdx\], selCards,/);
   assert.match(source, /injectChatMsgActions\(els\[row\.idx\], row\.cards, row\.idx\)/);

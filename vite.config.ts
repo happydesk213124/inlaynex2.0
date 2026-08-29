@@ -8630,7 +8630,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     if (typeof VC?.findElementIndexForLineWithFallback != "function" || typeof VC?.markerBlockHtml != "function") return;
     const doc = t.hostDoc;
     if (!doc || typeof doc.createElement != "function") return;
-    const list = Array.isArray(cards) ? cards : [];
+    const denyRole = typeof VC.allowInlineImagesOnRole == "function"
+      && opts && Object.prototype.hasOwnProperty.call(opts, "role")
+      && !VC.allowInlineImagesOnRole(opts.role, !!t.backendSettings?.card?.generate_all_roles);
+    const list = denyRole ? [] : (Array.isArray(cards) ? cards : []);
     // Pending spinners follow auto-gen roles — never on user bubbles when
     // "모든 메시지 이미지 생성" is off (same gate as Ka / select).
     const allowPending = typeof isSelectedCharRole == "function"
@@ -8762,8 +8765,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // (retry with noRebind, hash still loading) — stripping them is the flash.
       if (!placements.length && !encodeLater.length) {
         const stripEmpty = typeof VC.shouldStripEmptyInlineDesired == "function"
-          ? VC.shouldStripEmptyInlineDesired({ liveShotCount: prev.length, confirmedEmpty: !!t._inlineConfirmedEmpty })
-          : !prev.length;
+          ? VC.shouldStripEmptyInlineDesired({
+            liveShotCount: prev.length,
+            confirmedEmpty: !!t._inlineConfirmedEmpty,
+            forceStrip: denyRole
+          })
+          : denyRole || !prev.length;
         if (!stripEmpty) {
           y("info", "inline.inject.hold", \`shots=0 live=\${prev.length}\`);
           return;
@@ -9267,13 +9274,23 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
                   sessionId: sel.sessionId,
                   role,
                   text,
-                  hash: ye(text)
+                  hash: ye(text),
+                  apiText: w(hit?.text || "")
                 }
               };
               roleCache.set(idx, role);
             } else {
               roleCache.set(idx, "");
-              row = { idx, msg: null };
+              row = {
+                idx,
+                msg: {
+                  domIndex: idx,
+                  role: "",
+                  text,
+                  hash: text ? ye(text) : "",
+                  apiText: ""
+                }
+              };
             }
           } catch {
             roleCache.set(idx, "");
@@ -9289,11 +9306,27 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           resolvePend.delete(idx);
         }
       };
+      const roleAt = (idx) => {
+        const row = msgCache.get(idx);
+        if (typeof VC?.roleForInlineBubble == "function") {
+          return VC.roleForInlineBubble({
+            idx,
+            selIdx,
+            selRole: sel.role,
+            selHash: sel.hash,
+            liveHash: row?.msg?.hash,
+            matchedRole: roleCache.has(idx) ? roleCache.get(idx) : "",
+            domText: row?.msg?.text,
+            matchedText: row?.msg?.apiText
+          });
+        }
+        if (roleCache.has(idx)) return roleCache.get(idx);
+        if (idx === selIdx && sel.role != null && String(sel.role).length) return String(sel.role);
+        return "";
+      };
       const isCharAtSync = (idx) => {
-        let role = "";
-        if (roleCache.has(idx)) role = roleCache.get(idx);
-        else if (idx === selIdx && sel.role != null && String(sel.role).length) role = String(sel.role);
-        else return !1;
+        const role = roleAt(idx);
+        if (!role) return !1;
         return typeof VC?.isCharMessageRole == "function"
           ? VC.isCharMessageRole(role)
           : typeof isSelectedCharRole == "function"
@@ -9436,9 +9469,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // newest-first, so one new message renumbers every slot and the old index
       // list then pointed at the wrong bubbles — stripping shots that should have
       // stayed and leaving ones that should have gone.
-      const bubbleHashAt = (idx) => idx === selIdx
-        ? String(sel.hash || "")
-        : String(msgCache.get(idx)?.msg?.hash || "");
+      const bubbleHashAt = (idx) => {
+        const live = String(msgCache.get(idx)?.msg?.hash || "");
+        if (typeof VC?.liveBubbleHash == "function") {
+          return VC.liveBubbleHash({ liveHash: live, selHash: sel.hash, idx, selIdx });
+        }
+        return live || (idx === selIdx ? String(sel.hash || "") : "");
+      };
       const prevKeep = Array.isArray(t._inlineKeepEls) ? t._inlineKeepEls : [];
       const nextKeep = [...keep].sort((a, b) => a - b).map((idx) => ({ hash: bubbleHashAt(idx), el: els[idx] }));
       const nextKeepHashes = new Set(nextKeep.map((row) => row.hash).filter(Boolean));
@@ -9484,8 +9521,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const N = globalThis.__INLAY_NATIVE__;
       let selCards = [];
       try {
-        selCards = linkedCards(sel);
-        if (!selCards.length && !pendingKey) selCards = await nxRebind(sel, []);
+        const liveSel = msgCache.get(selIdx)?.msg;
+        const drifted = typeof VC?.selectionSlotDrifted == "function"
+          ? VC.selectionSlotDrifted(sel.hash, liveSel?.hash)
+          : !!(sel.hash && liveSel?.hash && String(sel.hash) !== String(liveSel.hash));
+        const selIdentity = drifted && liveSel ? liveSel : sel;
+        selCards = linkedCards(selIdentity);
+        if (!selCards.length && !pendingKey) selCards = await nxRebind(selIdentity, []);
       } catch {
         selCards = [];
       }
@@ -9511,6 +9553,16 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           : Array.isArray(paintCards)
             ? { cards: paintCards, skipInline: !1, source: "remap" }
             : { cards: [], skipInline: !0, source: "unresolved" };
+      if (typeof VC?.cardsForInlineBubble == "function") {
+        paintPlan.cards = VC.cardsForInlineBubble({
+          cards: paintPlan.cards,
+          role: roleAt(paintIdx),
+          allRoles,
+          selHash: sel.hash,
+          liveHash: bubbleHashAt(paintIdx),
+          isSelectionSlot: paintIdx === selIdx
+        });
+      }
       const paintIds = paintPlan.cards.map((card) => String(card?.id || "")).filter(Boolean);
       t._inlineKeepPaintIdx = paintIdx;
       t._inlineKeepPaintHash = bubbleHashAt(paintIdx);
@@ -9529,7 +9581,16 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         neighborCardLists.push({
           idx: row.idx,
           hash: String(row.msg?.hash || ""),
-          cards: nbCards
+          cards: typeof VC?.cardsForInlineBubble == "function"
+            ? VC.cardsForInlineBubble({
+              cards: nbCards,
+              role: roleAt(row.idx),
+              allRoles,
+              selHash: sel.hash,
+              liveHash: bubbleHashAt(row.idx),
+              isSelectionSlot: row.idx === selIdx
+            })
+            : nbCards
         });
       }
       const neighborIds = neighborCardLists.flatMap((row) =>
@@ -9645,7 +9706,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         } else {
           const row = paintRows.find((r) => r.idx === paintIdx);
           await injectChatInlineImages(els[paintIdx], paintPlan.cards, t._inlinePending, {
-            lockKey: row?.hash || \`dom\${paintIdx}\`
+            lockKey: row?.hash || \`dom\${paintIdx}\`,
+            role: roleAt(paintIdx),
+            allRoles
           });
           if (row) await notePainted(paintIdx, row.hash, row.key);
         }
@@ -9698,12 +9761,22 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           } catch {
             nbCards = [];
           }
+          const nbSafe = typeof VC?.cardsForInlineBubble == "function"
+            ? VC.cardsForInlineBubble({
+              cards: nbCards,
+              role: roleAt(row.idx),
+              allRoles,
+              selHash: sel.hash,
+              liveHash: bubbleHashAt(row.idx),
+              isSelectionSlot: row.idx === selIdx
+            })
+            : nbCards;
           neighborCardLists.push({
             idx: row.idx,
             hash: String(row.msg?.hash || ""),
-            cards: nbCards
+            cards: nbSafe
           });
-          paintRows.push({ idx: row.idx, hash: String(row.msg?.hash || ""), key: paintKeyOf(nbCards, !1) });
+          paintRows.push({ idx: row.idx, hash: String(row.msg?.hash || ""), key: paintKeyOf(nbSafe, !1) });
         }
         neighborIds.length = 0;
         for (const row of neighborCardLists) {
@@ -9734,7 +9807,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         await injectChatMsgActions(els[row.idx], row.cards, row.idx);
         const planned = paintRows.find((r) => r.idx === row.idx);
         await injectChatInlineImages(els[row.idx], row.cards, [], {
-          lockKey: planned?.hash || \`dom\${row.idx}\`
+          lockKey: planned?.hash || \`dom\${row.idx}\`,
+          role: roleAt(row.idx),
+          allRoles
         });
         if (planned) await notePainted(row.idx, planned.hash, planned.key);
       }
@@ -15936,6 +16011,11 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'y("info", "inline.inject.repaint",', 'repaint reason log landed');
     assertOnce(out, 'y("info", "inline.inject.hold",', 'empty-desired hold must keep live shots');
     assertOnce(out, 'confirmedEmpty: !!t._inlineConfirmedEmpty', 'force retag may confirm empty desired');
+    assertOnce(out, 'forceStrip: denyRole', 'wrong-role leftover shots must strip');
+    assertOnce(out, 'VC.roleForInlineBubble({', 'inline role must not trust drifted sel.role');
+    assertOnce(out, 'paintPlan.cards = VC.cardsForInlineBubble({', 'user bubbles must drop char cards');
+    assertOnce(out, 'VC.liveBubbleHash({', 'keep identity must prefer live DOM hash');
+    assertOnce(out, 'apiText: w(hit?.text || "")', 'overlap check needs matched API text');
     assertOnce(out, 't._inlineConfirmedEmpty = !0', 'force retag sets confirmed-empty before inject');
     assertOnce(out, 'VC.inlinePaintKeyHasCards(key)', 'empty paint keys must not be reused');
     {

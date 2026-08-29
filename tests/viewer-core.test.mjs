@@ -90,6 +90,11 @@ import {
   hasGenerationInfo,
   roleFromGenerationInfo,
   isCharMessageRole,
+  allowInlineImagesOnRole,
+  selectionSlotDrifted,
+  liveBubbleHash,
+  roleForInlineBubble,
+  cardsForInlineBubble,
   pickInlineKeepDomIndices,
   prefetchInlineRoleDomIndices,
   INLINE_ROLE_PREFETCH_RADIUS,
@@ -950,7 +955,80 @@ test("shouldStripEmptyInlineDesired holds live shots unless the miss is confirme
   assert.equal(shouldStripEmptyInlineDesired({ liveShotCount: 0 }), true);
   assert.equal(shouldStripEmptyInlineDesired({ liveShotCount: 2 }), false);
   assert.equal(shouldStripEmptyInlineDesired({ liveShotCount: 2, confirmedEmpty: true }), true);
+  assert.equal(shouldStripEmptyInlineDesired({ liveShotCount: 2, forceStrip: true }), true);
   assert.equal(shouldStripEmptyInlineDesired({}), true);
+});
+
+test("allowInlineImagesOnRole blocks user unless allRoles", () => {
+  assert.equal(allowInlineImagesOnRole("user", false), false);
+  assert.equal(allowInlineImagesOnRole("char", false), true);
+  assert.equal(allowInlineImagesOnRole("user", true), true);
+});
+
+test("selectionSlotDrifted detects newest-first steal", () => {
+  assert.equal(selectionSlotDrifted("char-hash", "user-hash"), true);
+  assert.equal(selectionSlotDrifted("same", "same"), false);
+  assert.equal(selectionSlotDrifted("char-hash", ""), false);
+});
+
+test("liveBubbleHash prefers resolved DOM hash over sel.hash", () => {
+  assert.equal(liveBubbleHash({ liveHash: "live", selHash: "sel", idx: 0, selIdx: 0 }), "live");
+  assert.equal(liveBubbleHash({ liveHash: "", selHash: "sel", idx: 0, selIdx: 0 }), "sel");
+  assert.equal(liveBubbleHash({ liveHash: "", selHash: "sel", idx: 1, selIdx: 0 }), "");
+});
+
+test("roleForInlineBubble trusts sel.role only when the slot hash still matches", () => {
+  assert.equal(roleForInlineBubble({
+    idx: 0,
+    selIdx: 0,
+    selRole: "char",
+    selHash: "h-char",
+    liveHash: "h-char",
+    matchedRole: "char",
+  }), "char");
+  assert.equal(roleForInlineBubble({
+    idx: 0,
+    selIdx: 0,
+    selRole: "char",
+    selHash: "h-char",
+    liveHash: "h-user",
+    matchedRole: "user",
+    matchedText: "안녕하세요유저입니다요",
+    domText: "안녕하세요유저입니다요",
+  }), "user");
+  assert.equal(roleForInlineBubble({
+    idx: 0,
+    selIdx: 0,
+    selRole: "char",
+    selHash: "h-char",
+    liveHash: "h-user",
+    matchedRole: "",
+  }), "");
+});
+
+test("roleForInlineBubble rejects reverse-index char on a user body", () => {
+  assert.equal(roleForInlineBubble({
+    idx: 1,
+    selIdx: 0,
+    selRole: "char",
+    matchedRole: "char",
+    matchedText: "긴캐릭터응답본문입니다요정말로길어요",
+    domText: "유저가한짧은말",
+  }), "");
+});
+
+test("cardsForInlineBubble drops char shots on user and on drift", () => {
+  const cards = [{ id: "c1" }];
+  assert.deepEqual(cardsForInlineBubble({ cards, role: "user", allRoles: false }), []);
+  assert.deepEqual(cardsForInlineBubble({ cards, role: "char", allRoles: false }), cards);
+  assert.deepEqual(cardsForInlineBubble({
+    cards,
+    role: "char",
+    allRoles: false,
+    isSelectionSlot: true,
+    selHash: "old",
+    liveHash: "new",
+  }), []);
 });
 
 test("pickInlineKeepDomIndices keeps selected char plus 1 each side (max 3)", () => {

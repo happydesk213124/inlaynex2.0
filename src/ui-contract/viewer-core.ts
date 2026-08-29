@@ -626,6 +626,89 @@ export function isCharMessageRole(roleOrMessage: string | ChatMessage | null | u
   return role === 'char' || role === 'assistant' || role === 'bot';
 }
 
+/**
+ * User bubbles never get inline shots unless `generate_all_roles` is on.
+ * A reverse-index mis-tag or a newest-first shift must not plant a char shot here.
+ */
+export function allowInlineImagesOnRole(role: unknown, allRoles = false): boolean {
+  if (allRoles) return true;
+  return isCharMessageRole(role);
+}
+
+/** Selection still names the old char hash after a new user message stole DOM#0. */
+export function selectionSlotDrifted(selHash: unknown, liveHash: unknown): boolean {
+  const sel = String(selHash || '');
+  const live = String(liveHash || '');
+  if (!sel || !live) return false;
+  return sel !== live;
+}
+
+/** Prefer the resolved DOM hash. `sel.hash` is only a fallback when this slot still is the selection. */
+export function liveBubbleHash(opts: {
+  liveHash?: unknown;
+  selHash?: unknown;
+  idx?: unknown;
+  selIdx?: unknown;
+} = {}): string {
+  const live = String(opts.liveHash || '');
+  if (live) return live;
+  const idx = Number(opts.idx);
+  const selIdx = Number(opts.selIdx);
+  if (Number.isFinite(idx) && Number.isFinite(selIdx) && idx === selIdx) {
+    return String(opts.selHash || '');
+  }
+  return '';
+}
+
+/**
+ * Role used for keep/inject. Prefer the selection when this slot still is that
+ * message. If the live hash drifted, or reverse-index role does not overlap the
+ * DOM body, do not treat the bubble as char.
+ */
+export function roleForInlineBubble(opts: {
+  idx?: unknown;
+  selIdx?: unknown;
+  selRole?: unknown;
+  selHash?: unknown;
+  liveHash?: unknown;
+  matchedRole?: unknown;
+  domText?: unknown;
+  matchedText?: unknown;
+} = {}): string {
+  const idx = Number(opts.idx);
+  const selIdx = Number(opts.selIdx);
+  const selRole = normalizeMessageRole(opts.selRole);
+  const matched = normalizeMessageRole(opts.matchedRole);
+  const onSel = Number.isFinite(idx) && Number.isFinite(selIdx) && idx === selIdx;
+  const drifted = selectionSlotDrifted(opts.selHash, opts.liveHash);
+  if (onSel && selRole && !drifted) return selRole;
+  const apiText = String(opts.matchedText || '');
+  const domText = String(opts.domText || '');
+  if (matched && apiText && domText && messagesTextOverlapScore(domText, apiText) < 8) {
+    return '';
+  }
+  if (matched) return matched;
+  // Drifted identity must not inherit the previous turn's role.
+  if (onSel && drifted) return '';
+  if (onSel && selRole) return selRole;
+  return '';
+}
+
+/** Drop char cards when this slot is a user turn or the selection identity drifted. */
+export function cardsForInlineBubble<T>(opts: {
+  cards?: readonly T[] | null;
+  role?: unknown;
+  allRoles?: boolean;
+  selHash?: unknown;
+  liveHash?: unknown;
+  isSelectionSlot?: boolean;
+} = {}): T[] {
+  const list = Array.isArray(opts.cards) ? [...opts.cards] : [];
+  if (opts.isSelectionSlot && selectionSlotDrifted(opts.selHash, opts.liveHash)) return [];
+  if (!allowInlineImagesOnRole(opts.role, !!opts.allRoles)) return [];
+  return list;
+}
+
 /** Max char bubbles kept above/below selection when inline skips user roles. */
 export const INLINE_KEEP_MAX_PER_SIDE = 1;
 
@@ -736,7 +819,9 @@ export function inlinePaintKeyHasCards(key: unknown): boolean {
 export function shouldStripEmptyInlineDesired(opts: {
   liveShotCount?: unknown;
   confirmedEmpty?: unknown;
+  forceStrip?: unknown;
 } = {}): boolean {
+  if (opts.forceStrip) return true;
   const live = Math.max(0, Math.floor(finiteNumber(opts.liveShotCount, 0)));
   if (live <= 0) return true;
   return !!opts.confirmedEmpty;

@@ -48,6 +48,7 @@ import {
   hasNaiBodyControl,
 } from '../providers/nai/http';
 import { allUniqueNaiTokens, tokensForFamily } from '../domain/nai/keys';
+import { resolveShotAspect } from '../domain/nai-meta/aspect';
 import {
   cardFlagOn,
   isNaiQuotaError,
@@ -955,8 +956,7 @@ async function runJob(jobId: string): Promise<void> {
     shots.forEach((shot, i) => {
       const line = Math.floor(Number((shot as { line?: unknown }).line));
       if (!Number.isFinite(line) || line < 1) return;
-      const aspect = cleanText(shot.aspect || '', 20);
-      pendingInline.push({ shot_index: i, line, ...(aspect ? { aspect } : {}) });
+      pendingInline.push({ shot_index: i, line, aspect: resolveShotAspect(shot.aspect) });
     });
     await setJob(
       jobId,
@@ -1207,7 +1207,7 @@ async function runJob(jobId: string): Promise<void> {
         const cardMeta = {
           ...cardMetaFromLocation(meta, location, raw?.byteLength || 0),
           assistant_preview: assistantPreview,
-          aspect: shot.aspect || undefined,
+          aspect: resolveShotAspect(shot.aspect),
           kind: isComicShot(shot) ? 'comic' : 'illustration',
           characters: slimCardCharacters(meta.characters || []),
           ...(cleanText(shot.complexity, 20) ? { complexity: cleanText(shot.complexity, 20) } : {}),

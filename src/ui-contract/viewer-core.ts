@@ -7,6 +7,7 @@
  */
 
 export { matchCharactersInText } from '../domain/character/roster';
+import { resolveShotAspect } from '../domain/nai-meta/aspect';
 import {
   inlineMsgActionsLegacy,
   inlineMsgActionsOn,
@@ -3491,7 +3492,7 @@ export function inlinePlaceholderSize(input: InlinePlaceholderInput | null | und
   const width = Math.floor(finiteNumber(input?.width, 0));
   const height = Math.floor(finiteNumber(input?.height, 0));
   if (width > 0 && height > 0) return { width, height };
-  const aspect = String(input?.aspect || '').trim().toLowerCase();
+  const aspect = resolveShotAspect(input?.aspect);
   if (aspect === 'square') return { width: 1024, height: 1024 };
   if (aspect === 'landscape') return { width: 1216, height: 832 };
   return { width: 832, height: 1216 };

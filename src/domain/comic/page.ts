@@ -5,6 +5,7 @@ import type { ShotCharacter, TaggedShot } from '../../core/types.ts';
 import { cleanText } from '../../core/util/text.ts';
 import { readNaiCoord } from '../nai/coords.ts';
 import { normalizeComicPageCoords } from './coords.ts';
+import { resolveShotAspect } from '../nai-meta/aspect.ts';
 import { normalizeShotKind } from './kind.ts';
 
 export interface ComicSlot {
@@ -140,7 +141,8 @@ export function assignComicPagesToShots(shots: TaggedShot[], pages: readonly Com
 }
 
 function attachPage(shot: TaggedShot, page: ComicPage): void {
-  shot.comic_page = page;
-  shot.aspect = page.aspect || shot.aspect;
+  const aspect = resolveShotAspect(shot.aspect);
+  shot.aspect = aspect;
+  shot.comic_page = { ...page, aspect };
   shot.characters = page.slots.map(comicSlotToCharacter);
 }

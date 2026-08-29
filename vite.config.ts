@@ -5553,7 +5553,7 @@ const VENDOR_SAVE_REROLL_BG_PATCH =
 const VENDOR_SAVE_REROLL_INLINE_NEEDLE =
   `        await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(\`저장·리롤 완료 · \${String(Gt || cardId).slice(0, 8)}\`), y("info", "card.tags.reroll", \`\${String(cardId).slice(0, 8)}→\${String(Gt).slice(0, 8)}\`);`;
 const VENDOR_SAVE_REROLL_INLINE_PATCH =
-  `        await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), await refreshSelectedInlineImages(!0), t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(\`저장·리롤 완료 · \${String(Gt || cardId).slice(0, 8)}\`), y("info", "card.tags.reroll", \`\${String(cardId).slice(0, 8)}→\${String(Gt).slice(0, 8)}\`);`;
+  `        await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), await nxPatchInlinePhotoByCardId(Gt || cardId, nxCardDisplaySrc((t.gallery || []).find((c) => String(c?.id || "") === String(Gt || cardId)) || { id: Gt || cardId }), cardId), t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(\`저장·리롤 완료 · \${String(Gt || cardId).slice(0, 8)}\`), y("info", "card.tags.reroll", \`\${String(cardId).slice(0, 8)}→\${String(Gt).slice(0, 8)}\`);`;
 
 /**
  * Session gallery: newest window plus the hashes we are about to paint.
@@ -8751,10 +8751,25 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         ...encodeLater.map((c) => String(c?.id || ""))
       ].filter(Boolean).sort();
       const scaleNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
+      const wantPhotos = opts?.wantPhotos !== !1;
       // One batched probe answers everything the skip gate needs: how many
       // markers exist, which ids they carry, and which of them actually show a
       // display URL. Sequential per-wrapper reads were two IPC hops per shot.
       const prevProbe = await nxProbeInlineShots(msgEl, unwrapSafe);
+      if (!wantPhotos) {
+        for (const row of prevProbe) {
+          try {
+            const photos = await unwrapSafe(await row.node.querySelectorAll("[data-inlay-inline-img]"));
+            for (const img of photos) {
+              try {
+                if (img && typeof img.remove == "function") await img.remove();
+              } catch {
+              }
+            }
+          } catch {
+          }
+        }
+      }
       let prev = prevProbe.map((row) => row.node);
       let htmlProbe = "n/a";
       const readyImgs = prevProbe.filter((row) => nxReadyImg(row.src)).length;
@@ -8771,33 +8786,19 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           liveShotCount: prev.length,
           liveUniqueCount,
           wantIdCount: wantIds.length,
-          readyImgCount: readyImgs,
-          awaitingCount: awaiting
+          readyImgCount: wantPhotos ? readyImgs : wantIds.length,
+          awaitingCount: wantPhotos ? awaiting : 0
         })
-        : prev.length === wantIds.length && liveUniqueCount === prev.length && t._inlinePaintScale === scaleNow && layoutMatches && readyImgs + awaiting >= wantIds.length;
-      if (skipOk) {
-        if (!wantIds.length) {
-          y("info", "inline.inject.skip", "shots=0 already");
-          return;
-        }
-        const liveIds = new Set(prevProbe.map((row) => row.id).filter(Boolean));
-        if (wantIds.every((id) => liveIds.has(id))) {
-          y("info", "inline.inject.skip", \`shots=\${wantIds.length} already ready=\${readyImgs} wait=\${awaiting}\`);
-          return;
-        }
-        htmlProbe = "miss";
-      }
-      // Re-inserting through SafeDOM always flashes empty first, so every repaint
-      // is visible to the user. Name the reason — count, scale or marker id.
-      y("info", "inline.inject.repaint", \`prev=\${prev.length} want=\${wantIds.length} scale=\${t._inlinePaintScale}/\${scaleNow} html=\${htmlProbe}\`);
+        : prev.length === wantIds.length && liveUniqueCount === prev.length && t._inlinePaintScale === scaleNow && layoutMatches && (wantPhotos ? readyImgs + awaiting >= wantIds.length : !0);
+      const liveIds = new Set(prevProbe.map((row) => row.id).filter(Boolean));
+      const markersReady = prev.length === wantIds.length && liveUniqueCount === prev.length && t._inlinePaintScale === scaleNow && layoutMatches && wantIds.every((id) => liveIds.has(id));
       const patchShotSrc = async (wrap, src) => {
         if (!wrap || !src || !nxReadyImg(src)) return !1;
         try {
           let photos = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-img]"));
           let img = photos[0];
           if (!img) {
-            // Keep-window evict removes only this layer. Recreate it on the
-            // still-mounted spinner instead of rebuilding the marker.
+            // Evict removes only this layer. Recreate it on the still-mounted spinner.
             const stacks = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-stack]"));
             const stack = stacks[0] || wrap;
             const style = typeof VC.inlineChatOverlayImgStyle == "function" ? VC.inlineChatOverlayImgStyle(!0) : "";
@@ -8820,6 +8821,32 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           return !1;
         }
       };
+      if (skipOk || markersReady) {
+        if (!wantIds.length) {
+          y("info", "inline.inject.skip", "shots=0 already");
+          return;
+        }
+        if (wantIds.every((id) => liveIds.has(id))) {
+          if (wantPhotos) {
+            const shotNodes = new Map();
+            for (const row of prevProbe) {
+              if (row.id && row.node) shotNodes.set(row.id, row.node);
+            }
+            for (const p of placements) {
+              const id = String(p.cardId || "");
+              const wrap = shotNodes.get(id);
+              if (wrap && p.src && nxReadyImg(p.src)) await patchShotSrc(wrap, p.src);
+            }
+            nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc);
+          }
+          y("info", "inline.inject.skip", \`shots=\${wantIds.length} already ready=\${readyImgs} wait=\${awaiting}\`);
+          return;
+        }
+        htmlProbe = "miss";
+      }
+      // Re-inserting through SafeDOM always flashes empty first, so every repaint
+      // is visible to the user. Name the reason — count, scale or marker id.
+      y("info", "inline.inject.repaint", \`prev=\${prev.length} want=\${wantIds.length} scale=\${t._inlinePaintScale}/\${scaleNow} html=\${htmlProbe}\`);
       const removeAllMarkers = async () => {
         for (const sel of ["[data-inlay-inline-shot]", "[data-inlay-inline-pending]"]) {
           let nodes = [];
@@ -9051,7 +9078,19 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // are a separate story: watch each missing id and drop its URL into the
       // <img> that is already mounted. No retry pass, no debt counter, and no
       // "did the attach succeed" question — the cell fills whenever it fills.
-      nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc);
+      if (wantPhotos) nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc);
+      else {
+        try {
+          const leftoverPhotos = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-img]"));
+          for (const img of leftoverPhotos) {
+            try {
+              if (img && typeof img.remove == "function") await img.remove();
+            } catch {
+            }
+          }
+        } catch {
+        }
+      }
       const msWatch = Date.now() - tWatch;
       const tLeft = Date.now();
       const keepIds = new Set(placedIds);
@@ -9165,6 +9204,85 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const n = Number(res?.total);
     return Number.isFinite(n) ? n : 0;
   }
+  function nxCardDisplaySrc(card) {
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      let src = typeof N?.resolveImageUrl == "function" ? String(N.resolveImageUrl(card || {}) || "") : "";
+      if (!nxReadyImg(src) && typeof Ie == "function") {
+        const fb = Ie(card);
+        if (nxReadyImg(fb)) src = fb;
+      }
+      return src;
+    } catch {
+      return "";
+    }
+  }
+  async function nxPatchInlinePhotoByCardId(cardId, src, prevId) {
+    const id = String(cardId || "");
+    const prev = String(prevId || "");
+    const lookIds = [];
+    if (id) lookIds.push(id);
+    if (prev && prev !== id) lookIds.push(prev);
+    if (!lookIds.length || !src || !nxReadyImg(src)) return !1;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    let els = [];
+    try {
+      els = await getCachedMsgEls(t.hostDoc);
+    } catch {
+      els = [];
+    }
+    const unwrapSafe = async (arr) => {
+      if (!arr) return [];
+      if (typeof k.unwarpSafeArray == "function") {
+        try {
+          const u = await k.unwarpSafeArray(arr);
+          return Array.isArray(u) ? u : u ? [u] : [];
+        } catch {
+          return [];
+        }
+      }
+      return Array.isArray(arr) ? arr : [arr];
+    };
+    for (const el of els) {
+      if (!el || typeof el.querySelectorAll != "function") continue;
+      for (const look of lookIds) {
+        let wraps = [];
+        try {
+          wraps = await unwrapSafe(await el.querySelectorAll('[data-inlay-inline-shot="' + look + '"]'));
+        } catch {
+          wraps = [];
+        }
+        for (const wrap of wraps) {
+          try {
+            let photos = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-img]"));
+            let img = photos[0];
+            if (!img) {
+              const stacks = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-stack]"));
+              const stack = stacks[0] || wrap;
+              const style = typeof VC?.inlineChatOverlayImgStyle == "function" ? VC.inlineChatOverlayImgStyle(!0) : "";
+              const tmp = await H(t.hostDoc, "div", {
+                html: '<img data-inlay-inline-img="1" alt="" style="' + style + '" loading="eager" decoding="sync">'
+              });
+              const kids = await unwrapSafe(typeof tmp?.getChildren == "function" ? await tmp.getChildren() : null);
+              img = kids[0];
+              if (img && typeof stack.appendChild == "function") await stack.appendChild(img);
+            }
+            if (!img || typeof img.setAttribute != "function") continue;
+            await img.setAttribute("src", src);
+            if (typeof img.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+              await img.setStyleAttribute(VC.inlineChatOverlayImgStyle(!0));
+            }
+            if (id && look !== id && typeof wrap.setAttribute == "function") {
+              await wrap.setAttribute("data-inlay-inline-shot", id);
+            }
+            return !0;
+          } catch {
+          }
+        }
+      }
+    }
+    return !1;
+  }
   async function refreshSelectedInlineImages(force) {
     if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") {
       hideAttachToast().catch(() => {});
@@ -9172,18 +9290,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     const sel = t.selectedMessage;
     if (!sel) return;
-    // Split the pass so "slow move" can be attributed: everything before the
-    // first inject (keep walk, card rebind, strip) versus the paints themselves.
-    const tPass = Date.now();
-    // Generation, not a queue flag. During a scroll the selection keeps moving,
-    // and the old design re-ran the whole pass from the top each time, so paints
-    // trailed the actual scroll position. A newer pass simply invalidates this
-    // one, which then stops wherever it is.
     const gen = (Number(t._inlinePassGen) || 0) + 1;
     t._inlinePassGen = gen;
     const stale = () => Number(t._inlinePassGen) !== gen;
     const nxRebind = async (msg, fallback) => {
-      // Cheap first: the cards may exist but sit below the loaded window edge.
       try {
         if (await nxEnsureCardsForHash(msg?.hash)) {
           const hit = linkedCards(msg);
@@ -9195,348 +9305,68 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     };
     try {
       const doc = await ue().catch(() => t.hostDoc);
-      if (!doc) {
-        showAttachToast().catch(() => {});
-        return;
-      }
+      if (!doc) return;
       if (force) t._msgElsCache = null;
-      let fromCache = !force && !!(t._msgElsCache?.doc === doc && Array.isArray(t._msgElsCache.els) && t._msgElsCache.els.length);
-      let els = fromCache ? t._msgElsCache.els : null;
-      if (!Array.isArray(els) || !els.length) {
-        try {
-          els = await getCachedMsgEls(doc);
-        } catch {
-          els = [];
-        }
-        fromCache = !1;
+      let els = [];
+      try {
+        els = await getCachedMsgEls(doc);
+      } catch {
+        els = [];
       }
-      if (!Array.isArray(els) || !els.length) {
-        showAttachToast().catch(() => {});
-        return;
-      }
+      if (!Array.isArray(els) || !els.length) return;
       const selIdx = Number(sel.domIndex);
       if (!Number.isFinite(selIdx) || selIdx < 0 || selIdx >= els.length) return;
-      const elStillMounted = async (el) => {
-        if (!el) return !1;
-        try {
-          if (typeof el.parentNode == "function") {
-            const p = await el.parentNode();
-            if (!p) return !1;
-          }
-        } catch {
-          return !1;
-        }
-        return !0;
-      };
-      if (fromCache && !(await elStillMounted(els[selIdx]))) {
-        t._msgElsCache = null;
-        fromCache = !1;
-        try {
-          els = await getCachedMsgEls(doc);
-        } catch {
-          els = [];
-        }
-        if (!Array.isArray(els) || !els.length) return;
-        if (selIdx >= els.length) return;
-      }
-      const pendingKey = (() => {
-        const core = globalThis.__INLAY_VIEWER_CORE__;
-        if (typeof core?.pendingInlineKey == "function") return core.pendingInlineKey(t._inlinePending);
-        return Array.isArray(t._inlinePending)
-          ? t._inlinePending.map((p) => \`\${Number(p?.shot_index)}:\${Number(p?.line)}\`).sort().join("|")
-          : "";
-      })();
-      let linkedKey = "";
-      try {
-        let selLinked = linkedCards(sel);
-        if (!selLinked.length && !pendingKey) selLinked = await nxRebind(sel, []);
-        linkedKey = selLinked.map((card) => String(card?.id || "")).filter(Boolean).sort().join("|");
-      } catch {
-        linkedKey = "";
-      }
-      // Gallery still linked, but Risu wiped bubble HTML (settings, new user msg).
-      // Shots and action chips are separate: an image can survive while chips vanish.
-      // Probe the bubble inline last painted, not the selection: a user turn is
-      // remapped to a neighbouring char, so its own bubble never holds markers
-      // and probing it would report "gone" forever, defeating the cheap skip.
-      const probeIdx = (() => {
-        const kept = Number(t._inlineKeepPaintIdx);
-        if (Number(t._inlineKeepSelIdx) !== selIdx) return selIdx;
-        if (!Number.isFinite(kept) || kept < 0 || kept >= els.length) return selIdx;
-        return kept;
-      })();
-      const probeLinkedKey = probeIdx === selIdx ? linkedKey : String(t._inlineKeepPaintLinkedKey || "");
-      const probeHash = probeIdx === selIdx ? String(sel.hash || "") : String(t._inlineKeepPaintHash || "");
-      const inlineGoneFromSel = async () => {
-        const wantActions = nxMsgAct() !== "off";
-        if (!probeLinkedKey && !pendingKey && !wantActions) return !1;
-        const el = els[probeIdx];
-        if (!el || typeof el.querySelectorAll != "function") return !1;
-        const unwrapGone = async (sel) => {
-          try {
-            const raw = await el.querySelectorAll(sel);
-            const arr = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(raw) : [];
-            return Array.isArray(arr) ? arr : arr ? [arr] : [];
-          } catch {
-            return [];
-          }
-        };
-        try {
-          if (probeLinkedKey || pendingKey) {
-            const wraps = await unwrapGone("[data-inlay-inline-shot],[data-inlay-inline-pending]");
-            if (!wraps.length) return !0;
-            const srcs = await Promise.all(wraps.map(async (wrap) => {
-              try {
-                const rawImgs = wrap && typeof wrap.querySelectorAll == "function" ? await wrap.querySelectorAll("[data-inlay-inline-img]") : null;
-                const imgs = typeof k.unwarpSafeArray == "function" && rawImgs ? await k.unwarpSafeArray(rawImgs) : [];
-                const img = Array.isArray(imgs) ? imgs[0] : imgs;
-                if (!img || typeof img.getAttribute != "function") return "";
-                return String(await img.getAttribute("src") || "");
-              } catch {
-                return "";
-              }
-            }));
-            // Empty wrappers are only "gone" when nothing is coming for them. A
-            // bubble still on its subscription is mid-fill, not wiped.
-            if (!srcs.some((src) => nxReadyImg(src)) && !nxInlineSubIds(probeHash).size) return !0;
-          }
-          if (wantActions && !(await unwrapGone("[x-inlay-msg-actions]")).length) return !0;
-          return !1;
-        } catch {
-          return !1;
-        }
-      };
-      // Cheap skip before any SafeDOM De/resolve — same bubble + same linked shots + same pending.
-      // force: reply finished and Risu rewrote the bubble; keep-keys would skip a real wipe.
-      if (
-        !force
-        && fromCache
-        && t._inlineKeepDoc === doc
-        && Number(t._inlineKeepElsLen) === els.length
-        && Number(t._inlineKeepSelIdx) === selIdx
-        && String(t._inlineKeepPendingKey || "") === pendingKey
-        && String(t._inlineKeepLinkedKey || "") === linkedKey
-        && Array.isArray(t._inlineKeepHashList)
-        && t._inlineKeepHashList.length
-        && !(await inlineGoneFromSel())
-      ) {
-        y("info", "inline.keep.skip", \`DOM#\${selIdx} cheap keep=\${t._inlineKeepHashList.length}\`);
-        hideAttachToast({ done: 1 }).catch(() => {});
-        return;
-      }
-      // First session attach only — later clicks no-op inside showAttachToast.
-      showAttachToast().catch(() => {});
       const VC = globalThis.__INLAY_VIEWER_CORE__;
-      const allRoles = !!t.backendSettings?.card?.generate_all_roles;
-      const maxPerSide = Math.max(3, Math.min(20, Math.round(Number(t.backendSettings?.card?.inline_chat_dom_radius) || 4)));
+      const radius = typeof VC?.clampInlineDomRadius == "function"
+        ? VC.clampInlineDomRadius(t.backendSettings?.card?.inline_chat_dom_radius)
+        : Math.max(3, Math.min(20, Math.round(Number(t.backendSettings?.card?.inline_chat_dom_radius) || 4)));
+      const spinnerIdxs = typeof VC?.inlineDomWindow == "function"
+        ? VC.inlineDomWindow(selIdx, els.length, radius)
+        : [];
       const scope = await Za().catch(() => null);
       const msgs = scope?.messages || [];
       const roleCache = new Map();
       const msgCache = new Map();
-      const resolvePend = new Map();
       const resolveAt = async (idx) => {
         if (msgCache.has(idx)) return msgCache.get(idx);
-        if (resolvePend.has(idx)) return resolvePend.get(idx);
-        const task = (async () => {
-          let row = null;
-          try {
-            const raw = await De(els[idx]);
-            const text = w(raw || "");
-            if (text.length >= 4) {
-              const hit = typeof qa == "function"
-                ? qa(text, msgs, idx, els.length, {})
-                : typeof VC?.resolveChatMessageMatch == "function"
-                  ? VC.resolveChatMessageMatch(text, msgs, idx, els.length)
-                  : null;
-              const role = w(hit?.role || "");
-              row = {
-                idx,
-                msg: {
-                  domIndex: idx,
-                  chatIndex: hit?.chatIndex,
-                  messageIndex: hit?.chatIndex,
-                  characterId: sel.characterId,
-                  chatId: sel.chatId,
-                  sessionId: sel.sessionId,
-                  role,
-                  text,
-                  hash: ye(text),
-                  apiText: w(hit?.text || "")
-                }
-              };
-              roleCache.set(idx, role);
-            } else {
-              roleCache.set(idx, "");
-              row = {
-                idx,
-                msg: {
-                  domIndex: idx,
-                  role: "",
-                  text,
-                  hash: text ? ye(text) : "",
-                  apiText: ""
-                }
-              };
-            }
-          } catch {
-            roleCache.set(idx, "");
-            row = { idx, msg: null };
-          }
-          msgCache.set(idx, row);
-          return row;
-        })();
-        resolvePend.set(idx, task);
+        let row = null;
         try {
-          return await task;
-        } finally {
-          resolvePend.delete(idx);
+          const raw = await De(els[idx]);
+          const text = w(raw || "");
+          if (text.length >= 4) {
+            const hit = typeof qa == "function"
+              ? qa(text, msgs, idx, els.length, {})
+              : null;
+            row = { idx, msg: hit || { text, hash: "", role: "", chatIndex: idx }, text };
+          }
+        } catch {
+          row = null;
         }
+        msgCache.set(idx, row);
+        return row;
       };
       const roleAt = (idx) => {
+        if (roleCache.has(idx)) return roleCache.get(idx);
         const row = msgCache.get(idx);
-        if (typeof VC?.roleForInlineBubble == "function") {
-          return VC.roleForInlineBubble({
+        const role = typeof VC?.roleForInlineBubble == "function"
+          ? VC.roleForInlineBubble({
             idx,
             selIdx,
             selRole: sel.role,
             selHash: sel.hash,
             liveHash: row?.msg?.hash,
-            matchedRole: roleCache.has(idx) ? roleCache.get(idx) : "",
-            domText: row?.msg?.text,
-            matchedText: row?.msg?.apiText
-          });
-        }
-        if (roleCache.has(idx)) return roleCache.get(idx);
-        if (idx === selIdx && sel.role != null && String(sel.role).length) return String(sel.role);
-        return "";
-      };
-      const roleDispositionAt = (idx) => typeof VC?.inlineRoleDisposition == "function"
-        ? VC.inlineRoleDisposition(roleAt(idx), allRoles)
-        : allRoles || isCharAtSync(idx) ? "allow" : roleAt(idx) ? "deny" : "hold";
-      const isCharAtSync = (idx) => {
-        const role = roleAt(idx);
-        if (!role) return !1;
-        return typeof VC?.isCharMessageRole == "function"
-          ? VC.isCharMessageRole(role)
-          : typeof isSelectedCharRole == "function"
-            ? isSelectedCharRole(role)
-            : /^(char|assistant|bot)$/i.test(String(role || ""));
+            matchedRole: row?.msg?.role,
+            domText: row?.text,
+            matchedText: row?.msg?.text
+          })
+          : String(row?.msg?.role || (idx === selIdx ? sel.role : "") || "");
+        roleCache.set(idx, role);
+        return role;
       };
       const isSkipBodyAt = (idx) => {
         const row = msgCache.get(idx);
-        const text = row?.msg?.text || "";
-        if (typeof VC?.isInlineSkipBody == "function") return VC.isInlineSkipBody(text);
-        if (typeof VC?.messageBodyCharCount == "function") return VC.messageBodyCharCount(text) <= 30;
-        return String(text).replace(/\s+/g, "").length <= 30;
+        return typeof VC?.isInlineSkipBody == "function" ? VC.isInlineSkipBody(row?.text) : !1;
       };
-      const canKeepAt = (idx) => {
-        if (isSkipBodyAt(idx)) return !1;
-        return allRoles ? !0 : isCharAtSync(idx);
-      };
-      // First wave: configured DOM radius in parallel. The role-aware walk may
-      // continue past users and short bodies until it finds enough eligible bubbles.
-      const prefetchIdxs = typeof VC?.prefetchInlineRoleDomIndices == "function"
-        ? VC.prefetchInlineRoleDomIndices({ selIdx, length: els.length, radius: maxPerSide })
-        : (() => {
-          const out = [];
-          const lo = Math.max(0, selIdx - maxPerSide);
-          const hi = Math.min(els.length - 1, selIdx + maxPerSide);
-          for (let i = lo; i <= hi; i += 1) out.push(i);
-          return out;
-        })();
-      const headFirst = !!t._inlineHeadFirst;
-      t._inlineHeadFirst = 0;
-      if (!headFirst) await Promise.all(prefetchIdxs.map((i) => resolveAt(i)));
-      // Prefetch roles/text along walk so pickInlineKeepDomIndices can stay sync.
-      await resolveAt(selIdx);
-      let paintIdx = selIdx;
-      if (!canKeepAt(selIdx)) {
-        for (let d = 1; d < els.length; d += 1) {
-          if (selIdx + d < els.length) {
-            await resolveAt(selIdx + d);
-            if (canKeepAt(selIdx + d)) {
-              paintIdx = selIdx + d;
-              break;
-            }
-          }
-          if (selIdx - d >= 0) {
-            await resolveAt(selIdx - d);
-            if (canKeepAt(selIdx - d)) {
-              paintIdx = selIdx - d;
-              break;
-            }
-          }
-        }
-      }
-      if (!headFirst) {
-      let found = 0;
-      for (let i = selIdx + 1; i < els.length && found < maxPerSide; i += 1) {
-        await resolveAt(i);
-        if (canKeepAt(i)) found += 1;
-      }
-      found = 0;
-      for (let i = selIdx - 1; i >= 0 && found < maxPerSide; i -= 1) {
-        await resolveAt(i);
-        if (canKeepAt(i)) found += 1;
-      }
-      }
-      const prevKeep = Array.isArray(t._inlineKeepEls) ? t._inlineKeepEls : [];
-      const heldKeepHashes = new Set(prevKeep.map((row) => String(row?.hash || "")).filter(Boolean));
-      const keepIdxs = headFirst
-        ? (canKeepAt(paintIdx) ? [paintIdx] : [])
-        : typeof VC?.pickInlineKeepDomIndices == "function"
-        ? VC.pickInlineKeepDomIndices({
-          selIdx: paintIdx,
-          length: els.length,
-          allRoles,
-          isCharAt: isCharAtSync,
-          isSkipBodyAt,
-          maxPerSide
-        })
-        : (() => {
-          const out = [];
-          const add = (i) => {
-            if (i >= 0 && i < els.length && !out.includes(i)) out.push(i);
-          };
-          if (canKeepAt(paintIdx)) add(paintIdx);
-          let n = 0;
-          for (let i = paintIdx + 1; i < els.length && n < maxPerSide; i += 1) {
-            if (canKeepAt(i)) {
-              add(i);
-              n += 1;
-            }
-          }
-          n = 0;
-          for (let i = paintIdx - 1; i >= 0 && n < maxPerSide; i -= 1) {
-            if (canKeepAt(i)) {
-              add(i);
-              n += 1;
-            }
-          }
-          return out;
-        })();
-      // Keep already-mounted bubbles whose role could not be resolved this pass.
-      // They may not receive new cards, but a transient miss must not tear down
-      // their frames and immediately rebuild them on the next click.
-      const heldRows = [...msgCache].map(([idx, row]) => ({
-        idx,
-        hash: String(row?.msg?.hash || ""),
-        disposition: roleDispositionAt(idx)
-      }));
-      const stableKeepIdxs = typeof VC?.retainHeldInlineKeepIndices == "function"
-        ? VC.retainHeldInlineKeepIndices({
-          keepIndices: keepIdxs,
-          previousHashes: [...heldKeepHashes],
-          rows: heldRows
-        })
-        : keepIdxs;
-      const keep = new Set(stableKeepIdxs);
-      const neighborMsgs = [];
-      for (const idx of keep) {
-        if (idx === paintIdx) continue;
-        const row = msgCache.get(idx) || await resolveAt(idx);
-        neighborMsgs.push(row || { idx, msg: null });
-      }
       const unwrapSafe = async (arr) => {
         if (!arr) return [];
         if (typeof k.unwarpSafeArray == "function") {
@@ -9549,383 +9379,74 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         return Array.isArray(arr) ? arr : [arr];
       };
-      const stripInlineMarkersIn = async (el) => {
+      const evictPhotosIn = async (el) => {
         if (!el || typeof el.querySelectorAll != "function") return;
         try {
-          let nodes = [];
-          try {
-            // Drop the photo bytes only. The marker, spinner and chip bar stay
-            // so the box cannot collapse while this bubble is outside the window.
-            nodes = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-img]"));
-          } catch {
-            nodes = [];
-          }
-          if (!nodes.length) return;
-          for (const node of nodes) {
+          const photos = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-img]"));
+          for (const img of photos) {
             try {
-              if (node && typeof node.remove == "function") await node.remove();
+              if (img && typeof img.remove == "function") await img.remove();
             } catch {
             }
           }
         } catch {
         }
       };
-      // Diff strip only: drop photos leaving the keep window. Never wipe the
-      // whole chat when els.length grows (new user msg remounts last 6 bodies).
-      //
-      // Remembered by hash and element handle, never by DOM index. The chat is
-      // newest-first, so one new message renumbers every slot and the old index
-      // list then pointed at the wrong bubbles — stripping shots that should have
-      // stayed and leaving ones that should have gone.
-      const bubbleHashAt = (idx) => {
-        const live = String(msgCache.get(idx)?.msg?.hash || "");
-        if (typeof VC?.liveBubbleHash == "function") {
-          return VC.liveBubbleHash({ liveHash: live, selHash: sel.hash, idx, selIdx });
-        }
-        return live || (idx === selIdx ? String(sel.hash || "") : "");
-      };
-      const nextKeep = [...keep].sort((a, b) => a - b).map((idx) => ({ hash: bubbleHashAt(idx), el: els[idx] }));
-      const nextKeepHashes = new Set(nextKeep.map((row) => row.hash).filter(Boolean));
-      const listChanged = !fromCache || t._inlineKeepDoc !== doc || Number(t._inlineKeepElsLen) !== els.length;
-      const sameKeep = !listChanged
-        && Number(t._inlineKeepSelIdx) === selIdx
-        && prevKeep.length === nextKeep.length
-        && prevKeep.every((row, i) => String(row?.hash || "") === String(nextKeep[i]?.hash || ""))
-        && String(t._inlineKeepPendingKey || "") === pendingKey
-        && String(t._inlineKeepLinkedKey || "") === linkedKey
-        && String(t._inlineKeepMsgActions || "") === nxMsgAct();
-      if (!force && sameKeep && !(await inlineGoneFromSel())) {
-        y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeep.length}\`);
-        hideAttachToast({ done: 1 }).catch(() => {});
-        return;
+      const nextPhotoEls = [];
+      for (const idx of spinnerIdxs) {
+        if (stale()) return;
+        await resolveAt(idx);
+        if (isSkipBodyAt(idx)) continue;
+        const role = roleAt(idx);
+        const wantPhoto = typeof VC?.shouldOverlayInlinePhoto == "function"
+          ? VC.shouldOverlayInlinePhoto({ idx, selIdx, length: els.length, role })
+          : !1;
+        if (wantPhoto) nextPhotoEls.push({ idx, el: els[idx] });
       }
-      if (listChanged && fromCache || await inlineGoneFromSel()) {
-        t._msgElsCache = null;
+      const nextPhotoIdx = new Set(nextPhotoEls.map((row) => row.idx));
+      for (const prev of Array.isArray(t._inlinePhotoEls) ? t._inlinePhotoEls : []) {
+        if (nextPhotoIdx.has(Number(prev?.idx)) && prev.el === els[prev.idx]) continue;
+        await evictPhotosIn(prev.el);
+      }
+      for (const idx of spinnerIdxs) {
+        if (!nextPhotoIdx.has(idx)) await evictPhotosIn(els[idx]);
+      }
+      for (const idx of spinnerIdxs) {
+        if (stale()) return;
+        const row = msgCache.get(idx) || await resolveAt(idx);
+        if (isSkipBodyAt(idx)) continue;
+        let cards = [];
         try {
-          els = await getCachedMsgEls(doc);
-        } catch {
-        }
-        fromCache = !1;
-      }
-      for (const row of prevKeep) {
-        const hash = String(row?.hash || "");
-        if (hash && nextKeepHashes.has(hash)) continue;
-        // The element handle is what makes this shift-proof: the bubble is
-        // whatever node we painted last time, wherever it moved to.
-        await stripInlineMarkersIn(row?.el);
-        if (hash) nxDropInlineSubs(hash);
-      }
-      t._inlineKeepEls = nextKeep;
-      t._inlineKeepHashList = [...nextKeepHashes];
-      t._inlineKeepDoc = doc;
-      t._inlineKeepElsLen = els.length;
-      t._inlineKeepSelIdx = selIdx;
-      t._inlineKeepPendingKey = pendingKey;
-      t._inlineKeepLinkedKey = linkedKey;
-      t._inlineKeepMsgActions = nxMsgAct();
-      const mode = allRoles ? \`±\${maxPerSide}\` : \`char±\${maxPerSide}\`;
-      y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${[...keep].sort((a, b) => a - b).join(",")}/\${els.length} strip=diff\`);
-      const N = globalThis.__INLAY_NATIVE__;
-      let selCards = [];
-      try {
-        const liveSel = msgCache.get(selIdx)?.msg;
-        const drifted = typeof VC?.selectionSlotDrifted == "function"
-          ? VC.selectionSlotDrifted(sel.hash, liveSel?.hash)
-          : !!(sel.hash && liveSel?.hash && String(sel.hash) !== String(liveSel.hash));
-        const selIdentity = drifted && liveSel ? liveSel : sel;
-        selCards = linkedCards(selIdentity);
-        if (!selCards.length && !pendingKey) selCards = await nxRebind(selIdentity, []);
-      } catch {
-        selCards = [];
-      }
-      const selIds = selCards.map((card) => String(card?.id || "")).filter(Boolean);
-      // paintIdx left the selection (user turn remapped to the nearest char).
-      // Its cards must come from that bubble's own message — selCards is [] on a
-      // user turn, and [] makes injectChatInlineImages strip the char's shots.
-      let paintCards = null;
-      if (paintIdx !== selIdx) {
-        const paintRow = msgCache.get(paintIdx);
-        if (paintRow?.msg) {
-          try {
-            paintCards = linkedCards(paintRow.msg) || [];
-          } catch {
-            paintCards = [];
+          if (row?.msg) {
+            cards = linkedCards(row.msg) || [];
+            if (!cards.length) cards = await nxRebind(row.msg, []);
+            if (typeof VC?.cardsForInlineBubble == "function") {
+              cards = VC.cardsForInlineBubble({
+                cards,
+                role: roleAt(idx),
+                allRoles: !1,
+                selHash: sel.hash,
+                liveHash: row.msg.hash,
+                isSelectionSlot: idx === selIdx
+              });
+            }
           }
-        }
-      }
-      const paintPlan = typeof VC?.resolveInlinePaintCards == "function"
-        ? VC.resolveInlinePaintCards({ selIdx, paintIdx, selCards, paintCards })
-        : paintIdx === selIdx
-          ? { cards: selCards, skipInline: !1, source: "selection" }
-          : Array.isArray(paintCards)
-            ? { cards: paintCards, skipInline: !1, source: "remap" }
-            : { cards: [], skipInline: !0, source: "unresolved" };
-      if (typeof VC?.cardsForInlineBubble == "function") {
-        paintPlan.cards = VC.cardsForInlineBubble({
-          cards: paintPlan.cards,
-          role: roleAt(paintIdx),
-          allRoles,
-          selHash: sel.hash,
-          liveHash: bubbleHashAt(paintIdx),
-          isSelectionSlot: paintIdx === selIdx
-        });
-      }
-      const paintIds = paintPlan.cards.map((card) => String(card?.id || "")).filter(Boolean);
-      t._inlineKeepPaintIdx = paintIdx;
-      t._inlineKeepPaintHash = bubbleHashAt(paintIdx);
-      t._inlineKeepPaintLinkedKey = [...paintIds].sort().join("|");
-      const neighborCardLists = [];
-      for (const row of neighborMsgs) {
-        if (row?.idx == null || !els[row.idx] || !row.msg) continue;
-        if (!keep.has(row.idx)) continue;
-        let nbCards = [];
-        try {
-          nbCards = linkedCards(row.msg);
-          if (!nbCards.length) nbCards = await nxRebind(row.msg, []);
         } catch {
-          nbCards = [];
+          cards = [];
         }
-        neighborCardLists.push({
-          idx: row.idx,
-          hash: String(row.msg?.hash || ""),
-          cards: typeof VC?.cardsForInlineBubble == "function"
-            ? VC.cardsForInlineBubble({
-              cards: nbCards,
-              role: roleAt(row.idx),
-              allRoles,
-              selHash: sel.hash,
-              liveHash: bubbleHashAt(row.idx),
-              isSelectionSlot: row.idx === selIdx
-            })
-            : nbCards
-        });
-      }
-      const neighborIds = neighborCardLists.flatMap((row) =>
-        row.cards.map((card) => String(card?.id || "")).filter(Boolean)
-      );
-      // The hashes ce() should name next time, so the window it asks for covers
-      // the bubbles this walk actually paints.
-      t._inlineKeepHashes = [
-        String(sel.hash || ""),
-        ...neighborMsgs.map((row) => String(row?.msg?.hash || "")),
-      ].filter(Boolean);
-      const warmHead = paintIds.length ? paintIds : selIds;
-      // Moving the selection one slot re-enters bubbles that are already correct.
-      // Fingerprint each one so an unchanged bubble costs one query instead of a
-      // full host scan — the scan is ~4 bridge round-trips per paragraph.
-      const scalePctNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
-      const paintKeyOf = (cards, pendingOn) => typeof VC?.inlinePaintKey == "function"
-        ? VC.inlinePaintKey({
-          cardIds: (Array.isArray(cards) ? cards : []).map((card) => String(card?.id || "")),
-          scalePct: scalePctNow,
-          msgActions: nxMsgAct(),
-          pending: pendingOn
-        })
-        : "";
-      const paintRows = [];
-      if (keep.has(paintIdx) && els[paintIdx] && !paintPlan.skipInline) {
-        paintRows.push({
-          idx: paintIdx,
-          hash: bubbleHashAt(paintIdx),
-          key: paintKeyOf(paintPlan.cards, !!pendingKey)
-        });
-      }
-      for (const row of neighborCardLists) {
-        paintRows.push({ idx: row.idx, hash: row.hash, key: paintKeyOf(row.cards, !1) });
-      }
-      const prevPaintedKeys = !force && t._inlinePaintedKeys && typeof t._inlinePaintedKeys == "object" ? t._inlinePaintedKeys : {};
-      const prevPaintedCounts = !force && t._inlinePaintedCounts && typeof t._inlinePaintedCounts == "object" ? t._inlinePaintedCounts : {};
-      // Rebuilt every run so the map stays the size of the keep window.
-      const nextPaintedKeys = {};
-      const nextPaintedCounts = {};
-      const markerCount = async (el) => {
-        if (!el || typeof el.querySelectorAll != "function") return -1;
-        try {
-          const nodes = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-shot],[data-inlay-inline-pending],[x-inlay-msg-actions]"));
-          return nodes.length;
-        } catch {
-          return -1;
-        }
-      };
-      const notePainted = async (idx, hash, key) => {
-        if (!hash || !key) return;
-        const hasCards = typeof VC?.inlinePaintKeyHasCards == "function"
-          ? VC.inlinePaintKeyHasCards(key)
-          : /\|c=.+/.test(String(key));
-        if (!hasCards) return;
-        const n = await markerCount(els[idx]);
-        if (n < 0) return;
-        // Wrappers alone are not a finished paint unless something is coming for
-        // them. With a live watcher on this bubble the empty cells fill on their
-        // own, so the fingerprint is honest; without one they are stripped
-        // leftovers and the next pass must repaint.
-        try {
-          const shots = await nxProbeInlineShots(els[idx], unwrapSafe);
-          if (shots.length && !shots.some((row) => nxReadyImg(row.src)) && !nxInlineSubIds(hash).size) return;
-        } catch {
-          return;
-        }
-        nextPaintedKeys[hash] = key;
-        nextPaintedCounts[hash] = n;
-      };
-      // Runs on every exit, not just the finished one. A pass abandoned by
-      // stale() has still painted the head bubble correctly, and dropping that
-      // record made the next pass repaint work that was already done — and left
-      // the progress toast up, because hiding it was past the return too.
-      let committed = !1;
-      const commitPaint = () => {
-        if (committed) return;
-        committed = !0;
-        t._inlinePaintedKeys = nextPaintedKeys;
-        t._inlinePaintedCounts = nextPaintedCounts;
-        // The paint is complete by construction: every linked card has a marker
-        // and every marker without bytes has a watcher. There is nothing to
-        // declare failed and nothing to schedule a retry for.
-        hideAttachToast({ done: 1 }).catch(() => {});
-      };
-      const repaintSplit = typeof VC?.pickInlineRepaintIndices == "function"
-        ? VC.pickInlineRepaintIndices({ rows: paintRows, painted: prevPaintedKeys })
-        : { repaint: paintRows.map((row) => row.idx), skip: [] };
-      // A matching fingerprint is not proof the nodes survived — Risu can rebuild
-      // a bubble under us. Confirm the marker count recorded at last paint.
-      const reuseIdxs = new Set();
-      for (const idx of Array.isArray(repaintSplit.skip) ? repaintSplit.skip : []) {
-        const row = paintRows.find((r) => r.idx === idx);
-        if (!row) continue;
-        const want = Number(prevPaintedCounts[row.hash]);
-        if (!Number.isFinite(want) || want < 0) continue;
-        if (await markerCount(els[idx]) !== want) continue;
-        reuseIdxs.add(idx);
-        nextPaintedKeys[row.hash] = row.key;
-        nextPaintedCounts[row.hash] = want;
-      }
-      if (reuseIdxs.size) y("info", "inline.paint.reuse", \`kept=\${[...reuseIdxs].join(",")} of \${paintRows.length}\`);
-      const msPre = Date.now() - tPass;
-      const tPaint = Date.now();
-      try {
-        if (typeof N?.prioritizeWarmFocus == "function" && warmHead.length) N.prioritizeWarmFocus(warmHead);
-      } catch {
-      }
-      if (keep.has(paintIdx) && els[paintIdx] && !reuseIdxs.has(paintIdx)) {
-        await injectChatMsgActions(els[paintIdx], paintPlan.cards, paintIdx);
-        if (paintPlan.skipInline) {
-          y("info", "inline.paint.hold", \`DOM#\${paintIdx} remap unresolved — leaving shots\`);
-        } else {
-          const row = paintRows.find((r) => r.idx === paintIdx);
-          await injectChatInlineImages(els[paintIdx], paintPlan.cards, t._inlinePending, {
-            lockKey: row?.hash || \`dom\${paintIdx}\`,
-            role: roleAt(paintIdx),
-            allRoles
+        const lockKey = String(row?.msg?.hash || sel.hash || ("dom" + idx));
+        await injectChatMsgActions(els[idx], cards, idx);
+        if (t.backendSettings?.card?.inline_chat_images === !0) {
+          await injectChatInlineImages(els[idx], cards, idx === selIdx ? t._inlinePending : [], {
+            lockKey,
+            role: roleAt(idx),
+            allRoles: !1,
+            wantPhotos: nextPhotoIdx.has(idx)
           });
-          if (row) await notePainted(paintIdx, row.hash, row.key);
         }
       }
-      // The selected bubble is painted. Everything after this is the ±1 window,
-      // which is a convenience and not what the user is looking at, so a newer
-      // selection wins outright.
-      if (stale()) {
-        y("info", "inline.pass.stale", \`DOM#\${selIdx} superseded after head\`);
-        commitPaint();
-        return;
-      }
-      if (headFirst) {
-        y("info", "inline.head.first", \`DOM#\${paintIdx} then neighbours\`);
-        await Promise.all(prefetchIdxs.map((i) => resolveAt(i)));
-        let foundN = 0;
-        for (let i = selIdx + 1; i < els.length && foundN < maxPerSide; i += 1) {
-          await resolveAt(i);
-          if (canKeepAt(i)) foundN += 1;
-        }
-        foundN = 0;
-        for (let i = selIdx - 1; i >= 0 && foundN < maxPerSide; i -= 1) {
-          await resolveAt(i);
-          if (canKeepAt(i)) foundN += 1;
-        }
-        const laterKeep = typeof VC?.pickInlineKeepDomIndices == "function"
-          ? VC.pickInlineKeepDomIndices({
-            selIdx: paintIdx,
-            length: els.length,
-            allRoles,
-            isCharAt: isCharAtSync,
-            isSkipBodyAt,
-            maxPerSide
-          })
-          : keepIdxs;
-        for (const idx of laterKeep) keep.add(Number(idx));
-        neighborMsgs.length = 0;
-        for (const idx of keep) {
-          if (idx === paintIdx) continue;
-          const row = msgCache.get(idx) || await resolveAt(idx);
-          neighborMsgs.push(row || { idx, msg: null });
-        }
-        neighborCardLists.length = 0;
-        for (const row of neighborMsgs) {
-          if (row?.idx == null || !els[row.idx] || !row.msg) continue;
-          let nbCards = [];
-          try {
-            nbCards = linkedCards(row.msg);
-            if (!nbCards.length) nbCards = await nxRebind(row.msg, []);
-          } catch {
-            nbCards = [];
-          }
-          const nbSafe = typeof VC?.cardsForInlineBubble == "function"
-            ? VC.cardsForInlineBubble({
-              cards: nbCards,
-              role: roleAt(row.idx),
-              allRoles,
-              selHash: sel.hash,
-              liveHash: bubbleHashAt(row.idx),
-              isSelectionSlot: row.idx === selIdx
-            })
-            : nbCards;
-          neighborCardLists.push({
-            idx: row.idx,
-            hash: String(row.msg?.hash || ""),
-            cards: nbSafe
-          });
-          paintRows.push({ idx: row.idx, hash: String(row.msg?.hash || ""), key: paintKeyOf(nbSafe, !1) });
-        }
-        neighborIds.length = 0;
-        for (const row of neighborCardLists) {
-          for (const card of row.cards) {
-            const id = String(card?.id || "");
-            if (id) neighborIds.push(id);
-          }
-        }
-      }
-      try {
-        if (typeof N?.prioritizeWarmFocus == "function" && neighborIds.length) {
-          N.prioritizeWarmFocus([...warmHead, ...neighborIds]);
-        }
-      } catch {
-      }
-      // Neighbours are painted in the same pass, mid-scroll included. Skipping
-      // them while the scroll was moving left them blank forever: settle only
-      // re-enters here when the selected index changes, and after a scroll that
-      // ends on the same bubble the cheap keep skip at the top of this function
-      // matches and returns. stale() below is what handles a moving selection —
-      // it abandons this pass the moment a newer one starts.
-      for (const row of neighborCardLists) {
-        if (reuseIdxs.has(row.idx)) continue;
-        if (stale()) {
-          y("info", "inline.pass.stale", \`DOM#\${selIdx} superseded mid-neighbours\`);
-          break;
-        }
-        await injectChatMsgActions(els[row.idx], row.cards, row.idx);
-        const planned = paintRows.find((r) => r.idx === row.idx);
-        await injectChatInlineImages(els[row.idx], row.cards, [], {
-          lockKey: planned?.hash || \`dom\${row.idx}\`,
-          role: roleAt(row.idx),
-          allRoles
-        });
-        if (planned) await notePainted(row.idx, planned.hash, planned.key);
-      }
-      y("info", "inline.pass.ms", \`total=\${Date.now() - tPass} pre=\${msPre} paint=\${Date.now() - tPaint} bubbles=\${paintRows.length - reuseIdxs.size}/\${paintRows.length} DOM#\${selIdx}\`);
-      commitPaint();
-      try {
-        if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
-      } catch {
-      }
+      t._inlinePhotoEls = nextPhotoEls;
+      hideAttachToast({ done: 1 }).catch(() => {});
     } catch (err) {
       y("warn", "inline.refresh.fail", z(err?.message || err, 100));
     }
@@ -10151,18 +9672,16 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const live = linkedCards(A);
       try {
         if (live.length && typeof rerollMessageImagesLive == "function") {
-          const onChipShot = async () => {
+          const onChipShot = async (_i, result) => {
             try {
-              await refreshSelectedInlineImages(!0);
+              const card = result?.card;
+              const replaced = result?.replaced;
+              await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "");
             } catch {
             }
           };
           if (typeof withImageRerollToast == "function") await withImageRerollToast("메시지 이미지 전체 재생성 중…", async (report) => rerollMessageImagesLive(A, { report, onShot: onChipShot }));
           else await rerollMessageImagesLive(A, { onShot: onChipShot });
-          try {
-            await refreshSelectedInlineImages(!0);
-          } catch {
-          }
           y("info", "regen.all", "msg-actions");
         } else {
           await Be(await Z({ useOverride: !1 }), A.text, !1);
@@ -12634,12 +12153,16 @@ const VENDOR_INSPECT_REROLL_INLINE_PATCH =
   `      if (act === "reroll") {
         await hideInspect();
         try {
-          await withImageRerollToast("이미지 리롤 중…", async () => await K(\`/v1/cards/\${encodeURIComponent(card.id)}/reroll\`, {
-            method: "POST",
-            body: {
-              mode: "nai"
-            }
-          }, 18e4));
+          let rolled = null;
+          await withImageRerollToast("이미지 리롤 중…", async () => {
+            rolled = await K(\`/v1/cards/\${encodeURIComponent(card.id)}/reroll\`, {
+              method: "POST",
+              body: {
+                mode: "nai"
+              }
+            }, 18e4);
+            return rolled;
+          });
           const W = await Z({
             useOverride: !1
           }).catch(() => null);
@@ -12649,7 +12172,7 @@ const VENDOR_INSPECT_REROLL_INLINE_PATCH =
           } catch {
           }
           try {
-            await refreshSelectedInlineImages(!0);
+            await nxPatchInlinePhotoByCardId(rolled?.card?.id || card.id, nxCardDisplaySrc(rolled?.card || card), card.id);
           } catch {
           }
         } catch (err) {
@@ -12682,10 +12205,12 @@ const VENDOR_INSPECT_REGEN_INLINE_PATCH =
   `            await withImageRerollToast(\`메시지 이미지 전체 재생성 중… (0/\${targets.length || "?"})\`, async (report) => rerollMessageImagesLive(liveMsg, {
               scope,
               report,
-              onShot: async () => {
+              onShot: async (_i, result) => {
                 if (t.galleryUi?.renderGal) await t.galleryUi.renderGal();
                 try {
-                  await refreshSelectedInlineImages(!0);
+                  const card = result?.card;
+                  const replaced = result?.replaced;
+                  await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "");
                 } catch {
                 }
               }
@@ -12693,10 +12218,6 @@ const VENDOR_INSPECT_REGEN_INLINE_PATCH =
             scope?.sessionId && await ce(scope.sessionId, !0);
             try {
               await he();
-            } catch {
-            }
-            try {
-              await refreshSelectedInlineImages(!0);
             } catch {
             }
           } finally {
@@ -12713,7 +12234,7 @@ const VENDOR_REROLL_IMAGE_INLINE_NEEDLE =
 const VENDOR_REROLL_IMAGE_INLINE_PATCH =
   `        d.index = nn >= 0 ? nn : Math.max(0, Math.min(_, Math.max(0, J.length - 1))), await T();
         try {
-          await refreshSelectedInlineImages(!0);
+          await nxPatchInlinePhotoByCardId(B?.card?.id || A.id, nxCardDisplaySrc(B?.card || A), A.id);
         } catch {
         }
         await C.setTextContent(\`이미지 리롤 완료 · \${String(B?.card?.id || A.id).slice(0, 8)}\`), y("info", "regen.image", \`P\${O} \${String(A.id).slice(0, 8)}→\${String(B?.card?.id || "").slice(0, 8)}\`);`;
@@ -12733,11 +12254,13 @@ const VENDOR_REROLL_ALL_INLINE_NEEDLE =
         const failCount = Array.isArray(B?.failed) ? B.failed.length : 0;
         d.index = 0, await T(), await C.setTextContent(failCount ? \`전체 재생성 부분 실패 · 성공 \${Number(B?.count || 0)} / 실패 \${failCount}\` : \`전체 재생성 완료 · \${Number(B?.count || 0)}장\`), y("info", "regen.all", \`count=\${B?.count || 0} failed=\${failCount} hash=\${String(A.hash || "").slice(0, 8)}\`);`;
 const VENDOR_REROLL_ALL_INLINE_PATCH =
-  `          onShot: async (i) => {
+  `          onShot: async (i, result) => {
             d.index = i;
             await T();
             try {
-              await refreshSelectedInlineImages(!0);
+              const card = result?.card;
+              const replaced = result?.replaced;
+              await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "");
             } catch {
             }
             await C.setTextContent(\`\${i + 1}/\${targets0.length} 교체 완료\`);
@@ -12750,10 +12273,6 @@ const VENDOR_REROLL_ALL_INLINE_PATCH =
         }
         const failCount = Array.isArray(B?.failed) ? B.failed.length : 0;
         d.index = 0, await T();
-        try {
-          await refreshSelectedInlineImages(!0);
-        } catch {
-        }
         await C.setTextContent(failCount ? \`전체 재생성 부분 실패 · 성공 \${Number(B?.count || 0)} / 실패 \${failCount}\` : \`전체 재생성 완료 · \${Number(B?.count || 0)}장\`), y("info", "regen.all", \`count=\${B?.count || 0} failed=\${failCount} hash=\${String(A.hash || "").slice(0, 8)}\`);`;
 
 /** Tag regenerate (force): do not reuse the 2.2s gallery cache after unlink. */
@@ -15895,25 +15414,11 @@ const loadVendorUi = (): string => {
       if ((body.match(/maybeRebindAndLink\(/g) || []).length !== 1) {
         throw new Error('[build] refreshSelectedInlineImages must reach maybeRebindAndLink only through nxRebind');
       }
-      const skipAt = body.indexOf('inline.keep.skip');
-      const showAt = body.lastIndexOf('showAttachToast().catch');
-      const zaAt = body.indexOf('const scope = await Za()');
-      if (skipAt < 0 || showAt < 0 || zaAt < 0 || !(skipAt < showAt && showAt < zaAt)) {
-        throw new Error('[build] attach toast must start after the already-painted skip, before Za');
+      if (!body.includes('VC.shouldOverlayInlinePhoto({') || !body.includes('VC.inlineDomWindow(selIdx, els.length, radius)')) {
+        throw new Error('[build] inline refresh must stamp ±radius and overlay ±1 char only');
       }
-      if (body.includes('First session attach only') === false) {
-        throw new Error('[build] attach toast must wait for the already-painted skip');
-      }
-      if (!body.includes('querySelectorAll("[data-inlay-inline-img]")')) {
-        throw new Error('[build] gone-check must read the photo layer, not the spinner');
-      }
-      {
-        const stripFrom = body.indexOf('const stripInlineMarkersIn = async (el) => {');
-        const stripTo = body.indexOf('// Diff strip only:', stripFrom);
-        const strip = stripFrom >= 0 && stripTo > stripFrom ? body.slice(stripFrom, stripTo) : '';
-        if (!strip.includes('querySelectorAll("[data-inlay-inline-img]")') || strip.includes('data-inlay-inline-shot') || strip.includes('x-inlay-msg-actions')) {
-          throw new Error('[build] keep-window evict must drop the photo layer only');
-        }
+      if (!body.includes('wantPhotos: nextPhotoIdx.has(idx)') || !body.includes('evictPhotosIn')) {
+        throw new Error('[build] photos outside ±1 must be evicted without tearing spinners');
       }
     }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
@@ -16012,11 +15517,8 @@ const loadVendorUi = (): string => {
       const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
       const to = out.indexOf('async function openSettingsTab(tab) {', from);
       const body = from >= 0 && to > from ? out.slice(from, to) : '';
-      const headAt = body.indexOf('inline.head.first');
-      const laterAt = body.indexOf('await Promise.all(prefetchIdxs.map', headAt);
-      const injectAt = body.indexOf('await injectChatInlineImages(els[paintIdx]');
-      if (headAt < 0 || laterAt < 0 || injectAt < 0 || !(injectAt < headAt && headAt < laterAt)) {
-        throw new Error('[build] head-first must inject DOM#0 before neighbour prefetch');
+      if (!body.includes('await injectChatInlineImages(els[idx], cards, idx === selIdx ? t._inlinePending : []')) {
+        throw new Error('[build] inline refresh must inject per spinner-window index');
       }
     }
     {
@@ -16133,31 +15635,20 @@ const loadVendorUi = (): string => {
     if (out.includes('pendingLeft || a.state === "done"')) {
       throw new Error('[build] poll must not force-refresh on every pending tick');
     }
-    if (!out.includes('strip=diff')) {
-      throw new Error('[build] inline keep must diff-strip only (no full-chat wipe)');
+    if (out.includes('inlineGoneFromSel') || out.includes('inline.keep.skip') || out.includes('stripInlineMarkersIn')) {
+      throw new Error('[build] the keep-window driver must stay gone');
     }
-    if (!out.includes('prefetchInlineRoleDomIndices') || !out.includes('Promise.all(prefetchIdxs.map')) {
-      throw new Error('[build] inline role prefetch must ask sel±4 in parallel');
-    }
-    assertOnce(out, 'VC.pickInlineRepaintIndices({ rows: paintRows, painted: prevPaintedKeys })', 'per-bubble repaint split landed');
-    // Both paint sites must consult the reuse set, or half the keep window still
-    // repaints and the flash is back for the neighbours.
-    if ((out.match(/reuseIdxs\.has\(/g) || []).length !== 2) {
-      throw new Error('[build] both paint sites must honour the per-bubble reuse set');
-    }
+    assertOnce(out, 'VC.inlineDomWindow(selIdx, els.length, radius)', 'spinner stamp is selected ± dashboard radius');
+    assertOnce(out, 'VC.shouldOverlayInlinePhoto({', 'photos overlay selected ±1 char only');
     assertOnce(out, 'y("info", "inline.inject.repaint",', 'repaint reason log landed');
     assertOnce(out, 'y("info", "inline.inject.hold",', 'empty-desired hold must keep live shots');
     assertOnce(out, 'confirmedEmpty: !!t._inlineConfirmedEmpty', 'force retag may confirm empty desired');
     assertOnce(out, 'VC.inlineRoleDisposition(opts.role,', 'inline role gate must distinguish unresolved from user');
     assertOnce(out, 'if (roleDisposition === "hold") return;', 'unresolved role must preserve mounted frames');
     assertOnce(out, 'forceStrip: roleDisposition === "deny"', 'verified wrong-role leftover shots must strip');
-    assertOnce(out, 'const heldKeepHashes = new Set(', 'unresolved kept bubbles must survive a selection pass');
     assertOnce(out, 'VC.roleForInlineBubble({', 'inline role must not trust drifted sel.role');
-    assertOnce(out, 'paintPlan.cards = VC.cardsForInlineBubble({', 'user bubbles must drop char cards');
-    assertOnce(out, 'VC.liveBubbleHash({', 'keep identity must prefer live DOM hash');
-    assertOnce(out, 'apiText: w(hit?.text || "")', 'overlap check needs matched API text');
+    assertOnce(out, 'cards = VC.cardsForInlineBubble({', 'user bubbles must drop char cards');
     assertOnce(out, 't._inlineConfirmedEmpty = !0', 'force retag sets confirmed-empty before inject');
-    assertOnce(out, 'VC.inlinePaintKeyHasCards(key)', 'empty paint keys must not be reused');
     {
       const from = out.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
       const to = out.indexOf('async function refreshSelectedInlineImages(force) {', from);
@@ -16165,8 +15656,12 @@ const loadVendorUi = (): string => {
       if (!body) throw new Error('[build] injectChatInlineImages body not found');
       // Placing a marker must never be conditional on the bytes existing — that
       // is what made a chat hop paint chips only and wait for a retry.
-      if (body.includes('nxWatchInlineShots') && body.indexOf('nxWatchInlineShots') < body.indexOf('const tPlace')) {
-        throw new Error('[build] markers must be placed before the subscription is registered');
+      if (!body.includes('if (skipOk || markersReady)')) {
+        throw new Error('[build] matching markers must skip rebuild and fill photos in place');
+      }
+      const placeWatch = body.lastIndexOf('if (wantPhotos) nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc)');
+      if (placeWatch < 0 || placeWatch < body.indexOf('const tPlace')) {
+        throw new Error('[build] the place path must register the subscription after markers exist');
       }
       if (!body.includes('nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc)')) {
         throw new Error('[build] cards without bytes must be filled by subscription, not a bake loop');
@@ -16177,7 +15672,7 @@ const loadVendorUi = (): string => {
       if (!body.includes('VC.canSkipInlineInject({')) {
         throw new Error('[build] inject skip must go through canSkipInlineInject');
       }
-      if (!body.includes('awaitingCount: awaiting')) {
+      if (!body.includes('awaitingCount: wantPhotos ? awaiting')) {
         throw new Error('[build] inject skip must count cells a live subscription owns');
       }
       if (!body.includes('querySelectorAll("[data-inlay-inline-img]")') || body.includes('spin.setStyleAttribute("display:none")')) {
@@ -16234,24 +15729,19 @@ const loadVendorUi = (): string => {
     }
     assertOnce(out, 't._inlinePlaceCache = null;', 'a chat switch must drop paragraph handles for the old DOM');
     assertOnce(out, 'nxDropInlineSubs(lockKey);\n    const N = globalThis.__INLAY_NATIVE__;', 'a re-registered watcher must replace the old one');
-    // Two checks: after the selected bubble, and inside the neighbour loop.
-    if ((out.match(/if \(stale\(\)\) \{/g) || []).length !== 2) {
-      throw new Error('[build] a superseded pass must stop after the head and between neighbours');
+    {
+      const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
+      const to = out.indexOf('async function openSettingsTab(tab) {', from);
+      const body = from >= 0 && to > from ? out.slice(from, to) : '';
+      if ((body.match(/if \(stale\(\)\) return;/g) || []).length < 2) {
+        throw new Error('[build] a superseded pass must stop between spinner-window bubbles');
+      }
+      if (!body.includes('hideAttachToast({ done: 1 })')) {
+        throw new Error('[build] a finished pass must hide the attach toast');
+      }
     }
-    // Deferring the ±1 window mid-scroll left it blank for good: settle only
-    // re-enters the pass when the selected index changes, and after a scroll that
-    // ends on the same bubble the cheap keep skip matches and returns.
     if (out.includes('t._scrollPhaseBus.pendingSettle') && out.includes('inline.paint.defer')) {
       throw new Error('[build] neighbours must not be deferred to a settle pass that never runs');
-    }
-    // Abandoning a pass still has to record what it painted, or the next pass
-    // repaints a correct bubble and the progress toast is never hidden.
-    assertOnce(out, 'const commitPaint = () => {', 'painted-key commit must be one exit-path helper');
-    if ((out.match(/commitPaint\(\);/g) || []).length !== 2) {
-      throw new Error('[build] both the superseded and the finished exit must commit painted keys');
-    }
-    if (out.includes('superseded after head`);\n        return;')) {
-      throw new Error('[build] a superseded pass must commit painted keys before returning');
     }
     {
       // One scan, two consumers. Two separate walks were ~4 IPC round-trips per
@@ -16282,10 +15772,10 @@ const loadVendorUi = (): string => {
         throw new Error('[build] a shifted chip bar must be reindexed in place');
       }
     }
-    if (!out.includes('inlineGoneFromSel') || !out.includes('refreshSelectedInlineImages(!0)')) {
-      throw new Error('[build] missing re-inject when inline markers vanished from live DOM');
+    if (!out.includes('evictPhotosIn') || !out.includes('refreshSelectedInlineImages(!0)')) {
+      throw new Error('[build] missing photo evict / inline refresh');
     }
-    if (!out.includes('wantActions') || !out.includes('prependBar') || out.includes('insertAdjacentHTML("afterbegin", barHtml)')) {
+    if (!out.includes('prependBar') || out.includes('insertAdjacentHTML("afterbegin", barHtml)')) {
       throw new Error('[build] msg-action chips must H+prepend onto hosts like inline shots');
     }
     if (out.includes('await msgEl.prepend(wrap)')) {
@@ -16294,8 +15784,11 @@ const loadVendorUi = (): string => {
     if (!out.includes('isInlayPaintHost') || !out.includes('canMountMsgActionOnParent') || !out.includes('msgActionMountKind') || !out.includes('isMessageBodyHostTag')) {
       throw new Error('[build] msg-action chips must stay on body hosts and skip card chrome');
     }
-    if (!out.includes('elStillMounted') || !out.includes('paintIdx')) {
-      throw new Error('[build] missing remount live-el check / nearest-char paintIdx');
+    if (!out.includes('nxPatchInlinePhotoByCardId') || !out.includes('shouldOverlayInlinePhoto')) {
+      throw new Error('[build] missing card-id photo patch / ±1 char overlay');
+    }
+    if (out.includes('[data-inlay-inline-shot=""')) {
+      throw new Error('[build] card-id selector quotes were eaten by the enclosing template');
     }
     if (out.includes('refreshSelectedInlineImages(source === "scroll")')) {
       throw new Error('[build] scroll inline must not force-refresh (cheap keep skip)');
@@ -16332,8 +15825,8 @@ const loadVendorUi = (): string => {
     if (!out.includes('_paintStatusKey') || !out.includes('_seFp') || !out.includes('_deTextCache')) {
       throw new Error('[build] missing same-feel skip caches (status/Se/De)');
     }
-    if (!out.includes('await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), await refreshSelectedInlineImages(!0)')) {
-      throw new Error('[build] tag save-reroll must refresh inline images after gallery');
+    if (!out.includes('await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), await nxPatchInlinePhotoByCardId(')) {
+      throw new Error('[build] tag save-reroll must patch the overlay photo after gallery');
     }
     if (out.includes('rerollMessageImagesLive(A, { report })')) {
       throw new Error('[build] chip regen must refresh inline images per shot');

@@ -765,6 +765,39 @@ export function retainHeldInlineKeepIndices(opts: {
 /** Max char bubbles kept above/below selection when inline skips user roles. */
 export const INLINE_KEEP_MAX_PER_SIDE = 4;
 
+/** Dashboard inline radius: spinner stamp window. Photos use 1. */
+export function clampInlineDomRadius(value: unknown): number {
+  const n = Math.round(finiteNumber(value, 4));
+  if (!Number.isFinite(n) || n <= 0) return 4;
+  return Math.max(3, Math.min(20, n));
+}
+
+/** Inclusive DOM indices around selection. Never walks the whole chat. */
+export function inlineDomWindow(selIdx: unknown, length: unknown, radius: unknown): number[] {
+  const sel = Math.floor(Number(selIdx));
+  const len = Math.floor(Number(length));
+  const r = Math.max(0, Math.floor(Number(radius)));
+  if (!Number.isInteger(sel) || !Number.isInteger(len) || sel < 0 || len <= 0 || sel >= len) return [];
+  const out: number[] = [];
+  const lo = Math.max(0, sel - r);
+  const hi = Math.min(len - 1, sel + r);
+  for (let i = lo; i <= hi; i += 1) out.push(i);
+  return out;
+}
+
+/** Photos sit on selected ±1, and only when that bubble is a char turn. */
+export function shouldOverlayInlinePhoto(opts: {
+  idx?: unknown;
+  selIdx?: unknown;
+  length?: unknown;
+  role?: unknown;
+} = {}): boolean {
+  const idx = Math.floor(Number(opts.idx));
+  if (!Number.isInteger(idx) || idx < 0) return false;
+  if (!inlineDomWindow(opts.selIdx, opts.length, 1).includes(idx)) return false;
+  return isCharMessageRole(typeof opts.role === 'string' ? opts.role : String(opts.role || ''));
+}
+
 /** Selected bubble plus this many DOM slots each side — 5 asks when the chat is long enough. */
 export const INLINE_ROLE_PREFETCH_RADIUS = 4;
 
@@ -3538,7 +3571,7 @@ export function inlinePlaceholderSrc(input: InlinePlaceholderInput | null | unde
   const { width, height } = inlinePlaceholderSize(input);
   const cx = Math.round(width / 2);
   const cy = Math.round(height / 2);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#7c6cff" fill-opacity=".08"/><g transform="translate(${cx} ${cy})"><circle r="22" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="6"/><circle r="22" fill="none" stroke="#c4b5fd" stroke-width="6" stroke-linecap="round" stroke-dasharray="36 104"><animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur=".75s" repeatCount="indefinite"/></circle></g></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#7c6cff" fill-opacity=".08"/><g transform="translate(${cx} ${cy})"><circle r="22" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="6"/><circle r="22" fill="none" stroke="#c4b5fd" stroke-width="6" stroke-linecap="round" stroke-dasharray="36 104"/></g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 

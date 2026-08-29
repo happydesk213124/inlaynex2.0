@@ -108,6 +108,9 @@ import {
   resolveInlinePaintCards,
   mergeSessionGallery,
   INLINE_KEEP_MAX_PER_SIDE,
+  clampInlineDomRadius,
+  inlineDomWindow,
+  shouldOverlayInlinePhoto,
   desiredInlinePlacements,
   runBoundedPool,
   canSkipInlineInject,
@@ -347,6 +350,28 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   // duplicate plain "커피를 마셨다" still gets line-3 marker (not string search of first)
   const stripped = stripInlayInlineHtml(out);
   assert.equal(htmlToPlainLn(stripped), htmlToPlainLn(rich));
+});
+
+test("inlinePlaceholderSrc is a still ring, not a spinning SVG", () => {
+  const src = inlinePlaceholderSrc({ aspect: "portrait" });
+  assert.doesNotMatch(decodeURIComponent(src), /animateTransform/);
+  assert.match(decodeURIComponent(src), /circle/);
+});
+
+test("inlineDomWindow stays around the selection and never walks the chat", () => {
+  assert.equal(clampInlineDomRadius(4), 4);
+  assert.equal(clampInlineDomRadius(99), 20);
+  assert.deepEqual(inlineDomWindow(10, 30, 4), [6, 7, 8, 9, 10, 11, 12, 13, 14]);
+  assert.deepEqual(inlineDomWindow(0, 3, 4), [0, 1, 2]);
+  assert.deepEqual(inlineDomWindow(5, 6, 1), [4, 5]);
+});
+
+test("shouldOverlayInlinePhoto is selected ±1 char only", () => {
+  assert.equal(shouldOverlayInlinePhoto({ idx: 5, selIdx: 5, length: 20, role: "char" }), true);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 4, selIdx: 5, length: 20, role: "assistant" }), true);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 6, selIdx: 5, length: 20, role: "char" }), true);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 6, selIdx: 5, length: 20, role: "user" }), false);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 7, selIdx: 5, length: 20, role: "char" }), false);
 });
 
 test("inlinePlaceholderSize follows the first-tagger aspect aliases", () => {

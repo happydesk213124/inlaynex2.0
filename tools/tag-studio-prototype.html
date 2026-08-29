@@ -213,6 +213,22 @@
     box-shadow: 0 0 0 4px rgba(183,164,255,.28);
     cursor: grab; touch-action: none; white-space: nowrap;
     pointer-events: auto;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -webkit-user-drag: none;
+    z-index: 4;
+  }
+  .dot::after {
+    content: attr(data-label);
+    pointer-events: none;
+    user-select: none;
+  }
+  .dot:active { cursor: grabbing; }
+  body.is-dragging, body.is-dragging * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    cursor: grabbing !important;
   }
   .dots.hide { display: none; }
   .foldbar {
@@ -309,9 +325,27 @@
 
   .foot .mobset { display: none; }
 
-  .stepper { display: flex; align-items: center; gap: 5px; }
-  .stepper input { flex: 1; min-width: 0; height: 32px; }
-  .stepper .btn { height: 32px; padding: 0 8px; flex: 0 0 auto; }
+  .optstack { display: flex; flex-direction: column; gap: 6px; }
+  .optbar { display: flex; align-items: stretch; gap: 6px; }
+  .optcombo { display: flex; align-items: stretch; flex: 1; min-width: 0; }
+  .optstack .optnote { width: 100%; height: 36px; }
+  .optcombo input {
+    flex: 1; min-width: 0; height: 36px;
+    border-radius: 9px 0 0 9px; border-right: 0;
+  }
+  .optcaret { position: relative; width: 36px; flex: 0 0 36px; }
+  .optcaret span {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    border: 1px solid var(--line); border-left: 0;
+    border-radius: 0 9px 9px 0; background: #0e1017; color: var(--ink);
+    pointer-events: none; font-weight: 700;
+  }
+  .optcaret select {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    width: 100%; height: 100%; margin: 0; padding: 0; border: 0;
+  }
+  .optbar .btn { height: 36px; }
 
   .spinveil {
     position: absolute; inset: 0; z-index: 9;
@@ -541,30 +575,27 @@ const ROSTER = [
   {
     id: "bomin", name: "보민이", gender: "girl",
     appearance: "long silver hair, blue eyes, slender, 19 years old",
-    looks: [{ id: "", name: "" }, { id: "l1", name: "기본 외형", tags: "long silver hair, blue eyes, slender, 19 years old" }, { id: "l2", name: "머리 묶음", tags: "silver ponytail, blue eyes, slender" }],
     costumes: [
-      { name: "", attire: "" },
-      { name: "교복", attire: "school uniform, blazer, pleated skirt, blue tie" },
-      { name: "수영복", attire: "white bikini, sheer shirt" },
+      { name: "", attire: "", note: "" },
+      { name: "교복", attire: "school uniform, blazer, pleated skirt, blue tie", note: "등교" },
+      { name: "수영복", attire: "white bikini, sheer shirt", note: "수영장" },
     ],
   },
   {
     id: "taeyang", name: "태양", gender: "boy",
     appearance: "short black hair, amber eyes, tall, 24 years old",
-    looks: [{ id: "", name: "" }, { id: "l1", name: "기본 외형", tags: "short black hair, amber eyes, tall, 24 years old" }],
     costumes: [
-      { name: "", attire: "" },
-      { name: "코트", attire: "long black coat, gloves" },
-      { name: "캐주얼", attire: "hoodie, jeans" },
+      { name: "", attire: "", note: "" },
+      { name: "코트", attire: "long black coat, gloves", note: "외출" },
+      { name: "캐주얼", attire: "hoodie, jeans", note: "" },
     ],
   },
   {
     id: "byeol", name: "별이", gender: "girl",
     appearance: "wavy brown hair, green eyes, petite",
-    looks: [{ id: "", name: "" }, { id: "l1", name: "기본 외형", tags: "wavy brown hair, green eyes, petite" }],
     costumes: [
-      { name: "", attire: "" },
-      { name: "기본", attire: "knit sweater, skirt" },
+      { name: "", attire: "", note: "" },
+      { name: "니트", attire: "knit sweater, skirt", note: "" },
     ],
   },
 ];
@@ -643,6 +674,7 @@ const state = {
   showPeek: false,
   loop: null,
   selChar: "",
+  dragging: false,
 };
 
 /* ══ 유틸 ══════════════════════════════════════════════════ */
@@ -733,8 +765,12 @@ function loadSample(key) {
   state.chars = {};
   s.chars.forEach((ch, i) => {
     const id = nextId("c");
+    const rr = roster(ch.rosterId);
     state.chars[id] = {
       rosterId: ch.rosterId, lookId: "", costume: ch.costume,
+      charName: rr?.name || "",
+      costumeName: ch.costume || "",
+      costumeTags: rr?.costumes?.find((x) => x.name === ch.costume)?.attire || "",
       tags: ch.tags, post: ch.post, uc: ch.uc,
       x: ch.x, y: ch.y, auto: ch.auto, lock: ch.lock,
     };
@@ -811,14 +847,23 @@ function sec(id, head, bodyHtml) {
   </section>`;
 }
 
-function stepper(kind, name, placeholder) {
-  return `<div class="stepper">
-    <button class="btn sm" data-act="${kind}Prev" type="button">◀</button>
-    <input type="text" ${kind === "style" ? 'data-m="presetName"' : 'data-l="presetName"'} value="${esc(name)}" placeholder="${esc(placeholder)}" />
-    <button class="btn sm" data-act="${kind}Next" type="button">▶</button>
-    <button class="btn sm" data-act="${kind}Save" type="button">저장</button>
-    <button class="btn sm warn" data-act="${kind}Del" type="button">삭제</button>
+function optionBar({ nameAttr, nameValue, placeholder, selectAttr, options, saveAct, delAct, extra = "", noteAttr = "", noteValue = "", notePlaceholder = "언제 쓸지" }) {
+  return `<div class="optstack">
+    <div class="optbar">
+      <div class="optcombo">
+        <input type="text" ${nameAttr} value="${esc(nameValue)}" placeholder="${esc(placeholder)}" />
+        <div class="optcaret"><span>▾</span><select ${selectAttr}>${options}</select></div>
+      </div>
+      <button class="btn sm" data-act="${saveAct}" type="button">저장</button>
+      <button class="btn sm warn" data-act="${delAct}" type="button">삭제</button>
+      ${extra}
+    </div>
+    ${noteAttr ? `<input class="optnote" type="text" ${noteAttr} value="${esc(noteValue)}" placeholder="${esc(notePlaceholder)}" />` : ""}
   </div>`;
+}
+
+function optAdd(listHtml) {
+  return `<option value="__add__">＋ 추가</option>${listHtml}`;
 }
 
 function panelMain() {
@@ -834,7 +879,16 @@ function panelMain() {
     sec("preset", `<span class="name">선행 프리셋</span>
       <span class="grow"></span>
       <button class="btn sm ${m.autoPerson ? "on" : ""}" data-act="autoPerson" type="button">인원수 자동넣기 ${m.autoPerson ? "켬" : "끔"}</button>`,
-      `${stepper("style", m.presetName, "프리셋 이름")}
+      `${optionBar({
+        nameAttr: 'data-m="presetName"',
+        nameValue: m.presetName,
+        placeholder: "프리셋 이름",
+        selectAttr: 'data-opt="style"',
+        options: optAdd(namedPresets(PRESETS).map((p) =>
+          `<option value="${esc(p.id)}"${p.id === m.presetId ? " selected" : ""}>${esc(p.name)}</option>`).join("")),
+        saveAct: "styleSave",
+        delAct: "styleDel",
+      })}
       <div class="seg">
         <button class="${negPane ? "" : "on"}" data-act="presetPos" type="button">선행 프리셋</button>
         <button class="${negPane ? "on" : ""}" data-act="presetNeg" type="button">네거티브</button>
@@ -904,7 +958,16 @@ function panelLlm() {
   return [
     `<div class="sec"><div class="h" style="cursor:default"><span class="name">LLM 명령 프리셋</span></div>
     <div class="c">
-      ${stepper("llm", l.presetName, "명령 프리셋 이름")}
+      ${optionBar({
+        nameAttr: 'data-l="presetName"',
+        nameValue: l.presetName,
+        placeholder: "명령 프리셋 이름",
+        selectAttr: 'data-opt="llm"',
+        options: optAdd(namedPresets(LLM_PRESETS).map((p) =>
+          `<option value="${esc(p.id)}"${p.id === l.presetId ? " selected" : ""}>${esc(p.name)}</option>`).join("")),
+        saveAct: "llmSave",
+        delAct: "llmDel",
+      })}
       <label class="k">명령어
         <textarea class="t big" data-l="cmd" placeholder="예: 옷만 교복으로 바꾸고 구도는 그대로.">${esc(l.cmd)}</textarea>
       </label>
@@ -924,20 +987,26 @@ function panelChar(tabId) {
   if (!c) return `<p class="hint">없는 칸입니다.</p>`;
   const tab = state.tabs.find((t) => t.id === tabId);
   const r = roster(c.rosterId);
-  const looks = r?.looks?.length ? r.looks : [{ id: "", name: "" }];
-  const costumes = r?.costumes?.length ? r.costumes : [{ name: "", attire: "" }];
+  const costumes = r?.costumes?.filter((x) => x.name) || [];
   const cosIdx = Math.max(0, costumes.findIndex((x) => x.name === c.costume));
+  const costume = costumes[cosIdx] || { name: c.costumeName || "", attire: c.costumeTags || "", note: c.costumeNote || "" };
+  if (c.costumeTags == null) c.costumeTags = costume.attire || "";
+  if (c.costumeName == null) c.costumeName = costume.name || "";
+  if (c.costumeNote == null) c.costumeNote = costume.note || "";
   return [
-    `<label class="k">캐릭터
-      <select data-c="rosterId" data-tab="${tabId}">${opts(ROSTER.map((x) => [x.id, x.name]), c.rosterId)}</select>
-    </label>
-    <p class="hint">비우면 로스터에 안 묶고 이 칸 글자만 씁니다.</p>`,
+    optionBar({
+      nameAttr: `data-c="charName" data-tab="${tabId}"`,
+      nameValue: r?.name || c.charName || "",
+      placeholder: "캐릭터 이름",
+      selectAttr: `data-opt="char" data-tab="${tabId}"`,
+      options: optAdd(ROSTER.filter((x) => x.id).map((x) =>
+        `<option value="${esc(x.id)}"${x.id === c.rosterId ? " selected" : ""}>${esc(x.name)}</option>`).join("")),
+      saveAct: "charSave",
+      delAct: "charDel",
+    }),
 
-    sec(`ap-${tabId}`, `<span class="name">${esc(tab.label)}</span>
-      <span class="grow"><select data-c="lookId" data-tab="${tabId}">${opts(looks.map((x) => [x.id, x.name]), c.lookId)}</select></span>`,
-      `<label class="k">외형 태그
-        <textarea class="t big" data-c="tags" data-tab="${tabId}" placeholder="${esc(r?.appearance || "1girl, long hair, blue eyes …")}">${esc(c.tags)}</textarea>
-      </label>`),
+    sec(`ap-${tabId}`, `<span class="name">${esc(tab.label)}</span>`,
+      `<textarea class="t big" data-c="tags" data-tab="${tabId}" placeholder="1girl, long hair, blue eyes …">${esc(c.tags)}</textarea>`),
 
     sec(`po-${tabId}`, `<span class="name">${esc(tab.label.split(" ")[0])} 후행</span>`,
       `<textarea class="t" data-c="post" data-tab="${tabId}" placeholder="이 샷에서만 더할 것. 표정·상태 같은 것.">${esc(c.post)}</textarea>
@@ -945,11 +1014,22 @@ function panelChar(tabId) {
         <textarea class="t" data-c="uc" data-tab="${tabId}" style="min-height:56px">${esc(c.uc)}</textarea>
        </label>`),
 
-    sec(`cs-${tabId}`, `<span class="name">Default ${cosIdx}</span>
-      <span class="grow"><select data-c="costume" data-tab="${tabId}">${opts(costumes.map((x) => [x.name, x.name]), c.costume)}</select></span>`,
-      `<label class="k">코스튬 태그
-        <textarea class="t" data-c="costumeTags" data-tab="${tabId}" placeholder="${esc(costumes[cosIdx]?.attire || "school uniform, blue tie …")}">${esc(costumes.find((x) => x.name === c.costume)?.attire || "")}</textarea>
-      </label>
+    sec(`cs-${tabId}`, `<span class="name">코스튬</span>`,
+      `${optionBar({
+        nameAttr: `data-c="costumeName" data-tab="${tabId}"`,
+        nameValue: c.costumeName || costume.name || "",
+        placeholder: "코스튬 이름",
+        selectAttr: `data-opt="costume" data-tab="${tabId}"`,
+        options: optAdd(costumes.map((x, i) =>
+          `<option value="${esc(x.name)}"${x.name === (c.costume || costume.name) ? " selected" : ""}>${esc(x.name)}[${i}]${x.note ? ` · ${esc(x.note)}` : ""}</option>`).join("")),
+        saveAct: "costumeSave",
+        delAct: "costumeDel",
+        noteAttr: `data-c="costumeNote" data-tab="${tabId}"`,
+        noteValue: c.costumeNote || costume.note || "",
+        notePlaceholder: "언제 쓸지 · 예: 수영장",
+        extra: `<button class="btn sm" data-act="costumeDefault" type="button">기본값으로</button>`,
+      })}
+      <textarea class="t" data-c="costumeTags" data-tab="${tabId}" placeholder="school uniform, blue tie …">${esc(c.costumeTags || costume.attire || "")}</textarea>
       <label class="chk"><input type="checkbox" data-c="lock" data-tab="${tabId}" ${c.lock ? "checked" : ""}/> 룩 고정</label>`),
 
     sec(`xy-${tabId}`, `<span class="name">좌표</span>`,
@@ -1006,7 +1086,7 @@ function renderDots() {
   host.classList.toggle("grid", manual);
   host.innerHTML = charList().map((c) => {
     const cls = ["dot", state.selChar === c.tab.id ? "sel" : ""].join(" ");
-    return `<div class="${cls}" data-dot="${c.tab.id}" style="left:${c.x * 100}%;top:${c.y * 100}%">C${c.i + 1}</div>`;
+    return `<div class="${cls}" role="button" aria-label="C${c.i + 1}" data-dot="${c.tab.id}" data-label="C${c.i + 1}" draggable="false" style="left:${c.x * 100}%;top:${c.y * 100}%"></div>`;
   }).join("");
   $("#coord").textContent = manual
     ? (() => {
@@ -1103,14 +1183,27 @@ function bindViewport() {
     applyView();
   }, { passive: false });
 
-  vp.addEventListener("pointerdown", (e) => {
+  document.addEventListener("selectstart", (e) => {
+    if (state.dragging || e.target.closest?.(".dot, #dots")) e.preventDefault();
+  });
+  document.addEventListener("dragstart", (e) => {
+    if (e.target.closest?.(".dot, #dots")) e.preventDefault();
+  });
+
+  // 점은 포인터 캡처로만 옮긴다. 글자 선택·파일 드롭용 drag는 쓰지 않는다.
+  $("#dots").addEventListener("pointerdown", (e) => {
     const dot = e.target.closest("[data-dot]");
-    if (dot) {
-      if (canDragCoords()) return dragDot(dot, e);
-      state.selChar = dot.dataset.dot;
-      renderDots();
-      return;
-    }
+    if (!dot) return;
+    e.preventDefault();
+    e.stopPropagation();
+    document.getSelection()?.removeAllRanges();
+    if (canDragCoords()) return dragDot(dot, e);
+    state.selChar = dot.dataset.dot;
+    renderDots();
+  });
+
+  vp.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("[data-dot]") || state.dragging) return;
     vp.setPointerCapture(e.pointerId);
     vp.classList.add("grabbing");
     const sx = e.clientX - view.x;
@@ -1147,33 +1240,45 @@ function dragDot(el, e) {
   const tabId = el.dataset.dot;
   const c = state.chars[tabId];
   if (!c) return;
+  const pid = e.pointerId;
   state.selChar = tabId;
+  state.dragging = true;
+  document.body.classList.add("is-dragging");
   e.stopPropagation();
   e.preventDefault();
-  try { el.setPointerCapture(e.pointerId); } catch (_) {}
+  document.getSelection()?.removeAllRanges();
+  try { el.setPointerCapture(pid); } catch (_) {}
   const host = $("#dots");
   const move = (ev) => {
+    if (ev.pointerId !== pid) return;
     ev.preventDefault();
     const r = host.getBoundingClientRect();
     if (!r.width || !r.height) return;
     c.x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
     c.y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
-    if (state.coordMode === "manual") {
-      c.x = Math.round(c.x * 10) / 10;
-      c.y = Math.round(c.y * 10) / 10;
-    }
     el.style.left = `${c.x * 100}%`;
     el.style.top = `${c.y * 100}%`;
     $("#coord").textContent = `${c.x.toFixed(2)}, ${c.y.toFixed(2)}`;
   };
-  const up = () => {
-    document.removeEventListener("pointermove", move);
-    document.removeEventListener("pointerup", up);
+  const up = (ev) => {
+    if (ev && ev.pointerId !== pid) return;
+    c.x = Math.round(c.x * 10) / 10;
+    c.y = Math.round(c.y * 10) / 10;
+    el.style.left = `${c.x * 100}%`;
+    el.style.top = `${c.y * 100}%`;
+    $("#coord").textContent = `${c.x.toFixed(2)}, ${c.y.toFixed(2)}`;
+    try { el.releasePointerCapture(pid); } catch (_) {}
+    el.removeEventListener("pointermove", move);
+    el.removeEventListener("pointerup", up);
+    el.removeEventListener("pointercancel", up);
+    document.body.classList.remove("is-dragging");
+    window.setTimeout(() => { state.dragging = false; }, 0);
     renderPeek();
     renderPanel();
   };
-  document.addEventListener("pointermove", move);
-  document.addEventListener("pointerup", up);
+  el.addEventListener("pointermove", move);
+  el.addEventListener("pointerup", up);
+  el.addEventListener("pointercancel", up);
   move(e);
 }
 
@@ -1296,13 +1401,9 @@ function askYesNo(msg) {
   });
 }
 
-function stepList(list, id, dir) {
-  const named = namedPresets(list);
-  if (!named.length) return null;
-  let i = named.findIndex((p) => p.id === id);
-  if (i < 0) i = dir > 0 ? -1 : 0;
-  i = (i + dir + named.length) % named.length;
-  return named[i];
+function activeCharId() {
+  if (state.active && state.chars[state.active]) return state.active;
+  return state.selChar;
 }
 
 function applyStylePreset(p) {
@@ -1382,6 +1483,178 @@ async function deleteLlmPreset() {
   renderPanel();
 }
 
+function saveChar() {
+  const id = activeCharId();
+  const c = state.chars[id];
+  if (!c) return;
+  const name = String(c.charName || roster(c.rosterId)?.name || "").trim();
+  if (!name) return toast("캐릭터 이름을 적어 주세요.");
+  const cur = roster(c.rosterId);
+  if (cur && cur.id) {
+    cur.name = name;
+    cur.appearance = c.tags;
+  } else {
+    const nid = nextId("r");
+    ROSTER.push({
+      id: nid, name, gender: "", appearance: c.tags,
+      costumes: [{ name: "", attire: "", note: "" }],
+    });
+    c.rosterId = nid;
+  }
+  c.charName = name;
+  relabel();
+  toast("캐릭터를 저장했습니다.");
+  renderAll();
+}
+
+async function deleteChar() {
+  const id = activeCharId();
+  const c = state.chars[id];
+  const cur = roster(c?.rosterId);
+  if (!cur?.id) return toast("고른 캐릭터가 없습니다.");
+  if (!await askYesNo(`「${cur.name}」 캐릭터를 삭제할까요?`)) return;
+  const i = ROSTER.findIndex((x) => x.id === cur.id);
+  if (i >= 0) ROSTER.splice(i, 1);
+  Object.values(state.chars).forEach((ch) => {
+    if (ch.rosterId === cur.id) {
+      ch.rosterId = "";
+      ch.charName = "";
+    }
+  });
+  relabel();
+  toast("캐릭터를 지웠습니다.");
+  renderAll();
+}
+
+function saveCostume() {
+  const id = activeCharId();
+  const c = state.chars[id];
+  const r = roster(c?.rosterId);
+  if (!r?.id) return toast("먼저 캐릭터를 저장하세요.");
+  const name = String(c.costumeName || "").trim();
+  if (!name) return toast("코스튬 이름을 적어 주세요.");
+  if (!Array.isArray(r.costumes)) r.costumes = [{ name: "", attire: "", note: "" }];
+  let slot = r.costumes.find((x) => x.name === c.costume);
+  if (!slot || !c.costume) {
+    slot = { name, attire: c.costumeTags || "", note: c.costumeNote || "" };
+    r.costumes.push(slot);
+  } else {
+    slot.name = name;
+    slot.attire = c.costumeTags || "";
+    slot.note = c.costumeNote || "";
+  }
+  c.costume = name;
+  c.costumeName = name;
+  toast("코스튬을 저장했습니다.");
+  renderPanel();
+  renderPeek();
+}
+
+async function deleteCostume() {
+  const id = activeCharId();
+  const c = state.chars[id];
+  const r = roster(c?.rosterId);
+  if (!r?.id || !c.costume) return toast("고른 코스튬이 없습니다.");
+  if (!await askYesNo(`「${c.costume}」 코스튬을 삭제할까요?`)) return;
+  r.costumes = (r.costumes || []).filter((x) => x.name !== c.costume);
+  if (!r.costumes.some((x) => x.name)) r.costumes.push({ name: "", attire: "", note: "" });
+  const next = r.costumes.find((x) => x.name);
+  c.costume = next?.name || "";
+  c.costumeName = next?.name || "";
+  c.costumeTags = next?.attire || "";
+  c.costumeNote = next?.note || "";
+  toast("코스튬을 지웠습니다.");
+  renderPanel();
+  renderPeek();
+}
+
+function costumeDefault() {
+  const id = activeCharId();
+  const c = state.chars[id];
+  const r = roster(c?.rosterId);
+  if (!r?.id || !c.costume) return toast("고른 코스튬이 없습니다.");
+  const i = (r.costumes || []).findIndex((x) => x.name === c.costume);
+  if (i < 0) return toast("고른 코스튬이 없습니다.");
+  const [slot] = r.costumes.splice(i, 1);
+  const empty = r.costumes.findIndex((x) => !x.name);
+  if (empty === 0) r.costumes.splice(1, 0, slot);
+  else r.costumes.unshift(slot);
+  toast("이 코스튬을 기본으로 두었습니다.");
+  renderPanel();
+}
+
+function onOptPick(kind, value, tabId) {
+  if (kind === "style") {
+    if (value === "__add__") {
+      state.main.presetId = "";
+      state.main.presetName = "";
+      renderPanel();
+      return;
+    }
+    const p = preset(value);
+    if (p) applyStylePreset(p);
+    return;
+  }
+  if (kind === "llm") {
+    if (value === "__add__") {
+      state.llm.presetId = "";
+      state.llm.presetName = "";
+      renderPanel();
+      return;
+    }
+    const p = llmPreset(value);
+    if (p) applyLlmPreset(p);
+    return;
+  }
+  if (kind === "char") {
+    const c = state.chars[tabId];
+    if (!c) return;
+    if (value === "__add__") {
+      c.rosterId = "";
+      c.charName = "";
+      c.tags = "";
+      c.costume = "";
+      c.costumeName = "";
+      c.costumeTags = "";
+      c.costumeNote = "";
+      relabel();
+      renderAll();
+      return;
+    }
+    const r = roster(value);
+    c.rosterId = value;
+    c.charName = r?.name || "";
+    c.costume = r?.costumes?.find((x) => x.name)?.name || "";
+    c.costumeName = c.costume;
+    c.costumeTags = r?.costumes?.find((x) => x.name === c.costume)?.attire || "";
+    c.costumeNote = r?.costumes?.find((x) => x.name === c.costume)?.note || "";
+    c.tags = r?.appearance || "";
+    relabel();
+    renderAll();
+    return;
+  }
+  if (kind === "costume") {
+    const c = state.chars[tabId];
+    const r = roster(c?.rosterId);
+    if (!c) return;
+    if (value === "__add__") {
+      c.costume = "";
+      c.costumeName = "";
+      c.costumeTags = "";
+      c.costumeNote = "";
+      renderPanel();
+      return;
+    }
+    const slot = r?.costumes?.find((x) => x.name === value);
+    c.costume = value;
+    c.costumeName = value;
+    c.costumeTags = slot?.attire || "";
+    c.costumeNote = slot?.note || "";
+    renderPanel();
+    renderPeek();
+  }
+}
+
 function act(name) {
   const g = state.gen;
   switch (name) {
@@ -1418,31 +1691,16 @@ function act(name) {
     case "seedLock": g.seedLock = !g.seedLock; renderPanel(); break;
     case "presetPos": state.main.presetPane = "pos"; renderPanel(); break;
     case "presetNeg": state.main.presetPane = "neg"; renderPanel(); break;
-    case "stylePrev": {
-      const p = stepList(PRESETS, state.main.presetId, -1);
-      if (p) applyStylePreset(p);
-      break;
-    }
-    case "styleNext": {
-      const p = stepList(PRESETS, state.main.presetId, 1);
-      if (p) applyStylePreset(p);
-      break;
-    }
     case "styleSave": saveStylePreset(); break;
     case "styleDel": void deleteStylePreset(); break;
-    case "llmPrev": {
-      const p = stepList(LLM_PRESETS, state.llm.presetId, -1);
-      if (p) applyLlmPreset(p);
-      break;
-    }
-    case "llmNext": {
-      const p = stepList(LLM_PRESETS, state.llm.presetId, 1);
-      if (p) applyLlmPreset(p);
-      break;
-    }
     case "llmRun": toast("도화지라서 LLM은 안 붙습니다. 칸 구조만 보세요."); break;
     case "llmSave": saveLlmPreset(); break;
     case "llmDel": void deleteLlmPreset(); break;
+    case "charSave": saveChar(); break;
+    case "charDel": void deleteChar(); break;
+    case "costumeSave": saveCostume(); break;
+    case "costumeDel": void deleteCostume(); break;
+    case "costumeDefault": costumeDefault(); break;
   }
 }
 
@@ -1459,6 +1717,8 @@ function bindPanel() {
     }
     const a = e.target.closest("[data-act]");
     if (a) return act(a.dataset.act);
+    const opt = e.target.closest("[data-opt]");
+    if (opt && e.type === "click" && opt.tagName === "SELECT") return;
 
     const del = e.target.closest("[data-del]");
     if (del) {
@@ -1491,6 +1751,7 @@ function bindPanel() {
     }
     const dot = e.target.closest("[data-dot]");
     if (dot) {
+      if (state.dragging) return;
       state.selChar = dot.dataset.dot;
       state.active = dot.dataset.dot;
       renderAll();
@@ -1508,7 +1769,14 @@ function bindPanel() {
   });
 
   host.addEventListener("input", onEdit);
-  host.addEventListener("change", onEdit);
+  host.addEventListener("change", (e) => {
+    const opt = e.target.closest("[data-opt]");
+    if (opt) {
+      onOptPick(opt.dataset.opt, opt.value, opt.dataset.tab);
+      return;
+    }
+    onEdit(e);
+  });
 }
 
 function onEdit(e) {
@@ -1541,6 +1809,11 @@ function onEdit(e) {
       renderDots(); renderPanel(); renderPeek();
       return;
     }
+    if (k === "charName" || k === "costumeName" || k === "costumeTags" || k === "costumeNote") {
+      c[k] = el.value;
+      renderPeek();
+      return;
+    }
     if (k === "x" || k === "y") {
       c[k] = Math.min(1, Math.max(0, Number(el.value) || 0));
       renderDots(); renderPeek();
@@ -1569,7 +1842,6 @@ function onEdit(e) {
       renderPanel(); renderPeek();
       return;
     }
-    if (k === "costumeTags") { renderPeek(); return; }
     c[k] = el.value;
     renderPeek();
   }
@@ -1589,8 +1861,12 @@ function addCharTab(rosterId) {
   if (charList().length >= 6) return toast("캐릭터 칸은 6개까지");
   const id = nextId("c");
   const r = roster(rosterId);
+  const firstCos = r?.costumes?.find((x) => x.name);
   state.chars[id] = {
-    rosterId: rosterId || "", lookId: "", costume: "",
+    rosterId: rosterId || "", lookId: "", costume: firstCos?.name || "",
+    charName: r?.name || "",
+    costumeName: firstCos?.name || "",
+    costumeTags: firstCos?.attire || "",
     tags: r?.appearance || "", post: "", uc: "",
     x: 0.5, y: 0.5, auto: true, lock: false,
   };

@@ -1769,15 +1769,15 @@ function act(name) {
     case "settings": {
       $("#left").classList.remove("collapsed");
       syncLeftFold();
-      Object.keys(state.fold).forEach((k) => {
-        if (k === "gset" || k.startsWith("gs-")) state.fold[k] = false;
-      });
-      renderPanel();
-      const sec = $("[data-sec=gset], [data-sec^=gs-]");
-      if (sec) {
+      state.active = "main";
+      state.fold.gset = false;
+      renderAll();
+      window.requestAnimationFrame(() => {
+        const sec = $("[data-sec=gset]");
+        if (!sec) return;
         sec.classList.remove("fold");
-        sec.scrollIntoView({ block: "nearest" });
-      }
+        sec.scrollIntoView({ block: "center" });
+      });
       break;
     }
     case "autoPerson": state.main.autoPerson = !state.main.autoPerson; renderPanel(); renderPeek(); break;

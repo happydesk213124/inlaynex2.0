@@ -82,6 +82,8 @@ const MODULES = {
     'src/storage/stores.ts',
     'src/storage/device-store.ts',
   ],
+  // Needs the same store copy it encodes from, so the test can seed real bytes.
+  'image-urls': ['src/storage/image-urls.ts', 'src/storage/stores.ts'],
   'chat-chrome': 'src/services/chat-chrome.ts',
   'style-preset-io': 'src/domain/style-presets/io.ts',
   'composition-leaves': 'src/domain/composition/leaves.ts',

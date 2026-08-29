@@ -17,7 +17,7 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 | `resolveImageUrl` | `(cardOrId) => string` | Synchronous cache hit, else `""` |
 | `ensureImageUrl` | `(id) => Promise<string>` | Loads and caches |
 | `subscribeImageUrl` | `(ids: string[], cb: (id, url) => void) => () => void` | Fires per id as it becomes displayable; replays ids already cached. Caller **must** run the returned unsubscribe |
-| `warmImages` | `(ids: string[]) => Promise<void>` | Fire-and-forget prefetch |
+| `warmImages` | `(ids: string[]) => Promise<string[]>` | Prefetch. Queues onto the one shared encoder rather than encoding in parallel itself, so `prioritizeWarmFocus` / `pinImageUrls` genuinely decide who goes first. Resolves once every id has a URL **or has been given up on** — a missing image and an id evicted by `retainImageUrls` both settle |
 | `pinImageUrls` | `(ids: string[]) => void` | Pin sticky-window ids against data-URL LRU eviction; prioritizes their warm queue |
 | `warmProgress` | `() => { pending, active, done, total, pct, busy }` | Full background warm wave (viewer status) |
 | `warmFocusProgress` | `() => { pending, active, done, total, pct, busy }` | Selection-focus warm only — mint progress toast |
@@ -38,6 +38,11 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 > `onWarmProgress`. While the explorer panel is open, warm progress must still
 > reapply `src` on `.explorer-card img` (build patch); otherwise freshly generated
 > cards stay on the broken-image icon until a full panel remount.
+>
+> Every surface shares one encode budget, so an explorer folder full of cold
+> thumbs and the selected bubble's shots compete for the same slots. That is why
+> the inline paint calls `prioritizeWarmFocus` — it is the only thing that decides
+> which of them the user sees first.
 >
 > Style presets may carry optional `cfg_scale` / `cfg_rescale` (empty → NAI
 > model defaults). Per-preset vibe is a device-local upload like NAI vibe

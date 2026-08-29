@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.1';
+const PLUGIN_VERSION = '2.5.2';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -764,11 +764,20 @@ const VENDOR_CURATION_PANEL_PATCH =
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
         </div>
         <div class="card" style="margin-top:14px">
+          <strong>2.5.2</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>채팅 안 이미지가 훨씬 빨리 붙습니다. 말풍선 하나를 그릴 때 하던 조회를 크게 줄였습니다</li>
+            <li>글이 그대로인 말풍선은 자리 계산을 다시 하지 않고 기억해 둔 것을 씁니다. 스크롤하거나 답장이 끝난 뒤 다시 그릴 때가 특히 빨라집니다</li>
+            <li>보고 있는 말풍선의 이미지가 탐색기·뷰어 썸네일보다 먼저 만들어집니다. 2.5.1에서 이 우선순위가 듣지 않았습니다</li>
+            <li>스크롤을 멈춘 자리에서 위아래 말풍선 이미지가 안 채워지던 문제를 고쳤습니다</li>
+            <li>이미지 탐색 썸네일이 비어 있는 시간이 줄어듭니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
           <strong>2.5.1</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
             <li>채팅 안 이미지: 자리를 한 번에 다 잡고, 그림은 준비되는 것부터 그 칸에만 들어옵니다. 챗을 바꾼 뒤 여러 번 눌러야 나오던 문제가 사라집니다</li>
             <li>새 메시지가 와도 옆 말풍선이 다시 그려지지 않습니다. 깜빡임이 줄어듭니다</li>
-            <li>스크롤 중에는 보고 있는 말풍선만 먼저 그리고, 멈춘 뒤에 위아래를 채웁니다</li>
             <li>첫 로딩에서 말풍선 이미지가 뷰어 띠·마커보다 먼저 붙습니다</li>
             <li>챗을 바꿀 때 갤러리를 두 번 받던 것을 한 번으로 줄였습니다</li>
             <li>말풍선 한 개를 그릴 때 하던 중복 DOM 조회를 걷어냈습니다</li>
@@ -8332,6 +8341,15 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const mode = nxMsgAct();
     const hit = t._inlineHostScan;
     if (hit && hit.el === msgEl && hit.gen === gen && hit.mode === mode) return hit;
+    // Only legacy mounts on the DIV that wraps the content, so only legacy needs
+    // DIVs in the list. Every other mode drops them a few lines below in
+    // isMessageBodyHostTag — and a bubble carries far more DIV chrome than
+    // paragraphs, so asking for them spent four round-trips each to build an
+    // answer that was thrown away. This is most of the cost of a bubble paint.
+    const legacy = mode === "legacy";
+    const hostSel = legacy
+      ? "p,h1,h2,h3,h4,h5,h6,li,blockquote,div"
+      : "p,h1,h2,h3,h4,h5,h6,li,blockquote";
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     const unwrapSafe = async (arr) => {
       if (!arr) return [];
@@ -8347,7 +8365,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     };
     let hostsRaw = [];
     try {
-      hostsRaw = await unwrapSafe(await msgEl.querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"));
+      hostsRaw = await unwrapSafe(await msgEl.querySelectorAll(hostSel));
     } catch {
       hostsRaw = [];
     }
@@ -8360,7 +8378,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         name = "";
       }
       let nested = null;
-      if (name === "DIV") {
+      if (legacy && name === "DIV") {
         try {
           nested = typeof el.querySelector == "function"
             ? await el.querySelector("p,h1,h2,h3,h4,h5,h6,li,blockquote")
@@ -8404,6 +8422,56 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const scan = { el: msgEl, gen, mode, rows, raw: hostsRaw.length };
     t._inlineHostScan = scan;
     return scan;
+  }
+  /**
+   * Paragraph scans keyed by the bubble's content hash.
+   *
+   * The scan and the line matching depend only on the bubble's text, so a repaint
+   * of an unchanged bubble was recomputing an identical answer at a round-trip
+   * per paragraph — on every scroll hop, every \`force\` repaint after a reply, and
+   * every return to a bubble already on screen.
+   *
+   * Deliberately small: an entry holds live element handles, and keeping handles
+   * for bubbles that scrolled away is how a cache becomes a leak.
+   */
+  function nxPlaceCacheGet(key, msgEl) {
+    if (!(t._inlinePlaceCache instanceof Map)) return null;
+    const k = String(key || "");
+    const row = t._inlinePlaceCache.get(k);
+    if (!row) return null;
+    // Same text in two bubbles hashes the same, so the handle has to match too.
+    if (row.el !== msgEl || row.mode !== nxMsgAct()) {
+      t._inlinePlaceCache.delete(k);
+      return null;
+    }
+    return row;
+  }
+  function nxPlaceCacheSet(key, msgEl, row) {
+    if (!(t._inlinePlaceCache instanceof Map)) t._inlinePlaceCache = new Map();
+    const k = String(key || "");
+    if (!k) return;
+    t._inlinePlaceCache.delete(k);
+    t._inlinePlaceCache.set(k, { ...row, el: msgEl, mode: nxMsgAct() });
+    while (t._inlinePlaceCache.size > 12) {
+      t._inlinePlaceCache.delete(t._inlinePlaceCache.keys().next().value);
+    }
+  }
+  /**
+   * One round-trip: is a marker stamped with this bubble hash still mounted?
+   *
+   * A yes means Risu did not rebuild the bubble (our nodes would be gone) and the
+   * text is unchanged (a different text hashes to a different key), which is
+   * exactly the condition under which the cached handles are still live.
+   */
+  async function nxBubbleKeyIntact(msgEl, key) {
+    const k = String(key || "");
+    // The key reaches a selector, so only accept the hash shape it should have.
+    if (!k || !/^[A-Za-z0-9_-]+$/.test(k) || typeof msgEl?.querySelector != "function") return !1;
+    try {
+      return !!(await msgEl.querySelector(\`[data-inlay-inline-key="\${k}"]\`));
+    } catch {
+      return !1;
+    }
   }
   async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {
     if (!msgEl || t.backendSettings?.card?.inline_chat_images !== !0) return;
@@ -8585,27 +8653,46 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // paragraph. Timing each stage separately is the only way to tell a slow
       // scan apart from a slow data-URL insert — they look identical from here.
       const tStart = Date.now();
-      const html = String(await msgEl.getInnerHTML() || "");
-      const msHtml = Date.now() - tStart;
-      const cleaned = typeof VC.stripInlayInlineHtml == "function" ? VC.stripInlayInlineHtml(html) : html;
-      const plain = typeof VC.htmlToPlainLn == "function" ? VC.htmlToPlainLn(cleaned) : cleaned;
-      const messageLines = typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(plain) : [];
-      if (!messageLines.length) return;
-      const tScan = Date.now();
-      // Shared with injectChatMsgActions, which normally ran moments earlier on
-      // this same bubble. The text came back with the scan, so no second read.
-      const scan = await nxScanBubbleHosts(msgEl);
-      const hosts = [];
-      const hostTags = [];
-      const hostTexts = [];
-      for (const row of scan.rows) {
-        if (!(typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(row.text) : []).length) continue;
-        hosts.push(row.el);
-        hostTags.push(row.name || "DIV");
-        hostTexts.push(row.text);
+      let hosts = [];
+      let hostTags = [];
+      let hostTexts = [];
+      let messageLines = [];
+      let msHtml = 0;
+      let msScan = 0;
+      let rawCount = 0;
+      let cacheHit = !1;
+      const cached = nxPlaceCacheGet(lockKey, msgEl);
+      if (cached && await nxBubbleKeyIntact(msgEl, lockKey)) {
+        hosts = cached.hosts;
+        hostTags = cached.hostTags;
+        hostTexts = cached.hostTexts;
+        messageLines = cached.messageLines;
+        rawCount = Number(cached.rawCount) || 0;
+        cacheHit = !0;
+        msHtml = Date.now() - tStart;
       }
-      if (!hosts.length) return;
-      const msScan = Date.now() - tScan;
+      if (!cacheHit) {
+        const html = String(await msgEl.getInnerHTML() || "");
+        msHtml = Date.now() - tStart;
+        const cleaned = typeof VC.stripInlayInlineHtml == "function" ? VC.stripInlayInlineHtml(html) : html;
+        const plain = typeof VC.htmlToPlainLn == "function" ? VC.htmlToPlainLn(cleaned) : cleaned;
+        messageLines = typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(plain) : [];
+        if (!messageLines.length) return;
+        const tScan = Date.now();
+        // Shared with injectChatMsgActions, which normally ran moments earlier on
+        // this same bubble. The text came back with the scan, so no second read.
+        const scan = await nxScanBubbleHosts(msgEl);
+        for (const row of scan.rows) {
+          if (!(typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(row.text) : []).length) continue;
+          hosts.push(row.el);
+          hostTags.push(row.name || "DIV");
+          hostTexts.push(row.text);
+        }
+        if (!hosts.length) return;
+        rawCount = scan.raw;
+        msScan = Date.now() - tScan;
+        nxPlaceCacheSet(lockKey, msgEl, { hosts, hostTags, hostTexts, messageLines, rawCount });
+      }
       const byLine = new Map();
       for (const p of placements) {
         const line = typeof VC.clampShotLine == "function"
@@ -8660,7 +8747,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         return info;
       };
       const prependShot = async (host, hostIdx, shot) => {
-        const markerHtml = VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100);
+        // The hash goes onto the marker so the next paint can prove this bubble
+        // is untouched with one query instead of rescanning every paragraph.
+        const markerHtml = VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100, lockKey);
         if (!markerHtml || !host || typeof host.prepend != "function") return !1;
         try {
           const tmp = await H(doc, "div", { html: markerHtml });
@@ -8767,7 +8856,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       const msLeft = Date.now() - tLeft;
       y("info", "inline.inject", \`shots=\${placements.length}+enc\${encodeLater.length} placed=\${placed} watch=\${nxInlineSubIds(lockKey).size} pending=\${placements.filter((p) => p.pending).length}\`);
-      y("info", "inline.inject.ms", \`total=\${Date.now() - tStart} html=\${msHtml} scan=\${msScan}(hosts=\${hosts.length}/\${scan.raw}) place=\${msPlace} watch=\${msWatch} left=\${msLeft}\`);
+      y("info", "inline.inject.ms", \`total=\${Date.now() - tStart} html=\${msHtml} scan=\${cacheHit ? "cached" : msScan}(hosts=\${hosts.length}/\${rawCount}) place=\${msPlace} watch=\${msWatch} left=\${msLeft}\`);
       t._inlinePaintScale = scaleNow;
     } catch (err) {
       // A throw leaves the bubble half-painted; drop any watcher it registered so
@@ -9374,6 +9463,21 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         nextPaintedKeys[hash] = key;
         nextPaintedCounts[hash] = n;
       };
+      // Runs on every exit, not just the finished one. A pass abandoned by
+      // stale() has still painted the head bubble correctly, and dropping that
+      // record made the next pass repaint work that was already done — and left
+      // the progress toast up, because hiding it was past the return too.
+      let committed = !1;
+      const commitPaint = () => {
+        if (committed) return;
+        committed = !0;
+        t._inlinePaintedKeys = nextPaintedKeys;
+        t._inlinePaintedCounts = nextPaintedCounts;
+        // The paint is complete by construction: every linked card has a marker
+        // and every marker without bytes has a watcher. There is nothing to
+        // declare failed and nothing to schedule a retry for.
+        hideAttachToast({ done: 1 }).catch(() => {});
+      };
       const repaintSplit = typeof VC?.pickInlineRepaintIndices == "function"
         ? VC.pickInlineRepaintIndices({ rows: paintRows, painted: prevPaintedKeys })
         : { repaint: paintRows.map((row) => row.idx), skip: [] };
@@ -9414,6 +9518,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // selection wins outright.
       if (stale()) {
         y("info", "inline.pass.stale", \`DOM#\${selIdx} superseded after head\`);
+        commitPaint();
         return;
       }
       if (headFirst) {
@@ -9477,34 +9582,27 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
       } catch {
       }
-      // Mid-scroll the selection is still moving, so the neighbours would be
-      // painted for a bubble that is already off target. Let the scroll settle
-      // (the phase bus fires at 160ms) and paint them from the pass that follows.
-      const scrolling = !!(t._scrollPhaseBus && t._scrollPhaseBus.pendingSettle);
-      if (scrolling) {
-        y("info", "inline.paint.defer", \`DOM#\${selIdx} neighbours wait for scroll settle\`);
-      } else {
-        for (const row of neighborCardLists) {
-          if (reuseIdxs.has(row.idx)) continue;
-          if (stale()) {
-            y("info", "inline.pass.stale", \`DOM#\${selIdx} superseded mid-neighbours\`);
-            break;
-          }
-          await injectChatMsgActions(els[row.idx], row.cards, row.idx);
-          const planned = paintRows.find((r) => r.idx === row.idx);
-          await injectChatInlineImages(els[row.idx], row.cards, [], {
-            lockKey: planned?.hash || \`dom\${row.idx}\`
-          });
-          if (planned) await notePainted(row.idx, planned.hash, planned.key);
+      // Neighbours are painted in the same pass, mid-scroll included. Skipping
+      // them while the scroll was moving left them blank forever: settle only
+      // re-enters here when the selected index changes, and after a scroll that
+      // ends on the same bubble the cheap keep skip at the top of this function
+      // matches and returns. stale() below is what handles a moving selection —
+      // it abandons this pass the moment a newer one starts.
+      for (const row of neighborCardLists) {
+        if (reuseIdxs.has(row.idx)) continue;
+        if (stale()) {
+          y("info", "inline.pass.stale", \`DOM#\${selIdx} superseded mid-neighbours\`);
+          break;
         }
+        await injectChatMsgActions(els[row.idx], row.cards, row.idx);
+        const planned = paintRows.find((r) => r.idx === row.idx);
+        await injectChatInlineImages(els[row.idx], row.cards, [], {
+          lockKey: planned?.hash || \`dom\${row.idx}\`
+        });
+        if (planned) await notePainted(row.idx, planned.hash, planned.key);
       }
       y("info", "inline.pass.ms", \`total=\${Date.now() - tPass} pre=\${msPre} paint=\${Date.now() - tPaint} bubbles=\${paintRows.length - reuseIdxs.size}/\${paintRows.length} DOM#\${selIdx}\`);
-      t._inlinePaintedKeys = nextPaintedKeys;
-      t._inlinePaintedCounts = nextPaintedCounts;
-      // The paint is complete by construction: every linked card has a marker and
-      // every marker without bytes has a watcher. There is nothing to declare
-      // failed and nothing to schedule a retry for.
-      hideAttachToast({ done: 1 }).catch(() => {});
+      commitPaint();
       try {
         if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
       } catch {
@@ -11369,8 +11467,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.1",
-    body: "채팅 안 이미지가 자리를 먼저 잡고 준비되는 것부터 그 칸에 들어옵니다. 챗을 바꾼 뒤 여러 번 눌러야 나오던 문제가 사라졌습니다. 업데이트 내역 탭 참고."
+    title: "2.5.2",
+    body: "채팅 안 이미지가 훨씬 빨리 붙습니다. 글이 그대로인 말풍선은 자리 계산을 다시 하지 않고, 보고 있는 말풍선의 이미지가 썸네일보다 먼저 만들어집니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -12583,6 +12681,8 @@ const VENDOR_POINTER_SELECT_PATCH =
       t._inlineKeepHashList = [];
       t._inlinePaintedKeys = {};
       t._inlinePaintedCounts = {};
+      // Cached paragraph handles point at the outgoing chat's DOM.
+      t._inlinePlaceCache = null;
       await Da(0, newest, { source: "provisional", auto: 1 });
       return !0;
     }
@@ -15697,19 +15797,71 @@ const loadVendorUi = (): string => {
       if (!body.includes('t._inlineInjectLocks.get(lockKey)')) {
         throw new Error('[build] the inject lock must be per bubble');
       }
+      // The scan and the line matching depend only on the bubble text, which
+      // lockKey hashes. Recomputing them per repaint was a round-trip per
+      // paragraph on every scroll hop and every post-reply force repaint.
+      if (!body.includes('const cached = nxPlaceCacheGet(lockKey, msgEl);')
+        || !body.includes('await nxBubbleKeyIntact(msgEl, lockKey)')) {
+        throw new Error('[build] an unchanged bubble must reuse its cached paragraph scan');
+      }
+      if (!body.includes('nxPlaceCacheSet(lockKey, msgEl, { hosts, hostTags, hostTexts, messageLines, rawCount })')) {
+        throw new Error('[build] a fresh scan must be cached for the next repaint');
+      }
+      // Without the stamp the validation query can never match, so the cache
+      // would be written and never read — a silent no-op.
+      if (!body.includes('VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100, lockKey)')) {
+        throw new Error('[build] markers must carry the bubble hash the cache validates against');
+      }
+      // Reading the cache without proving the nodes survived would prepend into
+      // handles for a bubble Risu already rebuilt — images placed nowhere.
+      if (body.indexOf('await nxBubbleKeyIntact(msgEl, lockKey)') > body.indexOf('cacheHit = !0')) {
+        throw new Error('[build] the cached scan must be validated before it is used');
+      }
     }
+    assertOnce(out, 'async function nxBubbleKeyIntact(msgEl, key) {', 'the one round-trip cache probe landed');
+    // The tie between this selector and INLAY_INLINE_KEY_ATTR cannot be checked
+    // here — the marker HTML comes from our own bundle, not the vendor output
+    // `out` holds. tests/build-layout.test.mjs checks it against the composed file.
+    if (!out.includes('/^[A-Za-z0-9_-]+$/.test(k)')) {
+      throw new Error('[build] the bubble hash reaches a selector and must be shape-checked');
+    }
+    assertOnce(out, 't._inlinePlaceCache = null;', 'a chat switch must drop paragraph handles for the old DOM');
     assertOnce(out, 'nxDropInlineSubs(lockKey);\n    const N = globalThis.__INLAY_NATIVE__;', 'a re-registered watcher must replace the old one');
     // Two checks: after the selected bubble, and inside the neighbour loop.
     if ((out.match(/if \(stale\(\)\) \{/g) || []).length !== 2) {
       throw new Error('[build] a superseded pass must stop after the head and between neighbours');
     }
-    assertOnce(out, 'const scrolling = !!(t._scrollPhaseBus && t._scrollPhaseBus.pendingSettle);\n      if (scrolling) {', 'neighbours must wait for the scroll to settle');
+    // Deferring the ±1 window mid-scroll left it blank for good: settle only
+    // re-enters the pass when the selected index changes, and after a scroll that
+    // ends on the same bubble the cheap keep skip matches and returns.
+    if (out.includes('t._scrollPhaseBus.pendingSettle') && out.includes('inline.paint.defer')) {
+      throw new Error('[build] neighbours must not be deferred to a settle pass that never runs');
+    }
+    // Abandoning a pass still has to record what it painted, or the next pass
+    // repaints a correct bubble and the progress toast is never hidden.
+    assertOnce(out, 'const commitPaint = () => {', 'painted-key commit must be one exit-path helper');
+    if ((out.match(/commitPaint\(\);/g) || []).length !== 2) {
+      throw new Error('[build] both the superseded and the finished exit must commit painted keys');
+    }
+    if (out.includes('superseded after head`);\n        return;')) {
+      throw new Error('[build] a superseded pass must commit painted keys before returning');
+    }
     {
       // One scan, two consumers. Two separate walks were ~4 IPC round-trips per
       // paragraph each, on the same element list, moments apart.
-      const scans = (out.match(/querySelectorAll\("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"\)/g) || []).length;
+      const scans = (out.match(/querySelectorAll\(hostSel\)/g) || []).length;
       if (scans !== 1) {
         throw new Error(`[build] the bubble host scan must exist once, found ${scans}`);
+      }
+      // Only legacy mounts on DIVs. Everywhere else they are dropped by
+      // isMessageBodyHostTag a few lines later, after paying four round-trips
+      // each — and a bubble holds far more DIV chrome than paragraphs.
+      if (!out.includes('const legacy = mode === "legacy";')
+        || !out.includes('? "p,h1,h2,h3,h4,h5,h6,li,blockquote,div"\n      : "p,h1,h2,h3,h4,h5,h6,li,blockquote";')) {
+        throw new Error('[build] the host scan must only ask for DIVs in legacy mode');
+      }
+      if (!out.includes('if (legacy && name === "DIV") {')) {
+        throw new Error('[build] the nested-host probe must be legacy-only');
       }
       const from = out.indexOf('async function injectChatMsgActions(msgEl, cards, msgIndex) {');
       const early = out.indexOf('const earlyBars = await readBars();', from);

@@ -134,13 +134,24 @@ export async function publishImage(
 // ── background warming ──────────────────────────────────────────────────────
 
 /**
- * Two at a time: enough to hide latency behind the UI's own render work, low
+ * Four at a time: enough to hide latency behind the UI's own render work, low
  * enough that warming a large gallery never starves an in-flight generation.
+ *
+ * It was two while `warmImages` ran its own parallel chunks — effective
+ * concurrency was closer to six, unordered. Now that every encode goes through
+ * the one queue below, this number is the whole throughput budget.
  */
-const WARM_CONCURRENCY = 2;
+const WARM_CONCURRENCY = 4;
 
 const warmQueued = new Set<string>();
 const warmQueue: string[] = [];
+/**
+ * Callers waiting on a specific id. This is what makes one queue enough:
+ * `warmImages` used to bypass it and encode in its own parallel chunks, so
+ * `prioritizeWarmFocus` reordered a queue that the busiest caller never read
+ * and the selected bubble competed on equal terms with the explorer strip.
+ */
+const warmWaiters = new Map<string, Array<() => void>>();
 /**
  * Ids the current selection wants first.
  *
@@ -241,6 +252,45 @@ export function clearWarmFocus(): void {
   notifyWarm();
 }
 
+/**
+ * Releases everyone awaiting this id.
+ *
+ * Must run on every exit an id can take, not just a finished encode: an id with
+ * no bytes resolves to '' and never notifies a URL, and `pinImageUrls` /
+ * `retainImageUrls` evict queued ids outright. Missing either case leaves a
+ * `warmImages` caller awaiting forever.
+ */
+function settleWarm(id: string): void {
+  const waiters = warmWaiters.get(id);
+  if (!waiters) return;
+  warmWaiters.delete(id);
+  for (const done of waiters) {
+    try {
+      done();
+    } catch {
+      /* one waiter must not strand the rest */
+    }
+  }
+}
+
+/** Queues one id and resolves when it has been encoded, or given up on. */
+function warmOne(id: string): Promise<void> {
+  if (!id || getBlobUrl(id) !== undefined) return Promise.resolve();
+  const wait = new Promise<void>((resolve) => {
+    const waiters = warmWaiters.get(id);
+    if (waiters) waiters.push(resolve);
+    else warmWaiters.set(id, [resolve]);
+  });
+  if (!warmQueued.has(id)) {
+    warmQueued.add(id);
+    warmQueue.push(id);
+    warmWaveTotal += 1;
+    notifyWarm();
+    pumpWarm();
+  }
+  return wait;
+}
+
 function pumpWarm(): void {
   while (warmActive < WARM_CONCURRENCY && warmQueue.length) {
     const id = warmQueue.shift() as string;
@@ -251,6 +301,7 @@ function pumpWarm(): void {
       .finally(() => {
         warmActive -= 1;
         warmQueued.delete(id);
+        settleWarm(id);
         warmWaveDone += 1;
         if (warmFocus?.has(id)) warmFocus.delete(id);
         if (warmFocus && !warmFocus.size) warmFocus = null;
@@ -273,13 +324,7 @@ function pumpWarm(): void {
 }
 
 export function enqueueWarm(id: unknown): void {
-  const key = String(id || '');
-  if (!key || getBlobUrl(key) !== undefined || warmQueued.has(key)) return;
-  warmQueued.add(key);
-  warmQueue.push(key);
-  warmWaveTotal += 1;
-  notifyWarm();
-  pumpWarm();
+  void warmOne(String(id || ''));
 }
 
 /**
@@ -295,7 +340,10 @@ export function pinImageUrls(ids: unknown[] = []): void {
   const kept: string[] = [];
   for (const id of warmQueue) {
     if (pinned.has(id)) kept.push(id);
-    else warmQueued.delete(id);
+    else {
+      warmQueued.delete(id);
+      settleWarm(id);
+    }
   }
   warmQueue.length = 0;
   const front: string[] = [];
@@ -326,7 +374,9 @@ export function retainImageUrls(ids: unknown[] = []): void {
   retainBlobUrls(list);
   const keep = new Set(list);
   for (const id of warmQueue) {
-    if (!keep.has(id)) warmQueued.delete(id);
+    if (keep.has(id)) continue;
+    warmQueued.delete(id);
+    settleWarm(id);
   }
   const next = warmQueue.filter((id) => keep.has(id));
   warmQueue.length = 0;
@@ -339,39 +389,18 @@ export function dropImageUrl(id: unknown): void {
   dropBlobUrl(String(id || ''));
 }
 
-/** Warms a batch and returns the URLs that resolved. */
-export async function warmImages(ids: unknown[] = [], { concurrency = WARM_CONCURRENCY } = {}): Promise<string[]> {
+/**
+ * Warms a batch and returns the URLs that resolved.
+ *
+ * Queues through `warmOne` rather than encoding here. Encoding here was its own
+ * second encoder with its own slots, which is why the inline bubble's
+ * `prioritizeWarmFocus` had no effect on the explorer and viewer strips racing
+ * it — they all called this.
+ */
+export async function warmImages(ids: unknown[] = []): Promise<string[]> {
   const list = [...new Set((ids || []).map(String).filter(Boolean))];
-  const limit = Math.max(1, Number(concurrency) || WARM_CONCURRENCY);
   const need = list.filter((id) => getBlobUrl(id) === undefined);
-  if (need.length) {
-    warmWaveTotal += need.length;
-    notifyWarm();
-  }
-  for (let i = 0; i < need.length; i += limit) {
-    const chunk = need.slice(i, i + limit);
-    await Promise.all(
-      chunk.map((id) =>
-        ensureBlobUrl(id)
-          .catch(() => '')
-          .finally(() => {
-            warmWaveDone += 1;
-            if (warmFocus?.has(id)) warmFocus.delete(id);
-            if (warmFocus && !warmFocus.size) warmFocus = null;
-            if (warmQueue.length === 0 && warmActive === 0 && warmWaveDone >= warmWaveTotal) {
-              warmWaveTotal = 0;
-              warmWaveDone = 0;
-            }
-            notifyWarm();
-          }),
-      ),
-    );
-  }
-  if (warmQueue.length === 0 && warmActive === 0) {
-    warmWaveTotal = 0;
-    warmWaveDone = 0;
-    notifyWarm();
-  }
+  if (need.length) await Promise.all(need.map((id) => warmOne(id)));
   return list.map((id) => resolveImageUrl(id)).filter(Boolean);
 }
 

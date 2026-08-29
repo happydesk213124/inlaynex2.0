@@ -291,7 +291,7 @@ test('a shot without bytes gets its marker now and its image by subscription', (
 test('the bubble host scan is shared by chips and inline shots', () => {
   const bundle = read('dist', 'inlaynexus2.0.js');
   assert.equal(
-    (bundle.match(/querySelectorAll\("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"\)/g) || []).length,
+    (bundle.match(/querySelectorAll\(hostSel\)/g) || []).length,
     1,
     'the per-paragraph scan must exist once, not once per consumer',
   );
@@ -299,14 +299,69 @@ test('the bubble host scan is shared by chips and inline shots', () => {
   assert.equal((bundle.match(/await nxScanBubbleHosts\(msgEl\)/g) || []).length, 2);
 });
 
+test('only legacy pays to walk the bubble DIVs', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  // Non-legacy modes drop every DIV in isMessageBodyHostTag moments later, after
+  // spending four round-trips on each. A bubble holds far more DIV chrome than
+  // paragraphs, so asking for them was most of the cost of a paint.
+  assert.match(bundle, /const legacy = mode === "legacy";/);
+  assert.match(bundle, /\? "p,h1,h2,h3,h4,h5,h6,li,blockquote,div"/);
+  assert.match(bundle, /: "p,h1,h2,h3,h4,h5,h6,li,blockquote";/);
+  assert.match(bundle, /if \(legacy && name === "DIV"\)/);
+});
+
+test('an unchanged bubble reuses its paragraph scan instead of rewalking it', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  // The scan and the line matching depend only on the bubble text, and lockKey
+  // already hashes it. One query proves our marker (and therefore the bubble)
+  // survived; without that proof the cached handles could be detached nodes.
+  assert.match(bundle, /async function nxBubbleKeyIntact\(msgEl, key\)/);
+  assert.match(bundle, /const cached = nxPlaceCacheGet\(lockKey, msgEl\);/);
+  assert.match(bundle, /nxPlaceCacheSet\(lockKey, msgEl, \{ hosts, hostTags, hostTexts, messageLines, rawCount \}\)/);
+  // The stamp is what makes the probe answerable — without it the cache is
+  // written and never read.
+  assert.match(bundle, /markerBlockHtml\(shot, t\.backendSettings\?\.card\?\.inline_chat_scale_pct \?\? 100, lockKey\)/);
+  assert.ok(
+    bundle.indexOf('await nxBubbleKeyIntact(msgEl, lockKey)') < bundle.indexOf('cacheHit = !0'),
+    'the cached scan must be validated before it is used',
+  );
+  // Handles from the outgoing chat's DOM must not survive a switch.
+  assert.match(bundle, /t\._inlinePlaceCache = null;/);
+  // The probe's selector is hand-written in the UI patch while the marker's
+  // attribute comes from INLAY_INLINE_KEY_ATTR in the backend. They live in
+  // different halves of the file, so only the composed bundle can tie them —
+  // and if they drift the cache is written, never read, and nothing else
+  // notices. Two occurrences: the marker emit and the probe selector.
+  assert.ok(
+    (bundle.match(/data-inlay-inline-key/g) || []).length >= 2,
+    'the cache probe selector and the marker attribute must be the same name',
+  );
+});
+
 test('the inject lock is per bubble so neighbours do not serialize', () => {
   const bundle = read('dist', 'inlaynexus2.0.js');
   assert.doesNotMatch(bundle, /_inlineInjectBusy/);
   assert.doesNotMatch(bundle, /_inlineInjectQueued/);
   assert.match(bundle, /t\._inlineInjectLocks\.get\(lockKey\)/);
-  // Mid-scroll only the selected bubble is worth painting; the ±1 window is a
-  // convenience and would be aimed at a selection that already moved.
-  assert.match(bundle, /t\._scrollPhaseBus && t\._scrollPhaseBus\.pendingSettle/);
+});
+
+test('the neighbour window is painted in the same pass, mid-scroll included', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  // Deferring it to "the pass that follows" left it blank for good: settle only
+  // re-enters the pass when the selected index changes, and a scroll that ends on
+  // the same bubble hits the cheap keep skip and returns. stale() is what handles
+  // a moving selection — it abandons the pass as soon as a newer one starts.
+  assert.doesNotMatch(bundle, /inline\.paint\.defer/);
+  assert.equal((bundle.match(/if \(stale\(\)\) \{/g) || []).length, 2);
+});
+
+test('a superseded pass records what it painted and clears its toast', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  // Committing only on the finished path made the next pass repaint a bubble that
+  // was already correct, and left the progress toast up forever.
+  assert.match(bundle, /const commitPaint = \(\) => \{/);
+  assert.equal((bundle.match(/commitPaint\(\);/g) || []).length, 2);
+  assert.doesNotMatch(bundle, /superseded after head`\);\s*\n\s*return;/);
 });
 
 test('keep window and paint keys survive a DOM index shift', () => {

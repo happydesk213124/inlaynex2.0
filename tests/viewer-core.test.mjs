@@ -370,6 +370,22 @@ test("markerBlockHtml ready is image-only", () => {
   assert.doesNotMatch(blobReady, /data-inlay-inline-pending/);
 });
 
+test("markerBlockHtml stamps the bubble hash so a repaint can skip the scan", () => {
+  const shot = { line: 2, src: "data:image/png;base64,abc", shotIndex: 0, cardId: "c1" };
+  const pendingShot = { line: 2, src: "", shotIndex: 0, pending: true, cardId: "pending-0" };
+  // Absent by default: injectInlineImagesIntoHtml rebuilds the whole bubble and
+  // has no cached scan to validate.
+  assert.doesNotMatch(markerBlockHtml(shot), /data-inlay-inline-key/);
+  assert.match(markerBlockHtml(shot, 100, "h4a9"), /data-inlay-inline-key="h4a9"/);
+  assert.match(markerBlockHtml(pendingShot, 100, "h4a9"), /data-inlay-inline-key="h4a9"/);
+  // The stamp must not shield the marker from the strip that runs before hashing,
+  // or the bubble's own text would be read back with our blocks still in it.
+  assert.equal(
+    stripInlayInlineHtml(`<p>hello${markerBlockHtml(shot, 100, "h4a9")}world</p>`).replace(/\s/g, ""),
+    "<p>helloworld</p>",
+  );
+});
+
 test("injectInlineImagesIntoHtml hard-dedupes pending circles by line and cardId", () => {
   const html = "<p>첫 줄</p><p>둘째</p>";
   const out = injectInlineImagesIntoHtml(html, [

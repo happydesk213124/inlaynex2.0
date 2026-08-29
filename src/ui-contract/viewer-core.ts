@@ -2901,6 +2901,14 @@ export function stickySegmentForInlineChat(opts: {
 // ── beta: chat-bubble inline images at newline lines ──────────────────────
 
 const INLAY_INLINE_ATTR = 'data-inlay-inline-shot';
+/**
+ * Content hash of the bubble this marker was placed into.
+ *
+ * Lets a repaint prove in one bridge round-trip that the bubble was not rebuilt
+ * and its text did not change, which is the licence to reuse the cached
+ * paragraph scan instead of walking the tree again.
+ */
+export const INLAY_INLINE_KEY_ATTR = 'data-inlay-inline-key';
 
 const BLOCK_CLOSE_RE = /^<\/(?:p|div|li|blockquote|h[1-6]|tr)>$/i;
 const BR_RE = /^<br\s*\/?>$/i;
@@ -3528,9 +3536,14 @@ export function findElementIndexForLineWithFallback(
   return null;
 }
 
-export function markerBlockHtml(p: InlineImagePlacement, scalePct: unknown = 100): string {
+export function markerBlockHtml(
+  p: InlineImagePlacement,
+  scalePct: unknown = 100,
+  bubbleKey: unknown = '',
+): string {
   const shot = Number.isFinite(Number(p.shotIndex)) ? String(Math.floor(Number(p.shotIndex))) : '';
   const id = escapeHtmlAttr(String(p.cardId || (p.pending ? `pending-${shot || p.line}` : '') || shot || p.line || '0'));
+  const keyAttr = bubbleKey ? ` ${INLAY_INLINE_KEY_ATTR}="${escapeHtmlAttr(String(bubbleKey))}"` : '';
   // Centered block; <br> keeps Risu bubble spacing. Width cap is a bit looser than
   // height so landscape shots don't look tiny next to portrait/1:1 (those still
   // hit max-height first). Mobile narrow bubbles still shrink instead of clipping.
@@ -3544,7 +3557,7 @@ export function markerBlockHtml(p: InlineImagePlacement, scalePct: unknown = 100
     // empty, which is exactly what the subscription exists to avoid. No `src`
     // attribute at all — an empty one renders the broken-image icon.
     return (
-      `<div ${INLAY_INLINE_ATTR}="${id}" data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
+      `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
       + `<br><br><span data-inlay-inline-spin="1" style="display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:48px;padding:10px;border-radius:12px;background:rgba(124,108,255,.12);border:1px solid rgba(196,181,253,.35)">${spin}</span>`
       + `<img data-inlay-inline-img="1" alt="" style="display:none" loading="eager" decoding="async"><br><br>`
       + `</div>`
@@ -3553,7 +3566,7 @@ export function markerBlockHtml(p: InlineImagePlacement, scalePct: unknown = 100
   const imgStyle = inlineChatImgStyle(scalePct);
   const embed = htmlSafeImageSrc(p.src);
   return (
-    `<div ${INLAY_INLINE_ATTR}="${id}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
+    `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
     + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(embed)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
     + `</div>`
   );

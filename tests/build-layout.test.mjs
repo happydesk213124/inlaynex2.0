@@ -216,6 +216,15 @@ test('Oe() collect writes per-family NAI sampler and steps', () => {
   assert.match(body, /sampler_v4/);
 });
 
+test('ce() does not speculatively warm the viewer strip', () => {
+  const source = read('vite.config.ts');
+  assert.match(source, /VENDOR_GALLERY_CE_WARM_NEEDLE/);
+  assert.match(source, /List only — viewer \/ inline \/ overlay warm the shots they actually paint/);
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.match(bundle, /List only — viewer \/ inline \/ overlay warm the shots they actually paint/);
+  assert.doesNotMatch(bundle, /VC\.galleryForMessage\(t\.gallery, focus, 8\)/);
+});
+
 test('new chat/reply schedules a pointer-near message select', () => {
   const source = read('vite.config.ts');
   assert.match(source, /function schedulePointerSelect/);

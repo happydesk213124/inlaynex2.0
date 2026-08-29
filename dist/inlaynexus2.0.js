@@ -1501,12 +1501,7 @@ async function gn() {
         } catch {
         }
       }
-      const focus = typeof VC?.galleryFocusMessage == "function" ? VC.galleryFocusMessage(t.selectedMessage, t.lastImagedMessage, t.gallery) : t.selectedMessage;
-      const ordered = typeof VC?.galleryForMessage == "function" ? VC.galleryForMessage(t.gallery, focus, 8) : (t.gallery || []).slice(0, 8);
-      const idx = Number(t.galleryUi?.index) || 0;
-      const ids = VC?.visibleGalleryImageIds ? VC.visibleGalleryImageIds(ordered, idx, 1, Math.max(8, ordered.length || 0)) : ordered.map((c) => c?.id).filter(Boolean);
-      if (typeof N?.warmImages == "function") N.warmImages(ids).catch(() => {
-      });
+      // List only — viewer / inline / overlay warm the shots they actually paint.
     } catch {
     }
     try {

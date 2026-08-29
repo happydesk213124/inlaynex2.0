@@ -5449,6 +5449,22 @@ const VENDOR_GALLERY_CE_MERGE_PATCH =
     }
     t._galleryCache = { sessionId: n, at: Date.now() };`;
 
+/**
+ * ce() used to warm the viewer strip (up to 8 data URLs) on every gallery
+ * reload — even when the floating viewer was off, and ahead of inline paint.
+ * The mounted viewer warms its own strip; inline / overlay encode what they
+ * paint. Leave ce() as list-only so those surfaces own the encode slots.
+ */
+const VENDOR_GALLERY_CE_WARM_NEEDLE =
+  `      const focus = typeof VC?.galleryFocusMessage == "function" ? VC.galleryFocusMessage(t.selectedMessage, t.lastImagedMessage, t.gallery) : t.selectedMessage;
+      const ordered = typeof VC?.galleryForMessage == "function" ? VC.galleryForMessage(t.gallery, focus, 8) : (t.gallery || []).slice(0, 8);
+      const idx = Number(t.galleryUi?.index) || 0;
+      const ids = VC?.visibleGalleryImageIds ? VC.visibleGalleryImageIds(ordered, idx, 1, Math.max(8, ordered.length || 0)) : ordered.map((c) => c?.id).filter(Boolean);
+      if (typeof N?.warmImages == "function") N.warmImages(ids).catch(() => {
+      });`;
+const VENDOR_GALLERY_CE_WARM_PATCH =
+  `      // List only — viewer / inline / overlay warm the shots they actually paint.`;
+
 const VENDOR_CHAR_SAVE_BG_NEEDLE =
   `        if (t.charactersSession = v?.characters || t.charactersSession, t.charactersGlobal = v?.global || t.charactersGlobal, t.appearance = v?.appearance || t.appearance, y("info", "char.edit.save", \`\${I} → \${rosterMeta?.rosterUnified ? "roots" : x === "__global__" ? "global" : "session"} app=\${F.length} attire=\${T.length} acc=\${Acc.length}\`), t.galleryUi?.status?.setTextContent) try {
           await t.galleryUi.status.setTextContent(\`캐릭터 저장됨 · \${I}\`);
@@ -14657,6 +14673,7 @@ const loadVendorUi = (): string => {
     [VENDOR_SAVE_REROLL_INLINE_NEEDLE, 'shot save reroll refresh inline'],
     [VENDOR_GALLERY_CE_LIMIT_NEEDLE, 'session gallery ce limit'],
     [VENDOR_GALLERY_CE_MERGE_NEEDLE, 'session gallery ce cache write'],
+    [VENDOR_GALLERY_CE_WARM_NEEDLE, 'session gallery ce skip speculative strip warm'],
     [VENDOR_CHAR_SAVE_BG_NEEDLE, 'char save skip close after POST'],
     [VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, 'char save close before POST'],
     [VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, 'settings open sticky hide'],
@@ -15054,6 +15071,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_SAVE_REROLL_INLINE_NEEDLE, VENDOR_SAVE_REROLL_INLINE_PATCH)
     .replace(VENDOR_GALLERY_CE_LIMIT_NEEDLE, VENDOR_GALLERY_CE_LIMIT_PATCH)
     .replace(VENDOR_GALLERY_CE_MERGE_NEEDLE, VENDOR_GALLERY_CE_MERGE_PATCH)
+    .replace(VENDOR_GALLERY_CE_WARM_NEEDLE, VENDOR_GALLERY_CE_WARM_PATCH)
     .replace(VENDOR_CHAR_SAVE_BG_NEEDLE, VENDOR_CHAR_SAVE_BG_PATCH)
     .replace(VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, VENDOR_CHAR_SAVE_CLOSE_FIRST_PATCH)
     .replace(VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, VENDOR_SETTINGS_OPEN_STICKY_PATCH)
@@ -15649,6 +15667,12 @@ const loadVendorUi = (): string => {
     }
     if (out.includes('t.gallery = nextItems;')) {
       throw new Error('[build] ce() still replaces t.gallery — cards outside the window would be dropped');
+    }
+    if (!out.includes('List only — viewer / inline / overlay warm the shots they actually paint.')) {
+      throw new Error('[build] ce() must skip the speculative 8-image warm');
+    }
+    if (out.includes('VC.galleryForMessage(t.gallery, focus, 8)')) {
+      throw new Error('[build] ce() still warms the viewer strip — that raced inline and ran with the viewer off');
     }
     if (!out.includes('async function nxEnsureCardsForHash(hash)')) {
       throw new Error('[build] hash-miss fetch missing — a shot below the window edge could never attach');

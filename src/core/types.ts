@@ -22,6 +22,13 @@ export type LlmSource = 'custom' | 'main' | 'aux';
 export type LlmRoleId = 'autotag' | 'asset_char' | 'curator';
 export type ImageBackend = 'nai' | 'comfy';
 
+export interface CommandPreset {
+  id: string;
+  name: string;
+  cmd: string;
+  cmd_post?: string;
+}
+
 export interface StylePreset {
   id: string;
   name: string;
@@ -149,6 +156,8 @@ export interface CardSettings {
   active_preset_id: string;
   /** 2nd-priority style preset (green). Empty = none. */
   secondary_preset_id: string;
+  /** Shot-studio LLM command presets (name + instruction + trailing note). */
+  command_presets: CommandPreset[];
   /** When true, simple→V4 and dynamic→V5. Off → selected model for every shot. */
   nai5_first: boolean;
   /** When true, every shot uses V5. Wins over nai5_first and the model-tab pick. */
@@ -161,6 +170,36 @@ export interface CardSettings {
   v5_natural_lang: 'en' | 'ja';
   /** Send v4_prompt centers when 2+ chars all have valid 0–1 coords. */
   nai_use_coords: boolean;
+  /** off | on — comic tab. Off → identical to today. */
+  comic_gen?: 'off' | 'on' | boolean;
+  /** Tone / world for the comic LLM. Not an artist stack. */
+  comic_author_note?: string;
+  /** one JSON for all comic shots vs one call per comic shot. */
+  comic_llm_batch?: 'once' | 'per_shot';
+  /** illustration NAI while comic LLM runs, or wait for both taggers. */
+  comic_schedule?: 'overlap' | 'wait_taggers';
+  /** Legacy page cap. Kept so old saves are not orphaned. */
+  comic_max_pages?: number;
+  /** 0–100: share of this message's shots that may be comic. */
+  comic_gen_ratio?: number;
+  /** Tab: AI choice / LLM per page / always position. */
+  comic_coords?: 'ai_choice' | 'llm' | 'position';
+  /** Empty → NAI V5 steps. */
+  comic_steps?: number | null | '';
+  /** Empty → NAI V5 sampler. */
+  comic_sampler?: string | null;
+  /** Extra positive joined into the comic main. Legacy; prefix is the UI field. */
+  comic_prompt?: string;
+  /** Extra UC joined into the comic negative. Legacy; no longer in the tab. */
+  comic_uc?: string;
+  /** Comic main: after person tags, before style / koma. */
+  comic_prompt_prefix?: string;
+  /** Comic main: after layout, before quality tags. */
+  comic_prompt_suffix?: string;
+  /** Empty → existing CFG. */
+  comic_cfg_scale?: number | null | '';
+  /** Empty → existing rescale. */
+  comic_cfg_rescale?: number | null | '';
   userchat: boolean;
   unified_chat_priority: boolean;
   /** Unified character tab: keep one row per name (priority, then newest). */
@@ -170,6 +209,12 @@ export interface CardSettings {
   inline_msg_actions?: 'off' | 'legacy' | 'compat' | boolean;
   /** Insert shot images into chat bubbles at LLM `line`. */
   inline_chat_images?: boolean;
+  /** Eligible message bubbles retained on each side of the selection. */
+  inline_chat_dom_radius?: number;
+  /** Screen corner for progress / selection / host / attach toasts. */
+  toast_anchor?: 'tl' | 'bl' | 'tr' | 'br' | 'tc';
+  /** How a long-press on an inline/sticky shot opens the enlarge sheet. */
+  image_press_inspect?: 'off' | 'hold' | 'two' | 'three' | 'both';
   auto_gen_on_reply: boolean;
   /** Master switch for stream-keyword gen. Independent of execute / auto_gen_on_reply. */
   stream_keywords_enabled: boolean;
@@ -465,6 +510,7 @@ export interface JobRow {
   error?: string;
   progress?: Record<string, unknown>;
   created_at?: number;
+  updated_at?: number;
   [key: string]: unknown;
 }
 
@@ -487,6 +533,10 @@ export interface TaggedShot {
   y_percent?: number;
   /** 1-based newline index for beta inline chat illustrations. */
   line?: number;
+  /** illustration | comic. Dropped when the comic tab is off. */
+  kind?: 'illustration' | 'comic' | string;
+  /** Inclusive end line for the comic LLM range. Start is `line`. */
+  comic_line_end?: number;
   camera?: string;
   situation?: string;
   place?: string;

@@ -295,7 +295,9 @@ export async function listMergedSessionCharacters(sourceSessionIds: unknown[] = 
 
 export async function listUnifiedViewCharacters(sourceSessionIds: unknown[] = []): Promise<CharacterRecord[]> {
   const collected = await listMergedSessionCharacters(sourceSessionIds);
-  if (getConfig()?.card?.unified_winners_only) return asRoster(pickUnifiedWinners(collected));
+  if (getConfig()?.card?.unified_winners_only) {
+    return asRoster(pickUnifiedWinners(collected, characterHasAppearance));
+  }
   return collected;
 }
 
@@ -318,7 +320,7 @@ export async function rosterForSession(
   let session: CharacterRecord[];
   if (prefer && sources.length) {
     const merged = await listMergedSessionCharacters(sources);
-    session = asRoster(winnersOnly ? pickUnifiedWinners(merged) : merged);
+    session = asRoster(winnersOnly ? pickUnifiedWinners(merged, characterHasAppearance) : merged);
   } else {
     session = await listCharacters(cleanText(sessionId || '', 200));
   }

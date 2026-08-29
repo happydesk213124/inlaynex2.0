@@ -12,11 +12,54 @@ import {
   inlineMsgActionsOn,
   normalizeInlineMsgActions,
 } from '../domain/inline-msg-actions';
+import {
+  IMAGE_DOUBLE_TAP_SLOP_PX,
+  IMAGE_DOUBLE_TAP_WINDOW_MS,
+  IMAGE_PRESS_WINDOW_MS,
+  imagePressAllowsDoubleTap,
+  imagePressAllowsHold,
+  imagePressAllowsSecondPointer,
+  imagePressAllowsTripleTap,
+  imagePressDoubleTapHits,
+  imagePressDownCount,
+  imagePressIgnorePointerCancel,
+  imagePressMoveCancels,
+  imagePressOtherPointerUp,
+  imagePressTapHits,
+  imagePressTapNeed,
+  noteImagePressDown,
+  noteImagePressUp,
+  normalizeImagePressInspect,
+  normalizeToastAnchor,
+  pruneImagePressDowns,
+} from '../domain/toast-press';
 export {
   inlineMsgActionsLegacy,
   inlineMsgActionsOn,
   normalizeInlineMsgActions,
 };
+export {
+  IMAGE_DOUBLE_TAP_SLOP_PX,
+  IMAGE_DOUBLE_TAP_WINDOW_MS,
+  IMAGE_PRESS_WINDOW_MS,
+  imagePressAllowsDoubleTap,
+  imagePressAllowsHold,
+  imagePressAllowsSecondPointer,
+  imagePressAllowsTripleTap,
+  imagePressDoubleTapHits,
+  imagePressDownCount,
+  imagePressIgnorePointerCancel,
+  imagePressMoveCancels,
+  imagePressOtherPointerUp,
+  imagePressTapHits,
+  imagePressTapNeed,
+  noteImagePressDown,
+  noteImagePressUp,
+  normalizeImagePressInspect,
+  normalizeToastAnchor,
+  pruneImagePressDowns,
+};
+export type { ImagePressInspect, ToastAnchor } from '../domain/toast-press';
 
 // ── shared shapes ─────────────────────────────────────────────────────────
 
@@ -583,8 +626,258 @@ export function isCharMessageRole(roleOrMessage: string | ChatMessage | null | u
   return role === 'char' || role === 'assistant' || role === 'bot';
 }
 
+/**
+ * User bubbles never get inline shots unless `generate_all_roles` is on.
+ * A reverse-index mis-tag or a newest-first shift must not plant a char shot here.
+ */
+export function allowInlineImagesOnRole(role: unknown, allRoles = false): boolean {
+  if (allRoles) return true;
+  return isCharMessageRole(String(role || ''));
+}
+
+export type InlineRoleDisposition = 'allow' | 'deny' | 'hold';
+
+/**
+ * Missing role evidence is not evidence of a user turn. Keep mounted shots
+ * untouched until the DOM/API match is conclusive; only a verified user role
+ * may remove them.
+ */
+export function inlineRoleDisposition(role: unknown, allRoles = false): InlineRoleDisposition {
+  if (allRoles) return 'allow';
+  const normalized = normalizeMessageRole(role);
+  if (!normalized) return 'hold';
+  if (isCharMessageRole(normalized)) return 'allow';
+  return normalized === 'user' ? 'deny' : 'hold';
+}
+
+/** Selection still names the old char hash after a new user message stole DOM#0. */
+export function selectionSlotDrifted(selHash: unknown, liveHash: unknown): boolean {
+  const sel = String(selHash || '');
+  const live = String(liveHash || '');
+  if (!sel || !live) return false;
+  return sel !== live;
+}
+
+/** Prefer the resolved DOM hash. `sel.hash` is only a fallback when this slot still is the selection. */
+export function liveBubbleHash(opts: {
+  liveHash?: unknown;
+  selHash?: unknown;
+  idx?: unknown;
+  selIdx?: unknown;
+} = {}): string {
+  const live = String(opts.liveHash || '');
+  if (live) return live;
+  const idx = Number(opts.idx);
+  const selIdx = Number(opts.selIdx);
+  if (Number.isFinite(idx) && Number.isFinite(selIdx) && idx === selIdx) {
+    return String(opts.selHash || '');
+  }
+  return '';
+}
+
+/**
+ * Role used for keep/inject. Prefer the selection when this slot still is that
+ * message. If the live hash drifted, or reverse-index role does not overlap the
+ * DOM body, do not treat the bubble as char.
+ */
+export function roleForInlineBubble(opts: {
+  idx?: unknown;
+  selIdx?: unknown;
+  selRole?: unknown;
+  selHash?: unknown;
+  liveHash?: unknown;
+  matchedRole?: unknown;
+  domText?: unknown;
+  matchedText?: unknown;
+} = {}): string {
+  const idx = Number(opts.idx);
+  const selIdx = Number(opts.selIdx);
+  const selRole = normalizeMessageRole(opts.selRole);
+  const matched = normalizeMessageRole(opts.matchedRole);
+  const onSel = Number.isFinite(idx) && Number.isFinite(selIdx) && idx === selIdx;
+  const drifted = selectionSlotDrifted(opts.selHash, opts.liveHash);
+  if (onSel && selRole && !drifted) return selRole;
+  const apiText = String(opts.matchedText || '');
+  const domText = String(opts.domText || '');
+  if (matched && apiText && domText && messagesTextOverlapScore(domText, apiText) < 8) {
+    return '';
+  }
+  if (matched) return matched;
+  // Drifted identity must not inherit the previous turn's role.
+  if (onSel && drifted) return '';
+  if (onSel && selRole) return selRole;
+  return '';
+}
+
+/** Drop char cards when this slot is a user turn or the selection identity drifted. */
+export function cardsForInlineBubble<T>(opts: {
+  cards?: readonly T[] | null;
+  role?: unknown;
+  allRoles?: boolean;
+  selHash?: unknown;
+  liveHash?: unknown;
+  isSelectionSlot?: boolean;
+} = {}): T[] {
+  const list = Array.isArray(opts.cards) ? [...opts.cards] : [];
+  if (opts.isSelectionSlot && selectionSlotDrifted(opts.selHash, opts.liveHash)) return [];
+  if (!allowInlineImagesOnRole(opts.role, !!opts.allRoles)) return [];
+  return list;
+}
+
+/** Retain unresolved bubbles only when the same hash already owns mounted frames. */
+export function retainHeldInlineKeepIndices(opts: {
+  keepIndices?: unknown;
+  previousHashes?: unknown;
+  rows?: unknown;
+} = {}): number[] {
+  const keep = new Set<number>();
+  if (Array.isArray(opts.keepIndices)) {
+    for (const raw of opts.keepIndices) {
+      const idx = Number(raw);
+      if (Number.isInteger(idx) && idx >= 0) keep.add(idx);
+    }
+  }
+  const previous = new Set(
+    Array.isArray(opts.previousHashes)
+      ? opts.previousHashes.map((value) => String(value || '')).filter(Boolean)
+      : [],
+  );
+  if (previous.size && Array.isArray(opts.rows)) {
+    for (const raw of opts.rows) {
+      const row = raw as { idx?: unknown; hash?: unknown; disposition?: unknown } | null;
+      const idx = Number(row?.idx);
+      const hash = String(row?.hash || '');
+      if (
+        Number.isInteger(idx)
+        && idx >= 0
+        && row?.disposition === 'hold'
+        && hash
+        && previous.has(hash)
+      ) {
+        keep.add(idx);
+      }
+    }
+  }
+  return [...keep].sort((a, b) => a - b);
+}
+
 /** Max char bubbles kept above/below selection when inline skips user roles. */
-export const INLINE_KEEP_MAX_PER_SIDE = 1;
+export const INLINE_KEEP_MAX_PER_SIDE = 4;
+
+/** Selected bubble plus this many DOM slots each side — 5 asks when the chat is long enough. */
+export const INLINE_ROLE_PREFETCH_RADIUS = 4;
+
+/**
+ * DOM indices whose role/text we ask in parallel before the ± walk.
+ *
+ * The walk still decides keep. This list is only the first wave: sel ± radius,
+ * clamped to the chat. Two messages stay two; we never invent slots.
+ */
+export function prefetchInlineRoleDomIndices(opts: {
+  selIdx?: unknown;
+  length?: unknown;
+  radius?: unknown;
+} = {}): number[] {
+  const sel = Number(opts.selIdx);
+  const length = Number(opts.length);
+  if (!Number.isInteger(sel) || !Number.isInteger(length) || sel < 0 || length <= 0 || sel >= length) {
+    return [];
+  }
+  const raw = Number(opts.radius);
+  const radius = Number.isInteger(raw) && raw >= 0 ? raw : INLINE_ROLE_PREFETCH_RADIUS;
+  const lo = Math.max(0, sel - radius);
+  const hi = Math.min(length - 1, sel + radius);
+  const out: number[] = [];
+  for (let i = lo; i <= hi; i += 1) out.push(i);
+  return out;
+}
+
+/**
+ * One-line fingerprint of everything a bubble's paint depends on.
+ *
+ * Two runs with the same key produce byte-identical markers and chips, so the
+ * bubble can be left alone. Card order is not meaningful — sort so a reordered
+ * link list does not force a repaint.
+ */
+export function inlinePaintKey(opts: {
+  cardIds?: unknown;
+  scalePct?: unknown;
+  msgActions?: unknown;
+  pending?: unknown;
+} = {}): string {
+  const ids = Array.isArray(opts.cardIds)
+    ? [...new Set(opts.cardIds.map((v) => String(v ?? '')).filter(Boolean))].sort()
+    : [];
+  const scale = Math.max(25, Math.min(200, Math.round(finiteNumber(opts.scalePct, 100)) || 100));
+  const acts = String(opts.msgActions ?? '');
+  const pending = opts.pending ? '1' : '0';
+  // Deliberately no DOM index. The chat DOM is newest-first, so one new message
+  // shifts every slot, and a slot in the key made the whole keep window repaint
+  // — visibly, because re-inserting through SafeDOM flashes empty first. The
+  // only thing that really depends on the slot is the chip bar's
+  // `x-inlay-msg-index`, and that is a one-round-trip attribute update.
+  return `s${scale}|a=${acts}|p=${pending}|c=${ids.join(',')}`;
+}
+
+/**
+ * Split the keep window into bubbles that must be repainted and ones already
+ * correct. A row without a hash always repaints — DOM index alone is not an
+ * identity, it shifts the moment the chat grows.
+ */
+export function pickInlineRepaintIndices(opts: {
+  rows?: unknown;
+  painted?: unknown;
+} = {}): { repaint: number[]; skip: number[] } {
+  const rows = Array.isArray(opts.rows) ? opts.rows : [];
+  const painted = opts.painted;
+  const lookup = (hash: string): string => {
+    if (!hash) return '';
+    if (painted instanceof Map) return String(painted.get(hash) ?? '');
+    if (painted && typeof painted === 'object') {
+      return String((painted as Record<string, unknown>)[hash] ?? '');
+    }
+    return '';
+  };
+  const repaint: number[] = [];
+  const skip: number[] = [];
+  const seen = new Set<number>();
+  for (const raw of rows) {
+    const row = raw as { idx?: unknown; hash?: unknown; key?: unknown } | null;
+    const idx = Number(row?.idx);
+    if (!Number.isInteger(idx) || idx < 0 || seen.has(idx)) continue;
+    seen.add(idx);
+    const hash = String(row?.hash ?? '');
+    const key = String(row?.key ?? '');
+    if (hash && key && lookup(hash) === key) skip.push(idx);
+    else repaint.push(idx);
+  }
+  return { repaint, skip };
+}
+
+/** True when the fingerprint named at least one card. Empty `c=` is a miss, not a paint. */
+export function inlinePaintKeyHasCards(key: unknown): boolean {
+  const s = String(key || '');
+  const i = s.lastIndexOf('|c=');
+  if (i < 0) return false;
+  return s.slice(i + 3).length > 0;
+}
+
+/**
+ * Empty desired is often "gallery not loaded yet", not "this bubble has no shots".
+ * Live markers stay until a later pass actually finds cards — or the keep window
+ * strips the bubble when it leaves. Force retag unlinks first and sets
+ * confirmedEmpty so this pass may strip.
+ */
+export function shouldStripEmptyInlineDesired(opts: {
+  liveShotCount?: unknown;
+  confirmedEmpty?: unknown;
+  forceStrip?: unknown;
+} = {}): boolean {
+  if (opts.forceStrip) return true;
+  const live = Math.max(0, Math.floor(finiteNumber(opts.liveShotCount, 0)));
+  if (live <= 0) return true;
+  return !!opts.confirmedEmpty;
+}
 
 /** Same gate as auto-gen: LBDATA-stripped body too short → not an inline neighbor. */
 export function isInlineSkipBody(value: unknown): boolean {
@@ -641,6 +934,117 @@ export function pickInlineKeepDomIndices(opts: {
     }
   }
   return out;
+}
+
+export interface SessionGalleryMerge<T> {
+  cards: T[];
+  /** Rows carried over from the previous cache because the window missed them. */
+  kept: number;
+  /** Rows the response proves are gone. */
+  dropped: number;
+  /** True when the response listed the whole session and simply replaced the cache. */
+  replaced: boolean;
+}
+
+/**
+ * Folds a windowed session listing into the cached one.
+ *
+ * A window is only safe if older cards survive in the cache — otherwise a shot
+ * on an old message stops attaching, which is exactly why the request used to
+ * ask for the session ceiling. But the cache must not keep deleted cards
+ * either, and a window cannot see a deletion below its own edge.
+ *
+ * `windowOldestAt` is the oldest timestamp the window reached, so a cached row
+ * at or above it that the response omits was deleted. Below that edge the
+ * response says nothing, except about hashes it was explicitly asked for: an
+ * asked hash that came back with no rows has no cards left.
+ */
+export function mergeSessionGallery<T extends GalleryCard = GalleryCard>(opts: {
+  prev: readonly T[] | null | undefined;
+  next: readonly T[] | null | undefined;
+  total?: unknown;
+  windowOldestAt?: unknown;
+  askedHashes?: readonly unknown[] | null;
+  cap?: number;
+}): SessionGalleryMerge<T> {
+  const next = Array.isArray(opts.next) ? [...opts.next] : [];
+  const prev = Array.isArray(opts.prev) ? opts.prev : [];
+  const total = Math.max(0, finiteNumber(opts.total, 0));
+  const cap = Math.max(1, finiteNumber(opts.cap, 2000));
+  if (!prev.length || next.length >= total) {
+    return { cards: next.slice(0, cap), kept: 0, dropped: 0, replaced: true };
+  }
+
+  const haveIds = new Set(next.map((card) => String(card?.id || '')).filter(Boolean));
+  const haveHashes = new Set(next.map((card) => String(card?.content_hash || '')).filter(Boolean));
+  const asked = new Set(
+    (Array.isArray(opts.askedHashes) ? opts.askedHashes : [])
+      .map((h) => String(h || ''))
+      .filter(Boolean),
+  );
+  const edge = opts.windowOldestAt == null ? null : finiteNumber(opts.windowOldestAt, 0);
+
+  const carried: T[] = [];
+  let dropped = 0;
+  for (const card of prev) {
+    const id = String(card?.id || '');
+    if (!id || haveIds.has(id)) continue;
+    const at = finiteNumber(card?.created_at, 0);
+    if (edge != null && at >= edge) {
+      dropped += 1;
+      continue;
+    }
+    const hash = String(card?.content_hash || '');
+    if (hash && asked.has(hash) && !haveHashes.has(hash)) {
+      dropped += 1;
+      continue;
+    }
+    carried.push(card);
+  }
+
+  const cards = [...next, ...carried]
+    .sort((a, b) => finiteNumber(b?.created_at, 0) - finiteNumber(a?.created_at, 0))
+    .slice(0, cap);
+  return { cards, kept: carried.length, dropped, replaced: false };
+}
+
+export type InlinePaintSource = 'selection' | 'remap' | 'unresolved';
+
+export interface InlinePaintTarget<T> {
+  cards: T[];
+  /** True when the caller must leave the bubble alone instead of painting []. */
+  skipInline: boolean;
+  source: InlinePaintSource;
+}
+
+/**
+ * Cards to paint on the bubble inline actually writes to.
+ *
+ * `paintIdx` is remapped away from the selection when the selected bubble is not
+ * a keep candidate (a user turn, with `generate_all_roles` off). The cards must
+ * follow that remap: painting the *selection's* cards on someone else's bubble
+ * means an empty list on a user turn, and an empty list makes
+ * `injectChatInlineImages` strip the char bubble's existing shots.
+ *
+ * `paintCards === null` means the remapped bubble's message could not be
+ * resolved, so we cannot tell "no cards" from "unknown" — skip rather than strip.
+ */
+export function resolveInlinePaintCards<T>(opts: {
+  selIdx: unknown;
+  paintIdx: unknown;
+  selCards: readonly T[] | null | undefined;
+  paintCards: readonly T[] | null | undefined;
+}): InlinePaintTarget<T> {
+  const selIdx = Number(opts.selIdx);
+  const paintIdx = Number(opts.paintIdx);
+  const sel = Array.isArray(opts.selCards) ? [...opts.selCards] : [];
+  if (!Number.isFinite(selIdx) || !Number.isFinite(paintIdx) || selIdx === paintIdx) {
+    return { cards: sel, skipInline: false, source: 'selection' };
+  }
+  if (!Array.isArray(opts.paintCards)) {
+    return { cards: [], skipInline: true, source: 'unresolved' };
+  }
+  return { cards: [...opts.paintCards], skipInline: false, source: 'remap' };
 }
 
 // ── DOM ↔ API message matching ────────────────────────────────────────────
@@ -1675,6 +2079,43 @@ export interface StickyV2PinBox {
   left: number;
   top: number;
   size: number;
+  /** Hit target width. Defaults to `size` when omitted (square pin). */
+  w?: number;
+  /** Hit target height. Defaults to `size` when omitted. */
+  h?: number;
+}
+
+/** Gap between the two count chips. Keep tiny — a pin-sized hole looked broken. */
+export const STICKY_V2_COUNT_GAP = 4;
+
+/**
+ * ▲N ▼N side by side. The pin is a tight transparent hit over both chips:
+ * one click expands, two opens inspect.
+ */
+export function stickyV2CountCluster(cx: unknown, cy: unknown, pinSize: unknown): {
+  pin: StickyV2PinBox;
+  aboveBadge: StickyV2PinBox;
+  belowBadge: StickyV2PinBox;
+} {
+  const s = Math.max(12, Math.round(finiteNumber(pinSize, 28)));
+  const x = finiteNumber(cx, 0);
+  const y = finiteNumber(cy, 0);
+  const gap = STICKY_V2_COUNT_GAP;
+  const hit = 6;
+  const top = Math.round(y - s / 2);
+  const aboveLeft = Math.round(x - s - gap / 2);
+  const belowLeft = Math.round(x + gap / 2);
+  return {
+    pin: {
+      left: aboveLeft - hit,
+      top: top - hit,
+      size: s * 2 + gap + hit * 2,
+      w: s * 2 + gap + hit * 2,
+      h: s + hit * 2,
+    },
+    aboveBadge: { left: aboveLeft, top, size: s },
+    belowBadge: { left: belowLeft, top, size: s },
+  };
 }
 
 export interface StickyV2Layout {
@@ -1697,7 +2138,8 @@ export interface StickyV2Layout {
  * Free (non-corner) layout: attachment point = pin % position.
  * Image left-center or right-center glued to that point so landscape
  * does not swing into the chat column the way a center-anchor would.
- * ▲ / ▼ stack flush on the attachment point (no blank pin gap between).
+ * ▲N / ▼N sit side by side at the attachment point; the pin is a tight
+ * transparent hit over both chips.
  */
 export function stickyV2FreeLayout(opts: {
   pinX: unknown;
@@ -1720,19 +2162,15 @@ export function stickyV2FreeLayout(opts: {
   // side 'left' → pin on left edge of image; 'right' → pin on right edge
   const left = Math.round(side === 'left' ? cx : cx - w);
   const top = Math.round(cy - h / 2);
-  const badgeLeft = Math.round(cx - pinSize / 2);
-  // ▲ sits just above cy, ▼ just below — edges meet (no empty pin slot).
   void opts.badgeGap;
   void vh;
-  const aboveTop = Math.round(cy - pinSize);
-  const belowTop = Math.round(cy);
+  const cluster = stickyV2CountCluster(cx, cy, pinSize);
   return {
     side,
     image: { left, top, w, h },
-    // Invisible hit target covering the ▲▼ stack for pin gestures.
-    pin: { left: badgeLeft, top: aboveTop, size: pinSize * 2 },
-    aboveBadge: { left: badgeLeft, top: aboveTop, size: pinSize },
-    belowBadge: { left: badgeLeft, top: belowTop, size: pinSize },
+    pin: cluster.pin,
+    aboveBadge: cluster.aboveBadge,
+    belowBadge: cluster.belowBadge,
     leftBadge: null,
     rightBadge: null,
     pinBelowImage: false,
@@ -1741,7 +2179,7 @@ export function stickyV2FreeLayout(opts: {
 
 /**
  * Corner layout: image parked at corner with pad.
- * ▲ / ▼ stack flush at viewport top-center (no blank pin gap), for any corner.
+ * ▲N / ▼N in two columns at viewport top-center, for any corner.
  */
 export function stickyV2CornerLayout(opts: {
   corner: StickyCorner | null | undefined;
@@ -1766,26 +2204,45 @@ export function stickyV2CornerLayout(opts: {
     { width: vw, height: vh },
     pad,
   );
-  const badgeLeft = Math.round(vw / 2 - pinSize / 2);
-  const aboveTop = pad;
-  const belowTop = pad + pinSize;
+  const cluster = stickyV2CountCluster(vw / 2, pad + pinSize / 2, pinSize);
   return {
     side: 'corner',
     image: { left: box.left, top: box.top, w: box.w, h: box.h },
-    pin: { left: badgeLeft, top: aboveTop, size: pinSize * 2 },
-    aboveBadge: { left: badgeLeft, top: aboveTop, size: pinSize },
-    belowBadge: { left: badgeLeft, top: belowTop, size: pinSize },
+    pin: cluster.pin,
+    aboveBadge: cluster.aboveBadge,
+    belowBadge: cluster.belowBadge,
     leftBadge: null,
     rightBadge: null,
     pinBelowImage: false,
   };
 }
 
+/**
+ * Display URLs the UI can point an <img> at. `blob:` is valid on setAttribute
+ * but SafeDOM/DOMPurify strips it from setInnerHTML — never embed those in HTML.
+ */
+export function isPlaceholderImageSrc(src: unknown): boolean {
+  return /^data:image\/svg\+xml/i.test(String(src || ''));
+}
+
+export function isReadyImageSrc(src: unknown): boolean {
+  const s = String(src || '');
+  if (!s || isPlaceholderImageSrc(s)) return false;
+  return /^data:image\//i.test(s) || /^blob:/i.test(s);
+}
+
+/** Only `data:image` survives setInnerHTML. Empty string → setAttribute later. */
+export function htmlSafeImageSrc(src: unknown): string {
+  const s = String(src || '');
+  return /^data:image\//i.test(s) ? s : '';
+}
+
 /** Pure-image sticky HTML — box already matches aspect; no letterbox frame. */
 export function composeStickyV2ThumbHtml(src: string | null | undefined): string {
   const next = typeof src === 'string' ? src : '';
   if (!next) return '<div style="width:100%;height:100%;background:transparent"></div>';
-  return `<img src="${next}" style="width:100%;height:100%;object-fit:fill;display:block;background:transparent;border:none;outline:none" />`;
+  const embed = htmlSafeImageSrc(next);
+  return `<img src="${embed}" style="width:100%;height:100%;object-fit:fill;display:block;background:transparent;border:none;outline:none" />`;
 }
 
 /** Counts of shots above / below the active sticky index. */
@@ -2315,7 +2772,77 @@ export function composeProgressToastHtml(args: {
   const metaRow = meta
     ? `<div style="min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8b97ab;font-size:10px;line-height:1.25">${meta}</div>`
     : '';
-  return `<div data-inlay-progress-toast="1" style="display:flex;flex-direction:column;gap:4px;box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;cursor:pointer;user-select:none"><div style="min-width:0;font-weight:700;color:${accent};font-size:11px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stage}</div>${metaRow}${bar ? `<div style="width:100%">${bar}</div>` : ''}</div>`;
+  return `<div data-inlay-progress-toast="1" style="display:flex;flex-direction:column;gap:4px;box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:rgba(18,24,32,.42);border:1px solid rgba(42,51,68,.5);cursor:pointer;user-select:none"><div style="min-width:0;font-weight:700;color:${accent};font-size:11px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stage}</div>${metaRow}${bar ? `<div style="width:100%">${bar}</div>` : ''}</div>`;
+}
+
+/**
+ * Fixed-position chip for progress / selection / host / attach toasts.
+ * `shiftPx` pushes a stacked toast inward from the same corner so two chips
+ * do not cover each other.
+ */
+export function toastAnchorStyle(anchor: unknown, opts: {
+  insetPx?: unknown;
+  shiftPx?: unknown;
+  visible?: unknown;
+  pointerEvents?: unknown;
+  zIndex?: unknown;
+} = {}): string {
+  const a = normalizeToastAnchor(anchor);
+  const inset = Math.max(0, finiteNumber(opts.insetPx, 16));
+  const shift = Math.max(0, finiteNumber(opts.shiftPx, 0));
+  const vis = opts.visible === false || opts.visible === 0 ? 'none' : 'block';
+  const pe = opts.pointerEvents === false || opts.pointerEvents === 0 ? 'none' : 'auto';
+  const z = Math.max(1, Math.round(finiteNumber(opts.zIndex, 99999)));
+  const box = `z-index:${z};pointer-events:${pe};width:min(280px,92vw);box-sizing:border-box;display:${vis}`;
+  const along = inset + shift;
+  // Bottom corners sit above Risu's input chrome and off the side edge.
+  const bottom = along + 36;
+  const bottomSide = inset + 12;
+  if (a === 'tl') return `position:fixed;top:${along}px;left:${inset}px;${box};`;
+  if (a === 'tr') return `position:fixed;top:${along}px;right:${inset}px;${box};`;
+  if (a === 'bl') return `position:fixed;bottom:${bottom}px;left:${bottomSide}px;${box};`;
+  if (a === 'br') return `position:fixed;bottom:${bottom}px;right:${bottomSide}px;${box};`;
+  return `position:fixed;top:${along}px;left:50%;transform:translateX(-50%);${box};`;
+}
+
+export function shouldStartImagePressInspect(opts: {
+  mode?: unknown;
+  pointerCount?: unknown;
+} = {}): boolean {
+  const mode = normalizeImagePressInspect(opts.mode);
+  const n = Math.max(0, Math.floor(finiteNumber(opts.pointerCount, 0)));
+  if (!imagePressAllowsHold(mode) || n < 1) return false;
+  return true;
+}
+
+/** First attach wait — boot / first enter of a session. Not every click. */
+export const ATTACH_TOAST_MAX_MS = 10000;
+
+/**
+ * One toast per session. Stay visible (`alreadyWanted`) until hide-done or a
+ * new session id. `doneSessionId == null` means this boot has never finished.
+ */
+export function shouldShowSessionAttachToast(opts: {
+  sessionId?: unknown;
+  doneSessionId?: unknown;
+  alreadyWanted?: unknown;
+} = {}): boolean {
+  if (opts.alreadyWanted) return true;
+  if (opts.doneSessionId == null) return true;
+  return String(opts.sessionId ?? '') !== String(opts.doneSessionId);
+}
+
+/** Spinner chip shown while the first chips/shots of a session are landing. */
+export function composeAttachToastHtml(escapeHtml?: ((s: string) => string) | null): string {
+  const esc = typeof escapeHtml === 'function'
+    ? escapeHtml
+    : (s: string) => String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  const stage = esc('인레이 넥서스 조각 불러오는중..');
+  return `<div data-inlay-attach-toast="1" style="display:flex;align-items:center;gap:8px;box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:rgba(18,24,32,.42);border:1px solid rgba(42,51,68,.5);color:#e8eef8;font-size:11px;user-select:none"><svg width="12" height="12" viewBox="0 0 12 12" style="flex:0 0 12px" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="rgba(196,181,253,.35)" stroke-width="2"/><circle cx="6" cy="6" r="4.5" fill="none" stroke="#c4b5fd" stroke-width="2" stroke-dasharray="8 20" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 6 6" to="360 6 6" dur="0.7s" repeatCount="indefinite"/></circle></svg><div style="min-width:0;font-weight:700;color:#c4b5fd;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stage}</div></div>`;
 }
 
 // ── anchor / reading / segment index ──────────────────────────────────────
@@ -2551,6 +3078,15 @@ export function stickySegmentForInlineChat(opts: {
 // ── beta: chat-bubble inline images at newline lines ──────────────────────
 
 const INLAY_INLINE_ATTR = 'data-inlay-inline-shot';
+export const INLINE_FRAME_LAYOUT_VERSION = '4';
+/**
+ * Content hash of the bubble this marker was placed into.
+ *
+ * Lets a repaint prove in one bridge round-trip that the bubble was not rebuilt
+ * and its text did not change, which is the licence to reuse the cached
+ * paragraph scan instead of walking the tree again.
+ */
+export const INLAY_INLINE_KEY_ATTR = 'data-inlay-inline-key';
 
 const BLOCK_CLOSE_RE = /^<\/(?:p|div|li|blockquote|h[1-6]|tr)>$/i;
 const BR_RE = /^<br\s*\/?>$/i;
@@ -2653,6 +3189,9 @@ export interface InlineImagePlacement {
   src: string;
   shotIndex?: number;
   cardId?: string;
+  aspect?: unknown;
+  width?: unknown;
+  height?: unknown;
   /** No image yet — show spinner + br spacing at the line. */
   pending?: boolean;
 }
@@ -2661,27 +3200,36 @@ export type InlineCardInput = {
   id?: unknown;
   line?: unknown;
   shot_index?: unknown;
+  aspect?: unknown;
+  width?: unknown;
+  height?: unknown;
 };
 
 export type InlinePendingInput = {
   line?: unknown;
   shot_index?: unknown;
+  aspect?: unknown;
+  width?: unknown;
+  height?: unknown;
 };
 
 export type InlineLiveMarker = {
   cardId: string;
   pending?: boolean;
+  layoutVersion?: unknown;
 };
 
 export type InlineReconcileAction =
   | { op: 'keep' }
   | { op: 'strip' }
   | { op: 'prepend'; placement: InlineImagePlacement }
+  | { op: 'fill'; placement: InlineImagePlacement }
   | { op: 'swap'; placement: InlineImagePlacement };
 
 /**
  * Ready cards first (they claim line/shot). Pending only fills leftover lines.
- * A linked card with no bytes goes to encodeLater and still blocks pending.
+ * A linked card with no bytes is a spinner on its own id and still blocks
+ * job-pending on that line; encodeLater bakes the bytes after the spinner is in.
  */
 export function desiredInlinePlacements(
   cards: InlineCardInput[] | null | undefined,
@@ -2706,8 +3254,21 @@ export function desiredInlinePlacements(
     if (Number.isFinite(line) && line >= 1) seenLine.add(line);
     if (!Number.isFinite(line) || line < 1) continue;
     const src = String(getSrc(card) || '');
-    if (!/^data:image\//i.test(src)) {
-      if (cardId) encodeLater.push(card);
+    if (!isReadyImageSrc(src)) {
+      if (cardId) {
+        encodeLater.push(card);
+        seenCard.add(cardId);
+        placements.push({
+          line,
+          src: '',
+          shotIndex: Number.isFinite(shotIndex) ? shotIndex : undefined,
+          cardId,
+          aspect: card.aspect,
+          width: card.width,
+          height: card.height,
+          pending: true,
+        });
+      }
       continue;
     }
     if (cardId) seenCard.add(cardId);
@@ -2716,6 +3277,9 @@ export function desiredInlinePlacements(
       src,
       shotIndex: Number.isFinite(shotIndex) ? shotIndex : undefined,
       cardId,
+      aspect: card.aspect,
+      width: card.width,
+      height: card.height,
       pending: false,
     });
   }
@@ -2735,11 +3299,75 @@ export function desiredInlinePlacements(
       src: '',
       shotIndex: Number.isFinite(shotIndex) ? shotIndex : undefined,
       cardId,
+      aspect: row.aspect,
+      width: row.width,
+      height: row.height,
       pending: true,
     });
   }
 
   return { placements, encodeLater };
+}
+
+/**
+ * Run `worker` over `items` with at most `limit` in flight.
+ * Completion order is whatever the workers finish — callers that paint should
+ * do it inside `worker`, not wait for this to return an ordered list.
+ */
+export async function runBoundedPool<T>(
+  items: T[] | null | undefined,
+  limit: unknown,
+  worker: (item: T, index: number) => Promise<unknown> | unknown,
+): Promise<void> {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return;
+  const cap = Math.max(1, Math.floor(Number(limit)) || 1);
+  let next = 0;
+  const run = async () => {
+    while (next < list.length) {
+      const i = next;
+      next += 1;
+      await worker(list[i] as T, i);
+    }
+  };
+  const n = Math.min(cap, list.length);
+  await Promise.all(Array.from({ length: n }, () => run()));
+}
+
+/**
+ * Cheap "bubble is already correct" gate for the inject pass.
+ *
+ * A shot with no bytes yet is not a failure: its marker is in place and a live
+ * `subscribeImageUrl` watcher will fill that one cell when the encode lands.
+ * `awaitingCount` is how many of the wanted ids are in exactly that state, so
+ * ready + awaiting covering the want set means there is nothing left to do.
+ *
+ * Leftover wrappers are the case this must still catch: after Risu (or a chat
+ * hop) strips the `<img src>`, ids and counts still match but nothing is
+ * watching those cells, so the bubble has to be repainted.
+ */
+export function canSkipInlineInject(opts: {
+  scaleMatches?: unknown;
+  liveShotCount?: unknown;
+  liveUniqueCount?: unknown;
+  wantIdCount?: unknown;
+  readyImgCount?: unknown;
+  awaitingCount?: unknown;
+} = {}): boolean {
+  if (!opts.scaleMatches) return false;
+  const live = Math.max(0, Math.floor(finiteNumber(opts.liveShotCount, 0)));
+  const want = Math.max(0, Math.floor(finiteNumber(opts.wantIdCount, 0)));
+  if (live !== want) return false;
+  // Two wrappers with the same card id still count as live===want.
+  if (opts.liveUniqueCount != null) {
+    const unique = Math.max(0, Math.floor(finiteNumber(opts.liveUniqueCount, live)));
+    if (unique !== live) return false;
+  }
+  if (want === 0) return true;
+  if (opts.readyImgCount == null) return true;
+  const ready = Math.max(0, Math.floor(finiteNumber(opts.readyImgCount, 0)));
+  const awaiting = Math.max(0, Math.floor(finiteNumber(opts.awaitingCount, 0)));
+  return ready + awaiting >= want;
 }
 
 /** Cheap skip key: line + pending/image + id. Bytes themselves stay out. */
@@ -2777,7 +3405,7 @@ export function reconcileInlineShot(
 
   if (!hasDesired) return hasLive ? { op: 'strip' } : { op: 'keep' };
 
-  const hold = !desired.pending && !/^data:image\//i.test(String(desired.src || ''));
+  const hold = !desired.pending && !isReadyImageSrc(desired.src);
   if (hold) return { op: 'keep' };
   if (!hasLive) return { op: 'prepend', placement: desired };
 
@@ -2786,11 +3414,19 @@ export function reconcileInlineShot(
   const livePending = live.pending === true;
   const wantPending = desired.pending === true;
 
+  if (String(live.layoutVersion || '') !== INLINE_FRAME_LAYOUT_VERSION) {
+    return { op: 'swap', placement: desired };
+  }
   if (wantPending) {
     if (livePending) return { op: 'keep' };
     return { op: 'swap', placement: desired };
   }
-  if (!livePending && liveId === wantId) return { op: 'keep' };
+  if (liveId === wantId) {
+    // Same card, marker already mounted: the bytes belong in the <img> that is
+    // already there. Swapping would tear the node out and flash the bubble
+    // empty, which is the whole reason the spinner ships with an <img>.
+    return livePending ? { op: 'fill', placement: desired } : { op: 'keep' };
+  }
   return { op: 'swap', placement: desired };
 }
 
@@ -2803,16 +3439,22 @@ export function shouldScanInlineLeftovers(_keepCount: unknown = 0): boolean {
   return true;
 }
 
-/** Unreadable id stays. Only a known stale id is leftover. */
+/** Unreadable id stays. Stale ids and a second copy of a keep id are leftover. */
 export function shouldStripLeftoverInlineId(
   leftId: unknown,
   keepIds: Iterable<string> | null | undefined,
   _stripUnread = false,
+  seenIds?: Set<string>,
 ): boolean {
   const id = String(leftId || '');
   if (!id) return false;
   const keep = keepIds instanceof Set ? keepIds : new Set(Array.isArray(keepIds) ? keepIds : [...(keepIds || [])]);
-  return !keep.has(id);
+  if (!keep.has(id)) return true;
+  if (seenIds) {
+    if (seenIds.has(id)) return true;
+    seenIds.add(id);
+  }
+  return false;
 }
 
 export interface InlineInjectOptions {
@@ -2836,6 +3478,32 @@ export function inlineChatImgStyle(scalePct: unknown = 100): string {
   const maxHVh = Math.max(10, Math.round(70 * s));
   const maxHPx = Math.max(120, Math.round(900 * s));
   return `width:auto;height:auto;max-width:min(${maxW}%,100%);max-height:min(${maxHVh}vh,${maxHPx}px);object-fit:contain;border-radius:8px;display:inline-block;vertical-align:top`;
+}
+
+type InlinePlaceholderInput = {
+  aspect?: unknown;
+  width?: unknown;
+  height?: unknown;
+};
+
+/** Intrinsic SVG size so the pending img already matches the coming shot. */
+export function inlinePlaceholderSize(input: InlinePlaceholderInput | null | undefined): { width: number; height: number } {
+  const width = Math.floor(finiteNumber(input?.width, 0));
+  const height = Math.floor(finiteNumber(input?.height, 0));
+  if (width > 0 && height > 0) return { width, height };
+  const aspect = String(input?.aspect || '').trim().toLowerCase();
+  if (aspect === 'square') return { width: 1024, height: 1024 };
+  if (aspect === 'landscape') return { width: 1216, height: 832 };
+  return { width: 832, height: 1216 };
+}
+
+/** Cheap SVG data URL used as the pending img src until real bytes arrive. */
+export function inlinePlaceholderSrc(input: InlinePlaceholderInput | null | undefined = null): string {
+  const { width, height } = inlinePlaceholderSize(input);
+  const cx = Math.round(width / 2);
+  const cy = Math.round(height / 2);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#7c6cff" fill-opacity=".08"/><g transform="translate(${cx} ${cy})"><circle r="22" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="6"/><circle r="22" fill="none" stroke="#c4b5fd" stroke-width="6" stroke-linecap="round" stroke-dasharray="36 104"><animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur=".75s" repeatCount="indefinite"/></circle></g></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 type MappedChar = { ch: string; htmlIndex: number };
@@ -3106,26 +3774,32 @@ export function findElementIndexForLineWithFallback(
   return null;
 }
 
-export function markerBlockHtml(p: InlineImagePlacement, scalePct: unknown = 100): string {
+export function markerBlockHtml(
+  p: InlineImagePlacement,
+  scalePct: unknown = 100,
+  bubbleKey: unknown = '',
+): string {
   const shot = Number.isFinite(Number(p.shotIndex)) ? String(Math.floor(Number(p.shotIndex))) : '';
   const id = escapeHtmlAttr(String(p.cardId || (p.pending ? `pending-${shot || p.line}` : '') || shot || p.line || '0'));
+  const keyAttr = bubbleKey ? ` ${INLAY_INLINE_KEY_ATTR}="${escapeHtmlAttr(String(bubbleKey))}"` : '';
   // Centered block; <br> keeps Risu bubble spacing. Width cap is a bit looser than
   // height so landscape shots don't look tiny next to portrait/1:1 (those still
   // hit max-height first). Mobile narrow bubbles still shrink instead of clipping.
   // scalePct (dashboard) multiplies the 78%/70vh defaults.
   const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box';
-  if (p.pending || !/^data:image\//i.test(String(p.src || ''))) {
-    const spin = '<svg width="28" height="28" viewBox="0 0 28 28" style="display:inline-block;vertical-align:middle" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="#c4b5fd" stroke-width="3" stroke-linecap="round" stroke-dasharray="18 52"><animateTransform attributeName="transform" type="rotate" from="0 14 14" to="360 14 14" dur="0.75s" repeatCount="indefinite"/></circle></svg>';
+  const imgStyle = inlineChatImgStyle(scalePct);
+  if (p.pending || !isReadyImageSrc(p.src)) {
+    const placeholder = inlinePlaceholderSrc(p);
     return (
-      `<div ${INLAY_INLINE_ATTR}="${id}" data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-      + `<br><br><span style="display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:48px;padding:10px;border-radius:12px;background:rgba(124,108,255,.12);border:1px solid rgba(196,181,253,.35)">${spin}</span><br><br>`
+      `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
+      + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(placeholder)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
       + `</div>`
     );
   }
-  const imgStyle = inlineChatImgStyle(scalePct);
+  const embed = htmlSafeImageSrc(p.src);
   return (
-    `<div ${INLAY_INLINE_ATTR}="${id}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-    + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(p.src)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
+    `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
+    + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(embed)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
     + `</div>`
   );
 }
@@ -3154,9 +3828,9 @@ export function injectInlineImagesIntoHtml(
     const line = clampShotLine(p?.line, lineCount);
     const src = String(p?.src || '');
     const cardId = String(p?.cardId || '');
-    const pending = p?.pending === true || (!!line && !/^data:image\//i.test(src));
+    const pending = p?.pending === true || (!!line && !isReadyImageSrc(src));
     if (!line) continue;
-    if (!pending && !/^data:image\//i.test(src)) continue;
+    if (!pending && !isReadyImageSrc(src)) continue;
     if (cardId && seenCard.has(cardId)) continue;
     if (byLine.has(line)) continue;
     if (cardId) seenCard.add(cardId);

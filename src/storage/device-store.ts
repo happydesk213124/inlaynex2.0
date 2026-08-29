@@ -111,6 +111,36 @@ export async function saveFileSet(key: string, value: unknown): Promise<boolean>
   }
 }
 
+/**
+ * Deletes a 1.x key from the save file. Returns false when it refused.
+ *
+ * Refuses whenever the device store *is* `pluginStorage`. On that host the save
+ * file is the live store, so the "legacy" key and the current one are the same
+ * row and deleting it destroys data the plugin is still reading. Callers report
+ * the false as a skip rather than treating the key as gone.
+ */
+export async function saveFileRemove(key: string): Promise<boolean> {
+  if (!key) return false;
+  try {
+    const { kind } = await getDeviceStore();
+    if (kind !== 'idb') {
+      dbg('storage.savefile.remove.skip', { message: key, kind, background: true }, 'warn');
+      return false;
+    }
+    const api = saveFileApi();
+    if (typeof api?.removeItem !== 'function') return false;
+    await api.removeItem(key);
+    return true;
+  } catch (err) {
+    dbg(
+      'storage.savefile.remove',
+      { message: `${key}: ${(err as Error)?.message || err}`, background: true },
+      'warn',
+    );
+    return false;
+  }
+}
+
 /** Reads a key, falling back once to the 1.x key and migrating it forward. */
 export async function psGet(key: string, legacyKey?: string): Promise<unknown> {
   try {

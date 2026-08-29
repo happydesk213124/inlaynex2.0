@@ -41,8 +41,15 @@ import {
   stripPersonCountTags,
   appendNoHumansWhenNoCast,
 } from '../domain/character/tags';
+import { resolveStoredContentHash } from '../domain/gallery/unlink-match';
 import { dimsForAspect } from '../domain/nai-meta/aspect.ts';
-import { shouldUseNaiCoords, readNaiCoord } from '../domain/nai/coords';
+import { composeComicSlotCaption } from '../domain/comic/caption';
+import { resolveComicUseCoords } from '../domain/comic/coords';
+import { normalizeShotKind } from '../domain/comic/kind';
+import { resolveComicNaiParams } from '../domain/comic/params';
+import { stripComicKomaFromUc, stripComicPageStyleTags, stripComicStyleWords } from '../domain/comic/tags';
+import type { ComicPage } from '../domain/comic/page';
+import { shouldUseNaiCoords, readNaiCoord, type CoordPair } from '../domain/nai/coords';
 import {
   captionWithSpeech,
   speechCaptionTagsForShot,
@@ -129,6 +136,13 @@ export interface GenerationPlan {
   meta: GenerationMeta;
   route: ShotNaiRoute;
   use_coords: boolean;
+  cfg?: {
+    cfg_scale?: number;
+    cfg_rescale?: number;
+    steps?: number;
+    sampler?: string;
+    scheduler?: string;
+  };
 }
 
 /**
@@ -154,6 +168,7 @@ export type ImageRequest = Pick<GenerationPlan, 'main' | 'neg' | 'captions'> & {
   model?: string;
   preset?: StylePreset | null;
   use_coords?: boolean;
+  cfg?: GenerationPlan['cfg'];
 };
 
 export interface GeneratedImage {
@@ -210,7 +225,6 @@ export type ImageLocation = {
   y_percent: number | null;
   line: number | null;
   content_hash: string;
-  assistant_preview: string;
 };
 
 /** The location fields a card response carries, resolved against its stored meta. */
@@ -393,6 +407,104 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   };
 }
 
+/** Comic page → V5 plan. Costume is resolved per slot; layout is row/position text. */
+export async function buildComicGenerationForShot(args: ShotArgs): Promise<GenerationPlan> {
+  const { shot, roster } = args;
+  const card = getConfig().card;
+  const nai = getConfig().nai;
+  const page = (shot.comic_page || {}) as Partial<ComicPage>;
+  const charMax = Math.min(6, characterMaxLimit(card));
+  const slots = (Array.isArray(shot.characters) ? shot.characters : []).slice(0, charMax);
+  const n = Math.max(1, slots.length);
+  const personMode = normalizePersonTagMode(card.person_tag_mode, card.auto_person_tags);
+  const person = emphasizePersonTags(
+    personCountTagsForShot(slots, roster, personMode, null, card.person_tag_solo),
+    card.person_tag_weight,
+  );
+  const [filePos, fileNeg] = extractPreset(await getPrompt('preset_1'));
+  const route = args.route || resolveShotRoute(card, nai, { ...shot, kind: 'comic' });
+  const active = route.preset as (StylePreset & Record<string, unknown>) | null;
+  let stylePos: string;
+  let styleNeg: string;
+  if (active) {
+    stylePos = cleanText(active.positive || active.pos || '');
+    styleNeg = cleanText(active.negative || active.neg || '');
+  } else {
+    stylePos = joinTags(cleanText(card.custom_pos), filePos);
+    styleNeg = joinTags(cleanText(card.custom_neg), fileNeg);
+  }
+  stylePos = stripSpokenBubbleSuppression(stylePos);
+  styleNeg = stripComicKomaFromUc(styleNeg);
+  const koma = Math.max(1, Math.min(6, Math.floor(Number(page.koma) || slots.length || 1)));
+  const layout = stripComicStyleWords(page.layout || '');
+  const comicLead = stripComicPageStyleTags(card.comic_prompt_prefix);
+  const comicTrail = stripComicPageStyleTags(card.comic_prompt_suffix);
+  const lead = cleanText(card.fixed_prompt_prefix, 8000);
+  const trail = cleanText(card.fixed_prompt_suffix, 8000);
+  // Author note is comic-LLM instruction only (callComicLlm). NAI main uses prefix/suffix.
+  let body = joinTags(
+    stylePos,
+    `${koma}::${koma}koma::`,
+    layout,
+  );
+  if (personMode !== 'off') body = stripPersonCountTags(body);
+  body = joinTags(lead, comicLead, body, comicTrail, trail);
+  body = stripComicPageStyleTags(body);
+  let main = person ? (body ? `${person}, ${body}` : person) : body;
+  const naiaModel = modelToNaia(route.model || nai.model || 'nai-diffusion-5-full');
+  if (nai.apply_quality_tags !== false) main += QUALITY_TAGS[naiaModel] || '';
+  main = appendNoHumansWhenNoCast(main, slots.length, card.no_humans_when_no_char);
+  const neg = styleNeg;
+
+  const captions: NaiCaption[] = [];
+  const charMeta: GenerationCharacter[] = [];
+  const taggedPairs: Array<CoordPair | null> = [];
+  for (let idx = 0; idx < slots.length; idx++) {
+    const char = slots[idx]!;
+    const name = cleanText(char.name, 200);
+    const stored = name ? resolveCharacter(name, roster) : null;
+    const prompt = joinTags(composeComicSlotCaption(stored, char)) || 'girl';
+    const uc = cleanText(char.negative);
+    const taggedX = readNaiCoord(char.center_x);
+    const taggedY = readNaiCoord(char.center_y);
+    taggedPairs.push(taggedX != null && taggedY != null ? { x: taggedX, y: taggedY } : null);
+    const cx = taggedX ?? (n === 1 ? 0.5 : Math.round((0.1 + (0.8 * idx) / Math.max(1, n - 1)) * 10) / 10);
+    const cy = taggedY ?? 0.5;
+    captions.push({ prompt, uc, center_x: cx, center_y: cy });
+    charMeta.push({
+      name: stored?.name || name,
+      id: cleanText(stored?.id || '', 80) || undefined,
+      scope: charRefScopeForStored(stored, args.sessionId || ''),
+      prompt,
+      uc,
+      center_x: cx,
+      center_y: cy,
+      raw: char,
+    });
+  }
+  const use_coords = resolveComicUseCoords(card.comic_coords, page.coords, taggedPairs);
+  const cfg = resolveComicNaiParams(card, nai, route.preset);
+  return {
+    main,
+    neg,
+    captions,
+    meta: {
+      setup: layout,
+      person,
+      characters: charMeta,
+      paragraph: shot.paragraph,
+      complexity: 'dynamic',
+    },
+    route,
+    use_coords,
+    cfg,
+  };
+}
+
+export function isComicShot(shot: TaggedShot | null | undefined): boolean {
+  return normalizeShotKind(shot?.kind) === 'comic';
+}
+
 /** Runs one generation on the configured backend and returns the bytes and seed. */
 export async function generateImage(plan: ImageRequest, shotAspect?: unknown): Promise<GeneratedImage> {
   const nai: NaiSettings = getConfig().nai;
@@ -473,6 +585,13 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
     },
     activePreset,
   );
+  if (plan.cfg) {
+    if (plan.cfg.cfg_scale != null) cfgParams.cfg_scale = plan.cfg.cfg_scale;
+    if (plan.cfg.cfg_rescale != null) cfgParams.cfg_rescale = plan.cfg.cfg_rescale;
+    if (plan.cfg.steps != null) cfgParams.steps = plan.cfg.steps;
+    if (plan.cfg.sampler) cfgParams.sampler = plan.cfg.sampler;
+    if (plan.cfg.scheduler) cfgParams.scheduler = plan.cfg.scheduler;
+  }
 
   const vibes: VibeReference[] = [];
   let charRefStrength = Number(card.char_ref_strength ?? 0.6);
@@ -603,6 +722,20 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
   return { bytes: result.raw_bytes, seed: req.seed || 0 };
 }
 
+/** Replay a saved image's NAI parameters. No current preset / char-ref / vibe. */
+export async function generateFromNaiReplay(req: T2iRequest): Promise<GeneratedImage> {
+  const nai = getConfig().nai;
+  const model = cleanText(req.model);
+  if (!model) throw new Error('이미지 메타에 모델이 없습니다.');
+  const family = isNaiV5(model) ? 'v5' : 'v4';
+  const token = tokensForFamily(nai, family)[0] || cleanText(nai.api_key);
+  if (!token) throw new Error('NAI api_key가 설정되지 않았습니다.');
+  if (!req.seed) req.seed = Math.floor(Math.random() * 4294967295) || 1;
+  const apiUrl = cleanText(nai.request_url) || API_URL;
+  const result = await generateT2i(token, req, apiUrl, { timeoutMs: 90000 });
+  return { bytes: result.raw_bytes, seed: req.seed || 0 };
+}
+
 /** The location record for a freshly generated image. */
 export function buildImageLocation({
   imageId,
@@ -613,7 +746,6 @@ export function buildImageLocation({
   yPercent,
   line = null,
   contentHash = '',
-  assistantPreview = '',
 }: LocationArgs): ImageLocation {
   const lineN = Math.floor(Number(line));
   return {
@@ -634,7 +766,6 @@ export function buildImageLocation({
     y_percent: yPercent,
     line: Number.isFinite(lineN) && lineN >= 1 ? lineN : null,
     content_hash: cleanText(contentHash || request.content_hash || '', 128),
-    assistant_preview: cleanText(assistantPreview || request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT),
   };
 }
 
@@ -655,7 +786,20 @@ export async function writeImageLocation(imageId: string, location: unknown): Pr
 
 /** Location fields for a card response, filling gaps from the card's own meta. */
 export async function locationFieldsForCard(imageId: string, meta: unknown = {}): Promise<CardLocationFields> {
-  const loc = await readImageLocation(imageId);
+  return locationFieldsFrom(imageId, meta, await readImageLocation(imageId));
+}
+
+/**
+ * The same mapping with the sidecar already in hand.
+ *
+ * Listings need the raw sidecar as well as these fields, and reading it twice per
+ * row is a lookup per card for nothing.
+ */
+export function locationFieldsFrom(
+  imageId: string,
+  meta: unknown,
+  loc: Record<string, unknown>,
+): CardLocationFields {
   const base = (typeof meta === 'object' && meta ? meta : {}) as Record<string, unknown>;
   let yPercent: unknown = loc.y_percent;
   if (yPercent == null) yPercent = base.y_percent ?? base.anchor_percent ?? base.read_percent;
@@ -677,7 +821,7 @@ export async function locationFieldsForCard(imageId: string, meta: unknown = {})
       const n = Math.floor(Number(loc.line ?? base.line));
       return Number.isFinite(n) && n >= 1 ? n : null;
     })(),
-    content_hash: cleanText(loc.content_hash || base.content_hash || '', 128),
+    content_hash: resolveStoredContentHash(loc, base),
     assistant_preview: cleanText(loc.assistant_preview || base.assistant_preview || '', ASSISTANT_PREVIEW_LIMIT),
     unified_session_id: cleanText(loc.unified_session_id || base.unified_session_id || '', 200),
     // UI-compat field: was a sidecar .json path; now an IndexedDB key ref.

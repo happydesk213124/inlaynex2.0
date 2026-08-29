@@ -83,10 +83,24 @@ test('character ref UI has refresh and library reset', () => {
   assert.match(source, /data-char-ref-refresh/);
   assert.match(source, /data-ce-ref-refresh/);
   assert.match(source, /id="nx-reset-char-refs"/);
-  assert.match(source, /id="nx-restore-chat-chrome"/);
   assert.match(source, /\/v1\/characters\/ref\/hydrate/);
   assert.match(source, /\/v1\/characters\/ref\/reset/);
-  assert.match(source, /\/v1\/chat\/restore-chrome/);
+});
+
+// 2.5 took the dashboard slot that used to hold 채팅 카드 복구. The route stays
+// (documented, still callable); only the button is gone, so assert both halves
+// or the next reader cannot tell an intentional swap from a lost patch.
+test('dashboard offers the 2.5 data migration in place of chat-card restore', () => {
+  const source = read('vite.config.ts');
+  assert.match(source, /id="nx-migrate-legacy"/);
+  assert.match(source, /id="nx-migrate-dot"/);
+  assert.match(source, /"nx-migrate-legacy":\s*\{\s*title:/);
+  assert.match(source, /\/v1\/storage\/migrate/);
+  assert.match(source, /\/v1\/storage\/migrate\/status/);
+  assert.match(source, /\/v1\/storage\/migrate\/cancel/);
+  assert.doesNotMatch(source, /id="nx-restore-chat-chrome"/);
+  const router = read('src', 'api', 'router.ts');
+  assert.match(router, /\/v1\/chat\/restore-chrome/);
 });
 
 test('manual character save and read never rewrite the appearance bucket', () => {
@@ -202,6 +216,15 @@ test('Oe() collect writes per-family NAI sampler and steps', () => {
   assert.match(body, /sampler_v4/);
 });
 
+test('ce() does not speculatively warm the viewer strip', () => {
+  const source = read('vite.config.ts');
+  assert.match(source, /VENDOR_GALLERY_CE_WARM_NEEDLE/);
+  assert.match(source, /List only — viewer \/ inline \/ overlay warm the shots they actually paint/);
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.match(bundle, /List only — viewer \/ inline \/ overlay warm the shots they actually paint/);
+  assert.doesNotMatch(bundle, /VC\.galleryForMessage\(t\.gallery, focus, 8\)/);
+});
+
 test('new chat/reply schedules a pointer-near message select', () => {
   const source = read('vite.config.ts');
   assert.match(source, /function schedulePointerSelect/);
@@ -210,9 +233,144 @@ test('new chat/reply schedules a pointer-near message select', () => {
   assert.match(source, /schedulePointerSelect\("boot"\)/);
   assert.match(source, /schedulePointerSelect\("reply"\)/);
   assert.match(source, /source: "provisional"/);
-  // A switch waits 250ms for the new chat DOM, then retries exactly once at 700ms.
-  assert.match(source, /freshSession \? 250 : rawWait/);
-  assert.match(source, /schedulePointerSelect\("session", 7e2\)/);
+  // A switch awaits the newest bubble once. There is no retry ladder after it:
+  // the paint places every marker and each image arrives on its own
+  // subscription, so a pass can no longer end "attached but empty".
+  assert.match(source, /async function nxWaitNewestDom/);
+  assert.match(source, /fresh \? 0 : rawWait/);
+  assert.match(source, /t\._inlineHeadFirst = 1/);
+  assert.match(source, /async function dtNewest/);
+  assert.match(source, /await Da\(0, newest, \{ source: "provisional", auto: 1 \}\);/);
+  // Absence is checked against the shipped bundle, not this file: vite.config.ts
+  // names the removed symbols on purpose, in the guards that keep them out.
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.doesNotMatch(bundle, /schedulePointerSelect\("session", 7e2\)/);
+  assert.doesNotMatch(bundle, /schedulePointerSelect\("boot", 200\)/);
+  assert.doesNotMatch(bundle, /nxScheduleAttachRetry/);
+});
+
+test('inline paint puts chips before shots so the bar is not blocked by encode', () => {
+  const source = read('vite.config.ts');
+  const start = source.indexOf('if (keep.has(paintIdx) && els[paintIdx] && !reuseIdxs.has(paintIdx))');
+  const end = source.indexOf('for (const row of neighborCardLists)', start);
+  assert.ok(start >= 0 && end > start, 'selected-bubble paint block not found');
+  const body = source.slice(start, end);
+  assert.ok(
+    body.indexOf('await injectChatMsgActions(els[paintIdx]') < body.indexOf('await injectChatInlineImages(els[paintIdx]'),
+    'chips must paint before inline shots on the selected bubble',
+  );
+});
+
+test('a shot without bytes gets its marker now and its image by subscription', () => {
+  const source = read('vite.config.ts');
+  const start = source.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
+  const end = source.indexOf('async function refreshSelectedInlineImages(force) {', start);
+  assert.ok(start >= 0 && end > start, 'inject body not found');
+  const inject = source.slice(start, end);
+  assert.match(inject, /VC\.canSkipInlineInject\(\{/);
+  assert.match(inject, /readyImgCount:\s*readyImgs/);
+  // A cell nobody is watching still has to be repainted; one that a live
+  // subscription owns is finished work even with an empty <img>.
+  assert.match(inject, /awaitingCount:\s*awaiting/);
+  // Placing the marker must never wait on the bytes, and the pass must not
+  // await an encode — that was the bake loop the retries existed to rescue.
+  assert.doesNotMatch(inject, /ensureStickyCardImage/);
+  assert.doesNotMatch(inject, /runBoundedPool/);
+  assert.ok(
+    inject.indexOf('const tPlace') < inject.indexOf('nxWatchInlineShots(lockKey'),
+    'markers must be placed before the subscription is registered',
+  );
+
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.doesNotMatch(bundle, /_inlineEncodeLeft/);
+  assert.doesNotMatch(bundle, /inlineAttachSucceeded/);
+  // A pass that has been superseded stops instead of painting the old selection.
+  assert.match(source.slice(end), /if \(stale\(\)\) \{/);
+});
+
+test('the bubble host scan is shared by chips and inline shots', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.equal(
+    (bundle.match(/querySelectorAll\(hostSel\)/g) || []).length,
+    1,
+    'the per-paragraph scan must exist once, not once per consumer',
+  );
+  assert.match(bundle, /async function nxScanBubbleHosts\(msgEl\)/);
+  assert.equal((bundle.match(/await nxScanBubbleHosts\(msgEl\)/g) || []).length, 2);
+});
+
+test('only legacy pays to walk the bubble DIVs', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  // Non-legacy modes drop every DIV in isMessageBodyHostTag moments later, after
+  // spending four round-trips on each. A bubble holds far more DIV chrome than
+  // paragraphs, so asking for them was most of the cost of a paint.
+  assert.match(bundle, /const legacy = mode === "legacy";/);
+  assert.match(bundle, /\? "p,h1,h2,h3,h4,h5,h6,li,blockquote,div"/);
+  assert.match(bundle, /: "p,h1,h2,h3,h4,h5,h6,li,blockquote";/);
+  assert.match(bundle, /if \(legacy && name === "DIV"\)/);
+});
+
+test('an unchanged bubble reuses its paragraph scan instead of rewalking it', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  // The scan and the line matching depend only on the bubble text, and lockKey
+  // already hashes it. One query proves our marker (and therefore the bubble)
+  // survived; without that proof the cached handles could be detached nodes.
+  assert.match(bundle, /async function nxBubbleKeyIntact\(msgEl, key\)/);
+  assert.match(bundle, /const cached = nxPlaceCacheGet\(lockKey, msgEl\);/);
+  assert.match(bundle, /nxPlaceCacheSet\(lockKey, msgEl, \{ hosts, hostTags, hostTexts, messageLines, rawCount \}\)/);
+  // The stamp is what makes the probe answerable — without it the cache is
+  // written and never read.
+  assert.match(bundle, /markerBlockHtml\(shot, t\.backendSettings\?\.card\?\.inline_chat_scale_pct \?\? 100, lockKey\)/);
+  assert.ok(
+    bundle.indexOf('await nxBubbleKeyIntact(msgEl, lockKey)') < bundle.indexOf('cacheHit = !0'),
+    'the cached scan must be validated before it is used',
+  );
+  // Handles from the outgoing chat's DOM must not survive a switch.
+  assert.match(bundle, /t\._inlinePlaceCache = null;/);
+  // The probe's selector is hand-written in the UI patch while the marker's
+  // attribute comes from INLAY_INLINE_KEY_ATTR in the backend. They live in
+  // different halves of the file, so only the composed bundle can tie them —
+  // and if they drift the cache is written, never read, and nothing else
+  // notices. Two occurrences: the marker emit and the probe selector.
+  assert.ok(
+    (bundle.match(/data-inlay-inline-key/g) || []).length >= 2,
+    'the cache probe selector and the marker attribute must be the same name',
+  );
+});
+
+test('the inject lock is per bubble so neighbours do not serialize', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.doesNotMatch(bundle, /_inlineInjectBusy/);
+  assert.doesNotMatch(bundle, /_inlineInjectQueued/);
+  assert.match(bundle, /t\._inlineInjectLocks\.get\(lockKey\)/);
+});
+
+test('the neighbour window is painted in the same pass, mid-scroll included', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  // Deferring it to "the pass that follows" left it blank for good: settle only
+  // re-enters the pass when the selected index changes, and a scroll that ends on
+  // the same bubble hits the cheap keep skip and returns. stale() is what handles
+  // a moving selection — it abandons the pass as soon as a newer one starts.
+  assert.doesNotMatch(bundle, /inline\.paint\.defer/);
+  assert.equal((bundle.match(/if \(stale\(\)\) \{/g) || []).length, 2);
+});
+
+test('a superseded pass records what it painted and clears its toast', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  // Committing only on the finished path made the next pass repaint a bubble that
+  // was already correct, and left the progress toast up forever.
+  assert.match(bundle, /const commitPaint = \(\) => \{/);
+  assert.equal((bundle.match(/commitPaint\(\);/g) || []).length, 2);
+  assert.doesNotMatch(bundle, /superseded after head`\);\s*\n\s*return;/);
+});
+
+test('keep window and paint keys survive a DOM index shift', () => {
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  // The chat is newest-first, so a new message renumbers every slot. Neither the
+  // keep list nor the paint fingerprint may be keyed on that number.
+  assert.doesNotMatch(bundle, /_inlineKeepIdxs/);
+  assert.match(bundle, /t\._inlineKeepEls = nextKeep;/);
+  assert.match(bundle, /setAttribute\("x-inlay-msg-index", String\(msgIdx\)\)/);
 });
 
 test('auto select paints inline shots and chips without a click', () => {
@@ -320,8 +478,10 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(body, /prependBar/);
   assert.match(body, /msgActionMountKind/);
   assert.match(body, /canMountMsgActionOnParent/);
-  assert.match(body, /isInlayPaintHost/);
-  assert.match(body, /isMessageBodyHostTag/);
+  // Host eligibility moved into the scan the bars now share with inline shots.
+  assert.match(body, /nxScanBubbleHosts\(msgEl\)/);
+  assert.match(source, /isInlayPaintHost/);
+  assert.match(source, /isMessageBodyHostTag/);
   assert.match(body, /getParent/);
   assert.match(body, /x-inlay-msg-end/);
   assert.match(body, /keepMsgActionBarIndexes/);
@@ -379,8 +539,37 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(body, /setAttribute\("x-inlay-ignore"/);
   assert.match(body, /getAttribute\("x-inlay-msg-chip"\)/);
   assert.match(body, /getAttribute\("x-inlay-msg-index"\)/);
-  assert.match(source, /injectChatMsgActions\(els\[paintIdx\], selCards, paintIdx\)/);
+  // paintIdx must carry the cards of the bubble it paints, not the selection's:
+  // selCards is [] on a user turn and [] strips the remapped char's shots.
+  assert.match(source, /injectChatMsgActions\(els\[paintIdx\], paintPlan\.cards, paintIdx\)/);
+  assert.match(source, /injectChatInlineImages\(els\[paintIdx\], paintPlan\.cards, t\._inlinePending, \{/);
+  assert.match(source, /role: roleAt\(paintIdx\)/);
+  assert.match(source, /VC\.roleForInlineBubble\(\{/);
+  assert.match(source, /VC\.cardsForInlineBubble\(\{/);
+  assert.match(source, /VC\.inlineRoleDisposition\(opts\.role/);
+  assert.match(source, /if \(roleDisposition === "hold"\) return/);
+  assert.match(source, /forceStrip: roleDisposition === "deny"/);
+  assert.match(source, /heldKeepHashes/);
+  assert.match(source, /getAttribute\("data-inlay-inline-layout"\)/);
+  assert.match(source, /layoutVersion: mark\.layoutVersion/);
+  assert.match(source, /VC\.INLINE_FRAME_LAYOUT_VERSION/);
+  assert.match(source, /VC\.inlineChatImgStyle\(scaleNow\)/);
+  assert.match(source, /id="nx-inline-dom-radius" type="number" min="3" max="20" step="1"/);
+  assert.match(source, /inline_chat_dom_radius: Math\.max\(3, Math\.min\(20,/);
+  assert.match(source, /inline_chat_dom_radius\) \|\| 4/);
+  assert.match(source, /prefetchInlineRoleDomIndices\(\{ selIdx, length: els\.length, radius: maxPerSide \}\)/);
+  assert.match(source, /spin\.setStyleAttribute\("display:none"\)/);
+  assert.doesNotMatch(source, /typeof spin\.remove/);
+  assert.match(source, /resolveInlinePaintCards\(\{ selIdx, paintIdx, selCards, paintCards \}\)/);
+  assert.doesNotMatch(source, /injectChatInlineImages\(els\[paintIdx\], selCards,/);
   assert.match(source, /injectChatMsgActions\(els\[row\.idx\], row\.cards, row\.idx\)/);
+  // Automatic selection must take the same char±4 path a click takes. Nothing
+  // reschedules it any more — the images come to the markers, not the other way.
+  const bundle = read('dist', 'inlaynexus2.0.js');
+  assert.doesNotMatch(bundle, /_inlineSelfOnly/);
+  assert.doesNotMatch(bundle, /nxScheduleAttachRetry/);
+  assert.doesNotMatch(bundle, /NX_SESSION_ATTACH_BACKOFF/);
+  assert.match(bundle, /subscribeImageUrl/);
   assert.match(body, /Da\(idx, els, \{ source: "provisional" \}\)/);
   assert.doesNotMatch(body, /<span x-inlay-msg-chip=/);
   assert.doesNotMatch(body, /getAttribute\("data-inlay-msg-/);
@@ -448,7 +637,8 @@ test('character editor header omits char slot when picker row has no finite inde
   assert.match(source, /\.replace\(VENDOR_CHAR_EDIT_HEADER_NEEDLE, VENDOR_CHAR_EDIT_HEADER_PATCH\)/);
 
   const bundle = read('dist', 'inlaynexus2.0.js');
-  const title = bundle.indexOf('>캐릭터 태그 수정</div><div style=');
+  const finiteAt = bundle.indexOf('Number.isFinite(e.index)');
+  const title = finiteAt >= 0 ? bundle.lastIndexOf('>캐릭터 태그 수정</div><div style=', finiteAt) : -1;
   const tail = bundle.indexOf('data-ce-x', title);
   assert.ok(title >= 0 && tail > title, 'built character editor header not found');
   const header = bundle.slice(title, tail);
@@ -494,6 +684,7 @@ test('character tab and edit popup pack identity and looks onto compact rows', (
   assert.match(looks, /<span>머리<\/span>/);
   assert.doesNotMatch(looks, /머리색/);
   assert.match(edit, /char-looks-row/);
+  assert.match(edit, /grid-template-columns:repeat\(6,minmax\(0,1fr\)\)/);
   assert.match(edit, /<span>스타일<\/span>/);
   assert.match(source, /data-ce-appearance rows="3"/);
   assert.match(source, /min-height:72px/);

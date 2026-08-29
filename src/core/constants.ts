@@ -8,18 +8,19 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.4.20';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.5.3';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
  * Only bump it when a prompt change is mandatory for correctness.
  */
-export const PROMPT_PACK = '2026-08-24-v24-action';
+export const PROMPT_PACK = '2026-08-29-v26-comic-now';
 
 export const PROMPT_KEYS = [
   'author_note', 'asset_author_note', 'tagger', 'format', 'prefill', 'preprocess',
   'preset_1', 'lore_inject', 'char_inject', 'appearance_inject', 'asset_tags_inject', 'char_looks', 'autotag',
   'curation_refine', 'curation_embed_hint', 'command_reroll', 'lorefilter_scan',
+  'comic',
 ] as const;
 
 export type PromptKey = (typeof PROMPT_KEYS)[number];
@@ -27,7 +28,7 @@ export type PromptKey = (typeof PROMPT_KEYS)[number];
 /** Prompts that must track the shipped pack even if the user edited them. */
 export const FORCE_PROMPT_KEYS: readonly PromptKey[] = [
   'tagger', 'format', 'appearance_inject', 'lore_inject', 'asset_tags_inject', 'char_looks', 'autotag',
-  'curation_refine', 'curation_embed_hint', 'command_reroll',
+  'curation_refine', 'curation_embed_hint', 'command_reroll', 'comic',
 ];
 
 export const GLOBAL_SCOPE = '__global__';
@@ -137,6 +138,16 @@ export const CHAR_REF_IMAGE_KEY = (characterId: string): string =>
 /** @deprecated Use charRefDiskDataKey(metaKey). */
 export const CHAR_REF_DATA_KEY = (characterId: string): string =>
   `inx_nxcrefd_${sanitizeCharRefPart(characterId)}`;
+
+/**
+ * Meta row recording that the one-time storage migration ran.
+ *
+ * Its presence is what lets boot skip the full-store scans that only ever find
+ * pre-2.5 data. Absent means "not migrated yet", so boot keeps the old
+ * behaviour and a user who never presses the button loses nothing.
+ */
+export const MIGRATION_META_KEY = 'storage:__migrated__';
+export const MIGRATION_VERSION = 3;
 
 // --- legacy save-file keys (one-time migration source) ---
 export const LEGACY_SETTINGS_KEY = 'native_settings';

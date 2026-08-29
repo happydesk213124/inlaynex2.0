@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.4.20';
+const PLUGIN_VERSION = '2.5.3';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -307,7 +307,22 @@ const VENDOR_NATURAL_BASE_CT_PATCH =
       v5_natural_lang: document.getElementById("nx-v5-natural-lang") ? (N("nx-v5-natural-lang") === "ja" ? "ja" : "en") : (e.v5_natural_lang === "ja" ? "ja" : "en"),
       nai_use_coords: document.getElementById("nx-nai-coords") ? ee("nx-nai-coords") : e.nai_use_coords !== !1,
       nai5_first: document.getElementById("nx-nai5-first") ? ee("nx-nai5-first") : !!e.nai5_first,
-      nai5_only: document.getElementById("nx-nai5-only") ? ee("nx-nai5-only") : !!e.nai5_only,`;
+      nai5_only: document.getElementById("nx-nai5-only") ? ee("nx-nai5-only") : !!e.nai5_only,
+      comic_gen: document.getElementById("nx-comic-gen") ? (N("nx-comic-gen") === "on" ? "on" : "off") : (e.comic_gen === "on" || e.comic_gen === !0 ? "on" : "off"),
+      comic_llm_batch: document.getElementById("nx-comic-llm-batch") ? (N("nx-comic-llm-batch") === "per_shot" ? "per_shot" : "once") : (e.comic_llm_batch === "per_shot" ? "per_shot" : "once"),
+      comic_schedule: document.getElementById("nx-comic-schedule") ? (N("nx-comic-schedule") === "wait_taggers" ? "wait_taggers" : "overlap") : (e.comic_schedule === "wait_taggers" ? "wait_taggers" : "overlap"),
+      comic_max_pages: e.comic_max_pages ?? 2,
+      comic_gen_ratio: document.getElementById("nx-comic-gen-ratio") ? (() => { const r = N("nx-comic-gen-ratio"); if (r === "" || r == null) return 50; const n = Number(r); return Number.isFinite(n) ? n : 50; })() : (e.comic_gen_ratio ?? 50),
+      comic_coords: document.getElementById("nx-comic-coords") ? (N("nx-comic-coords") || "llm") : (e.comic_coords || "llm"),
+      comic_steps: document.getElementById("nx-comic-steps") ? N("nx-comic-steps") : (e.comic_steps ?? ""),
+      comic_sampler: document.getElementById("nx-comic-sampler") ? N("nx-comic-sampler") : (e.comic_sampler || ""),
+      comic_cfg_scale: document.getElementById("nx-comic-cfg") ? N("nx-comic-cfg") : (e.comic_cfg_scale ?? ""),
+      comic_cfg_rescale: document.getElementById("nx-comic-cfg-rescale") ? N("nx-comic-cfg-rescale") : (e.comic_cfg_rescale ?? ""),
+      comic_prompt: String(e.comic_prompt || ""),
+      comic_uc: String(e.comic_uc || ""),
+      comic_prompt_prefix: document.getElementById("nx-comic-prompt-prefix") ? String(N("nx-comic-prompt-prefix") || "").slice(0, 8000) : String(e.comic_prompt_prefix || ""),
+      comic_prompt_suffix: document.getElementById("nx-comic-prompt-suffix") ? String(N("nx-comic-prompt-suffix") || "").slice(0, 8000) : String(e.comic_prompt_suffix || ""),
+      comic_author_note: document.getElementById("nx-comic-author-note") ? String(N("nx-comic-author-note") || "").slice(0, 8000) : String(e.comic_author_note || ""),`;
 
 /** Removed from original wide rows — re-homed next to Include Max (see PERSON_TAG_WEIGHT). */
 const VENDOR_NATURAL_BASE_CARD_NEEDLE =
@@ -341,7 +356,19 @@ const VENDOR_NATURAL_BASE_HELP_PATCH =
   "nx-v5-natural-lang": { title: "V5 자연어 태그", body: "V5로 뽑는 샷에만 씁니다. 언어만 고릅니다(English / 日本語). V4 샷은 왼쪽 자연어 base를 따릅니다." },
   "nx-nai-coords": { title: "NAI 위치 좌표 사용하기", body: "캐릭터가 2명 이상이고 전원에 0~1 좌표가 있을 때만 NovelAI에 좌표를 보냅니다. 한 명이라도 빠지면 켜지 않습니다. 혼자면 쓰지 않습니다." },
   "nx-nai5-first": { title: "LLM한테 NAI V4, V5 선택권주기", body: "켜면 샷마다 simple은 V4, dynamic은 V5로 나눕니다. LLM이 복잡도를 고른 대로 모델이 갈립니다. 꺼 두면 모델 탭에서 고른 모델로 전 샷을 뽑습니다." },
-  "nx-nai5-only": { title: "무조건 NAI V5한테만 요청하기", body: "켜면 모든 샷을 V5로만 뽑습니다. 모델 탭에서 V4를 고르거나 왼쪽 선택권을 켜도 V5가 이깁니다." }`;
+  "nx-nai5-only": { title: "무조건 NAI V5한테만 요청하기", body: "켜면 모든 샷을 V5로만 뽑습니다. 모델 탭에서 V4를 고르거나 왼쪽 선택권을 켜도 V5가 이깁니다." },
+  "nx-comic-gen": { title: "만화 생성", body: "켜면 태거가 연속 대사·액션을 만화 페이지로 고를 수 있습니다. 끄면 지금과 같습니다." },
+  "nx-comic-batch": { title: "만화 LLM", body: "메시지 1회는 그 메시지의 만화 페이지를 한 JSON으로 받습니다. 샷마다는 페이지마다 따로 부릅니다." },
+  "nx-comic-schedule": { title: "생성 순서", body: "겹쳐 생성은 삽화를 먼저 보내고 만화 LLM은 옆에서 돌립니다. 태거 전부 완료 후는 만화 태그가 끝난 뒤 번호 순으로만 보냅니다." },
+  "nx-comic-ratio": { title: "만화 생성 비율", body: "이번 메시지에서 만화로 고를 수 있는 샷 비율입니다. 0이면 만화를 고르지 않습니다. 남는 만화 후보는 삽화가 됩니다." },
+  "nx-comic-coords": { title: "위치", body: "LLM이 알아서: 페이지마다 position 또는 AI choice. Position: 좌표 필수, 하나라도 없으면 AI choice. AI choice: 좌표를 보내지 않습니다." },
+  "nx-comic-steps": { title: "Steps", body: "비우면 모델 탭 V5 steps를 씁니다. 만화만 이 값을 씁니다." },
+  "nx-comic-sampler": { title: "샘플러", body: "비우면 모델 탭 V5 샘플러를 씁니다." },
+  "nx-comic-cfg": { title: "가이던스", body: "비우면 기존 CFG를 씁니다." },
+  "nx-comic-rescale": { title: "리스케일", body: "비우면 기존 rescale을 씁니다." },
+  "nx-comic-prompt-prefix": { title: "선행 프롬프트", body: "값이 있으면 사람 태그 다음·스타일/칸 레이아웃 앞에 붙습니다." },
+  "nx-comic-prompt-suffix": { title: "후행 프롬프트", body: "값이 있으면 레이아웃 뒤·품질 태그 앞에 붙습니다." },
+  "nx-comic-note": { title: "작가의 프롬프트", body: "만화 LLM에게 주는 톤·세계관입니다. 아티스트 스택을 적지 마세요." }`;
 
 /** One 2×3 grid for the six gen-option toggles (coords / V4·V5 / V5-only / solo / costume / no humans). */
 const GEN_OPTION_TOGGLES_HTML =
@@ -649,6 +676,7 @@ const VENDOR_CURATION_TABS_NEEDLE = `S = {
 const VENDOR_CURATION_TABS_PATCH = `S = {
       dashboard: "대시보드",
       gen_options: "생성 옵션",
+      comic_gen: "만화 생성",
       style_presets: "스타일 프리셋",
       characters: "캐릭터",
       models: "모델 설정",
@@ -660,6 +688,7 @@ const VENDOR_CURATION_TABS_PATCH = `S = {
     }, E = [
       "dashboard",
       "gen_options",
+      "comic_gen",
       "style_presets",
       "characters",
       "models",
@@ -733,6 +762,54 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.3</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>채팅 안 이미지: 잘리던 예약 프레임을 없앴습니다. 비율에 맞는 가벼운 SVG를 먼저 두고, 그림이 오면 그 src만 바꿉니다</li>
+            <li>스피너가 탐색할 말풍선 숫자를 대시보드에서 3–20으로 정할 수 있습니다</li>
+            <li>유저 말풍선에 근처 캐릭터 그림이 붙던 문제를 고쳤습니다</li>
+            <li>같은 말풍선을 다시 눌러도 그림이 깜빡이지 않습니다</li>
+            <li>샷 태그 창을 닫을 때 회색 화면이 남던 문제를 고쳤습니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.2</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>채팅 안 이미지가 훨씬 빨리 붙습니다. 말풍선 하나를 그릴 때 하던 조회를 크게 줄였습니다</li>
+            <li>글이 그대로인 말풍선은 자리 계산을 다시 하지 않고 기억해 둔 것을 씁니다. 스크롤하거나 답장이 끝난 뒤 다시 그릴 때가 특히 빨라집니다</li>
+            <li>보고 있는 말풍선의 이미지가 탐색기·뷰어 썸네일보다 먼저 만들어집니다. 2.5.1에서 이 우선순위가 듣지 않았습니다</li>
+            <li>스크롤을 멈춘 자리에서 위아래 말풍선 이미지가 안 채워지던 문제를 고쳤습니다</li>
+            <li>이미지 탐색 썸네일이 비어 있는 시간이 줄어듭니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.1</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>채팅 안 이미지: 자리를 한 번에 다 잡고, 그림은 준비되는 것부터 그 칸에만 들어옵니다. 챗을 바꾼 뒤 여러 번 눌러야 나오던 문제가 사라집니다</li>
+            <li>새 메시지가 와도 옆 말풍선이 다시 그려지지 않습니다. 깜빡임이 줄어듭니다</li>
+            <li>첫 로딩에서 말풍선 이미지가 뷰어 띠·마커보다 먼저 붙습니다</li>
+            <li>챗을 바꿀 때 갤러리를 두 번 받던 것을 한 번으로 줄였습니다</li>
+            <li>말풍선 한 개를 그릴 때 하던 중복 DOM 조회를 걷어냈습니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.0</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>대시보드에 2.4 데이터 이전 버튼. 옛 이미지를 Risu 모듈로 옮기고 원본을 지웁니다 (되돌리기 불가)</li>
+            <li>이전을 끝내면 켤 때마다 하던 전체 점검이 사라집니다. 갤러리가 클수록 부팅이 빨라집니다</li>
+            <li>새로 만든 갤러리 샷도 Risu 모듈에 저장합니다. Risu 세이브파일이 가벼워집니다</li>
+            <li>채팅 안 이미지: 자리를 먼저 스피너로 잡고 준비된 것부터 차례대로 붙습니다</li>
+            <li>이미지를 못 받은 스피너는 다시 시도합니다</li>
+            <li>크게보기: 이미지를 세 번 톡톡톡, 길게 누르기는 라벨과 함께</li>
+            <li>리롤은 이미지 파일에 적힌 태그를 그대로 다시 씁니다. 카드에 메인·네거티브를 베끼지 않습니다</li>
+            <li>강제 재태그가 채팅 전체를 한 번에 정리하고 남은 조각을 치웁니다</li>
+            <li>작업 기록은 최신 3개, 카드 본문 사본은 최신 20장만 보관합니다</li>
+            <li>만화 생성: 페이지 수 대신 비율(%), 작가의 프롬프트·선행·후행</li>
+            <li>만화 생성 탭: V5 칸 페이지, 별도 steps/샘플러/가이던스</li>
+            <li>만화 작가의 프롬프트가 NAI 메인 프롬프트에 섞이지 않습니다</li>
+            <li>통합 챗: 외형이 비어 있는 카드는 우선순위가 높아도 후순위입니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.4.20</strong>
@@ -1652,8 +1729,11 @@ const VENDOR_EXPLORER_THUMB_PAINT_PATCH = `    document.querySelectorAll("[data-
       const img = el.querySelector("img");
       if (img && id) {
         try {
-          const src = Ie({ id });
-          if (typeof src == "string" && /^data:image\\//i.test(src)) {
+          const N = globalThis.__INLAY_NATIVE__;
+          const src = (typeof N?.resolveExplorerThumbUrl == "function" ? N.resolveExplorerThumbUrl(id) : "") || Ie({ id });
+          const VC = globalThis.__INLAY_VIEWER_CORE__;
+          const ready = typeof VC?.isReadyImageSrc == "function" ? VC.isReadyImageSrc(src) : typeof src == "string" && (/^data:image\\//i.test(src) || /^blob:/i.test(src));
+          if (ready) {
             if (img.getAttribute("src") !== src) img.setAttribute("src", src);
             img.classList.add("is-ready");
           }
@@ -1930,7 +2010,27 @@ const VENDOR_EXPLORER_SELBAR_LABELS_PATCH =
             <button type="button" id="nx-explorer-save-one" class="secondary" style="min-height:28px;padding:4px 10px">저장</button>
             <button type="button" id="nx-explorer-favonly" class="secondary ex-mobile-select \${e.favOnly ? "active" : ""}" style="min-height:28px;padding:4px 10px" title="별 표시한 이미지만 보기">\${e.favOnly ? "★" : "☆"}</button>
             <button type="button" id="nx-explorer-delete-sel" style="min-height:28px;padding:4px 10px">삭제</button>
+            <button type="button" id="nx-explorer-select-all" class="secondary" style="min-height:28px;padding:4px 10px">전체선택</button>
             <button type="button" id="nx-explorer-clear-sel" class="secondary" style="min-height:28px;padding:4px 10px">선택해제</button>`;
+
+const VENDOR_EXPLORER_LIMIT_NEEDLE =
+  `    const n = await K("/v1/gallery/explore?limit=500", { method: "GET" }, 2e4), o = n?.folders || [], a = n?.items || [];`;
+const VENDOR_EXPLORER_LIMIT_PATCH =
+  `    const n = await K("/v1/gallery/explore?limit=0", { method: "GET" }, 6e4), o = n?.folders || [], a = n?.items || [];`;
+
+const VENDOR_EXPLORER_SELECT_ALL_NEEDLE =
+  `    document.getElementById("nx-explorer-delete-sel")?.addEventListener("click", () => explorerDeleteSelected());
+    document.getElementById("nx-explorer-clear-sel")?.addEventListener("click", () => {`;
+const VENDOR_EXPLORER_SELECT_ALL_PATCH =
+  `    document.getElementById("nx-explorer-delete-sel")?.addEventListener("click", () => explorerDeleteSelected());
+    document.getElementById("nx-explorer-select-all")?.addEventListener("click", () => {
+      const EX = exHelpers();
+      const ids = (typeof Ze == "function" ? Ze().items : ensureExplorerState().items) || [];
+      const list = ids.map((x) => x && x.id).filter(Boolean);
+      ensureExplorerState().selection = EX.selectAll ? EX.selectAll(t.explorer.selection, list) : { selected: new Set(list), anchorId: list[0] || "", focusId: list[0] || "" };
+      paintExplorerSelectionUi();
+    });
+    document.getElementById("nx-explorer-clear-sel")?.addEventListener("click", () => {`;
 
 const VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE =
   `favBtn && (favBtn.classList.toggle("active", !!ex.favOnly), favBtn.textContent = ex.favOnly ? "★ 즐겨찾기만" : "☆ 즐겨찾기만");`;
@@ -1994,7 +2094,7 @@ const VENDOR_EXPLORER_ET_FN_PATCH =
     const folderKey = String(t.explorer?.folderKey || "");
     if (t._explorerActiveFolder !== folderKey) {
       for (const id of t._explorerWarmedIds || []) {
-        if (typeof N?.dropImageUrl == "function") N.dropImageUrl(id);
+        if (typeof N?.dropExplorerThumbUrl == "function") N.dropExplorerThumbUrl(id);
       }
       t._explorerWarmedIds = new Set();
       t._explorerActiveFolder = folderKey;
@@ -2002,10 +2102,11 @@ const VENDOR_EXPLORER_ET_FN_PATCH =
     const prev = t._explorerWarmedIds instanceof Set ? t._explorerWarmedIds : new Set();
     const keep = new Set(list);
     for (const id of prev) {
-      if (!keep.has(id) && typeof N?.dropImageUrl == "function") N.dropImageUrl(id);
+      if (!keep.has(id) && typeof N?.dropExplorerThumbUrl == "function") N.dropExplorerThumbUrl(id);
     }
     t._explorerWarmedIds = keep;
-    if (typeof N?.pinImageUrls == "function") N.pinImageUrls(list);
+    if (typeof N?.pinExplorerThumbs == "function") N.pinExplorerThumbs(list);
+    else if (typeof N?.retainExplorerThumbs == "function") N.retainExplorerThumbs(list);
   }
   function warmExplorerVisible(ids, opts) {
     try {
@@ -2013,8 +2114,9 @@ const VENDOR_EXPLORER_ET_FN_PATCH =
       const list = [...new Set((ids || []).map(String).filter(Boolean))];
       const missing = list.filter((id) => {
         try {
-          const src = Ie({ id });
-          return !(typeof src == "string" && /^data:image\\//i.test(src));
+          const src = (typeof N?.resolveExplorerThumbUrl == "function" ? N.resolveExplorerThumbUrl(id) : "") || Ie({ id });
+          const VC = globalThis.__INLAY_VIEWER_CORE__;
+          return !(typeof VC?.isReadyImageSrc == "function" ? VC.isReadyImageSrc(src) : typeof src == "string" && (/^data:image\\//i.test(src) || /^blob:/i.test(src)));
         } catch {
           return !0;
         }
@@ -2030,8 +2132,8 @@ const VENDOR_EXPLORER_ET_FN_PATCH =
         done();
         return;
       }
-      if (typeof N?.warmImages == "function") N.warmImages(missing).then(done).catch(done);
-      else if (typeof N?.ensureImageUrl == "function") Promise.all(missing.map((id) => N.ensureImageUrl(id).catch(() => ""))).then(done).catch(done);
+      if (typeof N?.warmExplorerThumbs == "function") N.warmExplorerThumbs(missing).then(done).catch(done);
+      else if (typeof N?.ensureExplorerThumbUrl == "function") Promise.all(missing.map((id) => N.ensureExplorerThumbUrl(id).catch(() => ""))).then(done).catch(done);
       else done();
     } catch {
       if (opts?.onDone) opts.onDone();
@@ -2106,7 +2208,8 @@ const VENDOR_EXPLORER_ET_FN_PATCH =
     const needLoad = ids.some((id) => {
       try {
         const src = Ie({ id });
-        return !(typeof src == "string" && /^data:image\\//i.test(src));
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        return !(typeof VC?.isReadyImageSrc == "function" ? VC.isReadyImageSrc(src) : typeof src == "string" && (/^data:image\\//i.test(src) || /^blob:/i.test(src)));
       } catch {
         return !0;
       }
@@ -2552,6 +2655,8 @@ const VENDOR_PRESET_SAVE_EVT_PATCH = `    }), (() => {
       };
       document.getElementById("nx-save-card")?.addEventListener("click", saveCard);
       document.getElementById("nx-save-card-head")?.addEventListener("click", saveCard);
+      document.getElementById("nx-save-gen-options")?.addEventListener("click", saveCard);
+      document.getElementById("nx-save-comic")?.addEventListener("click", saveCard);
       document.getElementById("nx-fixed-prompt-save")?.addEventListener("click", saveCard);
       document.getElementById("nx-fixed-prompt-export")?.addEventListener("click", () => {
         try {
@@ -2611,12 +2716,72 @@ const VENDOR_CARD_TAB_SPLIT_CLOSE_NEEDLE = `            <input id="nx-preset-fil
 const VENDOR_CARD_TAB_SPLIT_CLOSE_PATCH = `            <input id="nx-preset-file-input" type="file" accept=".json,application/json,text/plain" style="display:none">
           </div>
         </div>\`}\`;
+    } else if (t.uiTab === "comic_gen") {
+      const i = t.backendSettings?.card || {};
+      const comicOn = i.comic_gen === "on" || i.comic_gen === !0;
+      const comicBatch = i.comic_llm_batch === "per_shot" ? "per_shot" : "once";
+      const comicSched = i.comic_schedule === "wait_taggers" ? "wait_taggers" : "overlap";
+      const comicCoords = i.comic_coords === "ai_choice" || i.comic_coords === "position" ? i.comic_coords : "llm";
+      const comicSampler = String(i.comic_sampler || "");
+      u = \`
+        <div class="card model-card">
+          <div class="prompt-group-label">만화 생성</div>
+          <div class="muted" style="margin-top:8px">꺼 두면 지금과 같습니다. 켜면 태거가 연속 대사를 만화 페이지로 고를 수 있습니다.</div>
+          <div class="model-form" style="margin-top:12px">
+            <label data-nx-help-id="nx-comic-gen"><span>만화 생성</span>
+              <select id="nx-comic-gen">
+                <option value="off" \${!comicOn ? "selected" : ""}>끄기</option>
+                <option value="on" \${comicOn ? "selected" : ""}>켜기</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-comic-batch"><span>만화 LLM</span>
+              <select id="nx-comic-llm-batch">
+                <option value="once" \${comicBatch === "once" ? "selected" : ""}>메시지 1회</option>
+                <option value="per_shot" \${comicBatch === "per_shot" ? "selected" : ""}>샷마다</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-comic-schedule"><span>생성 순서</span>
+              <select id="nx-comic-schedule">
+                <option value="overlap" \${comicSched === "overlap" ? "selected" : ""}>겹쳐 생성</option>
+                <option value="wait_taggers" \${comicSched === "wait_taggers" ? "selected" : ""}>태거 전부 완료 후</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-comic-ratio"><span>만화 생성 비율 (%)</span><input id="nx-comic-gen-ratio" type="number" min="0" max="100" step="1" value="\${h(i.comic_gen_ratio ?? 50)}"></label>
+            <label data-nx-help-id="nx-comic-coords"><span>위치</span>
+              <select id="nx-comic-coords">
+                <option value="llm" \${comicCoords === "llm" ? "selected" : ""}>LLM이 알아서</option>
+                <option value="position" \${comicCoords === "position" ? "selected" : ""}>Position</option>
+                <option value="ai_choice" \${comicCoords === "ai_choice" ? "selected" : ""}>AI choice</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-comic-steps"><span>Steps</span><input id="nx-comic-steps" type="number" min="1" max="150" placeholder="기존" value="\${h(i.comic_steps ?? "")}"></label>
+            <label data-nx-help-id="nx-comic-sampler"><span>샘플러</span>
+              <select id="nx-comic-sampler">
+                <option value="" \${!comicSampler ? "selected" : ""}>기존</option>
+                <option value="k_euler_ancestral" \${comicSampler === "k_euler_ancestral" ? "selected" : ""}>Euler Ancestral</option>
+                <option value="k_euler" \${comicSampler === "k_euler" ? "selected" : ""}>Euler</option>
+                <option value="k_dpmpp_2s_ancestral" \${comicSampler === "k_dpmpp_2s_ancestral" ? "selected" : ""}>DPM++ 2S Ancestral</option>
+                <option value="k_dpmpp_2m_sde" \${comicSampler === "k_dpmpp_2m_sde" ? "selected" : ""}>DPM++ 2M SDE</option>
+                <option value="k_dpmpp_2m" \${comicSampler === "k_dpmpp_2m" ? "selected" : ""}>DPM++ 2M</option>
+                <option value="k_dpmpp_sde" \${comicSampler === "k_dpmpp_sde" ? "selected" : ""}>DPM++ SDE</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-comic-cfg"><span>가이던스</span><input id="nx-comic-cfg" type="number" step="0.1" placeholder="기존" value="\${h(i.comic_cfg_scale ?? "")}"></label>
+            <label data-nx-help-id="nx-comic-rescale"><span>리스케일</span><input id="nx-comic-cfg-rescale" type="number" step="0.01" placeholder="기존" value="\${h(i.comic_cfg_rescale ?? "")}"></label>
+            <div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:4px;grid-column:1/-1">
+              <label data-nx-help-id="nx-comic-note"><span>작가의 프롬프트</span><textarea id="nx-comic-author-note" rows="4" maxlength="8000" placeholder="톤·세계관. 아티스트 스택 아님">\${h(i.comic_author_note || "")}</textarea></label>
+              <label data-nx-help-id="nx-comic-prompt-prefix"><span>선행 프롬프트</span><textarea id="nx-comic-prompt-prefix" rows="4" maxlength="8000" placeholder="사람 태그 다음·스타일 앞">\${h(i.comic_prompt_prefix || "")}</textarea></label>
+              <label data-nx-help-id="nx-comic-prompt-suffix"><span>후행 프롬프트</span><textarea id="nx-comic-prompt-suffix" rows="4" maxlength="8000" placeholder="레이아웃 뒤·품질 태그 앞">\${h(i.comic_prompt_suffix || "")}</textarea></label>
+            </div>
+          </div>
+          <div class="row" style="margin-top:14px"><button type="button" id="nx-save-comic">만화 설정 저장</button></div>
+        </div>\`;
     } else if (t.uiTab === "characters") {`;
 
 const VENDOR_CT_GATE_NEEDLE = `  function Ct() {
     if (!document.getElementById("nx-mode") && !document.getElementById("nx-char-max")) return null;`;
 const VENDOR_CT_GATE_PATCH = `  function Ct() {
-    if (!document.getElementById("nx-mode") && !document.getElementById("nx-char-max") && !document.getElementById("nx-custom-pos") && !document.getElementById("nx-preset-select") && !document.getElementById("nx-fixed-prompt-prefix")) return null;`;
+    if (!document.getElementById("nx-mode") && !document.getElementById("nx-char-max") && !document.getElementById("nx-custom-pos") && !document.getElementById("nx-preset-select") && !document.getElementById("nx-fixed-prompt-prefix") && !document.getElementById("nx-comic-gen")) return null;`;
 
 const VENDOR_SHOW_CARD_TAB_NEEDLE = `        if (opts?.showCardTab) t.uiTab = "card";`;
 const VENDOR_SHOW_CARD_TAB_PATCH = `        if (opts?.showCardTab) t.uiTab = "style_presets";`;
@@ -3303,10 +3468,13 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
   }
   function nxStickyV2PinStyle(pin, on, z) {
     // Blank hit target — no fill, no glyph (counts live on badge nodes).
-    return ["position:fixed", \`left:\${pin.left}px\`, \`top:\${pin.top}px\`, \`width:\${pin.size}px\`, \`height:\${pin.size}px\`, \`z-index:\${z}\`, "border-radius:0", "display:block", "pointer-events:auto", "user-select:none", "background:transparent", "border:none", "box-shadow:none", "color:transparent", "font-size:0", "line-height:0", "opacity:" + (on ? "1" : "0")].join(";");
+    // Tight hit over both ▲/▼ chips.
+    const pw = Math.max(1, Math.round(Number(pin.w || pin.size) || 0));
+    const ph = Math.max(1, Math.round(Number(pin.h || pin.size) || 0));
+    return ["position:fixed", \`left:\${pin.left}px\`, \`top:\${pin.top}px\`, \`width:\${pw}px\`, \`height:\${ph}px\`, \`z-index:\${z}\`, "border-radius:0", "display:block", "pointer-events:auto", "user-select:none", "background:transparent", "border:none", "box-shadow:none", "color:transparent", "font-size:0", "line-height:0", "opacity:" + (on ? "1" : "0")].join(";");
   }
   function nxStickyV2BadgeStyle(pin, z) {
-    return ["position:fixed", \`left:\${pin.left}px\`, \`top:\${pin.top}px\`, \`min-width:\${pin.size}px\`, \`height:\${pin.size}px\`, "padding:0 6px", \`z-index:\${z}\`, "border-radius:6px", "display:flex", "align-items:center", "justify-content:center", "font-size:11px", "font-weight:700", "line-height:1", "pointer-events:none", "user-select:none", "background:rgba(15,23,42,.75)", "color:#e2e8f0", "border:1px solid rgba(255,255,255,.22)", "box-sizing:border-box"].join(";");
+    return ["position:fixed", \`left:\${pin.left}px\`, \`top:\${pin.top}px\`, \`min-width:\${pin.size}px\`, \`height:\${pin.size}px\`, "padding:0 4px", \`z-index:\${z}\`, "border-radius:6px", "display:flex", "align-items:center", "justify-content:center", "font-size:11px", "font-weight:700", "line-height:1", "pointer-events:auto", "user-select:none", "opacity:.45", "background:rgba(15,23,42,.2)", "color:rgba(226,232,240,.7)", "border:1px solid rgba(255,255,255,.1)", "box-sizing:border-box"].join(";");
   }
   function nxStickyV2BadgeHideStyle(pinSize, z) {
     return nxStickyV2BadgeStyle({ left: -9999, top: -9999, size: pinSize }, z);
@@ -3378,6 +3546,11 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
       // Fast swap: paint+show new, then hide old immediately (no blank gap, no delay).
       if (showSticky && next._thumbSrc && typeof next.thumb.setInnerHTML == "function" && next._paintedSrc !== next._thumbSrc) {
         await next.thumb.setInnerHTML(compose(next._thumbSrc));
+        try {
+          const img = typeof next.thumb.querySelector == "function" ? await next.thumb.querySelector("img") : null;
+          if (img && typeof img.setAttribute == "function") await img.setAttribute("src", next._thumbSrc);
+        } catch {
+        }
         if (flashGen !== e._flashGen) return;
         next._thumbHtmlId = activeId, next._paintedSrc = next._thumbSrc, e._lastStickyThumbHtmlId = activeId;
       }
@@ -3765,7 +3938,26 @@ const VENDOR_INLINE_PTR_STICKY_PATCH = `    }, l = async (f) => {
       if (pointerGesture && typeof f.clientX == "number" && typeof f.clientY == "number") {
         pointerGesture.movement = Math.max(pointerGesture.movement || 0, Math.hypot(f.clientX - pointerGesture.x, f.clientY - pointerGesture.y));
       }
-      if (mobilePress && typeof f.clientX == "number" && typeof f.clientY == "number" && Math.hypot(f.clientX - mobilePress.x, f.clientY - mobilePress.y) > 8) cancelMobilePress();
+      if (mobilePress && typeof f.clientX == "number" && typeof f.clientY == "number") {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const cancelMove = typeof VC?.imagePressMoveCancels == "function"
+          ? VC.imagePressMoveCancels({
+            pressPointerId: mobilePress.pointerId,
+            eventPointerId: f.pointerId,
+            mode: t.backendSettings?.card?.image_press_inspect,
+            pressCount: typeof VC.imagePressDownCount == "function"
+              ? VC.imagePressDownCount(t._imagePressDowns, Date.now())
+              : 0,
+            fromX: mobilePress.x,
+            fromY: mobilePress.y,
+            toX: f.clientX,
+            toY: f.clientY,
+            slopPx: 8
+          })
+          : (f.pointerId == null || mobilePress.pointerId == null || f.pointerId === mobilePress.pointerId)
+            && Math.hypot(f.clientX - mobilePress.x, f.clientY - mobilePress.y) > 8;
+        if (cancelMove) cancelMobilePress();
+      }
       // Sticky pin hover preview removed — keep preview layer hidden.
       if (t._hoverPreviewCardId) s().catch(() => {});
     }, p = async (f) => {`;
@@ -4384,12 +4576,12 @@ const VENDOR_STICKY_CLICK_NEEDLE = `      if (fPress.source === "sticky-thumb") 
 const VENDOR_STICKY_CLICK_PATCH = `      if (fPress.source === "sticky-thumb") {
         await hidePressFill();
         const ov = t.overlayUi;
-        if (ov) ov._stickyThumbCollapsed = !ov._stickyThumbCollapsed;
+        if (ov) ov._stickyThumbCollapsed = !0;
         try {
           await Ht();
         } catch {
         }
-        y("info", ov?._stickyThumbCollapsed ? "sticky.thumb.hide" : "sticky.thumb.show", String(fPress.card?.id || "").slice(0, 8));
+        y("info", "sticky.thumb.hide", String(fPress.card?.id || "").slice(0, 8));
         return;
       }
       if (fPress.source === "inline-shot") {
@@ -4397,11 +4589,15 @@ const VENDOR_STICKY_CLICK_PATCH = `      if (fPress.source === "sticky-thumb") {
         return;
       }
       if (fPress.source === "sticky-pin") {
+        await hidePressFill();
+        if (fPress.openedInspect) return;
         const ov = t.overlayUi;
-        if (ov) ov._stickyThumbCollapsed = !1;
-        try {
-          await Ht();
-        } catch {
+        if (ov && ov._stickyThumbCollapsed) {
+          ov._stickyThumbCollapsed = !1;
+          try {
+            await Ht();
+          } catch {
+          }
         }`;
 
 
@@ -4410,7 +4606,92 @@ const VENDOR_INLINE_LONGPRESS_NEEDLE =
   `      // Sticky always-image: short-tap hide / long-press fullscreen+sheet.
       if (Nt() && !inspectOpen) {`;
 const VENDOR_INLINE_LONGPRESS_PATCH =
-  `      // Msg chips: same coord hit-test as inline shots (node click never reaches us).
+  `      // Inspect press mode: off / one-finger / two-finger / both.
+      // Count pointerdowns that landed on a shot — never pointerIds. The host
+      // forwards a plain object, so pointerId can be absent or repeated and two
+      // fingers deduped into one entry, which is why two-finger never armed.
+      const nxImagePressMode = () => {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const raw = t.backendSettings?.card?.image_press_inspect;
+        return typeof VC?.normalizeImagePressInspect == "function" ? VC.normalizeImagePressInspect(raw) : "hold";
+      };
+      const nxPressCount = () => {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        if (typeof VC?.imagePressDownCount == "function") return VC.imagePressDownCount(t._imagePressDowns, Date.now());
+        return Array.isArray(t._imagePressDowns) ? t._imagePressDowns.length : 0;
+      };
+      const nxNotePressDown = () => {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        t._imagePressDowns = typeof VC?.noteImagePressDown == "function"
+          ? VC.noteImagePressDown(t._imagePressDowns, Date.now())
+          : [...(Array.isArray(t._imagePressDowns) ? t._imagePressDowns : []), Date.now()];
+      };
+      const nxHoldOk = () => {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const mode = nxImagePressMode();
+        return typeof VC?.imagePressAllowsHold == "function" ? VC.imagePressAllowsHold(mode) : mode === "hold" || mode === "both";
+      };
+      const nxTapNeed = () => {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const mode = nxImagePressMode();
+        if (typeof VC?.imagePressTapNeed == "function") return VC.imagePressTapNeed(mode);
+        if (mode === "three") return 3;
+        if (mode === "two" || mode === "both") return 2;
+        return 0;
+      };
+      const nxInspectAllowed = () => {
+        if (!nxHoldOk()) return !1;
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const mode = nxImagePressMode();
+        const n = nxPressCount();
+        return typeof VC?.shouldStartImagePressInspect == "function"
+          ? VC.shouldStartImagePressInspect({ mode, pointerCount: n })
+          : n >= 1;
+      };
+      const nxFireTap = (card) => {
+        const need = nxTapNeed();
+        if (!need || !card) return !1;
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const now = Date.now();
+        const prev = t._imageTap;
+        const next = typeof VC?.imagePressTapHits == "function"
+          ? VC.imagePressTapHits({
+            prevAt: prev?.at,
+            prevX: prev?.x,
+            prevY: prev?.y,
+            prevCardId: prev?.cardId,
+            prevCount: prev?.count,
+            now,
+            x,
+            y: I,
+            cardId: card.id,
+            need
+          })
+          : (() => {
+            const linked = !!(prev && String(prev.cardId || "") === String(card.id || "") && now - Number(prev.at) <= 450
+              && Math.hypot(x - Number(prev.x), I - Number(prev.y)) <= 28);
+            const count = linked ? Math.max(1, Math.floor(Number(prev?.count) || 0) + 1) : 1;
+            return { hit: count >= need, count };
+          })();
+        t._imageTap = { at: now, x, y: I, cardId: String(card.id || ""), count: next.count };
+        if (!next.hit) return !1;
+        t._imageTap = null;
+        if (typeof f.preventDefault == "function") f.preventDefault();
+        cancelMobilePress();
+        showStickyInspect(card).catch(() => {});
+        pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
+        return !0;
+      };
+      const nxArmInspect = (F) => {
+        if (!F || F.timer || F.long || !nxInspectAllowed()) return;
+        F.timer = setTimeout(() => {
+          if (mobilePress !== F || !nxInspectAllowed()) return;
+          F.long = !0;
+          showStickyInspect(F.card).catch(() => {
+          });
+        }, PRESS_MS);
+      };
+      // Msg chips: same coord hit-test as inline shots (node click never reaches us).
       if (!inspectOpen && nxMsgAct() !== "off" && typeof hitMsgChipAt == "function") {
         try {
           const chip = await hitMsgChipAt(e, x, I);
@@ -4452,8 +4733,17 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
             }
             const card = (t.gallery || []).find((c) => String(c?.id || "") === String(cardId || ""));
             if (!card) continue;
+            if (nxFireTap(card)) return;
+            nxNotePressDown();
             // Long-press start: activate sticky image to this inline shot immediately.
             if (typeof nxActivateStickyByCardId == "function") nxActivateStickyByCardId(card.id).catch(() => {});
+            if (mobilePress && (mobilePress.source === "inline-shot" || mobilePress.source === "sticky-thumb")) {
+              if (typeof f.preventDefault == "function") f.preventDefault();
+              if (nxInspectAllowed()) showPressFill(node, x, I).catch(() => {});
+              nxArmInspect(mobilePress);
+              pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
+              return;
+            }
             if (mobilePress) {
               cancelMobilePress();
               return;
@@ -4468,14 +4758,9 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
               timer: null,
               thumb: node
             };
-            showPressFill(node, x, I).catch(() => {
-            });
-            F.timer = setTimeout(() => {
-              if (mobilePress !== F) return;
-              F.long = !0;
-              showStickyInspect(F.card).catch(() => {
-              });
-            }, PRESS_MS), mobilePress = F;
+            if (nxInspectAllowed()) showPressFill(node, x, I).catch(() => {});
+            nxArmInspect(F);
+            mobilePress = F;
             pointerGesture = {
               x,
               y: I,
@@ -4489,8 +4774,95 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
         } catch {
         }
       }
-      // Sticky always-image: short-tap hide / long-press fullscreen+sheet.
-      if (Nt() && !inspectOpen) {`;
+      // Sticky always-image: pin/chips expand or inspect; the image only folds.
+      if (Nt() && !inspectOpen) {
+        const stickyPins = t.overlayUi?.markers || [];
+        const activePin = stickyPins.find((m) => m?.active) || null;
+        for (const g of stickyPins) {
+          if (!g?.el || !g.active && !g.mini) continue;
+          if (typeof hitEl != "function" || !await hitEl(g.el, x, I)) continue;
+          const card = activePin?.card || g.card;
+          const now = Date.now();
+          const prev = t._stickyPinTap;
+          const dbl = !!(prev && now - Number(prev.at || 0) < 550);
+          if (dbl && card && typeof showStickyInspect == "function") {
+            t._stickyPinTap = null;
+            if (mobilePress) cancelMobilePress();
+            showStickyInspect(card).catch(() => {});
+            mobilePress = {
+              x, y: I, card, source: "sticky-pin", pointerId: f.pointerId,
+              long: !1, timer: null, openedInspect: !0
+            };
+            pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
+            return;
+          }
+          t._stickyPinTap = { at: now };
+          if (mobilePress) {
+            cancelMobilePress();
+            return;
+          }
+          mobilePress = {
+            x,
+            y: I,
+            card,
+            source: "sticky-pin",
+            pointerId: f.pointerId,
+            long: !1,
+            timer: null
+          };
+          pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
+          return;
+        }
+
+`;
+
+const VENDOR_STICKY_INSPECT_PRESS_NEEDLE =
+  `          if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;
+          if (!await hitEl(g.thumb, x, I)) continue;
+          if (mobilePress) {
+            cancelMobilePress();
+            return;
+          }
+          const F = {
+            x,
+            y: I,
+            card: g.card,
+            source: "sticky-thumb",
+            pointerId: f.pointerId,
+            long: !1,
+            timer: null,
+            thumb: g.thumb
+          };
+          showPressFill(g.thumb, x, I).catch(() => {
+          });
+          F.timer = setTimeout(() => {
+            if (mobilePress !== F) return;
+            F.long = !0;
+            showStickyInspect(F.card).catch(() => {
+            });
+          }, PRESS_MS), mobilePress = F;
+          return;`;
+const VENDOR_STICKY_INSPECT_PRESS_PATCH =
+  `          if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;
+          if (!await hitEl(g.thumb, x, I)) continue;
+          // Image surface: one tap folds to 0. Hold / double / triple never inspect here.
+          if (mobilePress) {
+            cancelMobilePress();
+            return;
+          }
+          const F = {
+            x,
+            y: I,
+            card: g.card,
+            source: "sticky-thumb",
+            pointerId: f.pointerId,
+            long: !1,
+            timer: null,
+            thumb: g.thumb
+          };
+          mobilePress = F;
+          pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
+          return;`;
 
 const VENDOR_MSG_CHIP_UP_NEEDLE =
   `    }, onPointerUp = async (f) => {
@@ -4528,6 +4900,67 @@ const VENDOR_MSG_CHIP_UP_PATCH =
         }
       }`;
 
+const VENDOR_CANCEL_PRESS_IDS_NEEDLE =
+  `    }, cancelMobilePress = () => {
+      mobilePress?.timer && clearTimeout(mobilePress.timer), mobilePress = null;`;
+const VENDOR_CANCEL_PRESS_IDS_PATCH =
+  `    }, cancelMobilePress = () => {
+      mobilePress?.timer && clearTimeout(mobilePress.timer), mobilePress = null;
+      t._imagePressDowns = null;`;
+
+const VENDOR_SECOND_PTR_CANCEL_NEEDLE =
+  `      if (mobilePress && f.pointerId != null && mobilePress.pointerId != null && f.pointerId !== mobilePress.pointerId) {
+        cancelMobilePress();
+        return;
+      }`;
+const VENDOR_SECOND_PTR_CANCEL_PATCH =
+  `      if (mobilePress && f.pointerId != null && mobilePress.pointerId != null && f.pointerId !== mobilePress.pointerId) {
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const keep = typeof VC?.imagePressAllowsSecondPointer == "function"
+          ? VC.imagePressAllowsSecondPointer(t.backendSettings?.card?.image_press_inspect)
+          : !1;
+        if (!keep) {
+          cancelMobilePress();
+          return;
+        }
+      }`;
+
+const VENDOR_PRESS_PTR_UP_NEEDLE =
+  `      const fPress = mobilePress;
+      if (!fPress) return;
+      fPress.timer && clearTimeout(fPress.timer), mobilePress = null;`;
+const VENDOR_PRESS_PTR_UP_PATCH =
+  `      const fPress = mobilePress;
+      if (!fPress) return;
+      const VCUp = globalThis.__INLAY_VIEWER_CORE__;
+      // One finger up drops one live press slot, so a two-finger hold stops
+      // qualifying the moment either finger leaves the image.
+      if (typeof VCUp?.noteImagePressUp == "function") t._imagePressDowns = VCUp.noteImagePressUp(t._imagePressDowns);
+      else if (Array.isArray(t._imagePressDowns)) t._imagePressDowns = t._imagePressDowns.slice(1);
+      if (typeof VCUp?.imagePressOtherPointerUp == "function"
+        ? VCUp.imagePressOtherPointerUp({ pressPointerId: fPress.pointerId, eventPointerId: f.pointerId })
+        : f.pointerId != null && fPress.pointerId != null && f.pointerId !== fPress.pointerId) {
+        return;
+      }
+      fPress.timer && clearTimeout(fPress.timer), mobilePress = null;`;
+
+const VENDOR_PRESS_PTR_CANCEL_NEEDLE =
+  `    }, onPointerCancel = () => {
+      cancelMobilePress(), pointerGesture = null, pinClick = null, pendingSheetHit = null;
+    }`;
+const VENDOR_PRESS_PTR_CANCEL_PATCH =
+  `    }, onPointerCancel = (f) => {
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      if (typeof VC?.imagePressIgnorePointerCancel == "function"
+        ? VC.imagePressIgnorePointerCancel(t.backendSettings?.card?.image_press_inspect, mobilePress?.source)
+        : !1) {
+        // Pinch/zoom cancels the first finger mid-hold. Keep the slot: no
+        // pointerup follows a cancel, so the press window prunes it instead.
+        return;
+      }
+      cancelMobilePress(), pointerGesture = null, pinClick = null, pendingSheetHit = null;
+    }`;
+
 const VENDOR_STICKY_PRESS_NEEDLE = `if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbUserHidden) continue;`;
 const VENDOR_STICKY_PRESS_PATCH = `if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;`;
 
@@ -4558,6 +4991,30 @@ const VENDOR_STICKY_OPEN_CARD_NEEDLE = `  async function openCardTagEdit(e) {
 
 const VENDOR_STICKY_OPEN_CARD_PATCH = `  async function openCardTagEdit(e) {
     if (!e?.id) return;
+    if (typeof globalThis.__INLAY_NATIVE__?.openTagStudio == "function") {
+      if (typeof document > "u" || !document.body) {
+        y("error", "card.tags.open", "plugin document unavailable");
+        return;
+      }
+      t._editOpenGen = (t._editOpenGen || 0) + 1;
+      const studioGen = t._editOpenGen;
+      await closeCharacterCreateModal().catch(() => null);
+      await closeCardTagEdit();
+      if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
+      const openedShell = !t.uiOpen;
+      if (openedShell && typeof k.showContainer == "function") {
+        await k.showContainer("fullscreen");
+        document.body.style.cssText = "margin:0;min-height:100vh;background:transparent;font:13px/1.45 Segoe UI,sans-serif;color:#e2e8f0;";
+      }
+      t.cardTagUi = { openedContainer: openedShell, _studio: !0 };
+      await hideFloatingViewerForModal();
+      try {
+        await globalThis.__INLAY_NATIVE__.openTagStudio(e);
+      } finally {
+        if (studioGen === t._editOpenGen) await closeCardTagEdit();
+      }
+      return;
+    }
     if (typeof document > "u" || !document.body) {
       y("error", "card.tags.open", "plugin document unavailable");
       return;
@@ -4577,12 +5034,29 @@ const VENDOR_STICKY_OPEN_CARD_PATCH = `  async function openCardTagEdit(e) {
     const veil = document.createElement("div");
     veil.id = "nx-card-tag-modal";
     veil.setAttribute("data-ct-root", "1");
-    veil.innerHTML = '<div data-ct-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.55);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;"><div style="width:min(620px,100%);padding:28px 20px;border-radius:16px;background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);color:#9aa6b8;font-size:13px;text-align:center">불러오는 중…</div></div>';
+    veil.innerHTML = '<div data-ct-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;"><div data-ct-card style="width:min(620px,100%);max-height:min(90vh,860px);display:flex;flex-direction:column;overflow:hidden;background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);border-radius:16px;box-shadow:0 28px 80px rgba(0,0,0,.55);"><div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08)"><div><div style="font-weight:700;font-size:15px">샷 태그 수정</div><div style="margin-top:3px;color:#9aa6b8;font-size:11px">불러오는 중…</div></div><button type="button" data-ct-x style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:6px 10px;border-radius:8px">✕</button></div><div style="flex:1;min-height:140px;display:flex;align-items:center;justify-content:center;padding:28px 16px;color:#9aa6b8;font-size:13px">불러오는 중…</div><div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-top:1px solid rgba(255,255,255,.08);background:rgba(8,12,20,.96)"><span style="color:#9aa6b8;font-size:11px">불러오는 중…</span><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button type="button" data-ct-cancel style="cursor:pointer;border:0;background:#334155;color:#fff;padding:8px 12px;border-radius:9px;font:12px Segoe UI,sans-serif">취소</button><button type="button" disabled style="cursor:default;opacity:.45;border:0;background:#7c6cff;color:#fff;padding:8px 14px;border-radius:9px;font:600 12px Segoe UI,sans-serif">저장·리롤</button></div></div></div></div>';
     document.body.appendChild(veil);
     t.cardTagUi = { root: veil, openedContainer: openedShell, _stub: !0 };
+    const dismissCardStub = () => {
+      if (openGen !== t._editOpenGen) return;
+      t._editOpenGen = (t._editOpenGen || 0) + 1;
+      closeCardTagEdit().catch(() => {});
+    };
+    veil.querySelector("[data-ct-x]")?.addEventListener("click", (ev) => { ev.preventDefault(); ev.stopPropagation(); dismissCardStub(); });
+    veil.querySelector("[data-ct-cancel]")?.addEventListener("click", (ev) => { ev.preventDefault(); dismissCardStub(); });
+    veil.querySelector("[data-ct-backdrop]")?.addEventListener("click", (ev) => { if (ev.target === ev.currentTarget) dismissCardStub(); });
     await hideFloatingViewerForModal();
     if (typeof requestAnimationFrame == "function") await new Promise((res) => requestAnimationFrame(res));
     if (openGen !== t._editOpenGen) return;
+    try { await le(); } catch {}
+    try {
+      const nai = await K("/v1/cards/" + e.id + "/nai-prompt");
+      if (nai && nai.ok) {
+        if (typeof nai.main_prompt == "string") e.main_prompt = nai.main_prompt;
+        if (typeof nai.negative_prompt == "string") e.negative_prompt = nai.negative_prompt;
+        if (Array.isArray(nai.characters) && nai.characters.length) e.characters = nai.characters;
+      }
+    } catch {}
     if (!t._viewerRoster) void ensureViewerRosterLoaded().catch(() => null);`;
 
 /** Shot-tag modal was rebuilding char prompts from live roster + expression/action/sex,
@@ -4895,12 +5369,21 @@ const VENDOR_STICKY_OPEN_CHAR_PATCH = `  async function Ua(e) {
     const veil = document.createElement("div");
     veil.id = "nx-char-edit-modal";
     veil.setAttribute("data-ce-root", "1");
-    veil.innerHTML = '<div data-ce-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.72);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;"><div style="width:min(720px,100%);padding:28px 20px;border-radius:16px;background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);color:#9aa6b8;font-size:13px;text-align:center">불러오는 중…</div></div>';
+    veil.innerHTML = '<div data-ce-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;"><div data-ce-card style="width:min(720px,100%);max-height:min(94vh,920px);background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);border-radius:16px;box-shadow:0 28px 80px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0"><div><div style="font-weight:700;font-size:15px">캐릭터 태그 수정</div><div style="margin-top:3px;color:#9aa6b8;font-size:11px">불러오는 중…</div></div><button type="button" data-ce-x style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:6px 10px;border-radius:8px">✕</button></div><div style="padding:28px 16px;flex:1;min-height:140px;display:flex;align-items:center;justify-content:center;color:#9aa6b8;font-size:13px">불러오는 중…</div><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-top:1px solid rgba(255,255,255,.08);flex-shrink:0;background:rgba(8,12,20,.92)"><span style="color:#9aa6b8;font-size:11px">불러오는 중…</span><div style="display:flex;gap:8px"><button type="button" data-ce-cancel style="cursor:pointer;border:0;background:#334155;color:#fff;padding:8px 12px;border-radius:9px;font:12px Segoe UI,sans-serif">취소</button><button type="button" disabled style="cursor:default;opacity:.45;border:0;background:#7c6cff;color:#fff;padding:8px 14px;border-radius:9px;font:600 12px Segoe UI,sans-serif">저장</button></div></div></div></div>';
     document.body.appendChild(veil);
     t.charEditUi = { root: veil, openedContainer: openedShell, _stub: !0, _openGen: openGen };
+    const dismissCharStub = () => {
+      if (openGen !== t._editOpenGen) return;
+      t._editOpenGen = (t._editOpenGen || 0) + 1;
+      xe().catch(() => {});
+    };
+    veil.querySelector("[data-ce-x]")?.addEventListener("click", (ev) => { ev.preventDefault(); ev.stopPropagation(); dismissCharStub(); });
+    veil.querySelector("[data-ce-cancel]")?.addEventListener("click", (ev) => { ev.preventDefault(); dismissCharStub(); });
+    veil.querySelector("[data-ce-backdrop]")?.addEventListener("click", (ev) => { if (ev.target === ev.currentTarget) dismissCharStub(); });
     await hideFloatingViewerForModal();
     if (typeof requestAnimationFrame == "function") await new Promise((res) => requestAnimationFrame(res));
     if (openGen !== t._editOpenGen) return;
+    try { await le(); } catch {}
     try {
       const hid = String(e.id || "").trim();
       if (hid) {
@@ -4926,10 +5409,20 @@ const VENDOR_STICKY_CLOSE_CARD_NEEDLE = `  async function closeCardTagEdit() {
   }`;
 
 const VENDOR_STICKY_CLOSE_CARD_PATCH = `  async function closeCardTagEdit() {
+    if (t._closingCardTag) return;
+    t._closingCardTag = !0;
+    try {
     const e = t.cardTagUi, n = e?.root || (typeof document < "u" ? document.getElementById("nx-card-tag-modal") : null);
     try {
       n?.remove?.();
     } catch {
+    }
+    try {
+      document.getElementById("nx-tag-studio")?.remove?.();
+    } catch {
+    }
+    if (e?._studio && typeof globalThis.__INLAY_NATIVE__?.closeTagStudio == "function") {
+      globalThis.__INLAY_NATIVE__.closeTagStudio();
     }
     const o = !!e?.openedContainer;
     t.cardTagUi = null;
@@ -4938,6 +5431,9 @@ const VENDOR_STICKY_CLOSE_CARD_PATCH = `  async function closeCardTagEdit() {
     if (!t.charEditUi && !t.uiOpen) {
       void restoreFloatingViewerAfterModal();
       void Ht();
+    }
+    } finally {
+      t._closingCardTag = !1;
     }
   }`;
 
@@ -5052,11 +5548,63 @@ const VENDOR_SAVE_REROLL_INLINE_NEEDLE =
 const VENDOR_SAVE_REROLL_INLINE_PATCH =
   `        await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), await refreshSelectedInlineImages(!0), t.galleryUi?.status?.setTextContent && await t.galleryUi.status.setTextContent(\`저장·리롤 완료 · \${String(Gt || cardId).slice(0, 8)}\`), y("info", "card.tags.reroll", \`\${String(cardId).slice(0, 8)}→\${String(Gt).slice(0, 8)}\`);`;
 
-/** Session gallery used 120 because 1.x decoded every listed PNG. Now cachedOnly. */
+/**
+ * Session gallery: newest window plus the hashes we are about to paint.
+ *
+ * This used to ask for 2000 — the session ceiling — because a plain 120 cut the
+ * hash links on old messages and their shots stopped attaching. The window is
+ * back because the request now names the hashes it needs and the cache merges
+ * instead of replacing, so an old shot survives outside the window.
+ */
 const VENDOR_GALLERY_CE_LIMIT_NEEDLE =
   `      o = await K(\`/v1/gallery?session_id=\${encodeURIComponent(n)}&limit=120\`, { method: "GET" });`;
 const VENDOR_GALLERY_CE_LIMIT_PATCH =
-  `      o = await K(\`/v1/gallery?session_id=\${encodeURIComponent(n)}&limit=2000\`, { method: "GET" });`;
+  `      const askHashes = nxCeWantHashes();
+      const hashQ = askHashes.length ? \`&hashes=\${encodeURIComponent(askHashes.join(","))}\` : "";
+      o = await K(\`/v1/gallery?session_id=\${encodeURIComponent(n)}&limit=\${NX_GALLERY_WINDOW}\${hashQ}\`, { method: "GET" });
+      o.__askedHashes = askHashes;`;
+
+const VENDOR_GALLERY_CE_MERGE_NEEDLE =
+  `    t.gallery = nextItems;
+    t._galleryCache = { sessionId: n, at: Date.now() };`;
+const VENDOR_GALLERY_CE_MERGE_PATCH =
+  `    {
+      const VCm = globalThis.__INLAY_VIEWER_CORE__;
+      // A forced reload means cards may have appeared; retry remembered misses.
+      if (force) t._galleryHashMiss = null;
+      const samePrev = t._galleryCache?.sessionId === n ? prevGallery : [];
+      const merged = typeof VCm?.mergeSessionGallery == "function"
+        ? VCm.mergeSessionGallery({
+          prev: samePrev,
+          next: nextItems,
+          total: o?.total,
+          windowOldestAt: o?.window_oldest_at,
+          askedHashes: o?.__askedHashes || [],
+          cap: 2000
+        })
+        : { cards: nextItems, kept: 0, dropped: 0, replaced: !0 };
+      t.gallery = merged.cards;
+      if (!merged.replaced) {
+        y("info", "gallery.window", \`win=\${nextItems.length}/\${Number(o?.total || 0)} keep=\${merged.kept} drop=\${merged.dropped}\`);
+      }
+    }
+    t._galleryCache = { sessionId: n, at: Date.now() };`;
+
+/**
+ * ce() used to warm the viewer strip (up to 8 data URLs) on every gallery
+ * reload — even when the floating viewer was off, and ahead of inline paint.
+ * The mounted viewer warms its own strip; inline / overlay encode what they
+ * paint. Leave ce() as list-only so those surfaces own the encode slots.
+ */
+const VENDOR_GALLERY_CE_WARM_NEEDLE =
+  `      const focus = typeof VC?.galleryFocusMessage == "function" ? VC.galleryFocusMessage(t.selectedMessage, t.lastImagedMessage, t.gallery) : t.selectedMessage;
+      const ordered = typeof VC?.galleryForMessage == "function" ? VC.galleryForMessage(t.gallery, focus, 8) : (t.gallery || []).slice(0, 8);
+      const idx = Number(t.galleryUi?.index) || 0;
+      const ids = VC?.visibleGalleryImageIds ? VC.visibleGalleryImageIds(ordered, idx, 1, Math.max(8, ordered.length || 0)) : ordered.map((c) => c?.id).filter(Boolean);
+      if (typeof N?.warmImages == "function") N.warmImages(ids).catch(() => {
+      });`;
+const VENDOR_GALLERY_CE_WARM_PATCH =
+  `      // List only — viewer / inline / overlay warm the shots they actually paint.`;
 
 const VENDOR_CHAR_SAVE_BG_NEEDLE =
   `        if (t.charactersSession = v?.characters || t.charactersSession, t.charactersGlobal = v?.global || t.charactersGlobal, t.appearance = v?.appearance || t.appearance, y("info", "char.edit.save", \`\${I} → \${rosterMeta?.rosterUnified ? "roots" : x === "__global__" ? "global" : "session"} app=\${F.length} attire=\${T.length} acc=\${Acc.length}\`), t.galleryUi?.status?.setTextContent) try {
@@ -5088,6 +5636,8 @@ const VENDOR_SETTINGS_OPEN_STICKY_NEEDLE = `  async function At() {
 const VENDOR_SETTINGS_OPEN_STICKY_PATCH = `  async function At() {
     // Flag first so La()/pin park while settings shell paints — do not await Ht here.
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
+    t._inspectGen = (t._inspectGen || 0) + 1;
+    if (typeof t.hideStickyInspect == "function") t.hideStickyInspect().catch(() => {});
     t.uiOpen = !0;
     // Re-open settings with whatever the viewer last selected.`;
 
@@ -5117,7 +5667,7 @@ const VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE = `      const hide = "position:fixed
     typeof k.showContainer == "function" && await k.showContainer("fullscreen");`;
 const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH = `      const hide = "position:fixed;left:0;top:0;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden;";
       // Panel is position:fixed — must hide it too (root alone does not cover it).
-      for (const ui of [t.galleryUi?.root, t.galleryUi?.panel, t.overlayUi?.root, t.debugUi?.root, t.overlayUi?.pinned, t.overlayUi?.preview, t.overlayUi?.fullscreen]) {
+      for (const ui of [t.galleryUi?.root, t.galleryUi?.panel, t.overlayUi?.root, t.debugUi?.root, t.overlayUi?.pinned, t.overlayUi?.preview, t.overlayUi?.fullscreen, t.overlayUi?.actionMenu]) {
         if (ui && typeof ui.setStyleAttribute == "function") ui.setStyleAttribute(hide).catch(() => {
         });
       }
@@ -5144,7 +5694,51 @@ const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH = `      const hide = "position:fixed;
     Promise.resolve().then(() => {
       hideFloatingViewerForModal().catch(() => {});
       Ht().catch(() => {});
+      if (typeof t.hideStickyInspect == "function") t.hideStickyInspect().catch(() => {});
     });`;
+
+/** Expose inspect close on t so At() can force-dismiss the enlarge sheet. */
+const VENDOR_HIDE_INSPECT_BIND_NEEDLE = `    }, hideInspect = async () => {
+      inspectOpen = !1, pendingSheetHit = null, await hideActionMenu(), await hideFullscreen();
+    }, hidePressFill = async () => {`;
+const VENDOR_HIDE_INSPECT_BIND_PATCH = `    }, hideInspect = async () => {
+      t._inspectGen = (t._inspectGen || 0) + 1;
+      inspectOpen = !1, pendingSheetHit = null, await hideActionMenu(), await hideFullscreen();
+    };
+    t.hideStickyInspect = hideInspect;
+    const hidePressFill = async () => {`;
+
+/** In-flight enlarge sheet must not finish after settings already opened. */
+const VENDOR_SHOW_INSPECT_ABORT_NEEDLE = `    }, showStickyInspect = async (f) => {
+      if (!f) return;
+      await hidePressFill();
+      actionCard = f, inspectOpen = !0, pendingSheetHit = null, inspectGuardUntil = Date.now() + 400, inspectZones = [], inspectSheetEl = null;
+      await showFullscreen(f);
+      try {
+        await actionMenu.setInnerHTML("");
+      } catch {
+      }`;
+const VENDOR_SHOW_INSPECT_ABORT_PATCH = `    }, showStickyInspect = async (f) => {
+      if (!f || t.uiOpen) return;
+      const inspectGen = (t._inspectGen = (t._inspectGen || 0) + 1);
+      await hidePressFill();
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
+      actionCard = f, inspectOpen = !0, pendingSheetHit = null, inspectGuardUntil = Date.now() + 400, inspectZones = [], inspectSheetEl = null;
+      await showFullscreen(f);
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
+      try {
+        await actionMenu.setInnerHTML("");
+      } catch {
+      }`;
+
+const VENDOR_SHOW_INSPECT_COMMIT_NEEDLE = `      inspectSheetEl = sheet;
+      await actionMenu.setStyleAttribute("position:fixed;inset:0;display:flex;z-index:100002;pointer-events:auto;background:transparent;align-items:flex-end;justify-content:center;padding:max(12px,env(safe-area-inset-bottom)) 12px 18px;box-sizing:border-box;");
+    }, findActHit = async (x, I) => {`;
+const VENDOR_SHOW_INSPECT_COMMIT_PATCH = `      inspectSheetEl = sheet;
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
+      await actionMenu.setStyleAttribute("position:fixed;inset:0;display:flex;z-index:100002;pointer-events:auto;background:transparent;align-items:flex-end;justify-content:center;padding:max(12px,env(safe-area-inset-bottom)) 12px 18px;box-sizing:border-box;");
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
+    }, findActHit = async (x, I) => {`;
 
 /** Settings close (nx-close): hide first, flush in background; restore viewer; no duplicate he/Ce after it(). */
 const VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE = `    document.getElementById("nx-close")?.addEventListener("click", async () => {
@@ -5377,7 +5971,7 @@ const VENDOR_CHAR_EDIT_GENDER_HTML_NEEDLE =
   `<div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:8px"><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>이름</span><input data-ce-name value="\${h(n.name || e.name)}" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>원본 태그</span><input data-ce-original value="\${h(n.original || "")}" placeholder="(원작 캐릭터 태그)" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"></label></div>`;
 const VENDOR_CHAR_EDIT_GENDER_HTML_PATCH =
   `<div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr) minmax(0,.7fr);gap:8px"><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>이름</span><input data-ce-name value="\${h(n.name || e.name)}" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>원본</span><input data-ce-original value="\${h(n.original || "")}" placeholder="(원작 캐릭터 태그)" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>성별</span><select data-ce-gender style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif"><option value="" \${!["girl","boy","other","female","male"].includes(String(n.gender||n.sex||""))?"selected":""}>미정</option><option value="girl" \${["girl","female"].includes(String(n.gender||n.sex||""))?"selected":""}>girl</option><option value="boy" \${["boy","male"].includes(String(n.gender||n.sex||""))?"selected":""}>boy</option><option value="other" \${String(n.gender||n.sex||"")==="other"?"selected":""}>other</option></select></label></div>
-<div class="char-looks-row" style="margin-top:8px"><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>머리</span><input data-ce-hair-color value="\${h(n.hair_color||"")}" placeholder="black hair" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>스타일</span><input data-ce-hair-style value="\${h(n.hair_style||"")}" placeholder="short hair, bangs…" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>눈</span><input data-ce-eye-color value="\${h(n.eye_color||"")}" placeholder="amber eyes" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>키</span><input data-ce-height value="\${h(n.height||"")}" placeholder="170" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>나이</span><input data-ce-age type="number" min="1" max="120" value="\${h(n.age??"")}" placeholder="24" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>자지</span><select data-ce-penis-size style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"><option value="" \${!n.penis_size?"selected":""}>없음</option><option value="small penis" \${n.penis_size==="small penis"?"selected":""}>small penis</option><option value="penis" \${n.penis_size==="penis"?"selected":""}>penis</option><option value="huge penis" \${n.penis_size==="huge penis"?"selected":""}>huge penis</option><option value="gigantic penis" \${n.penis_size==="gigantic penis"?"selected":""}>gigantic penis</option></select></label></div>`;
+<div class="char-looks-row" style="margin-top:8px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px"><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>머리</span><input data-ce-hair-color value="\${h(n.hair_color||"")}" placeholder="black hair" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>스타일</span><input data-ce-hair-style value="\${h(n.hair_style||"")}" placeholder="short hair, bangs…" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>눈</span><input data-ce-eye-color value="\${h(n.eye_color||"")}" placeholder="amber eyes" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>키</span><input data-ce-height value="\${h(n.height||"")}" placeholder="170" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>나이</span><input data-ce-age type="number" min="1" max="120" value="\${h(n.age??"")}" placeholder="24" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px"><span>자지</span><select data-ce-penis-size style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px/1.4 Segoe UI,sans-serif"><option value="" \${!n.penis_size?"selected":""}>없음</option><option value="small penis" \${n.penis_size==="small penis"?"selected":""}>small penis</option><option value="penis" \${n.penis_size==="penis"?"selected":""}>penis</option><option value="huge penis" \${n.penis_size==="huge penis"?"selected":""}>huge penis</option><option value="gigantic penis" \${n.penis_size==="gigantic penis"?"selected":""}>gigantic penis</option></select></label></div>`;
 
 const VENDOR_CHAR_EDIT_GENDER_REF_NEEDLE =
   `const s = i.querySelector("[data-ce-name]"), c = i.querySelector("[data-ce-original]"), surnameEl = i.querySelector("[data-ce-surname]")`;
@@ -7083,7 +7677,7 @@ const VENDOR_DASH_ACTIONS_HTML_NEEDLE =
   `          <div class="row" style="margin-top:12px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-run-now" class="secondary" data-nx-help-id="nx-run-now">지금 생성 (수동)</button><button id="nx-open-viewer" class="secondary" data-nx-help-id="nx-open-viewer">뷰어 앞으로</button></div>
           <div class="row" style="margin-top:8px"><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">모든 창 위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">모든 설정 초기화</button></div>`;
 const VENDOR_DASH_ACTIONS_HTML_PATCH =
-  `          <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">창위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">전체 초기화</button><button id="nx-reset-char-refs" class="secondary" type="button" data-nx-help-id="nx-reset-char-refs">레퍼런스 이미지 초기화</button><button id="nx-restore-chat-chrome" class="secondary" type="button" data-nx-help-id="nx-restore-chat-chrome">채팅 카드 복구</button></div>`;
+  `          <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px"><button id="nx-save-dash" data-nx-help-id="nx-save-dash">대시보드 저장</button><button id="nx-reset-windows" class="secondary" type="button" data-nx-help-id="nx-reset-windows">창위치 초기화</button><button id="nx-reset-settings" class="secondary" type="button" data-nx-help-id="nx-reset-settings">전체 초기화</button><button id="nx-reset-char-refs" class="secondary" type="button" data-nx-help-id="nx-reset-char-refs">레퍼런스 이미지 초기화</button><button id="nx-migrate-legacy" class="secondary" type="button" data-nx-help-id="nx-migrate-legacy">2.4 데이터 이전<span id="nx-migrate-dot" style="display:none;margin-left:6px;color:#fbbf24">●</span></button></div>`;
 
 const VENDOR_CHAR_IMPORT_EVT_NEEDLE =
   `    }), document.getElementById("nx-char-add-global")?.addEventListener("click", async () => {`;
@@ -7301,7 +7895,7 @@ const VENDOR_RESET_HELP_PATCH =
   `    "nx-reset-windows": { title: "창위치 초기화", body: "뷰어·접힘 아이콘·핀이 화면 밖으로 나가 안 보일 때 기본 위치로 되돌립니다." },
     "nx-reset-settings": { title: "전체 초기화", body: "카드·LLM·NAI 등 설정을 기본값으로 되돌립니다. API 키·창 위치·카드 프리셋은 유지됩니다." },
     "nx-reset-char-refs": { title: "레퍼런스 이미지 초기화", body: "모든 캐릭터 참고이미지 해시를 지우고, 기기 IDB와 Inlay 모듈 에셋을 삭제합니다. 설정은 유지됩니다." },
-    "nx-restore-chat-chrome": { title: "채팅 카드 복구", body: "카드 위쪽 이름·대표이미지가 HTML에서 안 보일 때, 그 칸만 다시 그립니다. 이미지 파일은 지우거나 덮지 않습니다." },`;
+    "nx-migrate-legacy": { title: "2.4 데이터 이전", body: "2.4까지 쓰던 이미지 저장 방식을 2.5 방식으로 옮깁니다. 켤 때마다 하던 전체 점검이 사라져 부팅이 빨라지고, Risu 세이브파일도 가벼워집니다. 옮긴 뒤 옛 원본은 지워지므로 2.4로는 되돌릴 수 없습니다. 남은 장수가 있으면 버튼에 점이 붙습니다." },`;
 
 const VENDOR_RESET_CHAR_REF_EVT_NEEDLE =
   `    }), document.getElementById("nx-reset-settings")?.addEventListener("click", async () => {
@@ -7321,16 +7915,73 @@ const VENDOR_RESET_CHAR_REF_EVT_PATCH =
         t.uiMessage = { type: "error", text: z(a?.message || a) };
       }
       await P();
-    }), document.getElementById("nx-restore-chat-chrome")?.addEventListener("click", async () => {
-      try {
-        const a = await K("/v1/chat/restore-chrome", { method: "POST", body: {} }, 15e3);
-        t.uiMessage = { type: "success", text: a?.remounted ? "채팅 카드 헤더를 다시 그렸습니다" : "다시 그릴 카드가 없습니다" };
-        $e("채팅 카드 복구");
-      } catch (a) {
-        t.uiMessage = { type: "error", text: z(a?.message || a) };
-      }
-      await P();
-    }), document.getElementById("nx-reset-settings")?.addEventListener("click", async () => {
+    }), (() => {
+      const btn = document.getElementById("nx-migrate-legacy");
+      if (!btn) return;
+      const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      const setDot = (n) => {
+        const dot = document.getElementById("nx-migrate-dot");
+        dot && (dot.style.display = n > 0 ? "" : "none", dot.title = n > 0 ? n + "장 남음" : "");
+      };
+      const PHASES = { idle: "대기", images: "이미지 이전", cleanup: "정리", purge: "옛 데이터 삭제", done: "완료", cancelled: "중단됨", error: "오류" };
+      const render = (st, note) => {
+        const box = document.getElementById("nx-migrate-body");
+        if (!box) return;
+        const total = Number(st?.total || 0), done = Number(st?.done || 0), failed = Number(st?.failed || 0);
+        const pct = total > 0 ? Math.round(100 * done / total) : st?.running ? 6 : 100;
+        const mb = (Number(st?.freed_bytes || 0) / 1048576).toFixed(1);
+        const bar = globalThis.__INLAY_VIEWER_CORE__?.composeSingleProgressBarHtml?.({
+          pct, busy: st?.running, error: st?.phase === "error", tone: "index",
+        }) || "";
+        box.innerHTML = '<div style="font-weight:700">' + esc(PHASES[String(st?.phase || "idle")] || st?.phase) + "</div>"
+          + '<div class="muted" style="font-size:12px;margin:4px 0">' + done + " / " + total + " 장"
+          + (failed ? " · 실패 " + failed : "") + " · 확보 " + mb + " MB</div>"
+          + '<div style="margin:8px 0">' + bar + "</div>"
+          + (st?.error ? '<div style="color:#f87171;font-size:12px">' + esc(st.error) + "</div>" : "")
+          + (note ? '<div class="muted" style="font-size:12px">' + esc(note) + "</div>" : "");
+      };
+      K("/v1/storage/migrate/status", { method: "GET" }, 15e3)
+        .then((r) => setDot(Number(r?.pending_images || 0)))
+        .catch(() => {});
+      btn.addEventListener("click", async () => {
+        if (!globalThis.confirm?.("2.4 데이터를 2.5 형식으로 옮길까요?\\n\\n옛 이미지 원본은 옮긴 뒤 삭제됩니다. 2.4로는 되돌릴 수 없습니다.")) return;
+        document.getElementById("nx-migrate-modal")?.remove?.();
+        const veil = document.createElement("div");
+        veil.id = "nx-migrate-modal";
+        veil.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px";
+        veil.innerHTML = '<div style="background:#1b2330;border-radius:14px;width:min(420px,100%);padding:16px;box-sizing:border-box">'
+          + '<div style="display:flex;gap:8px;align-items:center"><strong>2.4 데이터 이전</strong>'
+          + '<button type="button" class="secondary" data-mig-cancel style="margin-left:auto">중단</button>'
+          + '<button type="button" class="secondary" data-mig-close>닫기</button></div>'
+          + '<div id="nx-migrate-body" style="margin-top:12px"><div class="muted">준비 중…</div></div></div>';
+        document.body.appendChild(veil);
+        veil.querySelector("[data-mig-close]")?.addEventListener("click", () => veil.remove());
+        veil.querySelector("[data-mig-cancel]")?.addEventListener("click", () => {
+          K("/v1/storage/migrate/cancel", { method: "POST", body: {} }, 15e3).catch(() => {});
+        });
+        let st = null;
+        try {
+          st = (await K("/v1/storage/migrate", { method: "POST", body: {} }, 6e4))?.status || null;
+          render(st, "");
+          // Closing the modal only stops the polling; the run itself continues,
+          // which is why cancel is a separate button.
+          while (st?.running && document.getElementById("nx-migrate-modal")) {
+            await new Promise((r) => setTimeout(r, 400));
+            const info = await K("/v1/storage/migrate/status", { method: "GET" }, 15e3);
+            st = info?.status || st;
+            setDot(Number(info?.pending_images || 0));
+            render(st, "");
+          }
+          render(st, st?.failed ? "실패한 장은 옛 저장소에 그대로 있습니다. 다시 눌러 이어서 할 수 있습니다." : "");
+          t.uiMessage = st?.phase === "error"
+            ? { type: "error", text: z(st?.error || "데이터 이전 실패") }
+            : { type: "success", text: st?.phase === "done" ? "데이터 이전 완료" : "데이터 이전 " + (PHASES[String(st?.phase || "")] || "") };
+        } catch (a) {
+          t.uiMessage = { type: "error", text: z(a?.message || a) };
+        }
+        await P();
+      });
+    })(), document.getElementById("nx-reset-settings")?.addEventListener("click", async () => {
       if (!globalThis.confirm?.("정말로 모든 설정을 기본값으로 초기화할까요?`;
 
 const VENDOR_UNLOAD_SAVE_NEEDLE =
@@ -7459,10 +8110,13 @@ const VENDOR_INLINE_HELP_NEEDLE =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽에 핀과 이미지를 함께 둡니다. 스크롤하는 동안에도 지금 읽는 구간의 이미지를 계속 보여 줍니다. 짧게 누르면 이미지를 숨기고, 핀을 누르면 다시 나타납니다. 길게 누르면 크게보기와 태그·재생성·리롤·캐릭터 칩 메뉴가 열립니다." },`;
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
-    "nx-inline-chat": { title: "이미지 채팅에", body: "선택 기준에서 근처 char 말풍선(위·아래 각 최대 1, 유저·라이트보드(본문 30자 이하)는 건너뜀; 선택이 char면 포함해 최대 3)에만 샷 line 이미지를 끼웁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
+    "nx-inline-chat": { title: "이미지 채팅에", body: "선택 기준에서 설정한 탐색 숫자만큼 위·아래의 char 말풍선을 유지합니다. 유저·라이트보드(본문 30자 이하)는 건너뜁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "사용안함 / 편의성(오류율 있음 · 2.4.7, 칩을 본문 위에 붙임) / 호환성(2.4.9, 본문 문단에만 붙임). 헤더가 비면 채팅 카드 복구를 쓰세요. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
     "nx-inline-chat-scale": { title: "이미지 채팅 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
-    "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트." },
+    "nx-inline-dom-radius": { title: "스피너 DOM 탐색 숫자", body: "선택한 메시지 기준으로 위·아래에서 유지할 적격 말풍선 수입니다. 기본 4, 범위 3–20입니다. 유저와 본문 30자 이하 메시지는 건너뜁니다." },
+    "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트. 칩·샷을 꽂기 직전에는 조각 불러오는 중 스피너가 같은 자리에 뜹니다." },
+    "nx-toast-anchor": { title: "토스트 위치", body: "진행·선택·알림·조각 로딩 토스트가 붙는 화면 모서리입니다. 기본은 중상단입니다." },
+    "nx-image-press": { title: "이미지 크게보기", body: "인라인·스티키 샷을 크게 봅니다. 사용안함 / 더블 탭(이미지 위 빠른 두 번) / 트리플 탭(빠른 세 번) / 꾸욱 누르기 / 꾸욱 누르기 + 더블탭. 탐색기·메시지 선택 길게 누르기는 그대로입니다." },
     "nx-nai4-fallback": { title: "할당량 끝나면 NAI4 폴백", body: "V5 샷이 할당량(402)으로 실패하면 그 샷만 V4.5와 NAI4 프리셋으로 다시 뽑습니다. V5 자연어·대사는 빼입니다." },
     "nx-nai5-speech": { title: "NAI5 대사삽입", body: "V5 샷에서 말한 캐릭터의 캡션 끝에 말풍선을 넣습니다. 여러 명이 말하면 각자 자기 대사만 가집니다. 프리셋의 spoken bubble 억제는 그 샷에서 빼입니다." },`;
 
@@ -7481,7 +8135,28 @@ const VENDOR_INLINE_TOGGLE_PATCH =
             <label data-nx-help-id="nx-inline-chat-scale"><span>이미지 채팅 배율 (%)</span>
               <input id="nx-inline-chat-scale" type="number" min="25" max="200" step="5" value="\${h(i.inline_chat_scale_pct ?? 100)}">
             </label>
+            <label data-nx-help-id="nx-inline-dom-radius"><span>스피너 DOM 탐색 숫자</span>
+              <input id="nx-inline-dom-radius" type="number" min="3" max="20" step="1" value="\${h(i.inline_chat_dom_radius ?? 4)}">
+            </label>
             <label class="toggle-row" data-nx-help-id="nx-progress-toast"><input type="checkbox" id="nx-progress-toast" \${i.progress_toast ? "checked" : ""}><span>진행 토스트</span></label>
+            <label data-nx-help-id="nx-toast-anchor"><span>토스트 위치</span>
+              <select id="nx-toast-anchor">
+                <option value="tl" \${(i.toast_anchor || "tc") === "tl" ? "selected" : ""}>좌상단</option>
+                <option value="bl" \${i.toast_anchor === "bl" ? "selected" : ""}>좌하단</option>
+                <option value="tr" \${i.toast_anchor === "tr" ? "selected" : ""}>우상단</option>
+                <option value="br" \${i.toast_anchor === "br" ? "selected" : ""}>우하단</option>
+                <option value="tc" \${!i.toast_anchor || i.toast_anchor === "tc" ? "selected" : ""}>중상단</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-image-press"><span>이미지 크게보기</span>
+              <select id="nx-image-press">
+                <option value="off" \${i.image_press_inspect === "off" ? "selected" : ""}>사용안함</option>
+                <option value="two" \${i.image_press_inspect === "two" ? "selected" : ""}>더블 탭</option>
+                <option value="three" \${i.image_press_inspect === "three" ? "selected" : ""}>트리플 탭</option>
+                <option value="hold" \${!i.image_press_inspect || i.image_press_inspect === "hold" ? "selected" : ""}>꾸욱 누르기</option>
+                <option value="both" \${i.image_press_inspect === "both" ? "selected" : ""}>꾸욱 누르기 + 더블탭</option>
+              </select>
+            </label>
             <label class="toggle-row" data-nx-help-id="nx-nai4-fallback"><input type="checkbox" id="nx-nai4-fallback" \${i.nai4_fallback ? "checked" : ""}><span>할당량 끝나면 NAI4 폴백</span></label>
             <label class="toggle-row" data-nx-help-id="nx-nai5-speech"><input type="checkbox" id="nx-nai5-speech" \${i.nai5_speech ? "checked" : ""}><span>NAI5 대사삽입</span></label>`;
 
@@ -7492,7 +8167,10 @@ const VENDOR_INLINE_SAVE_PATCH =
       inline_chat_images: ee("nx-inline-chat"),
       inline_msg_actions: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeInlineMsgActions == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeInlineMsgActions(N("nx-inline-msg-actions")) : String(N("nx-inline-msg-actions") || "off")),
       inline_chat_scale_pct: Math.max(25, Math.min(200, Math.round(Ne(N("nx-inline-chat-scale"), 100)) || 100)),
+      inline_chat_dom_radius: Math.max(3, Math.min(20, Math.round(Ne(N("nx-inline-dom-radius"), 4)) || 4)),
       progress_toast: ee("nx-progress-toast"),
+      toast_anchor: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeToastAnchor == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeToastAnchor(N("nx-toast-anchor")) : String(N("nx-toast-anchor") || "tc")),
+      image_press_inspect: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeImagePressInspect == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeImagePressInspect(N("nx-image-press")) : String(N("nx-image-press") || "hold")),
       nai4_fallback: ee("nx-nai4-fallback"),
       nai5_speech: ee("nx-nai5-speech"),`;
 
@@ -7519,6 +8197,98 @@ const VENDOR_DE_STRIP_PATCH =
       }
     } catch {
     }`;
+
+const VENDOR_IE_FN_NEEDLE =
+  `  function Ie(e) {
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      const u = N?.resolveImageUrl?.(e) || e?.image_url;
+      // DOMPurify keeps data:image, strips blob:. Never use blob: or localhost backend.
+      if (typeof u == "string" && /^data:image\\//i.test(u)) return u;
+    } catch {
+    }
+    return "";
+  }
+  /** Warm a card to a DOMPurify-safe data:image URL (Risu strips blob:/http). */
+  async function ensureStickyCardImage(card) {
+    if (!card?.id) return "";
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      let src = typeof N?.resolveImageUrl == "function" ? N.resolveImageUrl(card) || "" : "";
+      if ((!src || !/^data:image\\//i.test(src)) && typeof N?.ensureImageUrl == "function") {
+        src = await N.ensureImageUrl(card.id) || "";
+        if (src) card.image_url = src;
+      }
+      if (typeof src == "string" && /^data:image\\//i.test(src)) return src;
+    } catch {
+    }
+    try {
+      const fallback = Ie(card);
+      if (typeof fallback == "string" && /^data:image\\//i.test(fallback)) return fallback;
+    } catch {
+    }
+    return "";
+  }`;
+
+const VENDOR_IE_FN_PATCH =
+  `  function nxReadyImg(src) {
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    if (typeof VC?.isReadyImageSrc == "function") return VC.isReadyImageSrc(src);
+    return typeof src == "string" && (/^data:image\\//i.test(src) || /^blob:/i.test(src));
+  }
+  function Ie(e) {
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      const u = N?.resolveImageUrl?.(e) || e?.image_url;
+      // blob: is set via setAttribute after insert — SafeDOM strips it from setInnerHTML.
+      if (nxReadyImg(u)) return typeof u == "string" ? u : "";
+    } catch {
+    }
+    return "";
+  }
+  /** Warm a card to a display URL. blob: is applied with setAttribute, not innerHTML. */
+  async function ensureStickyCardImage(card) {
+    if (!card?.id) return "";
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      let src = typeof N?.resolveImageUrl == "function" ? N.resolveImageUrl(card) || "" : "";
+      if (!nxReadyImg(src) && typeof N?.ensureImageUrl == "function") {
+        src = await N.ensureImageUrl(card.id) || "";
+        if (src) card.image_url = src;
+      }
+      if (nxReadyImg(src)) return src;
+    } catch {
+    }
+    try {
+      const fallback = Ie(card);
+      if (nxReadyImg(fallback)) return fallback;
+    } catch {
+    }
+    return "";
+  }`;
+
+const VENDOR_IE_READY_FB_NEEDLE = `typeof fb == "string" && /^data:image\\//i.test(fb)`;
+const VENDOR_IE_READY_FB_PATCH = `nxReadyImg(fb)`;
+const VENDOR_IE_READY_FRESH_NEEDLE = `typeof fresh == "string" && /^data:image\\//i.test(fresh)`;
+const VENDOR_IE_READY_FRESH_PATCH = `nxReadyImg(fresh)`;
+
+const VENDOR_STICKY_POOL_IMG_NEEDLE =
+  `        const X = await H(n, "div", {
+          style: "position:fixed;display:none;z-index:99970;",
+          html: \`<img src="\${src}" style="width:100%;height:100%;object-fit:cover;display:block" />\`
+        });
+        await e.layer.appendChild(X);`;
+const VENDOR_STICKY_POOL_IMG_PATCH =
+  `        const X = await H(n, "div", {
+          style: "position:fixed;display:none;z-index:99970;",
+          html: \`<img src="" style="width:100%;height:100%;object-fit:cover;display:block" />\`
+        });
+        try {
+          const img = typeof X.querySelector == "function" ? await X.querySelector("img") : null;
+          if (img && typeof img.setAttribute == "function") await img.setAttribute("src", src);
+        } catch {
+        }
+        await e.layer.appendChild(X);`;
 
 const VENDOR_DT_FN_NEEDLE =
   `  async function dt(e) {
@@ -7585,6 +8355,45 @@ const VENDOR_DT_FN_PATCH =
       if (b.length) return b;
     }
     return [];
+  }
+  async function nxWaitNewestDom(doc, maxMs) {
+    // Character switch: Risu remounts the chat after we notice the session.
+    // A fixed 250 ms is early on a phone and late on localhost. Ask for the
+    // newest bubble until it exists, then stop — do not watch the whole tree.
+    const cap = Number(maxMs) > 0 ? Number(maxMs) : 2000;
+    const t0 = Date.now();
+    while (Date.now() - t0 <= cap) {
+      let root = doc;
+      try {
+        if (typeof qe == "function") root = await qe(doc) || doc;
+      } catch {
+        root = doc;
+      }
+      const newest = typeof dtNewest == "function" ? await dtNewest(root) : [];
+      if (Array.isArray(newest) && newest.length) return newest;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return [];
+  }
+  async function dtNewest(e) {
+    if (!e) return [];
+    const unwrap = async (sel) => {
+      try {
+        const o = await e.querySelectorAll(sel);
+        const a = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(o) : [];
+        return Array.isArray(a) ? a : [];
+      } catch {
+        return [];
+      }
+    };
+    let a = await unwrap("[data-chat-id]");
+    if (!a.length) a = await unwrap(".risu-chat");
+    if (a.length) return [a[a.length - 1]];
+    for (const n of $a) {
+      const b = await unwrap(n);
+      if (b.length) return [b[b.length - 1]];
+    }
+    return [];
   }`;
 
 const VENDOR_DA_QA_NEEDLE =
@@ -7610,21 +8419,281 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     if (raw === true || raw === "compat" || raw === "true" || raw === 1) return "compat";
     return "off";
   }
-  async function injectChatInlineImages(msgEl, cards, pendingRows) {
+  /** Batched read of every inline marker in a bubble: node, card id, current src. */
+  async function nxProbeInlineShots(msgEl, unwrapSafe) {
+    let nodes = [];
+    try {
+      nodes = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+    } catch {
+      nodes = [];
+    }
+    return Promise.all(nodes.map(async (node) => {
+      let id = "";
+      let src = "";
+      let layoutVersion = "";
+      try {
+        if (node && typeof node.getAttribute == "function") {
+          id = String(await node.getAttribute("data-inlay-inline-shot") || "");
+          layoutVersion = String(await node.getAttribute("data-inlay-inline-layout") || "");
+        }
+        const imgs = await unwrapSafe(await node.querySelectorAll("img"));
+        const img = imgs[0];
+        if (img && typeof img.getAttribute == "function") src = String(await img.getAttribute("src") || "");
+      } catch {
+      }
+      return { node, id, src, layoutVersion };
+    }));
+  }
+  /** Ids this bubble is still waiting on. Empty when nothing is watching it. */
+  function nxInlineSubIds(lockKey) {
+    const row = t._inlineSubs instanceof Map ? t._inlineSubs.get(String(lockKey)) : null;
+    return row?.ids instanceof Set ? row.ids : new Set();
+  }
+  /** Drops a bubble's watcher. Every repaint must call this before it re-registers. */
+  function nxDropInlineSubs(lockKey) {
+    if (!(t._inlineSubs instanceof Map)) return;
+    const key = String(lockKey);
+    const row = t._inlineSubs.get(key);
+    if (!row) return;
+    t._inlineSubs.delete(key);
+    try {
+      if (typeof row.stop == "function") row.stop();
+    } catch {
+    }
+  }
+  /**
+   * Waits for the bytes of every card that had none, and fills that one cell.
+   *
+   * This replaces the bake loop that used to run inside the paint: waiting there
+   * made the pass as slow as the slowest encode, and anything that missed became
+   * debt for a retry pass to pick up. Here the paint is already finished and the
+   * cells arrive independently.
+   */
+  function nxWatchInlineShots(lockKey, cards, shotNodes, patchShotSrc) {
+    nxDropInlineSubs(lockKey);
+    const N = globalThis.__INLAY_NATIVE__;
+    const ids = [];
+    for (const card of Array.isArray(cards) ? cards : []) {
+      const id = String(card?.id || "");
+      if (id && shotNodes.has(id) && !ids.includes(id)) ids.push(id);
+    }
+    if (!ids.length || typeof N?.subscribeImageUrl != "function") return;
+    if (!(t._inlineSubs instanceof Map)) t._inlineSubs = new Map();
+    const left = new Set(ids);
+    const row = { ids: left, stop: () => {} };
+    t._inlineSubs.set(String(lockKey), row);
+    row.stop = N.subscribeImageUrl(ids, (id, url) => {
+      const wrap = shotNodes.get(id);
+      if (!wrap) return;
+      Promise.resolve(patchShotSrc(wrap, url)).then((ok) => {
+        if (!ok) return;
+        left.delete(id);
+        if (!left.size) nxDropInlineSubs(lockKey);
+      }).catch(() => {
+      });
+    });
+    // A subscriber alone never triggers an encode — it only listens. Kick the
+    // ones that are not cached yet, respecting the selection's warm priority.
+    try {
+      if (typeof N?.warmImages == "function") N.warmImages(ids).catch(() => {});
+    } catch {
+    }
+  }
+  /**
+   * One host scan per bubble, shared by the chip bars and the inline shots.
+   *
+   * SafeDOM charges an IPC round-trip per call, and the two consumers used to
+   * walk the same \`p,h1..h6,li,blockquote,div\` list separately — four sequential
+   * reads each, plus a third pass for the paragraph text. All of it is
+   * independent per element, so it batches.
+   *
+   * The cache is scoped to one pass generation: reusing a scan across passes
+   * would hand out element handles for a bubble Risu already rebuilt.
+   */
+  async function nxScanBubbleHosts(msgEl) {
+    const gen = Number(t._inlinePassGen) || 0;
+    const mode = nxMsgAct();
+    const hit = t._inlineHostScan;
+    if (hit && hit.el === msgEl && hit.gen === gen && hit.mode === mode) return hit;
+    // Only legacy mounts on the DIV that wraps the content, so only legacy needs
+    // DIVs in the list. Every other mode drops them a few lines below in
+    // isMessageBodyHostTag — and a bubble carries far more DIV chrome than
+    // paragraphs, so asking for them spent four round-trips each to build an
+    // answer that was thrown away. This is most of the cost of a bubble paint.
+    const legacy = mode === "legacy";
+    const hostSel = legacy
+      ? "p,h1,h2,h3,h4,h5,h6,li,blockquote,div"
+      : "p,h1,h2,h3,h4,h5,h6,li,blockquote";
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const unwrapSafe = async (arr) => {
+      if (!arr) return [];
+      if (typeof k.unwarpSafeArray == "function") {
+        try {
+          const u = await k.unwarpSafeArray(arr);
+          return Array.isArray(u) ? u : u ? [u] : [];
+        } catch {
+          return [];
+        }
+      }
+      return Array.isArray(arr) ? arr : [arr];
+    };
+    let hostsRaw = [];
+    try {
+      hostsRaw = await unwrapSafe(await msgEl.querySelectorAll(hostSel));
+    } catch {
+      hostsRaw = [];
+    }
+    const probed = await Promise.all(hostsRaw.map(async (el) => {
+      if (!el) return null;
+      let name = "";
+      try {
+        name = typeof el.nodeName == "function" ? String(await el.nodeName() || "").toUpperCase() : "";
+      } catch {
+        name = "";
+      }
+      let nested = null;
+      if (legacy && name === "DIV") {
+        try {
+          nested = typeof el.querySelector == "function"
+            ? await el.querySelector("p,h1,h2,h3,h4,h5,h6,li,blockquote")
+            : null;
+        } catch {
+          nested = null;
+        }
+      }
+      let isActionBar = !1;
+      let isInlineShot = !1;
+      let text = "";
+      try {
+        const jobs = [];
+        jobs.push(typeof el.getAttribute == "function" ? el.getAttribute("x-inlay-msg-actions") : "");
+        jobs.push(typeof el.getAttribute == "function" ? el.getAttribute("x-inlay-inline-shot") : "");
+        jobs.push(typeof el.innerText == "function"
+          ? el.innerText()
+          : typeof el.textContent == "function" ? el.textContent() : "");
+        const [bar, shot, txt] = await Promise.all(jobs);
+        isActionBar = String(bar || "") !== "";
+        isInlineShot = String(shot || "") !== "";
+        text = String(txt || "");
+      } catch {
+      }
+      return { el, name: name || "DIV", nested: !!nested, isActionBar, isInlineShot, text };
+    }));
+    const rows = [];
+    for (const row of probed) {
+      if (!row) continue;
+      if (row.name === "DIV" && row.nested) continue;
+      const skipPaint = typeof VC?.isInlayPaintHost == "function"
+        ? VC.isInlayPaintHost({ isActionBar: row.isActionBar, isInlineShot: row.isInlineShot })
+        : (row.isActionBar || row.isInlineShot);
+      if (skipPaint) continue;
+      const bodyHost = typeof VC?.isMessageBodyHostTag == "function"
+        ? VC.isMessageBodyHostTag(row.name)
+        : /^(P|H[1-6]|LI|BLOCKQUOTE)$/.test(row.name);
+      if (mode !== "legacy" && !bodyHost) continue;
+      rows.push(row);
+    }
+    const scan = { el: msgEl, gen, mode, rows, raw: hostsRaw.length };
+    t._inlineHostScan = scan;
+    return scan;
+  }
+  /**
+   * Paragraph scans keyed by the bubble's content hash.
+   *
+   * The scan and the line matching depend only on the bubble's text, so a repaint
+   * of an unchanged bubble was recomputing an identical answer at a round-trip
+   * per paragraph — on every scroll hop, every \`force\` repaint after a reply, and
+   * every return to a bubble already on screen.
+   *
+   * Deliberately small: an entry holds live element handles, and keeping handles
+   * for bubbles that scrolled away is how a cache becomes a leak.
+   */
+  function nxPlaceCacheGet(key, msgEl) {
+    if (!(t._inlinePlaceCache instanceof Map)) return null;
+    const k = String(key || "");
+    const row = t._inlinePlaceCache.get(k);
+    if (!row) return null;
+    // Same text in two bubbles hashes the same, so the handle has to match too.
+    if (row.el !== msgEl || row.mode !== nxMsgAct()) {
+      t._inlinePlaceCache.delete(k);
+      return null;
+    }
+    return row;
+  }
+  function nxPlaceCacheSet(key, msgEl, row) {
+    if (!(t._inlinePlaceCache instanceof Map)) t._inlinePlaceCache = new Map();
+    const k = String(key || "");
+    if (!k) return;
+    t._inlinePlaceCache.delete(k);
+    t._inlinePlaceCache.set(k, { ...row, el: msgEl, mode: nxMsgAct() });
+    while (t._inlinePlaceCache.size > 12) {
+      t._inlinePlaceCache.delete(t._inlinePlaceCache.keys().next().value);
+    }
+  }
+  /**
+   * One round-trip: is a marker stamped with this bubble hash still mounted?
+   *
+   * A yes means Risu did not rebuild the bubble (our nodes would be gone) and the
+   * text is unchanged (a different text hashes to a different key), which is
+   * exactly the condition under which the cached handles are still live.
+   */
+  async function nxBubbleKeyIntact(msgEl, key) {
+    const k = String(key || "");
+    // The key reaches a selector, so only accept the hash shape it should have.
+    if (!k || !/^[A-Za-z0-9_-]+$/.test(k) || typeof msgEl?.querySelector != "function") return !1;
+    try {
+      return !!(await msgEl.querySelector(\`[data-inlay-inline-key="\${k}"]\`));
+    } catch {
+      return !1;
+    }
+  }
+  async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {
     if (!msgEl || t.backendSettings?.card?.inline_chat_images !== !0) return;
     if (typeof msgEl.querySelectorAll != "function" || typeof msgEl.getInnerHTML != "function") return;
-    if (t._inlineInjectBusy) {
-      t._inlineInjectQueued = !0;
+    // Per bubble, not global. The lock only exists so two passes cannot
+    // double-prepend into the same bubble; a global one made the bubble the user
+    // is looking at queue behind its own neighbours during a scroll. A second
+    // caller waits for the in-flight paint instead of dropping its request,
+    // otherwise the newer selection would silently lose its turn.
+    const lockKey = String(opts?.lockKey || \`dom\${opts?.domIndex ?? "?"}\`);
+    if (!(t._inlineInjectLocks instanceof Map)) t._inlineInjectLocks = new Map();
+    if (!(t._inlineInjectTicket instanceof Map)) t._inlineInjectTicket = new Map();
+    const held = t._inlineInjectLocks.get(lockKey);
+    const ticket = (Number(t._inlineInjectTicket.get(lockKey)) || 0) + 1;
+    t._inlineInjectTicket.set(lockKey, ticket);
+    let release = () => {};
+    const mine = new Promise((r) => {
+      release = r;
+    });
+    t._inlineInjectLocks.set(lockKey, held ? held.then(() => mine, () => mine) : mine);
+    if (held) {
+      try {
+        await held;
+      } catch {
+      }
+    }
+    if (t._inlineInjectTicket.get(lockKey) !== ticket) {
+      release();
       return;
     }
-    t._inlineInjectBusy = !0;
-    t._inlineInjectQueued = !1;
     try {
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     if (typeof VC?.findElementIndexForLineWithFallback != "function" || typeof VC?.markerBlockHtml != "function") return;
     const doc = t.hostDoc;
     if (!doc || typeof doc.createElement != "function") return;
-    const list = Array.isArray(cards) ? cards : [];
+    const hasRole = !!opts && Object.prototype.hasOwnProperty.call(opts, "role");
+    const roleDisposition = !hasRole
+      ? "allow"
+      : typeof VC.inlineRoleDisposition == "function"
+        ? VC.inlineRoleDisposition(opts.role, !!t.backendSettings?.card?.generate_all_roles)
+        : String(opts.role || "")
+          ? (typeof VC.allowInlineImagesOnRole == "function" && VC.allowInlineImagesOnRole(opts.role, !!t.backendSettings?.card?.generate_all_roles) ? "allow" : "deny")
+          : "hold";
+    // A failed DOM/API match is transient. Removing a mounted frame here made a
+    // same-bubble click flash empty before the next pass resolved the role.
+    if (roleDisposition === "hold") return;
+    const denyRole = roleDisposition === "deny";
+    const list = denyRole ? [] : (Array.isArray(cards) ? cards : []);
     // Pending spinners follow auto-gen roles — never on user bubbles when
     // "모든 메시지 이미지 생성" is off (same gate as Ka / select).
     const allowPending = typeof isSelectedCharRole == "function"
@@ -7643,9 +8712,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       try {
         const N = globalThis.__INLAY_NATIVE__;
         let src = typeof N?.resolveImageUrl == "function" ? String(N.resolveImageUrl(card) || "") : "";
-        if (!src || !/^data:image\\//i.test(src)) {
+        if (!nxReadyImg(src)) {
           const fb = typeof Ie == "function" ? Ie(card) : "";
-          if (typeof fb == "string" && /^data:image\\//i.test(fb)) src = fb;
+          if (nxReadyImg(fb)) src = fb;
         }
         return src;
       } catch {
@@ -7675,30 +8744,66 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         ...encodeLater.map((c) => String(c?.id || ""))
       ].filter(Boolean).sort();
       const scaleNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
-      let prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
-      if (prev.length === wantIds.length && t._inlinePaintScale === scaleNow) {
+      // One batched probe answers everything the skip gate needs: how many
+      // markers exist, which ids they carry, and which of them actually show a
+      // display URL. Sequential per-wrapper reads were two IPC hops per shot.
+      const prevProbe = await nxProbeInlineShots(msgEl, unwrapSafe);
+      let prev = prevProbe.map((row) => row.node);
+      let htmlProbe = "n/a";
+      const readyImgs = prevProbe.filter((row) => nxReadyImg(row.src)).length;
+      // A marker with no bytes is still finished work when a live watcher owns
+      // that id — it fills in place the moment the encode lands.
+      const watching = nxInlineSubIds(lockKey);
+      const awaiting = prevProbe.filter((row) => !nxReadyImg(row.src) && row.id && watching.has(row.id)).length;
+      const liveUniqueCount = new Set(prevProbe.map((row) => row.id).filter(Boolean)).size;
+      const frameVersion = String(VC.INLINE_FRAME_LAYOUT_VERSION || "");
+      const layoutMatches = !!frameVersion && prevProbe.every((row) => row.layoutVersion === frameVersion);
+      const skipOk = typeof VC.canSkipInlineInject == "function"
+        ? VC.canSkipInlineInject({
+          scaleMatches: t._inlinePaintScale === scaleNow && layoutMatches,
+          liveShotCount: prev.length,
+          liveUniqueCount,
+          wantIdCount: wantIds.length,
+          readyImgCount: readyImgs,
+          awaitingCount: awaiting
+        })
+        : prev.length === wantIds.length && liveUniqueCount === prev.length && t._inlinePaintScale === scaleNow && layoutMatches && readyImgs + awaiting >= wantIds.length;
+      if (skipOk) {
         if (!wantIds.length) {
           y("info", "inline.inject.skip", "shots=0 already");
           return;
         }
-        let htmlNow = "";
-        try {
-          htmlNow = String(await msgEl.getInnerHTML() || "");
-        } catch {
-          htmlNow = "";
-        }
-        if (wantIds.every((id) => htmlNow.includes(\`data-inlay-inline-shot="\${id}"\`))) {
-          y("info", "inline.inject.skip", \`shots=\${wantIds.length} already\`);
+        const liveIds = new Set(prevProbe.map((row) => row.id).filter(Boolean));
+        if (wantIds.every((id) => liveIds.has(id))) {
+          y("info", "inline.inject.skip", \`shots=\${wantIds.length} already ready=\${readyImgs} wait=\${awaiting}\`);
           return;
         }
+        htmlProbe = "miss";
       }
+      // Re-inserting through SafeDOM always flashes empty first, so every repaint
+      // is visible to the user. Name the reason — count, scale or marker id.
+      y("info", "inline.inject.repaint", \`prev=\${prev.length} want=\${wantIds.length} scale=\${t._inlinePaintScale}/\${scaleNow} html=\${htmlProbe}\`);
       const patchShotSrc = async (wrap, src) => {
-        if (!wrap || !src || !/^data:image\\//i.test(src)) return;
+        if (!wrap || !src || !nxReadyImg(src)) return !1;
         try {
           const imgs = await unwrapSafe(await wrap.querySelectorAll("img"));
           const img = imgs[0];
-          if (img && typeof img.setAttribute == "function") await img.setAttribute("src", src);
+          if (!img || typeof img.setAttribute != "function") return !1;
+          await img.setAttribute("src", src);
+          // The spinner marker ships its <img> hidden. Reveal it and hide the
+          // overlay in the same frame — re-inserting the marker is what flashes.
+          if (typeof img.setStyleAttribute != "function" || typeof VC.inlineChatImgStyle != "function") return !1;
+          await img.setStyleAttribute(VC.inlineChatImgStyle(scaleNow));
+          const spins = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-spin]"));
+          for (const spin of spins) {
+            try {
+              if (spin && typeof spin.setStyleAttribute == "function") await spin.setStyleAttribute("display:none");
+            } catch {
+            }
+          }
+          return !0;
         } catch {
+          return !1;
         }
       };
       const removeAllMarkers = async () => {
@@ -7717,8 +8822,20 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         }
       };
-      // Nothing to paint: strip leftover shots (scroll onto a no-image bubble).
+      // Nothing to paint. Live shots usually mean the gallery miss is temporary
+      // (retry with noRebind, hash still loading) — stripping them is the flash.
       if (!placements.length && !encodeLater.length) {
+        const stripEmpty = typeof VC.shouldStripEmptyInlineDesired == "function"
+          ? VC.shouldStripEmptyInlineDesired({
+            liveShotCount: prev.length,
+            confirmedEmpty: !!t._inlineConfirmedEmpty,
+            forceStrip: roleDisposition === "deny"
+          })
+          : denyRole || !prev.length;
+        if (!stripEmpty) {
+          y("info", "inline.inject.hold", \`shots=0 live=\${prev.length}\`);
+          return;
+        }
         await removeAllMarkers();
         if (nxMsgAct() === "legacy") {
           try {
@@ -7733,68 +8850,49 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         y("info", "inline.inject", "shots=0 stripped");
         return;
       }
-      const html = String(await msgEl.getInnerHTML() || "");
-      const cleaned = typeof VC.stripInlayInlineHtml == "function" ? VC.stripInlayInlineHtml(html) : html;
-      const plain = typeof VC.htmlToPlainLn == "function" ? VC.htmlToPlainLn(cleaned) : cleaned;
-      const messageLines = typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(plain) : [];
-      if (!messageLines.length) return;
-      const hostsRaw = await unwrapSafe(await msgEl.querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"));
-      const hosts = [];
-      const hostTags = [];
-      for (const el of hostsRaw) {
-        if (!el) continue;
-        let name = "";
-        try {
-          name = typeof el.nodeName == "function" ? String(await el.nodeName() || "").toUpperCase() : "";
-        } catch {
-          name = "";
-        }
-        if (name === "DIV") {
-          let nested = null;
-          try {
-            nested = typeof el.querySelector == "function"
-              ? await el.querySelector("p,h1,h2,h3,h4,h5,h6,li,blockquote")
-              : null;
-          } catch {
-            nested = null;
-          }
-          if (nested) continue;
-        }
-        let text = "";
-        try {
-          if (typeof el.innerText == "function") text = String(await el.innerText() || "");
-          else if (typeof el.textContent == "function") text = String(await el.textContent() || "");
-        } catch {
-          text = "";
-        }
-        if (!(typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(text) : []).length) continue;
-        let isActionBar = !1;
-        let isInlineShot = !1;
-        try {
-          if (typeof el.getAttribute == "function") {
-            isActionBar = String(await el.getAttribute("x-inlay-msg-actions") || "") !== "";
-            isInlineShot = String(await el.getAttribute("x-inlay-inline-shot") || "") !== "";
-          }
-        } catch {
-        }
-        if (typeof VC.isInlayPaintHost == "function" ? VC.isInlayPaintHost({ isActionBar, isInlineShot }) : (isActionBar || isInlineShot)) continue;
-        const bodyHost = typeof VC.isMessageBodyHostTag == "function"
-          ? VC.isMessageBodyHostTag(name)
-          : /^(P|H[1-6]|LI|BLOCKQUOTE)$/.test(name);
-        if (nxMsgAct() !== "legacy" && !bodyHost) continue;
-        hosts.push(el);
-        hostTags.push(name || "DIV");
+      // Every stage below is a SafeDOM round-trip, and the host scan asks per
+      // paragraph. Timing each stage separately is the only way to tell a slow
+      // scan apart from a slow data-URL insert — they look identical from here.
+      const tStart = Date.now();
+      let hosts = [];
+      let hostTags = [];
+      let hostTexts = [];
+      let messageLines = [];
+      let msHtml = 0;
+      let msScan = 0;
+      let rawCount = 0;
+      let cacheHit = !1;
+      const cached = nxPlaceCacheGet(lockKey, msgEl);
+      if (cached && await nxBubbleKeyIntact(msgEl, lockKey)) {
+        hosts = cached.hosts;
+        hostTags = cached.hostTags;
+        hostTexts = cached.hostTexts;
+        messageLines = cached.messageLines;
+        rawCount = Number(cached.rawCount) || 0;
+        cacheHit = !0;
+        msHtml = Date.now() - tStart;
       }
-      if (!hosts.length) return;
-      const hostTexts = [];
-      for (const el of hosts) {
-        try {
-          if (typeof el.innerText == "function") hostTexts.push(String(await el.innerText() || ""));
-          else if (typeof el.textContent == "function") hostTexts.push(String(await el.textContent() || ""));
-          else hostTexts.push("");
-        } catch {
-          hostTexts.push("");
+      if (!cacheHit) {
+        const html = String(await msgEl.getInnerHTML() || "");
+        msHtml = Date.now() - tStart;
+        const cleaned = typeof VC.stripInlayInlineHtml == "function" ? VC.stripInlayInlineHtml(html) : html;
+        const plain = typeof VC.htmlToPlainLn == "function" ? VC.htmlToPlainLn(cleaned) : cleaned;
+        messageLines = typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(plain) : [];
+        if (!messageLines.length) return;
+        const tScan = Date.now();
+        // Shared with injectChatMsgActions, which normally ran moments earlier on
+        // this same bubble. The text came back with the scan, so no second read.
+        const scan = await nxScanBubbleHosts(msgEl);
+        for (const row of scan.rows) {
+          if (!(typeof VC.splitMessageLines == "function" ? VC.splitMessageLines(row.text) : []).length) continue;
+          hosts.push(row.el);
+          hostTags.push(row.name || "DIV");
+          hostTexts.push(row.text);
         }
+        if (!hosts.length) return;
+        rawCount = scan.raw;
+        msScan = Date.now() - tScan;
+        nxPlaceCacheSet(lockKey, msgEl, { hosts, hostTags, hostTexts, messageLines, rawCount });
       }
       const byLine = new Map();
       for (const p of placements) {
@@ -7814,8 +8912,47 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         } catch {
         }
       };
-      const prependShot = async (host, shot) => {
-        const markerHtml = VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100);
+      // Marker nodes by card id, so a URL arriving later knows which cell to fill
+      // without another query.
+      const shotNodes = new Map();
+      // Host marker lists, read once per host instead of once per shot. Kept in
+      // sync as this pass prepends and removes, since it is the only writer.
+      const hostMarks = new Map();
+      const marksFor = async (idx, host) => {
+        if (hostMarks.has(idx)) return hostMarks.get(idx);
+        let raw = [];
+        try {
+          raw = await unwrapSafe(await host.querySelectorAll("[data-inlay-inline-shot]"));
+        } catch {
+          raw = [];
+        }
+        const info = await Promise.all(raw.map(async (mark) => {
+          let markId = "";
+          let src = "";
+          let layoutVersion = "";
+          try {
+            if (mark && typeof mark.getAttribute == "function") {
+              markId = String(await mark.getAttribute("data-inlay-inline-shot") || "");
+              layoutVersion = String(await mark.getAttribute("data-inlay-inline-layout") || "");
+            }
+            const imgs = await unwrapSafe(await mark.querySelectorAll("img"));
+            const img = imgs[0];
+            if (img && typeof img.getAttribute == "function") src = String(await img.getAttribute("src") || "");
+          } catch {
+            markId = "";
+          }
+          // Pending is whether the cell actually shows bytes, not what the
+          // attribute says: a subscription fills the <img> in place and cannot
+          // rewrite a data- attribute through SafeDOM.
+          return { node: mark, id: markId, pending: !nxReadyImg(src), layoutVersion };
+        }));
+        hostMarks.set(idx, info);
+        return info;
+      };
+      const prependShot = async (host, hostIdx, shot) => {
+        // The hash goes onto the marker so the next paint can prove this bubble
+        // is untouched with one query instead of rescanning every paragraph.
+        const markerHtml = VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100, lockKey);
         if (!markerHtml || !host || typeof host.prepend != "function") return !1;
         try {
           const tmp = await H(doc, "div", { html: markerHtml });
@@ -7823,6 +8960,11 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           const wrap = kids[0];
           if (wrap) {
             await host.prepend(wrap);
+            const id = String(shot.cardId || "");
+            if (id) shotNodes.set(id, wrap);
+            const marks = hostMarks.get(hostIdx);
+            if (Array.isArray(marks)) marks.unshift({ node: wrap, id, pending: !nxReadyImg(shot.src), layoutVersion: String(VC.INLINE_FRAME_LAYOUT_VERSION || "") });
+            if (shot.src && !shot.pending) await patchShotSrc(wrap, shot.src);
             return !0;
           }
         } catch {
@@ -7831,72 +8973,42 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       const applyShot = async (shot) => {
         const id = String(shot.cardId || "");
-        if (id && placedIds.has(id)) return !1;
+        // A spinner already claimed this id — ready shots must still swap.
+        if (id && placedIds.has(id) && (shot.pending || !nxReadyImg(shot.src))) return !1;
         const line = Number(shot.line);
         if (!line || !Number.isFinite(line)) return !1;
         const hit = VC.findElementIndexForLineWithFallback(hostTexts, hostTags, messageLines, line, ["P"]);
         if (!hit || hit.elementIndex < 0 || hit.elementIndex >= hosts.length) return !1;
         const host = hosts[hit.elementIndex];
         if (!host) return !1;
-        let marks = [];
-        try {
-          marks = await unwrapSafe(await host.querySelectorAll("[data-inlay-inline-shot]"));
-        } catch {
-          marks = [];
-        }
-        let node = null;
-        let live = null;
-        for (const mark of marks) {
-          let markId = "";
-          let pendingMark = !1;
-          try {
-            if (mark && typeof mark.getAttribute == "function") {
-              markId = String(await mark.getAttribute("data-inlay-inline-shot") || "");
-              pendingMark = String(await mark.getAttribute("data-inlay-inline-pending") || "") === "1";
-            }
-          } catch {
-            markId = "";
-          }
-          if (id && markId === id) {
-            node = mark;
-            live = { cardId: markId, pending: pendingMark };
-            break;
-          }
-        }
-        if (!node) {
-          for (const mark of marks) {
-            let markId = "";
-            let pendingMark = !1;
-            try {
-              if (mark && typeof mark.getAttribute == "function") {
-                markId = String(await mark.getAttribute("data-inlay-inline-shot") || "");
-                pendingMark = String(await mark.getAttribute("data-inlay-inline-pending") || "") === "1";
-              }
-            } catch {
-              markId = "";
-            }
-            if (markId && placedIds.has(markId)) continue;
-            node = mark;
-            live = { cardId: markId, pending: pendingMark };
-            break;
-          }
-        }
+        const marks = await marksFor(hit.elementIndex, host);
+        let mark = id ? marks.find((m) => m.id === id) : null;
+        if (!mark) mark = marks.find((m) => !m.id || !placedIds.has(m.id));
+        const node = mark?.node || null;
+        const live = mark ? { cardId: mark.id, pending: mark.pending, layoutVersion: mark.layoutVersion } : null;
         const action = typeof VC.reconcileInlineShot == "function"
           ? VC.reconcileInlineShot(shot, live)
           : live ? { op: "swap", placement: shot } : { op: "prepend", placement: shot };
-        if (action.op === "keep") {
-          if (shot.src && !shot.pending && node) await patchShotSrc(node, shot.src);
+        if (action.op === "keep" || action.op === "fill") {
+          if (shot.src && !shot.pending && node && await patchShotSrc(node, shot.src)) {
+            if (mark) mark.pending = !1;
+          }
+          if (id && node) shotNodes.set(id, node);
           placedHosts.add(hit.elementIndex);
           if (id) placedIds.add(id);
-          return !1;
+          return action.op === "fill";
         }
         if (action.op === "strip") {
           await removeNode(node);
+          if (mark) marks.splice(marks.indexOf(mark), 1);
           placedHosts.add(hit.elementIndex);
           return !0;
         }
-        if (action.op === "swap") await removeNode(node);
-        const did = await prependShot(host, action.placement || shot);
+        if (action.op === "swap") {
+          await removeNode(node);
+          if (mark) marks.splice(marks.indexOf(mark), 1);
+        }
+        const did = await prependShot(host, hit.elementIndex, action.placement || shot);
         if (did) {
           placed += 1;
           placedHosts.add(hit.elementIndex);
@@ -7904,36 +9016,19 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         return did;
       };
+      const tPlace = Date.now();
       for (const [, shot] of byLine) {
         await applyShot(shot);
       }
-      // Progressive: encode cache misses one-by-one; prepend without wiping ready shots.
-      for (const card of encodeLater) {
-        if (t._inlineInjectQueued) break;
-        let src = "";
-        try {
-          src = await ensureStickyCardImage(card) || "";
-        } catch {
-        }
-        if (!src || !/^data:image\\//i.test(src)) continue;
-        const line0 = Number(card?.line);
-        const cardId = String(card?.id || "");
-        if (!Number.isFinite(line0) || line0 < 1) continue;
-        if (cardId && placedIds.has(cardId)) continue;
-        const line = typeof VC.clampShotLine == "function"
-          ? VC.clampShotLine(line0, messageLines.length)
-          : Math.floor(line0);
-        if (!line || byLine.has(line)) continue;
-        const shot = {
-          line,
-          src,
-          shotIndex: card.shot_index,
-          cardId,
-          pending: !1
-        };
-        byLine.set(line, shot);
-        await applyShot(shot);
-      }
+      const msPlace = Date.now() - tPlace;
+      const tWatch = Date.now();
+      // Every linked card now owns a marker, so the paint is finished. The bytes
+      // are a separate story: watch each missing id and drop its URL into the
+      // <img> that is already mounted. No retry pass, no debt counter, and no
+      // "did the attach succeed" question — the cell fills whenever it fills.
+      nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc);
+      const msWatch = Date.now() - tWatch;
+      const tLeft = Date.now();
       const keepIds = new Set(placedIds);
       for (const card of encodeLater) {
         const laterId = String(card?.id || "");
@@ -7945,6 +9040,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           : !0;
         if (scanLeftovers) {
         const leftovers = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+        const seenInlineIds = new Set();
         for (const node of leftovers) {
           let leftId = "";
           try {
@@ -7955,34 +9051,129 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             leftId = "";
           }
           if (typeof VC.shouldStripLeftoverInlineId == "function"
-            ? !VC.shouldStripLeftoverInlineId(leftId, keepIds)
-            : !leftId || keepIds.has(leftId)) continue;
+            ? !VC.shouldStripLeftoverInlineId(leftId, keepIds, !1, seenInlineIds)
+            : !leftId || keepIds.has(leftId) && !seenInlineIds.has(leftId)) {
+            if (leftId) seenInlineIds.add(leftId);
+            continue;
+          }
           await removeNode(node);
         }
         }
       } catch {
       }
-      y("info", "inline.inject", \`shots=\${placements.length}+enc\${encodeLater.length} placed=\${placed} pending=\${placements.filter((p) => p.pending).length}\`);
+      const msLeft = Date.now() - tLeft;
+      y("info", "inline.inject", \`shots=\${placements.length}+enc\${encodeLater.length} placed=\${placed} watch=\${nxInlineSubIds(lockKey).size} pending=\${placements.filter((p) => p.pending).length}\`);
+      y("info", "inline.inject.ms", \`total=\${Date.now() - tStart} html=\${msHtml} scan=\${cacheHit ? "cached" : msScan}(hosts=\${hosts.length}/\${rawCount}) place=\${msPlace} watch=\${msWatch} left=\${msLeft}\`);
       t._inlinePaintScale = scaleNow;
     } catch (err) {
+      // A throw leaves the bubble half-painted; drop any watcher it registered so
+      // the next pass rebuilds from a known state instead of double-filling.
+      nxDropInlineSubs(lockKey);
       y("warn", "inline.inject.fail", z(err?.message || err, 120));
     }
     } finally {
-      t._inlineInjectBusy = !1;
-      if (t._inlineInjectQueued) {
-        t._inlineInjectQueued = !1;
-        refreshSelectedInlineImages().catch(() => {
-        });
-      }
+      release();
+      if (t._inlineInjectTicket.get(lockKey) === ticket) t._inlineInjectLocks.delete(lockKey);
     }
   }
+  // No attach retry ladder. A pass used to re-run itself up to five times
+  // because it could finish with chips and no image; now the markers land in one
+  // shot and each image arrives on its own subscription, so there is nothing to
+  // retry. The one remaining wait is nxWaitNewestDom, and it is an await in the
+  // sequence rather than a driver.
+  // Session listing window. Wide enough for the viewer strip (8) plus the inline
+  // window and normal browsing; older cards arrive by hash, not by raising this.
+  const NX_GALLERY_WINDOW = 120;
+  /** Hashes the next paint needs, cheap and synchronous — ce() is a hot path. */
+  function nxCeWantHashes() {
+    const out = [];
+    const add = (h) => {
+      const s = String(h || "").trim();
+      if (s && !out.includes(s)) out.push(s);
+    };
+    add(t.selectedMessage?.hash);
+    add(t.lastImagedMessage?.hash);
+    for (const h of Array.isArray(t._inlineKeepHashes) ? t._inlineKeepHashes : []) add(h);
+    return out.slice(0, 12);
+  }
+  /**
+   * Pulls one message's cards in when they sit outside the loaded window.
+   * A hash that comes back empty is remembered so a message with no shots does
+   * not re-ask on every paint.
+   */
+  async function nxEnsureCardsForHash(hash) {
+    const h = String(hash || "").trim();
+    if (!h) return !1;
+    if (!(t._galleryHashMiss instanceof Set)) t._galleryHashMiss = new Set();
+    if (t._galleryHashMiss.has(h)) return !1;
+    if ((t.gallery || []).some((card) => String(card?.content_hash || "") === h)) return !0;
+    const sid = t.lastScope?.sessionId || t.selectedMessage?.sessionId || "";
+    if (!sid) return !1;
+    let res = null;
+    try {
+      res = await K(\`/v1/gallery?session_id=\${encodeURIComponent(sid)}&limit=0&hashes=\${encodeURIComponent(h)}\`, { method: "GET" }, 8e3);
+    } catch {
+      return !1;
+    }
+    const rows = Array.isArray(res?.items) ? res.items : [];
+    if (!rows.length) {
+      t._galleryHashMiss.add(h);
+      return !1;
+    }
+    const VCm = globalThis.__INLAY_VIEWER_CORE__;
+    if (typeof VCm?.mergeSessionGallery == "function") {
+      t.gallery = VCm.mergeSessionGallery({
+        prev: t.gallery,
+        next: rows,
+        total: nxResTotal(res),
+        windowOldestAt: null,
+        askedHashes: [h],
+        cap: 2000
+      }).cards;
+    } else {
+      t.gallery = [...(t.gallery || []), ...rows];
+    }
+    y("info", "gallery.hash.fetch", \`\${h.slice(0, 8)} rows=\${rows.length}\`);
+    return !0;
+  }
+  function nxResTotal(res) {
+    const n = Number(res?.total);
+    return Number.isFinite(n) ? n : 0;
+  }
   async function refreshSelectedInlineImages(force) {
-    if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") return;
+    if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") {
+      hideAttachToast().catch(() => {});
+      return;
+    }
     const sel = t.selectedMessage;
     if (!sel) return;
+    // Split the pass so "slow move" can be attributed: everything before the
+    // first inject (keep walk, card rebind, strip) versus the paints themselves.
+    const tPass = Date.now();
+    // Generation, not a queue flag. During a scroll the selection keeps moving,
+    // and the old design re-ran the whole pass from the top each time, so paints
+    // trailed the actual scroll position. A newer pass simply invalidates this
+    // one, which then stops wherever it is.
+    const gen = (Number(t._inlinePassGen) || 0) + 1;
+    t._inlinePassGen = gen;
+    const stale = () => Number(t._inlinePassGen) !== gen;
+    const nxRebind = async (msg, fallback) => {
+      // Cheap first: the cards may exist but sit below the loaded window edge.
+      try {
+        if (await nxEnsureCardsForHash(msg?.hash)) {
+          const hit = linkedCards(msg);
+          if (hit.length) return hit;
+        }
+      } catch {
+      }
+      return await maybeRebindAndLink(msg) || fallback;
+    };
     try {
       const doc = await ue().catch(() => t.hostDoc);
-      if (!doc) return;
+      if (!doc) {
+        showAttachToast().catch(() => {});
+        return;
+      }
       if (force) t._msgElsCache = null;
       let fromCache = !force && !!(t._msgElsCache?.doc === doc && Array.isArray(t._msgElsCache.els) && t._msgElsCache.els.length);
       let els = fromCache ? t._msgElsCache.els : null;
@@ -7994,7 +9185,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         fromCache = !1;
       }
-      if (!Array.isArray(els) || !els.length) return;
+      if (!Array.isArray(els) || !els.length) {
+        showAttachToast().catch(() => {});
+        return;
+      }
       const selIdx = Number(sel.domIndex);
       if (!Number.isFinite(selIdx) || selIdx < 0 || selIdx >= els.length) return;
       const elStillMounted = async (el) => {
@@ -8030,17 +9224,28 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       let linkedKey = "";
       try {
         let selLinked = linkedCards(sel);
-        if (!selLinked.length && !pendingKey) selLinked = await maybeRebindAndLink(sel) || [];
+        if (!selLinked.length && !pendingKey) selLinked = await nxRebind(sel, []);
         linkedKey = selLinked.map((card) => String(card?.id || "")).filter(Boolean).sort().join("|");
       } catch {
         linkedKey = "";
       }
       // Gallery still linked, but Risu wiped bubble HTML (settings, new user msg).
       // Shots and action chips are separate: an image can survive while chips vanish.
+      // Probe the bubble inline last painted, not the selection: a user turn is
+      // remapped to a neighbouring char, so its own bubble never holds markers
+      // and probing it would report "gone" forever, defeating the cheap skip.
+      const probeIdx = (() => {
+        const kept = Number(t._inlineKeepPaintIdx);
+        if (Number(t._inlineKeepSelIdx) !== selIdx) return selIdx;
+        if (!Number.isFinite(kept) || kept < 0 || kept >= els.length) return selIdx;
+        return kept;
+      })();
+      const probeLinkedKey = probeIdx === selIdx ? linkedKey : String(t._inlineKeepPaintLinkedKey || "");
+      const probeHash = probeIdx === selIdx ? String(sel.hash || "") : String(t._inlineKeepPaintHash || "");
       const inlineGoneFromSel = async () => {
         const wantActions = nxMsgAct() !== "off";
-        if (!linkedKey && !pendingKey && !wantActions) return !1;
-        const el = els[selIdx];
+        if (!probeLinkedKey && !pendingKey && !wantActions) return !1;
+        const el = els[probeIdx];
         if (!el || typeof el.querySelectorAll != "function") return !1;
         const unwrapGone = async (sel) => {
           try {
@@ -8052,7 +9257,24 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         };
         try {
-          if ((linkedKey || pendingKey) && !(await unwrapGone("[data-inlay-inline-shot],[data-inlay-inline-pending]")).length) return !0;
+          if (probeLinkedKey || pendingKey) {
+            const wraps = await unwrapGone("[data-inlay-inline-shot],[data-inlay-inline-pending]");
+            if (!wraps.length) return !0;
+            const srcs = await Promise.all(wraps.map(async (wrap) => {
+              try {
+                const rawImgs = wrap && typeof wrap.querySelectorAll == "function" ? await wrap.querySelectorAll("img") : null;
+                const imgs = typeof k.unwarpSafeArray == "function" && rawImgs ? await k.unwarpSafeArray(rawImgs) : [];
+                const img = Array.isArray(imgs) ? imgs[0] : imgs;
+                if (!img || typeof img.getAttribute != "function") return "";
+                return String(await img.getAttribute("src") || "");
+              } catch {
+                return "";
+              }
+            }));
+            // Empty wrappers are only "gone" when nothing is coming for them. A
+            // bubble still on its subscription is mid-fill, not wiped.
+            if (!srcs.some((src) => nxReadyImg(src)) && !nxInlineSubIds(probeHash).size) return !0;
+          }
           if (wantActions && !(await unwrapGone("[x-inlay-msg-actions]")).length) return !0;
           return !1;
         } catch {
@@ -8069,66 +9291,106 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         && Number(t._inlineKeepSelIdx) === selIdx
         && String(t._inlineKeepPendingKey || "") === pendingKey
         && String(t._inlineKeepLinkedKey || "") === linkedKey
-        && Array.isArray(t._inlineKeepIdxs)
-        && t._inlineKeepIdxs.length
+        && Array.isArray(t._inlineKeepHashList)
+        && t._inlineKeepHashList.length
         && !(await inlineGoneFromSel())
       ) {
-        y("info", "inline.keep.skip", \`DOM#\${selIdx} cheap keep=\${t._inlineKeepIdxs.join(",")}\`);
+        y("info", "inline.keep.skip", \`DOM#\${selIdx} cheap keep=\${t._inlineKeepHashList.length}\`);
+        hideAttachToast({ done: 1 }).catch(() => {});
         return;
       }
+      // First session attach only — later clicks no-op inside showAttachToast.
+      showAttachToast().catch(() => {});
       const VC = globalThis.__INLAY_VIEWER_CORE__;
       const allRoles = !!t.backendSettings?.card?.generate_all_roles;
-      const maxPerSide = Number(VC?.INLINE_KEEP_MAX_PER_SIDE) > 0
-        ? Number(VC.INLINE_KEEP_MAX_PER_SIDE)
-        : 1;
+      const maxPerSide = Math.max(3, Math.min(20, Math.round(Number(t.backendSettings?.card?.inline_chat_dom_radius) || 4)));
       const scope = await Za().catch(() => null);
       const msgs = scope?.messages || [];
       const roleCache = new Map();
       const msgCache = new Map();
+      const resolvePend = new Map();
       const resolveAt = async (idx) => {
         if (msgCache.has(idx)) return msgCache.get(idx);
-        let row = null;
-        try {
-          const raw = await De(els[idx]);
-          const text = w(raw || "");
-          if (text.length >= 4) {
-            const hit = typeof qa == "function"
-              ? qa(text, msgs, idx, els.length, {})
-              : typeof VC?.resolveChatMessageMatch == "function"
-                ? VC.resolveChatMessageMatch(text, msgs, idx, els.length)
-                : null;
-            const role = w(hit?.role || "");
-            row = {
-              idx,
-              msg: {
-                domIndex: idx,
-                chatIndex: hit?.chatIndex,
-                messageIndex: hit?.chatIndex,
-                characterId: sel.characterId,
-                chatId: sel.chatId,
-                sessionId: sel.sessionId,
-                role,
-                text,
-                hash: ye(text)
-              }
-            };
-            roleCache.set(idx, role);
-          } else {
+        if (resolvePend.has(idx)) return resolvePend.get(idx);
+        const task = (async () => {
+          let row = null;
+          try {
+            const raw = await De(els[idx]);
+            const text = w(raw || "");
+            if (text.length >= 4) {
+              const hit = typeof qa == "function"
+                ? qa(text, msgs, idx, els.length, {})
+                : typeof VC?.resolveChatMessageMatch == "function"
+                  ? VC.resolveChatMessageMatch(text, msgs, idx, els.length)
+                  : null;
+              const role = w(hit?.role || "");
+              row = {
+                idx,
+                msg: {
+                  domIndex: idx,
+                  chatIndex: hit?.chatIndex,
+                  messageIndex: hit?.chatIndex,
+                  characterId: sel.characterId,
+                  chatId: sel.chatId,
+                  sessionId: sel.sessionId,
+                  role,
+                  text,
+                  hash: ye(text),
+                  apiText: w(hit?.text || "")
+                }
+              };
+              roleCache.set(idx, role);
+            } else {
+              roleCache.set(idx, "");
+              row = {
+                idx,
+                msg: {
+                  domIndex: idx,
+                  role: "",
+                  text,
+                  hash: text ? ye(text) : "",
+                  apiText: ""
+                }
+              };
+            }
+          } catch {
             roleCache.set(idx, "");
             row = { idx, msg: null };
           }
-        } catch {
-          roleCache.set(idx, "");
-          row = { idx, msg: null };
+          msgCache.set(idx, row);
+          return row;
+        })();
+        resolvePend.set(idx, task);
+        try {
+          return await task;
+        } finally {
+          resolvePend.delete(idx);
         }
-        msgCache.set(idx, row);
-        return row;
       };
+      const roleAt = (idx) => {
+        const row = msgCache.get(idx);
+        if (typeof VC?.roleForInlineBubble == "function") {
+          return VC.roleForInlineBubble({
+            idx,
+            selIdx,
+            selRole: sel.role,
+            selHash: sel.hash,
+            liveHash: row?.msg?.hash,
+            matchedRole: roleCache.has(idx) ? roleCache.get(idx) : "",
+            domText: row?.msg?.text,
+            matchedText: row?.msg?.apiText
+          });
+        }
+        if (roleCache.has(idx)) return roleCache.get(idx);
+        if (idx === selIdx && sel.role != null && String(sel.role).length) return String(sel.role);
+        return "";
+      };
+      const roleDispositionAt = (idx) => typeof VC?.inlineRoleDisposition == "function"
+        ? VC.inlineRoleDisposition(roleAt(idx), allRoles)
+        : allRoles || isCharAtSync(idx) ? "allow" : roleAt(idx) ? "deny" : "hold";
       const isCharAtSync = (idx) => {
-        let role = "";
-        if (roleCache.has(idx)) role = roleCache.get(idx);
-        else if (idx === selIdx && sel.role != null && String(sel.role).length) role = String(sel.role);
-        else return !1;
+        const role = roleAt(idx);
+        if (!role) return !1;
         return typeof VC?.isCharMessageRole == "function"
           ? VC.isCharMessageRole(role)
           : typeof isSelectedCharRole == "function"
@@ -8146,6 +9408,20 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (isSkipBodyAt(idx)) return !1;
         return allRoles ? !0 : isCharAtSync(idx);
       };
+      // First wave: configured DOM radius in parallel. The role-aware walk may
+      // continue past users and short bodies until it finds enough eligible bubbles.
+      const prefetchIdxs = typeof VC?.prefetchInlineRoleDomIndices == "function"
+        ? VC.prefetchInlineRoleDomIndices({ selIdx, length: els.length, radius: maxPerSide })
+        : (() => {
+          const out = [];
+          const lo = Math.max(0, selIdx - maxPerSide);
+          const hi = Math.min(els.length - 1, selIdx + maxPerSide);
+          for (let i = lo; i <= hi; i += 1) out.push(i);
+          return out;
+        })();
+      const headFirst = !!t._inlineHeadFirst;
+      t._inlineHeadFirst = 0;
+      if (!headFirst) await Promise.all(prefetchIdxs.map((i) => resolveAt(i)));
       // Prefetch roles/text along walk so pickInlineKeepDomIndices can stay sync.
       await resolveAt(selIdx);
       let paintIdx = selIdx;
@@ -8167,6 +9443,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         }
       }
+      if (!headFirst) {
       let found = 0;
       for (let i = selIdx + 1; i < els.length && found < maxPerSide; i += 1) {
         await resolveAt(i);
@@ -8177,7 +9454,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         await resolveAt(i);
         if (canKeepAt(i)) found += 1;
       }
-      const keepIdxs = typeof VC?.pickInlineKeepDomIndices == "function"
+      }
+      const prevKeep = Array.isArray(t._inlineKeepEls) ? t._inlineKeepEls : [];
+      const heldKeepHashes = new Set(prevKeep.map((row) => String(row?.hash || "")).filter(Boolean));
+      const keepIdxs = headFirst
+        ? (canKeepAt(paintIdx) ? [paintIdx] : [])
+        : typeof VC?.pickInlineKeepDomIndices == "function"
         ? VC.pickInlineKeepDomIndices({
           selIdx: paintIdx,
           length: els.length,
@@ -8208,7 +9490,22 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
           return out;
         })();
-      const keep = new Set(keepIdxs);
+      // Keep already-mounted bubbles whose role could not be resolved this pass.
+      // They may not receive new cards, but a transient miss must not tear down
+      // their frames and immediately rebuild them on the next click.
+      const heldRows = [...msgCache].map(([idx, row]) => ({
+        idx,
+        hash: String(row?.msg?.hash || ""),
+        disposition: roleDispositionAt(idx)
+      }));
+      const stableKeepIdxs = typeof VC?.retainHeldInlineKeepIndices == "function"
+        ? VC.retainHeldInlineKeepIndices({
+          keepIndices: keepIdxs,
+          previousHashes: [...heldKeepHashes],
+          rows: heldRows
+        })
+        : keepIdxs;
+      const keep = new Set(stableKeepIdxs);
       const neighborMsgs = [];
       for (const idx of keep) {
         if (idx === paintIdx) continue;
@@ -8227,9 +9524,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         return Array.isArray(arr) ? arr : [arr];
       };
-      const stripInlineMarkersAt = async (idx) => {
-        if (!Number.isFinite(idx) || idx < 0 || idx >= els.length || keep.has(idx)) return;
-        const el = els[idx];
+      const stripInlineMarkersIn = async (el) => {
         if (!el || typeof el.querySelectorAll != "function") return;
         try {
           let nodes = [];
@@ -8250,18 +9545,31 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       };
       // Diff strip only: drop markers leaving the keep window. Never wipe the
       // whole chat when els.length grows (new user msg remounts last 6 bodies).
-      const prevKeep = Array.isArray(t._inlineKeepIdxs) ? t._inlineKeepIdxs : [];
-      const nextKeepArr = [...keep].sort((a, b) => a - b);
+      //
+      // Remembered by hash and element handle, never by DOM index. The chat is
+      // newest-first, so one new message renumbers every slot and the old index
+      // list then pointed at the wrong bubbles — stripping shots that should have
+      // stayed and leaving ones that should have gone.
+      const bubbleHashAt = (idx) => {
+        const live = String(msgCache.get(idx)?.msg?.hash || "");
+        if (typeof VC?.liveBubbleHash == "function") {
+          return VC.liveBubbleHash({ liveHash: live, selHash: sel.hash, idx, selIdx });
+        }
+        return live || (idx === selIdx ? String(sel.hash || "") : "");
+      };
+      const nextKeep = [...keep].sort((a, b) => a - b).map((idx) => ({ hash: bubbleHashAt(idx), el: els[idx] }));
+      const nextKeepHashes = new Set(nextKeep.map((row) => row.hash).filter(Boolean));
       const listChanged = !fromCache || t._inlineKeepDoc !== doc || Number(t._inlineKeepElsLen) !== els.length;
       const sameKeep = !listChanged
         && Number(t._inlineKeepSelIdx) === selIdx
-        && prevKeep.length === nextKeepArr.length
-        && prevKeep.every((v, i) => Number(v) === Number(nextKeepArr[i]))
+        && prevKeep.length === nextKeep.length
+        && prevKeep.every((row, i) => String(row?.hash || "") === String(nextKeep[i]?.hash || ""))
         && String(t._inlineKeepPendingKey || "") === pendingKey
         && String(t._inlineKeepLinkedKey || "") === linkedKey
         && String(t._inlineKeepMsgActions || "") === nxMsgAct();
       if (!force && sameKeep && !(await inlineGoneFromSel())) {
-        y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeepArr.join(",")}\`);
+        y("info", "inline.keep.skip", \`DOM#\${selIdx} unchanged keep=\${nextKeep.length}\`);
+        hideAttachToast({ done: 1 }).catch(() => {});
         return;
       }
       if (listChanged && fromCache || await inlineGoneFromSel()) {
@@ -8272,27 +9580,73 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         fromCache = !1;
       }
-      for (const i of prevKeep) {
-        if (!keep.has(Number(i))) await stripInlineMarkersAt(i);
+      for (const row of prevKeep) {
+        const hash = String(row?.hash || "");
+        if (hash && nextKeepHashes.has(hash)) continue;
+        // The element handle is what makes this shift-proof: the bubble is
+        // whatever node we painted last time, wherever it moved to.
+        await stripInlineMarkersIn(row?.el);
+        if (hash) nxDropInlineSubs(hash);
       }
-      t._inlineKeepIdxs = nextKeepArr;
+      t._inlineKeepEls = nextKeep;
+      t._inlineKeepHashList = [...nextKeepHashes];
       t._inlineKeepDoc = doc;
       t._inlineKeepElsLen = els.length;
       t._inlineKeepSelIdx = selIdx;
       t._inlineKeepPendingKey = pendingKey;
       t._inlineKeepLinkedKey = linkedKey;
       t._inlineKeepMsgActions = nxMsgAct();
-      const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
-      y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${t._inlineKeepIdxs.join(",")}/\${els.length} strip=diff\`);
+      const mode = allRoles ? \`±\${maxPerSide}\` : \`char±\${maxPerSide}\`;
+      y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${[...keep].sort((a, b) => a - b).join(",")}/\${els.length} strip=diff\`);
       const N = globalThis.__INLAY_NATIVE__;
       let selCards = [];
       try {
-        selCards = linkedCards(sel);
-        if (!selCards.length && !pendingKey) selCards = await maybeRebindAndLink(sel) || [];
+        const liveSel = msgCache.get(selIdx)?.msg;
+        const drifted = typeof VC?.selectionSlotDrifted == "function"
+          ? VC.selectionSlotDrifted(sel.hash, liveSel?.hash)
+          : !!(sel.hash && liveSel?.hash && String(sel.hash) !== String(liveSel.hash));
+        const selIdentity = drifted && liveSel ? liveSel : sel;
+        selCards = linkedCards(selIdentity);
+        if (!selCards.length && !pendingKey) selCards = await nxRebind(selIdentity, []);
       } catch {
         selCards = [];
       }
       const selIds = selCards.map((card) => String(card?.id || "")).filter(Boolean);
+      // paintIdx left the selection (user turn remapped to the nearest char).
+      // Its cards must come from that bubble's own message — selCards is [] on a
+      // user turn, and [] makes injectChatInlineImages strip the char's shots.
+      let paintCards = null;
+      if (paintIdx !== selIdx) {
+        const paintRow = msgCache.get(paintIdx);
+        if (paintRow?.msg) {
+          try {
+            paintCards = linkedCards(paintRow.msg) || [];
+          } catch {
+            paintCards = [];
+          }
+        }
+      }
+      const paintPlan = typeof VC?.resolveInlinePaintCards == "function"
+        ? VC.resolveInlinePaintCards({ selIdx, paintIdx, selCards, paintCards })
+        : paintIdx === selIdx
+          ? { cards: selCards, skipInline: !1, source: "selection" }
+          : Array.isArray(paintCards)
+            ? { cards: paintCards, skipInline: !1, source: "remap" }
+            : { cards: [], skipInline: !0, source: "unresolved" };
+      if (typeof VC?.cardsForInlineBubble == "function") {
+        paintPlan.cards = VC.cardsForInlineBubble({
+          cards: paintPlan.cards,
+          role: roleAt(paintIdx),
+          allRoles,
+          selHash: sel.hash,
+          liveHash: bubbleHashAt(paintIdx),
+          isSelectionSlot: paintIdx === selIdx
+        });
+      }
+      const paintIds = paintPlan.cards.map((card) => String(card?.id || "")).filter(Boolean);
+      t._inlineKeepPaintIdx = paintIdx;
+      t._inlineKeepPaintHash = bubbleHashAt(paintIdx);
+      t._inlineKeepPaintLinkedKey = [...paintIds].sort().join("|");
       const neighborCardLists = [];
       for (const row of neighborMsgs) {
         if (row?.idx == null || !els[row.idx] || !row.msg) continue;
@@ -8300,36 +9654,247 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         let nbCards = [];
         try {
           nbCards = linkedCards(row.msg);
-          if (!nbCards.length) nbCards = await maybeRebindAndLink(row.msg) || [];
+          if (!nbCards.length) nbCards = await nxRebind(row.msg, []);
         } catch {
           nbCards = [];
         }
         neighborCardLists.push({
           idx: row.idx,
-          cards: nbCards
+          hash: String(row.msg?.hash || ""),
+          cards: typeof VC?.cardsForInlineBubble == "function"
+            ? VC.cardsForInlineBubble({
+              cards: nbCards,
+              role: roleAt(row.idx),
+              allRoles,
+              selHash: sel.hash,
+              liveHash: bubbleHashAt(row.idx),
+              isSelectionSlot: row.idx === selIdx
+            })
+            : nbCards
         });
       }
       const neighborIds = neighborCardLists.flatMap((row) =>
         row.cards.map((card) => String(card?.id || "")).filter(Boolean)
       );
+      // The hashes ce() should name next time, so the window it asks for covers
+      // the bubbles this walk actually paints.
+      t._inlineKeepHashes = [
+        String(sel.hash || ""),
+        ...neighborMsgs.map((row) => String(row?.msg?.hash || "")),
+      ].filter(Boolean);
+      const warmHead = paintIds.length ? paintIds : selIds;
+      // Moving the selection one slot re-enters bubbles that are already correct.
+      // Fingerprint each one so an unchanged bubble costs one query instead of a
+      // full host scan — the scan is ~4 bridge round-trips per paragraph.
+      const scalePctNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
+      const paintKeyOf = (cards, pendingOn) => typeof VC?.inlinePaintKey == "function"
+        ? VC.inlinePaintKey({
+          cardIds: (Array.isArray(cards) ? cards : []).map((card) => String(card?.id || "")),
+          scalePct: scalePctNow,
+          msgActions: nxMsgAct(),
+          pending: pendingOn
+        })
+        : "";
+      const paintRows = [];
+      if (keep.has(paintIdx) && els[paintIdx] && !paintPlan.skipInline) {
+        paintRows.push({
+          idx: paintIdx,
+          hash: bubbleHashAt(paintIdx),
+          key: paintKeyOf(paintPlan.cards, !!pendingKey)
+        });
+      }
+      for (const row of neighborCardLists) {
+        paintRows.push({ idx: row.idx, hash: row.hash, key: paintKeyOf(row.cards, !1) });
+      }
+      const prevPaintedKeys = !force && t._inlinePaintedKeys && typeof t._inlinePaintedKeys == "object" ? t._inlinePaintedKeys : {};
+      const prevPaintedCounts = !force && t._inlinePaintedCounts && typeof t._inlinePaintedCounts == "object" ? t._inlinePaintedCounts : {};
+      // Rebuilt every run so the map stays the size of the keep window.
+      const nextPaintedKeys = {};
+      const nextPaintedCounts = {};
+      const markerCount = async (el) => {
+        if (!el || typeof el.querySelectorAll != "function") return -1;
+        try {
+          const nodes = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-shot],[data-inlay-inline-pending],[x-inlay-msg-actions]"));
+          return nodes.length;
+        } catch {
+          return -1;
+        }
+      };
+      const notePainted = async (idx, hash, key) => {
+        if (!hash || !key) return;
+        const hasCards = typeof VC?.inlinePaintKeyHasCards == "function"
+          ? VC.inlinePaintKeyHasCards(key)
+          : /\|c=.+/.test(String(key));
+        if (!hasCards) return;
+        const n = await markerCount(els[idx]);
+        if (n < 0) return;
+        // Wrappers alone are not a finished paint unless something is coming for
+        // them. With a live watcher on this bubble the empty cells fill on their
+        // own, so the fingerprint is honest; without one they are stripped
+        // leftovers and the next pass must repaint.
+        try {
+          const shots = await nxProbeInlineShots(els[idx], unwrapSafe);
+          if (shots.length && !shots.some((row) => nxReadyImg(row.src)) && !nxInlineSubIds(hash).size) return;
+        } catch {
+          return;
+        }
+        nextPaintedKeys[hash] = key;
+        nextPaintedCounts[hash] = n;
+      };
+      // Runs on every exit, not just the finished one. A pass abandoned by
+      // stale() has still painted the head bubble correctly, and dropping that
+      // record made the next pass repaint work that was already done — and left
+      // the progress toast up, because hiding it was past the return too.
+      let committed = !1;
+      const commitPaint = () => {
+        if (committed) return;
+        committed = !0;
+        t._inlinePaintedKeys = nextPaintedKeys;
+        t._inlinePaintedCounts = nextPaintedCounts;
+        // The paint is complete by construction: every linked card has a marker
+        // and every marker without bytes has a watcher. There is nothing to
+        // declare failed and nothing to schedule a retry for.
+        hideAttachToast({ done: 1 }).catch(() => {});
+      };
+      const repaintSplit = typeof VC?.pickInlineRepaintIndices == "function"
+        ? VC.pickInlineRepaintIndices({ rows: paintRows, painted: prevPaintedKeys })
+        : { repaint: paintRows.map((row) => row.idx), skip: [] };
+      // A matching fingerprint is not proof the nodes survived — Risu can rebuild
+      // a bubble under us. Confirm the marker count recorded at last paint.
+      const reuseIdxs = new Set();
+      for (const idx of Array.isArray(repaintSplit.skip) ? repaintSplit.skip : []) {
+        const row = paintRows.find((r) => r.idx === idx);
+        if (!row) continue;
+        const want = Number(prevPaintedCounts[row.hash]);
+        if (!Number.isFinite(want) || want < 0) continue;
+        if (await markerCount(els[idx]) !== want) continue;
+        reuseIdxs.add(idx);
+        nextPaintedKeys[row.hash] = row.key;
+        nextPaintedCounts[row.hash] = want;
+      }
+      if (reuseIdxs.size) y("info", "inline.paint.reuse", \`kept=\${[...reuseIdxs].join(",")} of \${paintRows.length}\`);
+      const msPre = Date.now() - tPass;
+      const tPaint = Date.now();
       try {
-        if (typeof N?.prioritizeWarmFocus == "function" && selIds.length) N.prioritizeWarmFocus(selIds);
+        if (typeof N?.prioritizeWarmFocus == "function" && warmHead.length) N.prioritizeWarmFocus(warmHead);
       } catch {
       }
-      if (keep.has(paintIdx) && els[paintIdx]) {
-        await injectChatInlineImages(els[paintIdx], selCards, t._inlinePending);
-        await injectChatMsgActions(els[paintIdx], selCards, paintIdx);
+      if (keep.has(paintIdx) && els[paintIdx] && !reuseIdxs.has(paintIdx)) {
+        await injectChatMsgActions(els[paintIdx], paintPlan.cards, paintIdx);
+        if (paintPlan.skipInline) {
+          y("info", "inline.paint.hold", \`DOM#\${paintIdx} remap unresolved — leaving shots\`);
+        } else {
+          const row = paintRows.find((r) => r.idx === paintIdx);
+          await injectChatInlineImages(els[paintIdx], paintPlan.cards, t._inlinePending, {
+            lockKey: row?.hash || \`dom\${paintIdx}\`,
+            role: roleAt(paintIdx),
+            allRoles
+          });
+          if (row) await notePainted(paintIdx, row.hash, row.key);
+        }
+      }
+      // The selected bubble is painted. Everything after this is the ±1 window,
+      // which is a convenience and not what the user is looking at, so a newer
+      // selection wins outright.
+      if (stale()) {
+        y("info", "inline.pass.stale", \`DOM#\${selIdx} superseded after head\`);
+        commitPaint();
+        return;
+      }
+      if (headFirst) {
+        y("info", "inline.head.first", \`DOM#\${paintIdx} then neighbours\`);
+        await Promise.all(prefetchIdxs.map((i) => resolveAt(i)));
+        let foundN = 0;
+        for (let i = selIdx + 1; i < els.length && foundN < maxPerSide; i += 1) {
+          await resolveAt(i);
+          if (canKeepAt(i)) foundN += 1;
+        }
+        foundN = 0;
+        for (let i = selIdx - 1; i >= 0 && foundN < maxPerSide; i -= 1) {
+          await resolveAt(i);
+          if (canKeepAt(i)) foundN += 1;
+        }
+        const laterKeep = typeof VC?.pickInlineKeepDomIndices == "function"
+          ? VC.pickInlineKeepDomIndices({
+            selIdx: paintIdx,
+            length: els.length,
+            allRoles,
+            isCharAt: isCharAtSync,
+            isSkipBodyAt,
+            maxPerSide
+          })
+          : keepIdxs;
+        for (const idx of laterKeep) keep.add(Number(idx));
+        neighborMsgs.length = 0;
+        for (const idx of keep) {
+          if (idx === paintIdx) continue;
+          const row = msgCache.get(idx) || await resolveAt(idx);
+          neighborMsgs.push(row || { idx, msg: null });
+        }
+        neighborCardLists.length = 0;
+        for (const row of neighborMsgs) {
+          if (row?.idx == null || !els[row.idx] || !row.msg) continue;
+          let nbCards = [];
+          try {
+            nbCards = linkedCards(row.msg);
+            if (!nbCards.length) nbCards = await nxRebind(row.msg, []);
+          } catch {
+            nbCards = [];
+          }
+          const nbSafe = typeof VC?.cardsForInlineBubble == "function"
+            ? VC.cardsForInlineBubble({
+              cards: nbCards,
+              role: roleAt(row.idx),
+              allRoles,
+              selHash: sel.hash,
+              liveHash: bubbleHashAt(row.idx),
+              isSelectionSlot: row.idx === selIdx
+            })
+            : nbCards;
+          neighborCardLists.push({
+            idx: row.idx,
+            hash: String(row.msg?.hash || ""),
+            cards: nbSafe
+          });
+          paintRows.push({ idx: row.idx, hash: String(row.msg?.hash || ""), key: paintKeyOf(nbSafe, !1) });
+        }
+        neighborIds.length = 0;
+        for (const row of neighborCardLists) {
+          for (const card of row.cards) {
+            const id = String(card?.id || "");
+            if (id) neighborIds.push(id);
+          }
+        }
       }
       try {
         if (typeof N?.prioritizeWarmFocus == "function" && neighborIds.length) {
-          N.prioritizeWarmFocus([...selIds, ...neighborIds]);
+          N.prioritizeWarmFocus([...warmHead, ...neighborIds]);
         }
       } catch {
       }
+      // Neighbours are painted in the same pass, mid-scroll included. Skipping
+      // them while the scroll was moving left them blank forever: settle only
+      // re-enters here when the selected index changes, and after a scroll that
+      // ends on the same bubble the cheap keep skip at the top of this function
+      // matches and returns. stale() below is what handles a moving selection —
+      // it abandons this pass the moment a newer one starts.
       for (const row of neighborCardLists) {
-        await injectChatInlineImages(els[row.idx], row.cards, []);
+        if (reuseIdxs.has(row.idx)) continue;
+        if (stale()) {
+          y("info", "inline.pass.stale", \`DOM#\${selIdx} superseded mid-neighbours\`);
+          break;
+        }
         await injectChatMsgActions(els[row.idx], row.cards, row.idx);
+        const planned = paintRows.find((r) => r.idx === row.idx);
+        await injectChatInlineImages(els[row.idx], row.cards, [], {
+          lockKey: planned?.hash || \`dom\${row.idx}\`,
+          role: roleAt(row.idx),
+          allRoles
+        });
+        if (planned) await notePainted(row.idx, planned.hash, planned.key);
       }
+      y("info", "inline.pass.ms", \`total=\${Date.now() - tPass} pre=\${msPre} paint=\${Date.now() - tPaint} bubbles=\${paintRows.length - reuseIdxs.size}/\${paintRows.length} DOM#\${selIdx}\`);
+      commitPaint();
       try {
         if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
       } catch {
@@ -8668,46 +10233,45 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const doc = t.hostDoc;
     if (!doc || typeof H != "function") return;
     const wantSig = "tag|regen|stop|char|preset";
-    const hostsRaw = await unwrapSafe(await msgEl.querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div"));
-    const hosts = [];
-    for (const el of hostsRaw) {
-      if (!el) continue;
-      let name = "";
-      try {
-        name = typeof el.nodeName == "function" ? String(await el.nodeName() || "").toUpperCase() : "";
-      } catch {
-        name = "";
-      }
-      if (name === "DIV") {
-        let nested = null;
+    const msgIdx = Number.isInteger(Number(msgIndex)) && Number(msgIndex) >= 0 ? Number(msgIndex) : -1;
+    // The host scan below costs ~4 bridge round-trips per paragraph and it runs
+    // before we ever learn the bars are already right. Two bars carrying the
+    // wanted signature, both ends and this slot can only be a finished paint.
+    const earlyBars = await readBars();
+    if (earlyBars.length === 2) {
+      const probed = await Promise.all(earlyBars.map(async (bar) => {
         try {
-          nested = typeof el.querySelector == "function"
-            ? await el.querySelector("p,h1,h2,h3,h4,h5,h6,li,blockquote")
-            : null;
+          if (typeof bar?.getAttribute != "function") return null;
+          const [sig, end, at] = await Promise.all([
+            bar.getAttribute("x-inlay-msg-sig"),
+            bar.getAttribute("x-inlay-msg-end"),
+            bar.getAttribute("x-inlay-msg-index")
+          ]);
+          return { bar, sig: String(sig || ""), end: String(end || ""), at: String(at || "") };
         } catch {
-          nested = null;
+          return null;
         }
-        if (nested) continue;
-      }
-      let isActionBar = !1;
-      let isInlineShot = !1;
-      try {
-        if (typeof el.getAttribute == "function") {
-          isActionBar = String(await el.getAttribute("x-inlay-msg-actions") || "") !== "";
-          isInlineShot = String(await el.getAttribute("x-inlay-inline-shot") || "") !== "";
+      }));
+      const ends = new Set();
+      let intact = probed.every((row) => row && row.sig === wantSig);
+      if (intact) for (const row of probed) if (row.end) ends.add(row.end);
+      if (intact && ends.has("top") && ends.has("bot")) {
+        // The slot may have shifted under an unchanged bubble — the chat is
+        // newest-first, so one new message renumbers everything. That is a one
+        // attribute write, not a reason to tear the bars down and flash.
+        const shifted = probed.filter((row) => row.at !== String(msgIdx));
+        for (const row of shifted) {
+          try {
+            if (typeof row.bar.setAttribute == "function") await row.bar.setAttribute("x-inlay-msg-index", String(msgIdx));
+          } catch {
+          }
         }
-      } catch {
+        y("info", "msgact.skip", \`bars=2 already DOM#\${msgIdx}\${shifted.length ? " reindexed" : ""}\`);
+        return;
       }
-      const skipPaint = typeof globalThis.__INLAY_VIEWER_CORE__?.isInlayPaintHost == "function"
-        ? globalThis.__INLAY_VIEWER_CORE__.isInlayPaintHost({ isActionBar, isInlineShot })
-        : (isActionBar || isInlineShot);
-      if (skipPaint) continue;
-      const bodyHost = typeof globalThis.__INLAY_VIEWER_CORE__?.isMessageBodyHostTag == "function"
-        ? globalThis.__INLAY_VIEWER_CORE__.isMessageBodyHostTag(name)
-        : /^(P|H[1-6]|LI|BLOCKQUOTE)$/.test(name);
-      if (nxMsgAct() !== "legacy" && !bodyHost) continue;
-      hosts.push(el);
     }
+    const scan = await nxScanBubbleHosts(msgEl);
+    const hosts = scan.rows.map((row) => row.el);
     if (!hosts.length) {
       await removeBars(await readBars());
       return;
@@ -8789,7 +10353,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const chipsHtml = chipKinds.map((kind) =>
       '<span style="' + chipCss(kind) + '">' + chipLabels[kind] + "</span>"
     ).join("");
-    const msgIdx = Number.isInteger(Number(msgIndex)) && Number(msgIndex) >= 0 ? Number(msgIndex) : -1;
     const barHtml = '<div contenteditable="false" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-start;margin:10px 0;text-align:left;pointer-events:auto;line-height:1.2">' + chipsHtml + "</div>";
     const prependBar = async (host, end) => {
       if (!host) return null;
@@ -9843,10 +11406,13 @@ const VENDOR_SCROLL_GALLERY_NEW_NEEDLE = `    if (source !== "scroll") {
     }`;
 
 const VENDOR_SCROLL_GALLERY_NEW_PATCH = `    {
+      // Not force on the non-scroll path either. A chat switch already had oa()
+      // force-fetch the session, so forcing here was a second /v1/gallery round
+      // trip awaited before the first paint — for cards we already had.
       const galleryStale = !Array.isArray(t.gallery) || !t.gallery.length || t._galleryCache?.sessionId !== r.sessionId;
       if (source !== "scroll" || galleryStale) {
         try {
-          await ce(r.sessionId, galleryStale || source !== "scroll");
+          await ce(r.sessionId, galleryStale);
         } catch {
         }
       }
@@ -10075,6 +11641,67 @@ const VENDOR_OVERLAY_MOUNT_PATCH =
     // Overlay toggle only hides markers — shell + click tracking stay mounted.
     if (!0) {`;
 
+/**
+ * Boot mounted the window shell behind two things it does not need: a third
+ * `GET /v1/settings` and the whole session gallery.
+ *
+ * Three calls fetched settings before anything could appear — `Qa` on entry,
+ * `retryHostUi` again, then `it()` a third time. `le()` now stamps when it
+ * answered so `it()` can reuse a fetch from milliseconds ago, and `retryHostUi`
+ * drops its own call since `it()` still fetches when the value is stale.
+ *
+ * `ce()` is worse: it is a `limit=2000` listing plus a characters fetch, and it
+ * was awaited *before* `lt()`/`Ya()` appended their shells, so the viewer and the
+ * sticky overlay stayed absent for the whole round trip. Nothing below the mount
+ * line reads `t.gallery`, so it fires after the mounts and repaints when it
+ * lands.
+ */
+const VENDOR_BOOT_SETTINGS_STAMP_NEEDLE = `    const e = await K("/v1/settings", { method: "GET" });`;
+const VENDOR_BOOT_SETTINGS_STAMP_PATCH = `    const e = await K("/v1/settings", { method: "GET" });
+    // When this answered, so a boot re-entry can skip a redundant round trip.
+    t._nxSettingsAt = Date.now();`;
+
+const VENDOR_BOOT_RETRY_SETTINGS_NEEDLE = `        t.hostDoc = null, await le(), await it();`;
+const VENDOR_BOOT_RETRY_SETTINGS_PATCH = `        // it() fetches settings itself when they are stale; this second GET only
+        // delayed the first mount.
+        t.hostDoc = null, await it();`;
+
+/** Written against the post-`VENDOR_OVERLAY_MOUNT` text, so it is applied after it. */
+const VENDOR_BOOT_MOUNT_FIRST_NEEDLE = `    try {
+      await le();
+    } catch {
+    }
+    const e = t.backendSettings?.card || {}, n = await Z().catch(() => null);
+    if (n?.sessionId) try {
+      await ce(n.sessionId);
+    } catch {
+    }
+    e.floating_viewer !== !1 ? await lt() : await st(), await Ya(), e.debug_panel ? await Ba() : await ct();`;
+const VENDOR_BOOT_MOUNT_FIRST_PATCH = `    if (!t.backendSettings || Date.now() - Number(t._nxSettingsAt || 0) > 1e3) try {
+      await le();
+    } catch {
+    }
+    const e = t.backendSettings?.card || {}, n = await Z().catch(() => null);
+    e.floating_viewer !== !1 ? await lt() : await st(), await Ya(), e.debug_panel ? await Ba() : await ct();
+    // Gallery + characters after the shells exist. Neither mount reads t.gallery,
+    // and ce() does not paint on its own, so repaint once it resolves.
+    if (n?.sessionId) ce(n.sessionId).then(async () => {
+      // Bubbles before chrome. The first attach ran with an empty ledger and had
+      // nothing to link, so this is the pass that actually shows the images — and
+      // it is what the user is looking at. The gallery strip and the overlay used
+      // to go first, which put two encodes ahead of the bubble in the queue.
+      try {
+        await refreshSelectedInlineImages();
+      } catch {
+      }
+      try {
+        t.galleryUi?.renderGal && await t.galleryUi.renderGal();
+        invalidateOverlayLayoutCache(), await he(), Ce();
+      } catch {
+      }
+    }).catch(() => {
+    });`;
+
 const VENDOR_OVERLAY_WATCH_NEEDLE =
   `const card = t.backendSettings?.card || {}, needViewer = card.floating_viewer !== !1, needOverlay = card.overlay_markers !== !1;`;
 const VENDOR_OVERLAY_WATCH_PATCH =
@@ -10132,8 +11759,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.4.20",
-    body: "대사 삽입이 말한 캐릭터의 캡션 끝으로 옮겨졌습니다. 업데이트 내역 탭 참고."
+    title: "2.5.3",
+    body: "채팅 안 이미지는 비율에 맞는 SVG를 먼저 두고 그림이 오면 바꿉니다. 말풍선 탐색 숫자는 대시보드에서 조절합니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -10379,16 +12006,34 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }
   }
   /** Progress toast root — gated by card.progress_toast. */
-  const PROGRESS_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:auto;width:min(280px,92vw);display:block;";
-  const PROGRESS_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:none;width:min(280px,92vw);display:none;";
-  const HOST_TOAST_STYLE_SHOW = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;width:min(280px,92vw);box-sizing:border-box;display:block;background:rgba(37,99,235,.95);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.4);";
-  const HOST_TOAST_STYLE_HIDE = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100000;pointer-events:none;width:min(280px,92vw);display:none;";
+  function nxToastAnchor() {
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const raw = t.backendSettings?.card?.toast_anchor;
+    return typeof VC?.normalizeToastAnchor == "function" ? VC.normalizeToastAnchor(raw) : "tc";
+  }
+  function nxToastPos(opts) {
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const vis = opts?.visible !== !1;
+    const pe = opts?.pointerEvents !== !1;
+    const shift = Number(opts?.shiftPx) || 0;
+    const z = Number(opts?.zIndex) || 99999;
+    if (typeof VC?.toastAnchorStyle == "function") {
+      return VC.toastAnchorStyle(nxToastAnchor(), { visible: vis, pointerEvents: pe, shiftPx: shift, zIndex: z, insetPx: 16 });
+    }
+    const eye = vis ? "block" : "none";
+    const pointer = pe ? "auto" : "none";
+    return \`position:fixed;top:\${16 + shift}px;left:50%;transform:translateX(-50%);z-index:\${z};pointer-events:\${pointer};width:min(280px,92vw);box-sizing:border-box;display:\${eye};\`;
+  }
+  const HOST_TOAST_CHROME = "background:rgba(37,99,235,.42);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.18);";
+  function progressToastStyle(visible) {
+    return nxToastPos({ visible: !!visible, pointerEvents: !!visible, zIndex: 99999 });
+  }
+  function hostToastStyle(visible) {
+    return nxToastPos({ visible: !!visible, pointerEvents: !1, zIndex: 1e5 }) + (visible ? HOST_TOAST_CHROME : "");
+  }
   const SELECTION_TOAST_HIDE_MS = 2e3;
   function selectionToastStyle(visible, belowProgress) {
-    const top = belowProgress ? 64 : 16;
-    const eye = visible ? "block" : "none";
-    const pe = visible ? "auto" : "none";
-    return \`position:fixed;top:\${top}px;left:50%;transform:translateX(-50%);z-index:100001;pointer-events:\${pe};width:min(280px,92vw);box-sizing:border-box;display:\${eye};\`;
+    return nxToastPos({ visible: !!visible, pointerEvents: !!visible, shiftPx: belowProgress ? 48 : 0, zIndex: 100001 });
   }
   const PROGRESS_TOAST_HIDE_MS = 2e3;
   async function setProgressToastEye(visible, force) {
@@ -10403,7 +12048,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }
     t._progressToastShown = !!visible;
     try {
-      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(visible ? PROGRESS_TOAST_STYLE_SHOW : PROGRESS_TOAST_STYLE_HIDE);
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(progressToastStyle(visible));
     } catch {
     }
   }
@@ -10454,7 +12099,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     const body = await Ee(doc);
     if (!body) return null;
     const root = await H(doc, "div", {
-      style: PROGRESS_TOAST_STYLE_HIDE
+      style: progressToastStyle(!1)
     });
     try {
       typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-progress-toast");
@@ -10516,7 +12161,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     const body = await Ee(doc);
     if (!body) return null;
     const root = await H(doc, "div", {
-      style: HOST_TOAST_STYLE_HIDE
+      style: hostToastStyle(!1)
     });
     try {
       typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-host-toast");
@@ -10533,7 +12178,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     if (t._hostToastTimer) clearTimeout(t._hostToastTimer), t._hostToastTimer = null;
     try {
       if (typeof root.setInnerHTML == "function") await root.setInnerHTML(msg ? h(msg) : "");
-      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(msg ? HOST_TOAST_STYLE_SHOW : HOST_TOAST_STYLE_HIDE);
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(hostToastStyle(!!msg));
     } catch {
       return;
     }
@@ -10544,6 +12189,78 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       nxHostToast("").catch(() => {
       });
     }, ms);
+  }
+  function attachToastStyle(visible) {
+    return nxToastPos({ visible: !!visible, pointerEvents: !1, zIndex: 99998 });
+  }
+  function nxAttachSessionKey() {
+    return String(t.lastScope?.sessionId || t.selectedMessage?.sessionId || "");
+  }
+  function nxAttachToastClearTimer() {
+    if (t._attachToastTimer) {
+      clearTimeout(t._attachToastTimer);
+      t._attachToastTimer = null;
+    }
+  }
+  async function hideAttachToast(opts) {
+    const done = !!(opts && opts.done);
+    t._attachToastWanted = 0;
+    nxAttachToastClearTimer();
+    if (done) t._attachToastDoneSession = nxAttachSessionKey();
+    const root = t._attachToastRoot;
+    t._attachToastShown = !1;
+    if (!root) return;
+    try {
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(attachToastStyle(!1));
+    } catch {
+    }
+  }
+  async function showAttachToast() {
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const sid = nxAttachSessionKey();
+    const allow = typeof VC?.shouldShowSessionAttachToast == "function"
+      ? VC.shouldShowSessionAttachToast({
+        sessionId: sid,
+        doneSessionId: t._attachToastDoneSession,
+        alreadyWanted: t._attachToastWanted
+      })
+      : (t._attachToastWanted || t._attachToastDoneSession == null || String(t._attachToastDoneSession) !== sid);
+    if (!allow) return;
+    t._attachToastWanted = 1;
+    const maxMs = Number(VC?.ATTACH_TOAST_MAX_MS) > 0 ? Number(VC.ATTACH_TOAST_MAX_MS) : 1e4;
+    if (!t._attachToastTimer) {
+      t._attachToastTimer = setTimeout(() => {
+        t._attachToastTimer = null;
+        hideAttachToast({ done: 1 }).catch(() => {});
+      }, maxMs);
+    }
+    if (t._attachToastShown) return;
+    const doc = await ue().catch(() => t.hostDoc);
+    if (!t._attachToastWanted) return;
+    if (!doc || typeof doc.createElement != "function") return;
+    const body = await Ee(doc);
+    if (!body || !t._attachToastWanted) return;
+    let root = t._attachToastRoot;
+    if (!root) {
+      root = await H(doc, "div", { style: attachToastStyle(!1) });
+      try {
+        typeof root.setAttribute == "function" && await root.setAttribute("id", "inlay-nx-attach-toast");
+      } catch {
+      }
+      await body.appendChild(root);
+      t._attachToastRoot = root;
+    }
+    const html = typeof VC?.composeAttachToastHtml == "function"
+      ? VC.composeAttachToastHtml(h)
+      : \`<div data-inlay-attach-toast="1">인레이 넥서스 조각 불러오는중..</div>\`;
+    try {
+      if (!t._attachToastWanted) return;
+      if (typeof root.setInnerHTML == "function") await root.setInnerHTML(html);
+      if (!t._attachToastWanted) return;
+      if (typeof root.setStyleAttribute == "function") await root.setStyleAttribute(attachToastStyle(!0));
+      if (t._attachToastWanted) t._attachToastShown = !0;
+    } catch {
+    }
   }
   /** Selection toast — own DOM; never shares the progress/reroll slot. */
   async function ensureSelectionToastRoot() {
@@ -10621,7 +12338,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
       showBar: !1,
       tone: "job",
       escapeHtml: h
-    }) : \`<div data-inlay-selection-toast="1" style="box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px;cursor:pointer"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(stage)}</div><div style="color:#8b97ab;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(meta)}</div></div>\`;
+    }) : \`<div data-inlay-selection-toast="1" style="box-sizing:border-box;width:min(280px,92vw);padding:6px 10px;border-radius:8px;background:rgba(18,24,32,.42);border:1px solid rgba(42,51,68,.5);color:#e8eef8;font-size:11px;cursor:pointer"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(stage)}</div><div style="color:#8b97ab;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${h(meta)}</div></div>\`;
     const root = await ensureSelectionToastRoot();
     if (!root) return;
     try {
@@ -10766,7 +12483,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
         error: isError,
         tone,
         escapeHtml: h
-      }) : \`<div data-inlay-progress-toast="1" style="padding:6px 10px;border-radius:8px;background:#121820;border:1px solid #2a3344;color:#e8eef8;font-size:11px;cursor:pointer">\${h(stage + " " + meta)}</div>\`;
+      }) : \`<div data-inlay-progress-toast="1" style="padding:6px 10px;border-radius:8px;background:rgba(18,24,32,.42);border:1px solid rgba(42,51,68,.5);color:#e8eef8;font-size:11px;cursor:pointer">\${h(stage + " " + meta)}</div>\`;
       // Stay up while busy; auto-hide on terminal job or when index-only ends via idle branch.
       await paintProgressToastHtml(html, { armHide: !liveBusy });
     } finally {
@@ -11035,10 +12752,12 @@ const VENDOR_FORCE_REGEN_INLINE_PATCH =
         t._galleryCache = null;
         t._inlinePending = null;
         t._inlinePendingMsgIndex = -1;
+        t._inlineConfirmedEmpty = !0;
         if (e.sessionId) await ce(e.sessionId, !0);
         await refreshSelectedInlineImages(!0);
       } catch {
       }
+      t._inlineConfirmedEmpty = !1;
     }
     const u = {
       session_id: e.sessionId,`;
@@ -11214,23 +12933,24 @@ const VENDOR_POINTER_SELECT_PATCH =
       }, 0);
       return;
     }
+    const why0 = String(reason || "");
+    if ((why0 === "boot" || why0 === "session" || why0 === "reply") && typeof showAttachToast == "function") {
+      showAttachToast().catch(() => {});
+    }
     if (t._pointerSelectTimer) clearTimeout(t._pointerSelectTimer);
     t._pointerSelectReason = String(reason || "");
-    // A switch only needs the new chat DOM to exist, so try early and retry once
-    // rather than always paying the full second. The retry re-enters with 700 and
-    // is therefore not "fresh", which is what stops it from looping.
+    // A switch only needs the new chat DOM to exist, so start immediately and let
+    // runPointerSelect await it. There is no retry ladder: the wait lives in
+    // nxWaitNewestDom, and once the bubble is found the paint cannot come back
+    // half-done — markers land in one pass and images arrive by subscription.
     const rawWait = Math.max(0, Number(delayMs) || 0);
-    const freshSession = t._pointerSelectReason === "session" && rawWait === 1e3;
-    if (freshSession) t._pointerSelectRetried = 0;
+    const fresh = rawWait === 1e3
+      && (t._pointerSelectReason === "session" || t._pointerSelectReason === "boot" || t._pointerSelectReason === "reply");
     t._pointerSelectTimer = setTimeout(() => {
       t._pointerSelectTimer = null;
-      const why = t._pointerSelectReason;
-      runPointerSelect(why).then((selected) => {
-        if (selected || why !== "session" || t._pointerSelectRetried) return;
-        t._pointerSelectRetried = 1;
-        schedulePointerSelect("session", 7e2);
-      }).catch(() => {});
-    }, freshSession ? 250 : rawWait);
+      runPointerSelect(t._pointerSelectReason).catch(() => {
+      });
+    }, fresh ? 0 : rawWait);
   }
   async function runPointerSelect(reason) {
     if (t.uiOpen || t._hostChromeBlocked) return !1;
@@ -11238,6 +12958,26 @@ const VENDOR_POINTER_SELECT_PATCH =
     const doc = t.overlayUi?.doc || t.hostDoc || await ue().catch(() => null);
     if (!doc) return !1;
     t._msgElsCache = null;
+    const why = String(reason || "");
+    const fast = why === "boot" || why === "session" || why === "reply";
+    if (fast) {
+      const newest = typeof nxWaitNewestDom == "function"
+        ? await nxWaitNewestDom(doc, 2000)
+        : typeof dtNewest == "function" ? await dtNewest(doc) : [];
+      if (!newest.length) return !1;
+      y("info", "select.pointer", \`reason=\${why} newest wait\`);
+      // Head first: this chat's DOM#0, then neighbours. Previous keep/paint
+      // fingerprints belong to the last session and would strip or skip wrong.
+      t._inlineHeadFirst = 1;
+      t._inlineKeepEls = [];
+      t._inlineKeepHashList = [];
+      t._inlinePaintedKeys = {};
+      t._inlinePaintedCounts = {};
+      // Cached paragraph handles point at the outgoing chat's DOM.
+      t._inlinePlaceCache = null;
+      await Da(0, newest, { source: "provisional", auto: 1 });
+      return !0;
+    }
     const vh = typeof window < "u" && window.innerHeight || 800;
     const vw = typeof window < "u" && window.innerWidth || 800;
     let px = Number(t._pointerClientX), py = Number(t._pointerClientY);
@@ -12281,6 +14021,16 @@ const VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE =
 const VENDOR_VIEWER_META_Y_CHIP_TOUCH_PATCH =
   `          await addChip(\`\${Math.round(Math.max(0, Math.min(100, yNum)))}%\`, "y", "padding:10px 14px;border-radius:999px;font-size:13px;line-height:1.2;min-height:44px;box-sizing:border-box;display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.12);background:rgba(15,23,42,.72);color:#94a3b8;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;pointer-events:none");`;
 
+const VENDOR_VIEWER_BASE_CHIP_NEEDLE =
+  `      await addChip("base", "base", chipStyle(!0, "rgba(124,108,255,.45)"));`;
+const VENDOR_VIEWER_BASE_CHIP_PATCH =
+  `      await addChip("수정", "base", chipStyle(!0, "rgba(124,108,255,.45)"));`;
+
+const VENDOR_INSPECT_BASE_CHIP_NEEDLE =
+  '      await addInspectBtn(chipRow, "base", "base", `${chipStyle};background:rgba(124,108,255,.22);color:#ddd6fe;border:1px solid rgba(124,108,255,.45)`);';
+const VENDOR_INSPECT_BASE_CHIP_PATCH =
+  '      await addInspectBtn(chipRow, "수정", "base", `${chipStyle};background:rgba(124,108,255,.22);color:#ddd6fe;border:1px solid rgba(124,108,255,.45)`);';
+
 const VENDOR_THUMBS_STATE_NEEDLE =
   `      preview: S,
       thumbs: E,
@@ -12604,6 +14354,87 @@ const VENDOR_SOFT_SKIP_FILL_NEEDLE =
       if (gen !== (d._metaGen || 0)) return;`;
 const VENDOR_SOFT_SKIP_FILL_PATCH =
   `      if (gen !== (d._metaGen || 0)) return;`;
+
+/**
+ * The thumb strip painted only after encoding up to 12 originals, one at a time.
+ *
+ * Every caller of `paintThumbsStrip` already runs `warmVisibleImages` for the
+ * same window, so the strip was waiting on work that was in flight anyway — and
+ * waiting is all it accomplished: the paint uses `Ie()`, a cache lookup, and the
+ * cache is what the warm wave fills.
+ *
+ * `fillThumbSrcs` was supposed to be the cheap follow-up, filling `src` on the
+ * existing nodes. It cannot: SafeElement rejects every attribute without an `x-`
+ * prefix, so both its `getAttribute("data-gal-idx")` and its `setAttribute("src")`
+ * threw into a bare `catch`. `setInnerHTML` is the only paint SafeDOM honours, so
+ * the warm wave now ends in a real repaint and the pretend path is deleted rather
+ * than left looking functional.
+ *
+ * Written against the post-chain text, so applied after it.
+ */
+const VENDOR_THUMBS_DEAD_FILL_NEEDLE = `fillThumbSrcs = async (items, idx) => {
+      try {
+        const list = items || [];
+        const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await thumbsPaintEl().getChildren()) : [];
+        if (!kids?.length) return;
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const warmIds = new Set(VC?.visibleGalleryImageIds ? VC.visibleGalleryImageIds(list, idx, 1, 12) : list.slice(Math.max(0, idx - 3), idx + 5).map((c) => String(c?.id || "")).filter(Boolean));
+        for (const id of warmIds) {
+          const card = list.find((c) => String(c?.id || "") === id);
+          if (card) await ensureCardImage(card);
+        }
+        for (const el of kids) {
+          if (!el || typeof el.getAttribute != "function") continue;
+          let galIdx = null;
+          try {
+            const split = await el.getAttribute("data-nx-split");
+            if (split != null && split !== "") continue;
+            const raw = await el.getAttribute("data-gal-idx");
+            if (raw != null && raw !== "") galIdx = Number(raw);
+          } catch {
+            continue;
+          }
+          if (!Number.isFinite(galIdx)) continue;
+          const card = list[galIdx], id = String(card?.id || "");
+          if (!warmIds.has(id)) continue;
+          const src = Ie(card);
+          if (!src || typeof el.setAttribute != "function") continue;
+          try {
+            await el.setAttribute("src", src);
+          } catch {
+          }
+        }
+      } catch {
+      }
+    }, `;
+const VENDOR_THUMBS_DEAD_FILL_PATCH = '';
+
+const VENDOR_THUMBS_STRIP_NONBLOCK_NEEDLE = `      const warmIds = new Set(VC?.visibleGalleryImageIds ? VC.visibleGalleryImageIds(list, idx, 1, 12) : list.slice(Math.max(0, idx - 3), idx + 5).map((c) => String(c?.id || "")).filter(Boolean));
+      for (const id of warmIds) {
+        const card = list.find((c) => String(c?.id || "") === id);
+        if (card) await ensureCardImage(card);
+      }
+      const thumbBits = [];`;
+const VENDOR_THUMBS_STRIP_NONBLOCK_PATCH = `      const warmIds = new Set(VC?.visibleGalleryImageIds ? VC.visibleGalleryImageIds(list, idx, 1, 12) : list.slice(Math.max(0, idx - 3), idx + 5).map((c) => String(c?.id || "")).filter(Boolean));
+      // Cache hits only. Callers already started warmVisibleImages for this same
+      // window and it repaints when the wave lands, so awaiting the encodes here
+      // delayed the strip without changing what it could draw.
+      const thumbBits = [];`;
+
+const VENDOR_THUMBS_WARM_REPAINT_NEEDLE = `        const done = () => {
+          if (gen !== (d._metaGen || 0) || t.uiOpen || d.minimized) return;
+          // Fill srcs in place — avoid full strip rebuild (separator flicker).
+          fillThumbSrcs(items, d.index).catch(() => {
+          });
+        };`;
+const VENDOR_THUMBS_WARM_REPAINT_PATCH = `        const done = () => {
+          if (gen !== (d._metaGen || 0) || t.uiOpen || d.minimized) return;
+          // Full rebuild, not an in-place src fill: SafeElement refuses any
+          // attribute without an \`x-\` prefix, so the fill never landed. The gen
+          // check above keeps this to one repaint per selection.
+          paintThumbsStrip(items, d.index).catch(() => {
+          });
+        };`;
 
 const VENDOR_THUMBS_KIDS_NEEDLE =
   `await k.unwarpSafeArray(await E.getChildren())`;
@@ -13101,7 +14932,7 @@ const PROMPT_KEYS = [
   'author_note', 'asset_author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
   'char_inject', 'preprocess', 'prefill', 'preset_1', 'autotag',
   'curation_refine', 'curation_embed_hint', 'asset_tags_inject', 'char_looks',
-  'command_reroll', 'lorefilter_scan',
+  'command_reroll', 'lorefilter_scan', 'comic',
 ] as const;
 
 /**
@@ -13226,6 +15057,8 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE, 'explorer folders html');
   assertOnce(raw, VENDOR_EXPLORER_GRID_HTML_NEEDLE, 'explorer grid html');
   assertOnce(raw, VENDOR_EXPLORER_SELBAR_LABELS_NEEDLE, 'explorer selbar short labels');
+  assertOnce(raw, VENDOR_EXPLORER_LIMIT_NEEDLE, 'explorer explore limit 500');
+  assertOnce(raw, VENDOR_EXPLORER_SELECT_ALL_NEEDLE, 'explorer select-all bind');
   assertOnce(raw, VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE, 'explorer favonly paint star-only');
   assertOnce(raw, VENDOR_EXPLORER_ET_FN_NEEDLE, 'explorer et windowed');
   assertOnce(raw, VENDOR_EXPLORER_HA_NEEDLE, 'explorer ha window paint');
@@ -13298,6 +15131,10 @@ const loadVendorUi = (): string => {
     [VENDOR_STICKY_CLICK_NEEDLE, 'sticky click hide/revive'],
     [VENDOR_STICKY_PRESS_NEEDLE, 'sticky press skip'],
     [VENDOR_PRESS_FILL_NEEDLE, 'press fill lightweight ring'],
+    [VENDOR_CANCEL_PRESS_IDS_NEEDLE, 'cancel press clears image press ids'],
+    [VENDOR_SECOND_PTR_CANCEL_NEEDLE, 'second pointer used to cancel press'],
+    [VENDOR_PRESS_PTR_UP_NEEDLE, 'pointerup tears down mobilePress'],
+    [VENDOR_PRESS_PTR_CANCEL_NEEDLE, 'pointercancel tears down mobilePress'],
     [VENDOR_PRESS_FILL_STICKY_CALL_NEEDLE, 'press fill sticky call xy'],
     [VENDOR_INLINE_LONGPRESS_NEEDLE, 'inline shot long-press'],
     [VENDOR_MSG_CHIP_UP_NEEDLE, 'msg chip pointerup'],
@@ -13317,14 +15154,21 @@ const loadVendorUi = (): string => {
     [VENDOR_SAVE_REROLL_BG_NEEDLE, 'shot save reroll close first'],
     [VENDOR_SAVE_REROLL_INLINE_NEEDLE, 'shot save reroll refresh inline'],
     [VENDOR_GALLERY_CE_LIMIT_NEEDLE, 'session gallery ce limit'],
+    [VENDOR_GALLERY_CE_MERGE_NEEDLE, 'session gallery ce cache write'],
+    [VENDOR_GALLERY_CE_WARM_NEEDLE, 'session gallery ce skip speculative strip warm'],
     [VENDOR_CHAR_SAVE_BG_NEEDLE, 'char save skip close after POST'],
     [VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, 'char save close before POST'],
     [VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, 'settings open sticky hide'],
     [VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, 'settings At hide panel + rehide'],
+    [VENDOR_HIDE_INSPECT_BIND_NEEDLE, 'hideInspect bind on t'],
+    [VENDOR_SHOW_INSPECT_ABORT_NEEDLE, 'showStickyInspect abort start'],
+    [VENDOR_SHOW_INSPECT_COMMIT_NEEDLE, 'showStickyInspect abort commit'],
     [VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, 'settings close sticky restore'],
     [VENDOR_BLOCK_HOST_UNBLOCK_NEEDLE, 'blockHostChrome unblock style-only'],
     [VENDOR_SANGSI_TOGGLE_NEEDLE, 'viewer 상시 optimistic toggle'],
     [VENDOR_SETTINGS_WATCH_STICKY_NEEDLE, 'settings watch sticky restore'],
+    [VENDOR_BOOT_SETTINGS_STAMP_NEEDLE, 'boot settings fetch stamp'],
+    [VENDOR_BOOT_RETRY_SETTINGS_NEEDLE, 'boot retry drops its settings GET'],
     [VENDOR_OVERLAY_MOUNT_NEEDLE, 'overlay keep Ya shell'],
     [VENDOR_OVERLAY_WATCH_NEEDLE, 'overlay watchdog always shell'],
     [VENDOR_OVERLAY_RETRY_NEEDLE, 'overlay retry always shell'],
@@ -13442,6 +15286,8 @@ const loadVendorUi = (): string => {
     [VENDOR_FORCE_REGEN_GALLERY_NEEDLE, 'force regen gallery reload'],
     [VENDOR_FORCE_REGEN_INLINE_NEEDLE, 'force regen inline clear'],
     [VENDOR_DE_STRIP_NEEDLE, 'De strip inline markers'],
+    [VENDOR_IE_FN_NEEDLE, 'Ie/ensureSticky accept blob display urls'],
+    [VENDOR_STICKY_POOL_IMG_NEEDLE, 'sticky pool img setAttribute'],
     [VENDOR_DT_FN_NEEDLE, 'risu-chat data-chat-id list'],
     [VENDOR_DA_QA_NEEDLE, 'Da qa data-chat-index'],
     [VENDOR_BIND_QA_NEEDLE, 'bindCard qa data-chat-index'],
@@ -13519,6 +15365,8 @@ const loadVendorUi = (): string => {
     [VENDOR_META_SKIP_ROSTER_NEEDLE, 'viewer chips skip roster await'],
     [VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE, 'viewer meta chip touch'],
     [VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE, 'viewer meta y chip touch'],
+    [VENDOR_VIEWER_BASE_CHIP_NEEDLE, 'viewer base chip 수정'],
+    [VENDOR_INSPECT_BASE_CHIP_NEEDLE, 'inspect base chip 수정'],
     [VENDOR_THUMBS_STATE_NEEDLE, 'thumbs transform state'],
     [VENDOR_THUMBS_HELPERS_NEEDLE, 'thumbs transform helpers'],
     [VENDOR_THUMB_HIT_NEEDLE, 'thumb hit owned offset'],
@@ -13621,6 +15469,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE, VENDOR_EXPLORER_FOLDERS_HTML_PATCH)
     .replace(VENDOR_EXPLORER_GRID_HTML_NEEDLE, VENDOR_EXPLORER_GRID_HTML_PATCH)
     .replace(VENDOR_EXPLORER_SELBAR_LABELS_NEEDLE, VENDOR_EXPLORER_SELBAR_LABELS_PATCH)
+    .replace(VENDOR_EXPLORER_LIMIT_NEEDLE, VENDOR_EXPLORER_LIMIT_PATCH)
+    .replace(VENDOR_EXPLORER_SELECT_ALL_NEEDLE, VENDOR_EXPLORER_SELECT_ALL_PATCH)
     .replace(VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE, VENDOR_EXPLORER_FAVONLY_PAINT_PATCH)
     .replace(VENDOR_EXPLORER_ET_FN_NEEDLE, VENDOR_EXPLORER_ET_FN_PATCH)
     .replace(VENDOR_EXPLORER_TAB_LOAD_NEEDLE, VENDOR_EXPLORER_TAB_LOAD_PATCH)
@@ -13681,9 +15531,15 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_PCT_LIVE_NEEDLE, VENDOR_INLINE_PCT_LIVE_PATCH)
     .replace(VENDOR_STICKY_CLICK_NEEDLE, VENDOR_STICKY_CLICK_PATCH)
     .replace(VENDOR_PRESS_FILL_NEEDLE, VENDOR_PRESS_FILL_PATCH)
+    .replace(VENDOR_CANCEL_PRESS_IDS_NEEDLE, VENDOR_CANCEL_PRESS_IDS_PATCH)
+    .replace(VENDOR_SECOND_PTR_CANCEL_NEEDLE, VENDOR_SECOND_PTR_CANCEL_PATCH)
+    .replace(VENDOR_PRESS_PTR_UP_NEEDLE, VENDOR_PRESS_PTR_UP_PATCH)
+    .replace(VENDOR_PRESS_PTR_CANCEL_NEEDLE, VENDOR_PRESS_PTR_CANCEL_PATCH)
     .replace(VENDOR_PRESS_FILL_STICKY_CALL_NEEDLE, VENDOR_PRESS_FILL_STICKY_CALL_PATCH)
     .replace(VENDOR_STICKY_PRESS_NEEDLE, VENDOR_STICKY_PRESS_PATCH)
-    .replace(VENDOR_INLINE_LONGPRESS_NEEDLE, VENDOR_INLINE_LONGPRESS_PATCH)
+    .replace(VENDOR_INLINE_LONGPRESS_NEEDLE, VENDOR_INLINE_LONGPRESS_PATCH);
+    assertOnce(out, VENDOR_STICKY_INSPECT_PRESS_NEEDLE, 'sticky inspect press after collapsed rename');
+    out = out.replace(VENDOR_STICKY_INSPECT_PRESS_NEEDLE, VENDOR_STICKY_INSPECT_PRESS_PATCH)
     .replace(VENDOR_MSG_CHIP_UP_NEEDLE, VENDOR_MSG_CHIP_UP_PATCH)
     .replace(VENDOR_STICKY_REVIVE_NEEDLE, VENDOR_STICKY_REVIVE_PATCH)
     .replace(VENDOR_STICKY_INIT_NEEDLE, VENDOR_STICKY_INIT_PATCH)
@@ -13701,10 +15557,15 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_SAVE_REROLL_BG_NEEDLE, VENDOR_SAVE_REROLL_BG_PATCH)
     .replace(VENDOR_SAVE_REROLL_INLINE_NEEDLE, VENDOR_SAVE_REROLL_INLINE_PATCH)
     .replace(VENDOR_GALLERY_CE_LIMIT_NEEDLE, VENDOR_GALLERY_CE_LIMIT_PATCH)
+    .replace(VENDOR_GALLERY_CE_MERGE_NEEDLE, VENDOR_GALLERY_CE_MERGE_PATCH)
+    .replace(VENDOR_GALLERY_CE_WARM_NEEDLE, VENDOR_GALLERY_CE_WARM_PATCH)
     .replace(VENDOR_CHAR_SAVE_BG_NEEDLE, VENDOR_CHAR_SAVE_BG_PATCH)
     .replace(VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, VENDOR_CHAR_SAVE_CLOSE_FIRST_PATCH)
     .replace(VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, VENDOR_SETTINGS_OPEN_STICKY_PATCH)
     .replace(VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH)
+    .replace(VENDOR_HIDE_INSPECT_BIND_NEEDLE, VENDOR_HIDE_INSPECT_BIND_PATCH)
+    .replace(VENDOR_SHOW_INSPECT_ABORT_NEEDLE, VENDOR_SHOW_INSPECT_ABORT_PATCH)
+    .replace(VENDOR_SHOW_INSPECT_COMMIT_NEEDLE, VENDOR_SHOW_INSPECT_COMMIT_PATCH)
     .replace(VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, VENDOR_SETTINGS_CLOSE_STICKY_PATCH)
     .replace(VENDOR_BLOCK_HOST_UNBLOCK_NEEDLE, VENDOR_BLOCK_HOST_UNBLOCK_PATCH)
     .replace(VENDOR_SANGSI_TOGGLE_NEEDLE, VENDOR_SANGSI_TOGGLE_PATCH)
@@ -13811,6 +15672,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_FORCE_REGEN_GALLERY_NEEDLE, VENDOR_FORCE_REGEN_GALLERY_PATCH)
     .replace(VENDOR_FORCE_REGEN_INLINE_NEEDLE, VENDOR_FORCE_REGEN_INLINE_PATCH)
     .replace(VENDOR_DE_STRIP_NEEDLE, VENDOR_DE_STRIP_PATCH)
+    .replace(VENDOR_IE_FN_NEEDLE, VENDOR_IE_FN_PATCH)
+    .replaceAll(VENDOR_IE_READY_FB_NEEDLE, VENDOR_IE_READY_FB_PATCH)
+    .replaceAll(VENDOR_IE_READY_FRESH_NEEDLE, VENDOR_IE_READY_FRESH_PATCH)
+    .replace(VENDOR_STICKY_POOL_IMG_NEEDLE, VENDOR_STICKY_POOL_IMG_PATCH)
     .replace(VENDOR_DT_FN_NEEDLE, VENDOR_DT_FN_PATCH)
     .replace(VENDOR_DA_QA_NEEDLE, VENDOR_DA_QA_PATCH)
     .replace(VENDOR_BIND_QA_NEEDLE, VENDOR_BIND_QA_PATCH)
@@ -13886,6 +15751,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_META_SKIP_ROSTER_NEEDLE, VENDOR_META_SKIP_ROSTER_PATCH)
     .replace(VENDOR_VIEWER_META_CHIP_TOUCH_NEEDLE, VENDOR_VIEWER_META_CHIP_TOUCH_PATCH)
     .replace(VENDOR_VIEWER_META_Y_CHIP_TOUCH_NEEDLE, VENDOR_VIEWER_META_Y_CHIP_TOUCH_PATCH)
+    .replace(VENDOR_VIEWER_BASE_CHIP_NEEDLE, VENDOR_VIEWER_BASE_CHIP_PATCH)
+    .replace(VENDOR_INSPECT_BASE_CHIP_NEEDLE, VENDOR_INSPECT_BASE_CHIP_PATCH)
     .replace(VENDOR_THUMBS_STATE_NEEDLE, VENDOR_THUMBS_STATE_PATCH)
     .replace(VENDOR_THUMBS_HELPERS_NEEDLE, VENDOR_THUMBS_HELPERS_PATCH)
     .replace(VENDOR_THUMB_HIT_NEEDLE, VENDOR_THUMB_HIT_PATCH)
@@ -13909,6 +15776,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_ACTIONS_END_CLEAR_NEEDLE, VENDOR_ACTIONS_END_CLEAR_PATCH)
     .replace(VENDOR_ICON_EXPAND_GUARD_NEEDLE, VENDOR_ICON_EXPAND_GUARD_PATCH)
     .replace(VENDOR_HIDE_MODAL_CANCEL_EXPAND_NEEDLE, VENDOR_HIDE_MODAL_CANCEL_EXPAND_PATCH)
+    .replace(VENDOR_BOOT_SETTINGS_STAMP_NEEDLE, VENDOR_BOOT_SETTINGS_STAMP_PATCH)
+    .replace(VENDOR_BOOT_RETRY_SETTINGS_NEEDLE, VENDOR_BOOT_RETRY_SETTINGS_PATCH)
     .replace(VENDOR_OVERLAY_MOUNT_NEEDLE, VENDOR_OVERLAY_MOUNT_PATCH)
     .replace(VENDOR_OVERLAY_WATCH_NEEDLE, VENDOR_OVERLAY_WATCH_PATCH)
     .replace(VENDOR_OVERLAY_RETRY_NEEDLE, VENDOR_OVERLAY_RETRY_PATCH)
@@ -13931,13 +15800,202 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_NAI_SAMPLER_NEEDLE, VENDOR_NAI_SAMPLER_PATCH);
     assertOnce(out, VENDOR_CHAR_REF_MODE_OFF_LABEL_NEEDLE, 'char ref automatic mode label');
     out = out.replace(VENDOR_CHAR_REF_MODE_OFF_LABEL_NEEDLE, VENDOR_CHAR_REF_MODE_OFF_LABEL_PATCH);
+    assertOnce(out, VENDOR_BOOT_MOUNT_FIRST_NEEDLE, 'boot mount before gallery (after overlay mount)');
+    out = out.replace(VENDOR_BOOT_MOUNT_FIRST_NEEDLE, VENDOR_BOOT_MOUNT_FIRST_PATCH);
+    // Delete the dead fill first: its body carries the same warm loop the strip
+    // needle matches, so removing it is what makes that needle unambiguous.
+    assertOnce(out, VENDOR_THUMBS_DEAD_FILL_NEEDLE, 'dead fillThumbSrcs (after soft-skip)');
+    out = out.replace(VENDOR_THUMBS_DEAD_FILL_NEEDLE, VENDOR_THUMBS_DEAD_FILL_PATCH);
+    assertOnce(out, VENDOR_THUMBS_STRIP_NONBLOCK_NEEDLE, 'thumb strip warm await');
+    out = out.replace(VENDOR_THUMBS_STRIP_NONBLOCK_NEEDLE, VENDOR_THUMBS_STRIP_NONBLOCK_PATCH);
+    assertOnce(out, VENDOR_THUMBS_WARM_REPAINT_NEEDLE, 'warm wave repaints the strip');
+    out = out.replace(VENDOR_THUMBS_WARM_REPAINT_NEEDLE, VENDOR_THUMBS_WARM_REPAINT_PATCH);
+    if (out.includes('fillThumbSrcs')) {
+      throw new Error('[build] fillThumbSrcs survived — a dead setAttribute("src") fill is still shipping');
+    }
+    // The one-shot self-only attach is what made shots/chips wait for a click.
+    if (out.includes('_inlineSelfOnly')) {
+      throw new Error('[build] _inlineSelfOnly survived — automatic selection would attach once and give up');
+    }
+    // The retry ladder is gone: markers land in one pass and each image arrives
+    // on its own subscription, so a pass can no longer finish "half attached".
+    // Anything below reappearing means the ladder crept back in.
+    for (const dead of [
+      'nxScheduleAttachRetry',
+      'nxResetAttachRetry',
+      'nxAttachWaits',
+      'NX_ATTACH_BACKOFF',
+      'NX_SESSION_ATTACH_BACKOFF',
+      'inlineAttachSucceeded',
+      'nxReadyInlineImgCount',
+      '_inlineAttachOk',
+      '_inlineEncodeLeft',
+      'trackInlineEncodeAttempt',
+      '_inlineNoRebind',
+      '_pointerSelectRetried',
+      '_pointerSelectBootTries',
+      '_inlineInjectBusy',
+      '_inlineInjectQueued',
+      '_inlineKeepIdxs',
+    ]) {
+      if (out.includes(dead)) {
+        throw new Error(`[build] ${dead} survived — the inline retry ladder is back`);
+      }
+    }
+    assertOnce(out, 'subscribeImageUrl != "function"', 'inline fill must go through the subscription channel');
+    {
+      // A retry must never fan out POST /v1/jobs/retarget-hash per neighbour.
+      const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
+      const to = out.indexOf('async function openSettingsTab(tab) {', from);
+      if (from < 0 || to < 0) throw new Error('[build] cannot slice refreshSelectedInlineImages');
+      const body = out.slice(from, to);
+      if (body.includes('maybeRebindAndLink(') && !body.includes('return await maybeRebindAndLink(msg) || fallback;')) {
+        throw new Error('[build] refreshSelectedInlineImages calls maybeRebindAndLink outside the nxRebind gate');
+      }
+      if ((body.match(/maybeRebindAndLink\(/g) || []).length !== 1) {
+        throw new Error('[build] refreshSelectedInlineImages must reach maybeRebindAndLink only through nxRebind');
+      }
+      const skipAt = body.indexOf('inline.keep.skip');
+      const showAt = body.lastIndexOf('showAttachToast().catch');
+      const zaAt = body.indexOf('const scope = await Za()');
+      if (skipAt < 0 || showAt < 0 || zaAt < 0 || !(skipAt < showAt && showAt < zaAt)) {
+        throw new Error('[build] attach toast must start after the already-painted skip, before Za');
+      }
+      if (body.includes('First session attach only') === false) {
+        throw new Error('[build] attach toast must wait for the already-painted skip');
+      }
+    }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
     assertOnce(out, 'ensureScrollPhaseBus = () =>', 'scroll phase bus landed');
     assertOnce(out, 'async function nxUpdateStickyActiveOnScrollEnd', 'nx scroll-end sticky activate landed');
     assertOnce(out, 'async function nxActivateStickyByCardId', 'nx sticky by cardId landed');
+    assertOnce(out, 'const pw = Math.max(1, Math.round(Number(pin.w || pin.size) || 0));', 'sticky expand hit uses cluster width');
+    assertOnce(out, '"opacity:.45", "background:rgba(15,23,42,.2)"', 'sticky count badges stay translucent over the image');
+    assertOnce(out, 'if (dbl && card && typeof showStickyInspect == "function") {', 'count-chip double-click opens inspect');
+    assertOnce(out, 't.hideStickyInspect = hideInspect;', 'inspect close is exposed for settings');
+    assertOnce(out, 'char-looks-row" style="margin-top:8px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px"', 'char edit looks row is one line without settings CSS');
+    assertOnce(out, '캐릭터 태그 수정</div><div style="margin-top:3px;color:#9aa6b8;font-size:11px">불러오는 중…', 'char edit stub uses real modal chrome');
+    assertOnce(out, '샷 태그 수정</div><div style="margin-top:3px;color:#9aa6b8;font-size:11px">불러오는 중…', 'shot tag stub uses real modal chrome');
+    assertOnce(out, 't.cardTagUi = { openedContainer: openedShell, _studio: !0 }', 'studio reuses the old shot-tag container');
+    assertOnce(out, 'await globalThis.__INLAY_NATIVE__.openTagStudio(e);', 'studio overlay waits for close then hideContainer');
+    assertOnce(out, 't._closingCardTag = !0;', 'card-tag close is re-entry safe');
+    assertOnce(out, 'const dismissCharStub = () => {', 'char edit stub can close while loading');
+    assertOnce(out, 'if (!f || t.uiOpen) return;', 'inspect refuses to open while settings are up');
+    assertOnce(out, 't.overlayUi?.actionMenu]) {', 'settings hide also covers inspect actionMenu');
+    assertOnce(out, 'openedInspect: !0', 'count-chip inspect fires on the second pointerdown');
+    assertOnce(out, 'if (ov && ov._stickyThumbCollapsed) {', 'count-chip single tap only expands when folded');
+    assertOnce(out, 'const stickyPins = t.overlayUi?.markers || [];', 'count-chip / pin hit is tested before the sticky image');
+    assertOnce(out, '/v1/gallery/explore?limit=0', 'explorer listing is uncapped');
+    assertOnce(out, 'id="nx-explorer-select-all"', 'explorer select-all button landed');
+    assertOnce(out, 'N.warmExplorerThumbs(missing)', 'explorer warms object-URL thumbs');
+    if (out.includes('/v1/gallery/explore?limit=500')) {
+      throw new Error('[build] explorer still requests a 500-card listing cap');
+    }
+    if (out.includes('N.warmImages(missing)')) {
+      throw new Error('[build] explorer still encodes data URLs for thumbs');
+    }
+    if (out.includes('if (nxFireTap(g.card)) return;')) {
+      throw new Error('[build] sticky image must not fire tap-inspect');
+    }
     assertOnce(out, 'async function nxHostToast', 'nxHostToast landed');
     assertOnce(out, 'async function showSelectionToast', 'selection toast landed');
+    assertOnce(out, 'async function showAttachToast()', 'attach spinner toast landed');
+    assertOnce(out, 'function nxToastAnchor()', 'toast anchor helper landed');
+    assertOnce(out, 'const nxImagePressMode = () => {', 'image press mode helper landed');
+    assertOnce(out, 'VC.imagePressAllowsSecondPointer(t.backendSettings?.card?.image_press_inspect)', 'second pointer keep helper landed');
+    assertOnce(out, 'VC.imagePressIgnorePointerCancel(t.backendSettings?.card?.image_press_inspect, mobilePress?.source)', 'pinch cancel ignore landed');
+    if (out.includes('f.pointerId !== mobilePress.pointerId) {\n        cancelMobilePress();')) {
+      throw new Error('[build] second pointer still cancels image press before hit-test');
+    }
+    // Counting fingers by pointerId is what silently broke two-finger press: the
+    // forwarded event repeats or omits the id, so two touches deduped into one.
+    if (out.includes('_imagePressIds')) {
+      throw new Error('[build] image press still counts pointerIds — two fingers can dedupe into one');
+    }
+    if ((out.match(/nxNotePressDown\(\);/g) || []).length !== 1) {
+      throw new Error('[build] only inline-shot records a press down — sticky image does not inspect');
+    }
+    assertOnce(out, 'VCUp.noteImagePressUp(t._imagePressDowns)', 'pointerup releases one press slot');
+    assertOnce(out, 'select id="nx-toast-anchor"', 'toast position select landed');
+    assertOnce(out, 'select id="nx-image-press"', 'image press select landed');
+    assertOnce(out, '>더블 탭</option>', 'double-tap press option landed');
+    assertOnce(out, '>트리플 탭</option>', 'triple-tap press option landed');
+    assertOnce(out, '>꾸욱 누르기 + 더블탭</option>', 'hold plus double-tap option landed');
+    if (out.includes('>둘 다 사용</option>')) {
+      throw new Error('[build] both-option label must name hold + double-tap');
+    }
+    assertOnce(out, 'VC.imagePressTapHits({', 'image tap-streak helper landed');
+    assertOnce(out, 'const nxFireTap = (card) => {', 'tap-streak helper defined');
+    if ((out.match(/nxFireTap\(/g) || []).length !== 1) {
+      throw new Error('[build] tap-streak inspect is inline-shot only — not the sticky image');
+    }
+    if (out.includes('두손으로 꾸욱')) {
+      throw new Error('[build] two-finger press label must not remain');
+    }
+    if (out.includes('PROGRESS_TOAST_STYLE_SHOW')) {
+      throw new Error('[build] toast still uses hardcoded top-center style constants');
+    }
+    if (!out.includes('showAttachToast().catch') || !out.includes('hideAttachToast({ done: 1 })')) {
+      throw new Error('[build] attach toast must show on first attach and hide only when done');
+    }
+    if (out.includes('Spinner now — Za/ce/rebind are the wait')) {
+      throw new Error('[build] Da must not raise the attach toast before the already-painted skip');
+    }
+    assertOnce(out, 'VC.shouldShowSessionAttachToast({', 'attach toast is once per session');
+    assertOnce(out, 'Number(VC.ATTACH_TOAST_MAX_MS)', 'attach toast 10s cap landed');
+    {
+      const from = out.indexOf('function schedulePointerSelect(');
+      const to = out.indexOf('async function runPointerSelect(');
+      if (from < 0 || to < 0 || to < from) throw new Error('[build] cannot slice schedulePointerSelect');
+      const sched = out.slice(from, to);
+      if (!sched.includes('why0 === "boot" || why0 === "session" || why0 === "reply"')) {
+        throw new Error('[build] attach toast must rise on boot/session/reply, not every pointer');
+      }
+      if (sched.includes('runPointerSelect("bind")') && sched.indexOf('showAttachToast') < sched.indexOf('runPointerSelect("bind")') && sched.indexOf('why0 === "boot"') < 0) {
+        throw new Error('[build] bind pointer must not raise the attach toast');
+      }
+    }
+    assertOnce(out, 'async function nxWaitNewestDom(', 'session attach waits for the newest bubble');
+    assertOnce(out, 't._inlineHeadFirst = 1;', 'session attach paints the newest bubble first');
+    {
+      const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
+      const to = out.indexOf('async function openSettingsTab(tab) {', from);
+      const body = from >= 0 && to > from ? out.slice(from, to) : '';
+      const headAt = body.indexOf('inline.head.first');
+      const laterAt = body.indexOf('await Promise.all(prefetchIdxs.map', headAt);
+      const injectAt = body.indexOf('await injectChatInlineImages(els[paintIdx]');
+      if (headAt < 0 || laterAt < 0 || injectAt < 0 || !(injectAt < headAt && headAt < laterAt)) {
+        throw new Error('[build] head-first must inject DOM#0 before neighbour prefetch');
+      }
+    }
+    {
+      const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
+      const to = out.indexOf('async function openSettingsTab(tab) {', from);
+      const body = from >= 0 && to > from ? out.slice(from, to) : '';
+      const failAt = body.lastIndexOf('inline.refresh.fail');
+      const failHide = failAt >= 0 ? body.slice(Math.max(0, failAt - 80), failAt).includes('hideAttachToast') : !1;
+      if (failHide) throw new Error('[build] attach toast must stay up when the first paint throws');
+    }
+    {
+      const from = out.indexOf('async function showAttachToast()');
+      const to = out.indexOf('async function ensureSelectionToastRoot()');
+      if (from < 0 || to < 0 || to < from) throw new Error('[build] cannot slice showAttachToast');
+      const body = out.slice(from, to);
+      if (body.includes('readIndexProgress') || body.includes('formatViewerJob')) {
+        throw new Error('[build] attach toast must not hide behind job/index busy');
+      }
+    }
+    assertOnce(out, '/v1/cards/" + e.id + "/nai-prompt', 'card tag nai-prompt fill landed');
+    assertOnce(out, 'await addChip("수정", "base"', 'viewer base chip 수정 landed');
+    assertOnce(out, 'await addInspectBtn(chipRow, "수정", "base"', 'inspect base chip 수정 landed');
     assertOnce(out, 'async function nxStickyV2ApplyFromHt', 'sticky v2 apply landed');
+    assertOnce(out, 'function nxReadyImg(src)', 'nxReadyImg display-url helper landed');
+    if (out.includes('typeof fb == "string" && /^data:image')) {
+      throw new Error('[build] leftover data:image gate on fb — blob thumbs would stay empty');
+    }
+    if (out.includes('typeof fresh == "string" && /^data:image')) {
+      throw new Error('[build] leftover data:image gate on fresh — blob thumbs would stay empty');
+    }
     assertOnce(out, 'function __nxDeadStickyFlashBody()', 'legacy flash body retired');
     assertOnce(out, 'Sticky v2 only — skip legacy frame', 'Ht early-return to v2 landed');
     assertOnce(out, 'const anchorY = o * 0.5;', 'scroll track viewport mid landed');
@@ -14024,6 +16082,149 @@ const loadVendorUi = (): string => {
     if (!out.includes('strip=diff')) {
       throw new Error('[build] inline keep must diff-strip only (no full-chat wipe)');
     }
+    if (!out.includes('prefetchInlineRoleDomIndices') || !out.includes('Promise.all(prefetchIdxs.map')) {
+      throw new Error('[build] inline role prefetch must ask sel±4 in parallel');
+    }
+    assertOnce(out, 'VC.pickInlineRepaintIndices({ rows: paintRows, painted: prevPaintedKeys })', 'per-bubble repaint split landed');
+    // Both paint sites must consult the reuse set, or half the keep window still
+    // repaints and the flash is back for the neighbours.
+    if ((out.match(/reuseIdxs\.has\(/g) || []).length !== 2) {
+      throw new Error('[build] both paint sites must honour the per-bubble reuse set');
+    }
+    assertOnce(out, 'y("info", "inline.inject.repaint",', 'repaint reason log landed');
+    assertOnce(out, 'y("info", "inline.inject.hold",', 'empty-desired hold must keep live shots');
+    assertOnce(out, 'confirmedEmpty: !!t._inlineConfirmedEmpty', 'force retag may confirm empty desired');
+    assertOnce(out, 'VC.inlineRoleDisposition(opts.role,', 'inline role gate must distinguish unresolved from user');
+    assertOnce(out, 'if (roleDisposition === "hold") return;', 'unresolved role must preserve mounted frames');
+    assertOnce(out, 'forceStrip: roleDisposition === "deny"', 'verified wrong-role leftover shots must strip');
+    assertOnce(out, 'const heldKeepHashes = new Set(', 'unresolved kept bubbles must survive a selection pass');
+    assertOnce(out, 'VC.roleForInlineBubble({', 'inline role must not trust drifted sel.role');
+    assertOnce(out, 'paintPlan.cards = VC.cardsForInlineBubble({', 'user bubbles must drop char cards');
+    assertOnce(out, 'VC.liveBubbleHash({', 'keep identity must prefer live DOM hash');
+    assertOnce(out, 'apiText: w(hit?.text || "")', 'overlap check needs matched API text');
+    assertOnce(out, 't._inlineConfirmedEmpty = !0', 'force retag sets confirmed-empty before inject');
+    assertOnce(out, 'VC.inlinePaintKeyHasCards(key)', 'empty paint keys must not be reused');
+    {
+      const from = out.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
+      const to = out.indexOf('async function refreshSelectedInlineImages(force) {', from);
+      const body = from >= 0 && to > from ? out.slice(from, to) : '';
+      if (!body) throw new Error('[build] injectChatInlineImages body not found');
+      // Placing a marker must never be conditional on the bytes existing — that
+      // is what made a chat hop paint chips only and wait for a retry.
+      if (body.includes('nxWatchInlineShots') && body.indexOf('nxWatchInlineShots') < body.indexOf('const tPlace')) {
+        throw new Error('[build] markers must be placed before the subscription is registered');
+      }
+      if (!body.includes('nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc)')) {
+        throw new Error('[build] cards without bytes must be filled by subscription, not a bake loop');
+      }
+      if (body.includes('ensureStickyCardImage')) {
+        throw new Error('[build] the inject pass must not await encodes — that was the bake loop');
+      }
+      if (!body.includes('VC.canSkipInlineInject({')) {
+        throw new Error('[build] inject skip must go through canSkipInlineInject');
+      }
+      if (!body.includes('awaitingCount: awaiting')) {
+        throw new Error('[build] inject skip must count cells a live subscription owns');
+      }
+      if (!body.includes('spin.setStyleAttribute("display:none")') || body.includes('spin.remove()')) {
+        throw new Error('[build] ready image must fill the existing spinner frame');
+      }
+      // A bubble repainted without dropping its watcher would keep filling nodes
+      // that are no longer mounted, and the watcher would never be released.
+      if (!body.includes('nxDropInlineSubs(lockKey)')) {
+        throw new Error('[build] a failed inject must release the bubble subscription');
+      }
+      // Global would put the bubble under the cursor behind its own neighbours.
+      if (!body.includes('t._inlineInjectLocks.get(lockKey)')) {
+        throw new Error('[build] the inject lock must be per bubble');
+      }
+      if (!body.includes('t._inlineInjectTicket.set(lockKey, ticket)')) {
+        throw new Error('[build] a newer inject must supersede waiters on the same bubble');
+      }
+      if (!body.includes('shouldStripLeftoverInlineId(leftId, keepIds, !1, seenInlineIds)')) {
+        throw new Error('[build] leftover strip must drop a second copy of the same shot');
+      }
+      if (!body.includes('liveUniqueCount')) {
+        throw new Error('[build] inject skip must refuse duplicate wrappers');
+      }
+      // The scan and the line matching depend only on the bubble text, which
+      // lockKey hashes. Recomputing them per repaint was a round-trip per
+      // paragraph on every scroll hop and every post-reply force repaint.
+      if (!body.includes('const cached = nxPlaceCacheGet(lockKey, msgEl);')
+        || !body.includes('await nxBubbleKeyIntact(msgEl, lockKey)')) {
+        throw new Error('[build] an unchanged bubble must reuse its cached paragraph scan');
+      }
+      if (!body.includes('nxPlaceCacheSet(lockKey, msgEl, { hosts, hostTags, hostTexts, messageLines, rawCount })')) {
+        throw new Error('[build] a fresh scan must be cached for the next repaint');
+      }
+      // Without the stamp the validation query can never match, so the cache
+      // would be written and never read — a silent no-op.
+      if (!body.includes('VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100, lockKey)')) {
+        throw new Error('[build] markers must carry the bubble hash the cache validates against');
+      }
+      // Reading the cache without proving the nodes survived would prepend into
+      // handles for a bubble Risu already rebuilt — images placed nowhere.
+      if (body.indexOf('await nxBubbleKeyIntact(msgEl, lockKey)') > body.indexOf('cacheHit = !0')) {
+        throw new Error('[build] the cached scan must be validated before it is used');
+      }
+    }
+    assertOnce(out, 'async function nxBubbleKeyIntact(msgEl, key) {', 'the one round-trip cache probe landed');
+    // The tie between this selector and INLAY_INLINE_KEY_ATTR cannot be checked
+    // here — the marker HTML comes from our own bundle, not the vendor output
+    // `out` holds. tests/build-layout.test.mjs checks it against the composed file.
+    if (!out.includes('/^[A-Za-z0-9_-]+$/.test(k)')) {
+      throw new Error('[build] the bubble hash reaches a selector and must be shape-checked');
+    }
+    assertOnce(out, 't._inlinePlaceCache = null;', 'a chat switch must drop paragraph handles for the old DOM');
+    assertOnce(out, 'nxDropInlineSubs(lockKey);\n    const N = globalThis.__INLAY_NATIVE__;', 'a re-registered watcher must replace the old one');
+    // Two checks: after the selected bubble, and inside the neighbour loop.
+    if ((out.match(/if \(stale\(\)\) \{/g) || []).length !== 2) {
+      throw new Error('[build] a superseded pass must stop after the head and between neighbours');
+    }
+    // Deferring the ±1 window mid-scroll left it blank for good: settle only
+    // re-enters the pass when the selected index changes, and after a scroll that
+    // ends on the same bubble the cheap keep skip matches and returns.
+    if (out.includes('t._scrollPhaseBus.pendingSettle') && out.includes('inline.paint.defer')) {
+      throw new Error('[build] neighbours must not be deferred to a settle pass that never runs');
+    }
+    // Abandoning a pass still has to record what it painted, or the next pass
+    // repaints a correct bubble and the progress toast is never hidden.
+    assertOnce(out, 'const commitPaint = () => {', 'painted-key commit must be one exit-path helper');
+    if ((out.match(/commitPaint\(\);/g) || []).length !== 2) {
+      throw new Error('[build] both the superseded and the finished exit must commit painted keys');
+    }
+    if (out.includes('superseded after head`);\n        return;')) {
+      throw new Error('[build] a superseded pass must commit painted keys before returning');
+    }
+    {
+      // One scan, two consumers. Two separate walks were ~4 IPC round-trips per
+      // paragraph each, on the same element list, moments apart.
+      const scans = (out.match(/querySelectorAll\(hostSel\)/g) || []).length;
+      if (scans !== 1) {
+        throw new Error(`[build] the bubble host scan must exist once, found ${scans}`);
+      }
+      // Only legacy mounts on DIVs. Everywhere else they are dropped by
+      // isMessageBodyHostTag a few lines later, after paying four round-trips
+      // each — and a bubble holds far more DIV chrome than paragraphs.
+      if (!out.includes('const legacy = mode === "legacy";')
+        || !out.includes('? "p,h1,h2,h3,h4,h5,h6,li,blockquote,div"\n      : "p,h1,h2,h3,h4,h5,h6,li,blockquote";')) {
+        throw new Error('[build] the host scan must only ask for DIVs in legacy mode');
+      }
+      if (!out.includes('if (legacy && name === "DIV") {')) {
+        throw new Error('[build] the nested-host probe must be legacy-only');
+      }
+      const from = out.indexOf('async function injectChatMsgActions(msgEl, cards, msgIndex) {');
+      const early = out.indexOf('const earlyBars = await readBars();', from);
+      const scan = out.indexOf('const scan = await nxScanBubbleHosts(msgEl);', from);
+      if (from < 0 || early < 0 || scan < 0 || early > scan) {
+        throw new Error('[build] chip bar early-exit must run before the shared host scan');
+      }
+      // A slot shift under an unchanged bubble is one attribute write. Tearing
+      // the bars down instead is a visible flash on every new message.
+      if (!out.includes('setAttribute("x-inlay-msg-index", String(msgIdx))')) {
+        throw new Error('[build] a shifted chip bar must be reindexed in place');
+      }
+    }
     if (!out.includes('inlineGoneFromSel') || !out.includes('refreshSelectedInlineImages(!0)')) {
       throw new Error('[build] missing re-inject when inline markers vanished from live DOM');
     }
@@ -14057,8 +16258,13 @@ const loadVendorUi = (): string => {
     if ((out.match(/nxScopeCheckSoon\(\);/g) || []).length !== 3) {
       throw new Error('[build] scope recheck must ride the existing pointermove/capture/scroll handlers');
     }
-    if (!out.includes('freshSession ? 250 : rawWait') || !out.includes('schedulePointerSelect("session", 7e2)')) {
-      throw new Error('[build] session pointer select must try at 250ms and retry once');
+    // The wait is the sequence, not a retry driver: await the newest bubble once
+    // and paint. There is no second attempt because the paint cannot half-fail.
+    if (!out.includes('nxWaitNewestDom(doc, 2000)')) {
+      throw new Error('[build] session pointer select must await the newest bubble');
+    }
+    if (out.includes('schedulePointerSelect("session", 7e2)') || out.includes('schedulePointerSelect("boot", 200)')) {
+      throw new Error('[build] pointer select must not reschedule itself');
     }
     if (!out.includes('_paintStatusKey') || !out.includes('_seFp') || !out.includes('_deTextCache')) {
       throw new Error('[build] missing same-feel skip caches (status/Se/De)');
@@ -14072,11 +16278,35 @@ const loadVendorUi = (): string => {
     if (!out.includes('rerollMessageImagesLive(A, { report, onShot: onChipShot })') || !out.includes('y("info", "regen.all", "msg-actions")')) {
       throw new Error('[build] chip regen must pass onChipShot into live reroll');
     }
-    if (!out.includes('&limit=2000')) {
-      throw new Error('[build] session gallery ce() must request limit=2000');
+    // The window is only safe because the request names the hashes it needs and
+    // the cache merges. Losing either turns a narrow window into "old shots
+    // stop attaching" — the bug that forced limit=2000 in the first place.
+    if (!out.includes('&limit=${NX_GALLERY_WINDOW}${hashQ}')) {
+      throw new Error('[build] session gallery ce() must request the window plus its hashes');
+    }
+    if (!out.includes('const NX_GALLERY_WINDOW = 120;')) {
+      throw new Error('[build] NX_GALLERY_WINDOW missing — ce() would request an undefined limit');
+    }
+    if (!out.includes('VCm.mergeSessionGallery({')) {
+      throw new Error('[build] ce() must merge the window into t.gallery, not replace it');
+    }
+    if (out.includes('t.gallery = nextItems;')) {
+      throw new Error('[build] ce() still replaces t.gallery — cards outside the window would be dropped');
+    }
+    if (!out.includes('List only — viewer / inline / overlay warm the shots they actually paint.')) {
+      throw new Error('[build] ce() must skip the speculative 8-image warm');
+    }
+    if (out.includes('VC.galleryForMessage(t.gallery, focus, 8)')) {
+      throw new Error('[build] ce() still warms the viewer strip — that raced inline and ran with the viewer off');
+    }
+    if (!out.includes('async function nxEnsureCardsForHash(hash)')) {
+      throw new Error('[build] hash-miss fetch missing — a shot below the window edge could never attach');
+    }
+    if (out.includes('&limit=2000')) {
+      throw new Error('[build] session gallery ce() must not ask for the session ceiling');
     }
     if (out.includes('&limit=120')) {
-      throw new Error('[build] session gallery ce() must not still request limit=120');
+      throw new Error('[build] session gallery ce() must not hardcode a bare limit=120');
     }
     if (out.includes('afterRequest.skip", "execute=manual"') || out.includes('afterReply.skip", "execute=manual"')) {
       throw new Error('[build] after-reply/stream-keyword must not skip on execute=manual');

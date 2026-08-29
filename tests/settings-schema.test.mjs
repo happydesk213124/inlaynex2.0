@@ -166,6 +166,67 @@ test("inline_msg_actions migrates checkbox and aliases", () => {
   assert.equal(migrateSettings({ card: { inline_msg_actions: "2.4.9" } }).card.inline_msg_actions, "compat");
 });
 
+test("inline_chat_dom_radius defaults to 4 and clamps to 3–20", () => {
+  assert.equal(migrateSettings({ card: {} }).card.inline_chat_dom_radius, 4);
+  assert.equal(migrateSettings({ card: { inline_chat_dom_radius: 2 } }).card.inline_chat_dom_radius, 3);
+  assert.equal(migrateSettings({ card: { inline_chat_dom_radius: "5" } }).card.inline_chat_dom_radius, 5);
+  assert.equal(migrateSettings({ card: { inline_chat_dom_radius: 8.6 } }).card.inline_chat_dom_radius, 9);
+  assert.equal(migrateSettings({ card: { inline_chat_dom_radius: 99 } }).card.inline_chat_dom_radius, 20);
+});
+
+test("toast_anchor and image_press_inspect migrate with safe defaults", () => {
+  const empty = migrateSettings({ card: {} });
+  assert.equal(empty.card.toast_anchor, "tc");
+  assert.equal(empty.card.image_press_inspect, "hold");
+  assert.equal(migrateSettings({ card: { toast_anchor: "bottom-right" } }).card.toast_anchor, "br");
+  assert.equal(migrateSettings({ card: { toast_anchor: "nope" } }).card.toast_anchor, "tc");
+  assert.equal(migrateSettings({ card: { image_press_inspect: "two-hand" } }).card.image_press_inspect, "two");
+  assert.equal(migrateSettings({ card: { image_press_inspect: "double-tap" } }).card.image_press_inspect, "two");
+  assert.equal(migrateSettings({ card: { image_press_inspect: "off" } }).card.image_press_inspect, "off");
+  assert.equal(migrateSettings({ card: { image_press_inspect: "both" } }).card.image_press_inspect, "both");
+  assert.equal(migrateSettings({ card: { image_press_inspect: "triple-tap" } }).card.image_press_inspect, "three");
+});
+
+test("comic tab defaults off and migrates enums", () => {
+  const empty = migrateSettings({ card: {} });
+  assert.equal(empty.card.comic_gen, "off");
+  assert.equal(empty.card.comic_llm_batch, "once");
+  assert.equal(empty.card.comic_schedule, "overlap");
+  assert.equal(empty.card.comic_max_pages, 2);
+  assert.equal(empty.card.comic_gen_ratio, 50);
+  assert.equal(empty.card.comic_coords, "llm");
+  assert.equal(empty.card.comic_author_note, "");
+  assert.equal(empty.card.comic_steps, "");
+  assert.equal(empty.card.comic_sampler, "");
+  assert.equal(empty.card.comic_prompt_prefix, "");
+  assert.equal(empty.card.comic_prompt_suffix, "");
+  const on = migrateSettings({
+    card: {
+      comic_gen: true,
+      comic_llm_batch: "per-shot",
+      comic_schedule: "serial",
+      comic_max_pages: 9,
+      comic_coords: "coords",
+      comic_steps: 23,
+      comic_sampler: "k_euler",
+    },
+  });
+  assert.equal(on.card.comic_gen, "on");
+  assert.equal(on.card.comic_llm_batch, "per_shot");
+  assert.equal(on.card.comic_schedule, "wait_taggers");
+  assert.equal(on.card.comic_max_pages, 9);
+  assert.equal(on.card.comic_gen_ratio, 50);
+  assert.equal(on.card.comic_coords, "position");
+  assert.equal(on.card.comic_steps, 23);
+  assert.equal(on.card.comic_sampler, "k_euler");
+  const zero = migrateSettings({ card: { comic_max_pages: 0 } });
+  assert.equal(zero.card.comic_gen_ratio, 0);
+  const copied = migrateSettings({ card: { comic_prompt: "wet ink" } });
+  assert.equal(copied.card.comic_prompt_prefix, "wet ink");
+  const kept = migrateSettings({ card: { comic_prompt: "old", comic_prompt_prefix: "" } });
+  assert.equal(kept.card.comic_prompt_prefix, "");
+});
+
 test("overlay_markers is canonical for left-line overlay + inline previews", () => {
   const on = migrateSettings({ card: { overlay_markers: true, inline_previews: false } });
   assert.equal(on.card.overlay_markers, true);

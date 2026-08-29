@@ -16,6 +16,7 @@
  * and the reattach decision must see rows exactly as the explorer showed them.
  */
 
+import { cardMatchesMessageUnlink } from '../domain/gallery/unlink-match';
 import { IMAGE_KEY } from '../core/constants';
 import { dbg } from '../core/debug';
 import { errorBody } from '../core/errors';
@@ -23,12 +24,13 @@ import type { ApiResult, CardRow } from '../core/types';
 import { asU8, base64ToBytes, bytesToBase64, u8ToArrayBuffer } from '../core/util/bytes';
 import { ASSISTANT_PREVIEW_LIMIT, cleanText, toInt, toOptionalFloat, uuid } from '../core/util/text';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
-import { cardsForSession, idbDelete, idbGet, idbGetAll, idbPut, imageMeta, imagePng } from '../storage/stores';
+import { cardsForSession, idbDelete, idbGet, idbGetAll, idbPut, imageMeta, imagePng, removeCardImageRows } from '../storage/stores';
 import type { ZipEntryInput } from '../ui-contract/gallery-zip';
 import { buildGalleryManifest, packGalleryZip, resolveReattach, unpackGalleryZip } from '../ui-contract/gallery-zip';
 import {
   cardMetaFromLocation,
   locationFieldsForCard,
+  locationFieldsFrom,
   readImageLocation,
   writeImageLocation,
 } from './generation';
@@ -94,6 +96,7 @@ type GalleryRow = {
   paragraph: number;
   y_percent: number | null;
   line?: number | null;
+  aspect?: string;
   message_index: number;
   message_role: string;
   content_hash: string;
@@ -140,13 +143,21 @@ function parseMeta(row: CardRow): Record<string, unknown> {
 }
 
 /**
- * `png_bytes` as 1.x reported it: the stored image's byte length when there is
- * one, else whatever the card recorded. The index holds that byte length, so the
- * precedence survives without hydrating anything.
+ * Placement sidecar, mapped location fields and `png_bytes` from a single index
+ * lookup — a listing row needs all three and they live on the same image row.
+ *
+ * `png_bytes` keeps the 1.x precedence: the stored image's byte length when there
+ * is one, else whatever the card recorded. The index holds that byte length, so
+ * the precedence survives without hydrating anything.
  */
-async function pngBytesOf(id: string, meta: Record<string, unknown>): Promise<number> {
+async function rowLocation(id: string, meta: Record<string, unknown>) {
   const info = await imageMeta(id);
-  return info?.png_bytes || Number(meta.png_bytes) || 0;
+  const sidecar = info?.location || {};
+  return {
+    sidecar,
+    loc: locationFieldsFrom(id, meta, sidecar),
+    png_bytes: info?.png_bytes || Number(meta.png_bytes) || 0,
+  };
 }
 
 /**
@@ -154,15 +165,15 @@ async function pngBytesOf(id: string, meta: Record<string, unknown>): Promise<nu
  * rows directly while `galleryExplore` still hands the UI a plain result.
  */
 async function exploreCards(limit: number): Promise<ExplorePayload> {
-  const rows = (await idbGetAll('cards'))
-    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-    .slice(0, Math.max(1, Math.min(2000, limit)));
+  const all = (await idbGetAll('cards'))
+    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  const cap = Math.floor(Number(limit));
+  const rows = Number.isFinite(cap) && cap > 0 ? all.slice(0, cap) : all;
   const folders: Record<string, ExploreFolder> = {};
   const items: ExploreRow[] = [];
   for (const row of rows) {
     const meta = parseMeta(row);
-    const loc = await locationFieldsForCard(row.id, meta);
-    const sidecar = await readImageLocation(row.id);
+    const { sidecar, loc, png_bytes: pngBytes } = await rowLocation(row.id, meta);
     const characterName = cleanText(loc.character_name || sidecar.character_name || meta.character_name || '', 200);
     const chatName = cleanText(loc.chat_name || sidecar.chat_name || meta.chat_name || '', 200);
     const characterId = cleanText(loc.character_id || '', 200) || 'unknown';
@@ -220,7 +231,7 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
       storage: 'indexeddb',
       storage_key: loc.storage_key || IMAGE_KEY(row.id),
       location_file: loc.location_file || '',
-      png_bytes: await pngBytesOf(row.id, meta),
+      png_bytes: pngBytes,
     });
   }
   const folderList = Object.values(folders).sort((a, b) =>
@@ -241,19 +252,48 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
   return payload;
 }
 
-export async function galleryExplore(limit = 400): Promise<ApiResult> {
+export async function galleryExplore(limit = 0): Promise<ApiResult> {
   return exploreCards(limit);
 }
 
-export async function gallery(sessionId: string, limit = 40): Promise<ApiResult> {
-  const rows = (await cardsForSession(sessionId))
-    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-    .slice(0, Number(limit));
+/**
+ * One session's cards, newest first.
+ *
+ * `hashes` names messages the caller is about to paint. Their cards ship even
+ * when they fell out of the newest-first window — without that, asking for a
+ * window instead of the whole session silently stops old shots from attaching,
+ * which is why the window was widened to the session ceiling in the first place.
+ *
+ * `total` lets the caller tell a complete listing from a windowed one, so it
+ * knows whether it may replace its cache or has to merge into it.
+ */
+export async function gallery(
+  sessionId: string,
+  limit = 40,
+  hashes: readonly unknown[] = [],
+): Promise<ApiResult> {
+  const sorted = (await cardsForSession(sessionId))
+    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  const window = Math.max(0, Math.min(2000, Math.floor(Number(limit)) || 0));
+  const rows = sorted.slice(0, window);
+  const want = new Set(hashes.map((h) => cleanText(h, 128)).filter(Boolean));
+  if (want.size) {
+    // Only the tail is probed, and only when hashes were asked for. `imageMeta`
+    // is an index read; `idbGet('images')` here would decode the whole session.
+    for (const row of sorted.slice(window)) {
+      const meta = parseMeta(row);
+      const info = await imageMeta(row.id);
+      const hash = cleanText(
+        (info?.location as Record<string, unknown> | undefined)?.content_hash || meta.content_hash || '',
+        128,
+      );
+      if (hash && want.has(hash)) rows.push(row);
+    }
+  }
   const items: GalleryRow[] = [];
   for (const row of rows) {
     const meta = parseMeta(row);
-    const loc = await locationFieldsForCard(row.id, meta);
-    const sidecar = await readImageLocation(row.id);
+    const { sidecar, loc, png_bytes: pngBytes } = await rowLocation(row.id, meta);
     items.push({
       id: row.id,
       job_id: row.job_id,
@@ -261,6 +301,7 @@ export async function gallery(sessionId: string, limit = 40): Promise<ApiResult>
       paragraph: Object.keys(sidecar).length ? loc.paragraph : row.paragraph,
       y_percent: loc.y_percent,
       line: loc.line,
+      aspect: cleanText(meta.aspect || '', 20) || undefined,
       message_index: loc.message_index ?? -1,
       message_role: loc.message_role || '',
       content_hash: loc.content_hash || '',
@@ -281,10 +322,24 @@ export async function gallery(sessionId: string, limit = 40): Promise<ApiResult>
       created_at: row.created_at,
       storage: 'indexeddb',
       storage_key: loc.storage_key || IMAGE_KEY(row.id),
-      png_bytes: await pngBytesOf(row.id, meta),
+      png_bytes: pngBytes,
     });
   }
-  const payload = { ok: true, session_id: sessionId, items, storage: 'indexeddb' };
+  // Oldest card the window itself reached. A caller merging a windowed listing
+  // into its cache needs this to tell "still there, just older than the window"
+  // from "deleted": anything at or above this timestamp that the response omits
+  // is gone. Null when the window covered the whole session.
+  const windowOldestAt = rows.length && window < sorted.length
+    ? Number(sorted[Math.min(window, sorted.length) - 1]?.created_at || 0)
+    : null;
+  const payload = {
+    ok: true,
+    session_id: sessionId,
+    items,
+    total: sorted.length,
+    window_oldest_at: windowOldestAt,
+    storage: 'indexeddb',
+  };
   // Same as explorer: do not enqueue every miss. UI `ce()` warms the visible strip.
   await attachImageUrls(payload, { cachedOnly: true, warmMissing: false });
   return payload;
@@ -328,12 +383,12 @@ export async function rebindCardsHash(args: RebindArgs = {}): Promise<ApiResult>
     const existing = await readImageLocation(cardId);
     const already = cleanText(existing.content_hash || meta.content_hash || '', 128);
     if (already === toHash) continue;
-    const nextLoc = {
+    const nextLoc: Record<string, unknown> = {
       ...existing,
       image_id: cardId,
       content_hash: toHash,
-      assistant_preview: preview || existing.assistant_preview || '',
     };
+    delete nextLoc.assistant_preview;
     await writeImageLocation(cardId, nextLoc);
     meta.content_hash = toHash;
     if (preview) meta.assistant_preview = preview;
@@ -362,21 +417,27 @@ export async function unlinkCardsForMessage(
     msgIdx = null;
   }
   if (!sid || (!hash && msgIdx == null)) return { ok: true, unlinked: 0, ids: [] };
-  // The returned id order is 1.x's cards-store scan order, i.e. creation order.
-  // The session index reorders a card when it is rewritten, so sort rather than
-  // depend on it.
-  const rows = (await cardsForSession(sid)).sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+  // Session index plus a full scan: a late comic save can miss the index.
+  const byId = new Map<string, CardRow>();
+  for (const row of await cardsForSession(sid)) byId.set(row.id, row);
+  for (const row of await idbGetAll('cards')) {
+    if (byId.has(row.id)) continue;
+    if (cleanText(row.session_id, 200) !== sid) continue;
+    byId.set(row.id, row);
+  }
+  const rows = [...byId.values()].sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
   const unlinkedIds: string[] = [];
   for (const row of rows) {
     const meta = parseMeta(row);
     const loc = await locationFieldsForCard(row.id, meta);
-    const cardHash = cleanText(loc.content_hash || '');
-    const cardMsg = toInt(loc.message_index, -1);
-    let match = false;
-    if (hash && cardHash && cardHash === hash) match = true;
-    else if (msgIdx != null && msgIdx >= 0 && cardMsg === msgIdx) match = true;
-    if (!match) continue;
-    const existing = await readImageLocation(row.id);
+    const sidecar = await readImageLocation(row.id);
+    if (!cardMatchesMessageUnlink({
+      hashes: [loc.content_hash, meta.content_hash, sidecar.content_hash],
+      messageIndexes: [loc.message_index, meta.message_index, sidecar.message_index],
+      wantHash: hash,
+      wantMessageIndex: msgIdx,
+    })) continue;
+    const existing = sidecar;
     const cleared = {
       ...existing,
       version: 1,
@@ -391,14 +452,12 @@ export async function unlinkCardsForMessage(
       unlinked_at: Date.now() / 1000,
     };
     await writeImageLocation(row.id, cleared);
-    if (meta.content_hash || meta.message_index != null || meta.assistant_preview) {
-      meta.content_hash = '';
-      meta.assistant_preview = '';
-      meta.message_index = -1;
-      meta.unlinked_at = Date.now() / 1000;
-      row.meta_json = JSON.stringify(meta);
-      await idbPut('cards', row);
-    }
+    meta.content_hash = '';
+    meta.assistant_preview = '';
+    meta.message_index = -1;
+    meta.unlinked_at = Date.now() / 1000;
+    row.meta_json = JSON.stringify(meta);
+    await idbPut('cards', row);
     unlinkedIds.push(row.id);
   }
   return { ok: true, unlinked: unlinkedIds.length, ids: unlinkedIds };
@@ -422,11 +481,7 @@ export async function deleteCard(cardId: string): Promise<ApiResult> {
 
 export async function deleteCards(cardIds: unknown[] = []): Promise<ApiResult> {
   const ids = [...new Set((cardIds || []).map((id) => cleanText(id, 80)).filter(Boolean))];
-  const deleted: string[] = [];
-  for (const id of ids) {
-    const result = await removeCard(id);
-    if (result.ok) deleted.push(id);
-  }
+  const deleted = await removeCardImageRows(ids);
   return { ok: true, deleted: deleted.length, ids: deleted };
 }
 
@@ -438,13 +493,13 @@ export async function getExplorerFavorites(): Promise<ApiResult> {
 }
 
 export async function setExplorerFavorites(ids: unknown[] = []): Promise<ApiResult> {
-  const clean = [...new Set((ids || []).map((id) => cleanText(id, 80)).filter(Boolean))].slice(0, 5000);
+  const clean = [...new Set((ids || []).map((id) => cleanText(id, 80)).filter(Boolean))];
   await idbPut('meta', { key: 'explorer_favorites', ids: clean, updated_at: Date.now() / 1000 });
   return { ok: true, ids: clean };
 }
 
 export async function exportGalleryZip(body: Record<string, unknown> = {}): Promise<ApiResult> {
-  const explore = await exploreCards(2000);
+  const explore = await exploreCards(0);
   let items = explore.items;
   const folderKey = cleanText(body.folder_key || '', 400);
   if (body.all) {
@@ -490,7 +545,7 @@ export async function importGalleryZip(body: Record<string, unknown> = {}): Prom
   }
   const { manifest, images } = unpackGalleryZip(raw);
   if (!manifest?.items?.length) return { ok: false, ...errorBody('manifest.items missing', 'bad_request') };
-  const explore = await exploreCards(2000);
+  const explore = await exploreCards(0);
   const existing = explore.items;
   const imported: Array<{ id: string; reattach: string; content_hash: string }> = [];
   const report = { exact: 0, candidate: 0, orphan: 0, skipped: 0 };
@@ -564,16 +619,16 @@ export async function deleteFolder(folderKey: string): Promise<ApiResult> {
   const cid = cleanText(characterId, 200) || 'unknown';
   const chid = cleanText(chatId, 200) || 'unknown';
   const rows = await idbGetAll('cards');
-  const deletedIds: string[] = [];
+  const want: string[] = [];
   for (const row of rows) {
     const meta = parseMeta(row);
     const loc = await locationFieldsForCard(row.id, meta);
     const rowCid = cleanText(loc.character_id || '', 200) || 'unknown';
     const rowChid = cleanText(loc.chat_id || '', 200) || 'unknown';
     if (rowCid !== cid || rowChid !== chid) continue;
-    const result = await removeCard(row.id);
-    if (result.ok) deletedIds.push(row.id);
+    want.push(row.id);
   }
+  const deletedIds = await removeCardImageRows(want);
   return { ok: true, deleted: deletedIds.length, ids: deletedIds, folder_key: `${cid}|${chid}` };
 }
 

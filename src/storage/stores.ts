@@ -8,12 +8,15 @@
  *  1. **Lazy PNG hydration.** 1.x decoded every stored PNG from base64 during
  *     boot, so start-up cost grew linearly with gallery size. Here the images
  *     store holds only metadata (`has_png` / `png_bytes`) and pixel data is
- *     fetched on first real use, then held in a byte-budgeted LRU. Callers that
- *     only need a size use `imageMeta()` and never touch storage at all.
+ *     fetched on first real use (module `readImage`, or a leftover `inx_nximg_*`),
+ *     then held in a byte-budgeted LRU. Callers that only need a size use
+ *     `imageMeta()` and never touch storage at all.
  *  2. **Coalesced persistence.** 1.x re-serialised an entire store on every
  *     single row write, so a job that touched `meta` 47 times wrote 47 full
  *     snapshots. Writes now mark the store dirty and one flush covers the burst.
  *  3. **Session index for cards.** Per-session lookups were full scans.
+ *  4. **Job retention.** Completed job rows are capped at the newest 3 so
+ *     `inx_nxstore_jobs` cannot grow without bound. In-flight rows stay.
  *
  * Row shapes on disk are unchanged, so 1.x data loads as-is and a downgrade
  * would still read anything written here.
@@ -26,6 +29,8 @@ import {
   LEGACY_IMAGE_KEY,
   LEGACY_REF_IMAGE_KEY,
   LEGACY_STORE_KEY,
+  MIGRATION_META_KEY,
+  MIGRATION_VERSION,
   REF_IMAGE_KEY,
   STORE_KEY,
   STORE_NAMES,
@@ -41,8 +46,11 @@ import {
 import { dbg } from '../core/debug';
 import { base64ToAb, bytesToBase64Async } from '../core/util/bytes';
 import type { CardRow, CharacterRecord, JobRow, MetaRow, StoreName } from '../core/types';
-import { psGet, psRemove, psSet } from './device-store';
-import { blobUrlCache } from './blob-url-cache';
+import { cardIdsToStripPreview } from '../domain/gallery/preview-retention';
+import { jobIdsToPrune } from '../domain/jobs/retention';
+import { psGet, psRemove, psSet, resetDeviceStore } from './device-store';
+import { blobUrlCache, explorerThumbCache } from './blob-url-cache';
+import { dropShotAsset, putShotAsset, readShotAssetBytes } from './shot-module';
 
 /** Rows as held in memory. Images carry metadata even when pixels are absent. */
 interface ImageMemRow {
@@ -65,6 +73,9 @@ interface ImageMemRow {
    * in-memory copy is the only one, so it must never be evicted.
    */
   durable: boolean;
+  /** Risu module path from saveAsset. Empty when the row is legacy plugin storage. */
+  asset_path?: string;
+  asset_name?: string;
 }
 
 type RowOf<S extends StoreName> = S extends 'cards'
@@ -187,13 +198,15 @@ function snapshotOf(store: StoreName): Record<string, unknown> {
   const obj: Record<string, unknown> = {};
   if (store === 'images') {
     for (const [k, v] of memStores.images) {
+      const assetPath = String(v.asset_path || '');
       obj[k] = {
         id: v.id,
-        location: v.location || null,
+        location: locationWithoutPreview(v.location),
         has_png: v.has_png,
         png_bytes: v.png_bytes,
-        storage: 'indexeddb',
-        storage_key: IMAGE_KEY(k),
+        storage: assetPath ? 'module' : 'indexeddb',
+        storage_key: assetPath || IMAGE_KEY(k),
+        ...(assetPath ? { asset_path: assetPath, asset_name: v.asset_name || '' } : {}),
       };
     }
     return obj;
@@ -280,6 +293,139 @@ function schedulePersist(store: StoreName): void {
   flushTimer = setTimeout(runFlush, PERSIST_DEBOUNCE_MS);
 }
 
+/**
+ * Drop completed jobs past the retention cap. Must not await `openDb` — boot
+ * calls this while the open promise is still unsettled.
+ */
+function pruneJobStoreUnlocked(opts: { persist?: boolean } = {}): number {
+  const rows = [...memStores.jobs.entries()].map(([k, row]) => ({
+    id: String(row.id || k),
+    state: String(row.state || ''),
+    created_at: Number(row.created_at || 0),
+    updated_at: Number(row.updated_at || 0),
+  }));
+  const drop = new Set(jobIdsToPrune(rows));
+  if (!drop.size) return 0;
+  for (const [k, row] of memStores.jobs) {
+    if (drop.has(String(row.id || k))) memStores.jobs.delete(k);
+  }
+  if (opts.persist !== false) schedulePersist('jobs');
+  dbg('jobs.prune', { message: `${drop.size} dropped`, dropped: drop.size, kept: memStores.jobs.size });
+  return drop.size;
+}
+
+function locationWithoutPreview(
+  loc: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!loc || typeof loc !== 'object') return loc ?? null;
+  if (!Object.prototype.hasOwnProperty.call(loc, 'assistant_preview')) return loc;
+  const next = { ...loc };
+  delete next.assistant_preview;
+  return next;
+}
+
+function clearCardAssistantPreview(row: CardRow): boolean {
+  let changed = false;
+  if (row.assistant_preview) {
+    delete row.assistant_preview;
+    changed = true;
+  }
+  const raw = row.meta_json;
+  if (typeof raw !== 'string' || !raw.includes('assistant_preview')) return changed;
+  try {
+    const meta = JSON.parse(raw) as Record<string, unknown>;
+    if (!meta || typeof meta !== 'object' || !meta.assistant_preview) return changed;
+    delete meta.assistant_preview;
+    row.meta_json = JSON.stringify(meta);
+    return true;
+  } catch {
+    return changed;
+  }
+}
+
+/** Newest 20 cards keep preview for stream rematch; older cards drop the prose. */
+function pruneCardPreviewsUnlocked(opts: { persist?: boolean } = {}): number {
+  const rows = [...memStores.cards.values()].map((row) => ({
+    id: String(row.id || ''),
+    created_at: Number(row.created_at || 0),
+  }));
+  const drop = new Set(cardIdsToStripPreview(rows));
+  if (!drop.size) return 0;
+  let n = 0;
+  for (const [k, row] of memStores.cards) {
+    if (!drop.has(String(row.id || k))) continue;
+    if (clearCardAssistantPreview(row)) n += 1;
+  }
+  if (n && opts.persist !== false) schedulePersist('cards');
+  return n;
+}
+
+function stripImageLocationPreviewsUnlocked(): number {
+  let n = 0;
+  for (const row of memStores.images.values()) {
+    const loc = row.location;
+    if (!loc || typeof loc !== 'object' || !Object.prototype.hasOwnProperty.call(loc, 'assistant_preview')) {
+      continue;
+    }
+    const next = { ...loc };
+    delete next.assistant_preview;
+    row.location = next;
+    n += 1;
+  }
+  return n;
+}
+
+// ---------------------------------------------------------------------------
+// One-time migration stamp
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads the stamp from memory only, so `openDb` can consult it mid-load.
+ * `meta` is the first store loaded, so it is already populated by then.
+ */
+function migratedVersionUnlocked(): number {
+  const row = memStores.meta.get(MIGRATION_META_KEY);
+  return Number(row?.version ?? 0) || 0;
+}
+
+function stampMigratedUnlocked(version: number): void {
+  memStores.meta.set(MIGRATION_META_KEY, {
+    key: MIGRATION_META_KEY,
+    version,
+    at: Date.now(),
+  });
+}
+
+/** 0 when the storage migration has never run on this device. */
+export async function storageMigratedVersion(): Promise<number> {
+  await openDb();
+  return migratedVersionUnlocked();
+}
+
+export async function isStorageMigrated(): Promise<boolean> {
+  return (await storageMigratedVersion()) >= MIGRATION_VERSION;
+}
+
+/** Records the migration. Written through rather than debounced — it gates boot. */
+export async function stampStorageMigrated(version: number = MIGRATION_VERSION): Promise<number> {
+  await openDb();
+  stampMigratedUnlocked(version);
+  await persistStore('meta');
+  return version;
+}
+
+/**
+ * Writes one store snapshot immediately, ignoring both the debounce and the
+ * pause flag. The migration needs this: it pauses write-behind so a gallery
+ * walk cannot rewrite the index thousands of times, but must still checkpoint
+ * each batch — and a paused `runFlush` drops the write rather than deferring it.
+ */
+export async function persistStoreNow(store: StoreName): Promise<void> {
+  await openDb();
+  dirty.delete(store);
+  await persistStore(store);
+}
+
 /** Waits until every pending row write and image blob write has landed. */
 export async function flushPersist(): Promise<void> {
   if (flushTimer) {
@@ -364,7 +510,16 @@ async function hydrateImage(id: string, row: ImageMemRow): Promise<ArrayBuffer |
   const existing = hydrating.get(id);
   if (existing) return existing;
   const task = (async () => {
-    const png = decodeStoredPng(await psGet(IMAGE_KEY(id), LEGACY_IMAGE_KEY(id)));
+    const assetPath = String(row.asset_path || row.location?.asset_path || '');
+    let png = assetPath ? await readShotAssetBytes(assetPath) : null;
+    if (!png) {
+      // Once migrated there is no 1.x `nximg_*` row left to find, so asking the
+      // save file for one is a round-trip that can only ever miss.
+      const migrated = migratedVersionUnlocked() >= MIGRATION_VERSION;
+      png = decodeStoredPng(
+        migrated ? await psGet(IMAGE_KEY(id)) : await psGet(IMAGE_KEY(id), LEGACY_IMAGE_KEY(id)),
+      );
+    }
     row.png = png;
     row.hydrated = true;
     row.durable = true;
@@ -390,6 +545,9 @@ let storeReady: Promise<boolean> | null = null;
 export async function openDb(): Promise<boolean> {
   if (storeReady) return storeReady;
   storeReady = (async () => {
+    // Legacy sidecar rewrites found while loading. Deferred because the stamp
+    // row is written late in `meta` and so is not yet visible mid-loop.
+    const legacyWrites: Array<() => Promise<void>> = [];
     for (const store of STORE_NAMES) {
       const raw = await psGet(STORE_KEY(store), LEGACY_STORE_KEY(store));
       if (raw == null || raw === '') continue;
@@ -406,14 +564,20 @@ export async function openDb(): Promise<boolean> {
         const v = (rawRow ?? {}) as Record<string, unknown>;
         if (store === 'images') {
           const hasPng = Boolean(v.has_png);
+          const loc = (v.location as Record<string, unknown>) || {};
           memStores.images.set(k, {
             id: String(v.id || k),
-            location: (v.location as Record<string, unknown>) || {},
+            location: loc,
             png: null,
             has_png: hasPng,
             png_bytes: Number(v.png_bytes) || 0,
             hydrated: !hasPng,
             durable: true,
+            ...(typeof v.asset_path === 'string' && v.asset_path
+              ? { asset_path: v.asset_path, asset_name: String(v.asset_name || '') }
+              : typeof loc.asset_path === 'string' && loc.asset_path
+                ? { asset_path: String(loc.asset_path), asset_name: String(loc.asset_name || '') }
+                : {}),
           });
         } else if (store === 'meta' && (v.key === 'reference_image' || k === 'reference_image')) {
           const png = decodeStoredPng(await psGet(REF_IMAGE_KEY, LEGACY_REF_IMAGE_KEY));
@@ -466,13 +630,13 @@ export async function openDb(): Promise<boolean> {
             png = legacyImageBytes(v.png);
             if (png) {
               const migrate = png;
-              imagePersistChain = imagePersistChain
-                .then(async () => {
+              legacyWrites.push(async () => {
+                try {
                   await psSet(charRefDiskImageKey(metaKey), await bytesToBase64Async(new Uint8Array(migrate)));
-                })
-                .catch((err: unknown) =>
-                  console.warn('[Inlay Nexus] char ref migrate failed', characterId, (err as Error)?.message || err),
-                );
+                } catch (err) {
+                  console.warn('[Inlay Nexus] char ref migrate failed', characterId, (err as Error)?.message || err);
+                }
+              });
             }
           }
           let data = await psGet(charRefDiskDataKey(metaKey));
@@ -498,15 +662,17 @@ export async function openDb(): Promise<boolean> {
             const enc = encoded;
             const model = (d.model as string) || (v.model as string) || '';
             const ie = (d.information_extracted ?? v.information_extracted ?? 1.0) as number;
-            imagePersistChain = imagePersistChain
-              .then(async () => {
+            legacyWrites.push(async () => {
+              try {
                 await psSet(charRefDiskDataKey(metaKey), {
                   encoded: enc,
                   model,
                   information_extracted: ie,
                 });
-              })
-              .catch(() => {});
+              } catch {
+                /* sidecar rewrite is best-effort */
+              }
+            });
           }
         } else if (store === 'cards') {
           const row = v as unknown as CardRow;
@@ -517,6 +683,31 @@ export async function openDb(): Promise<boolean> {
         }
       }
     }
+    if (migratedVersionUnlocked() >= MIGRATION_VERSION) return true;
+
+    if (legacyWrites.length) {
+      imagePersistChain = imagePersistChain
+        .then(async () => {
+          for (const write of legacyWrites) await write();
+        })
+        .catch(() => {});
+    }
+
+    const empty = STORE_NAMES.every((name) => (memStores[name] as Map<string, unknown>).size === 0);
+    if (empty) {
+      // Fresh install: there is no pre-2.5 data to find, so stamp now and never
+      // pay for a boot scan at all.
+      stampMigratedUnlocked(MIGRATION_VERSION);
+      schedulePersist('meta');
+      return true;
+    }
+
+    // Unmigrated install: keep doing the full-store cleanup every boot. These
+    // only ever find legacy rows, but a user who never presses the migrate
+    // button must not be worse off than before.
+    if (pruneJobStoreUnlocked({ persist: false }) > 0) await persistStore('jobs');
+    if (stripImageLocationPreviewsUnlocked() > 0) await persistStore('images');
+    if (pruneCardPreviewsUnlocked({ persist: false }) > 0) await persistStore('cards');
     return true;
   })().catch((error: unknown) => {
     storeReady = null;
@@ -547,12 +738,29 @@ export async function idbGet<S extends StoreName>(store: S, key: unknown): Promi
   return (row == null ? undefined : row) as RowOf<S> | undefined;
 }
 
-/** Image metadata without touching storage or decoding base64. */
-export async function imageMeta(id: string): Promise<{ has_png: boolean; png_bytes: number } | undefined> {
+export interface ImageMeta {
+  has_png: boolean;
+  png_bytes: number;
+  /** Placement metadata, `{}` when the row never got one. Shared, not copied. */
+  location: Record<string, unknown>;
+}
+
+/**
+ * Everything about an image except its pixels, in one index lookup.
+ *
+ * Placement and byte count live on the same row, so a listing that wants both
+ * should ask once. `imageLocation` remains for callers that only need placement.
+ */
+export async function imageMeta(id: string): Promise<ImageMeta | undefined> {
   await openDb();
   const row = memStores.images.get(String(id));
   if (!row) return undefined;
-  return { has_png: row.has_png, png_bytes: row.png_bytes };
+  const loc = row.location;
+  return {
+    has_png: row.has_png,
+    png_bytes: row.png_bytes,
+    location: loc && typeof loc === 'object' ? (loc as Record<string, unknown>) : {},
+  };
 }
 
 export interface PutOptions {
@@ -572,7 +780,7 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
     if (prev?.png) pngCacheBytes -= prev.png.byteLength;
     const row: ImageMemRow = {
       id: String(value.id),
-      location: (value.location as Record<string, unknown>) || {},
+      location: locationWithoutPreview(value.location as Record<string, unknown>) || {},
       ...(typeof value.mime === 'string' && value.mime ? { mime: value.mime } : {}),
       png,
       has_png: Boolean(png),
@@ -585,8 +793,25 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
       chargePng(png.byteLength);
       imagePersistChain = imagePersistChain
         .then(async () => {
-          const b64 = await bytesToBase64Async(new Uint8Array(png));
-          await psSet(IMAGE_KEY(k), b64);
+          const saved = await putShotAsset(k, png);
+          if (saved?.path) {
+            row.asset_path = saved.path;
+            row.asset_name = saved.name;
+            await psRemove(IMAGE_KEY(k));
+            await persistStore('images');
+          } else if (memStores.images.get(k) === row) {
+            // One try at the gallery module. Plugin IDB is never a pixel store —
+            // a miss means the shot is gone, not parked as inx_nximg_*.
+            if (row.png) pngCacheBytes -= row.png.byteLength;
+            row.png = null;
+            row.has_png = false;
+            row.png_bytes = 0;
+            row.hydrated = true;
+            delete row.asset_path;
+            delete row.asset_name;
+            dropBlobUrl(k);
+            await persistStore('images');
+          }
           // Only now may the cache reclaim these bytes.
           if (memStores.images.get(k) === row) row.durable = true;
         })
@@ -711,12 +936,14 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
     const row = value as unknown as CardRow;
     memStores.cards.set(k, row);
     indexCard(row);
-    if (persist) schedulePersist('cards');
+    const stripped = pruneCardPreviewsUnlocked({ persist: false });
+    if (persist || stripped > 0) schedulePersist('cards');
     return k;
   }
 
   (memStores[store] as Map<string, unknown>).set(k, value);
-  if (persist) schedulePersist(store);
+  const pruned = store === 'jobs' ? pruneJobStoreUnlocked({ persist: false }) : 0;
+  if (persist || pruned > 0) schedulePersist(store);
   return k;
 }
 
@@ -729,7 +956,10 @@ export async function idbDelete(store: StoreName, key: unknown): Promise<boolean
     if (prev?.png) pngCacheBytes -= prev.png.byteLength;
   }
   (memStores[store] as Map<string, unknown>).delete(k);
-  if (store === 'images') await psRemove(IMAGE_KEY(k));
+  if (store === 'images') {
+    await dropShotAsset(k).catch(() => false);
+    await psRemove(IMAGE_KEY(k));
+  }
   if (store === 'meta' && k === 'reference_image') await psRemove(REF_IMAGE_KEY);
   if (store === 'meta' && k === 'vibe_transfer') {
     await psRemove(VIBE_IMAGE_KEY);
@@ -747,6 +977,43 @@ export async function idbDelete(store: StoreName, key: unknown): Promise<boolean
   schedulePersist(store);
   if (store === 'images') dropBlobUrl(k);
   return true;
+}
+
+/**
+ * Drop many card+image rows, persist each store once, then wipe disk bytes.
+ * Per-id `idbDelete` was a persist + psRemove round-trip each time.
+ */
+export async function removeCardImageRows(ids: readonly string[]): Promise<string[]> {
+  await openDb();
+  const deleted: string[] = [];
+  const disk: string[] = [];
+  for (const raw of ids) {
+    const k = String(raw || '');
+    if (!k) continue;
+    const card = memStores.cards.get(k);
+    if (card) {
+      deindexCard(card);
+      memStores.cards.delete(k);
+    }
+    const prev = memStores.images.get(k);
+    if (prev) {
+      if (prev.png) pngCacheBytes -= prev.png.byteLength;
+      memStores.images.delete(k);
+      disk.push(k);
+    }
+    dropBlobUrl(k);
+    explorerThumbCache.drop(k);
+    if (card || prev) deleted.push(k);
+  }
+  if (deleted.length) {
+    schedulePersist('cards');
+    schedulePersist('images');
+  }
+  await Promise.all(disk.map(async (k) => {
+    await dropShotAsset(k).catch(() => false);
+    await psRemove(IMAGE_KEY(k));
+  }));
+  return deleted;
 }
 
 export async function idbGetAll<S extends StoreName>(store: S): Promise<Array<RowOf<S>>> {
@@ -808,6 +1075,68 @@ export async function imageLocation(id: string): Promise<Record<string, unknown>
   return loc && typeof loc === 'object' ? (loc as Record<string, unknown>) : {};
 }
 
+/** One unmigrated image: pixels exist but not in the gallery module. */
+export interface LegacyImageRow {
+  id: string;
+  png_bytes: number;
+}
+
+/**
+ * Images whose bytes still live in a legacy `inx_nximg_*` / `nximg_*` row.
+ *
+ * Reads the index only — the whole point of the migration is to move these
+ * without decoding the gallery twice.
+ */
+export async function legacyImageRows(): Promise<LegacyImageRow[]> {
+  await openDb();
+  const out: LegacyImageRow[] = [];
+  for (const row of memStores.images.values()) {
+    if (!row.has_png) continue;
+    if (String(row.asset_path || row.location?.asset_path || '')) continue;
+    out.push({ id: row.id, png_bytes: row.png_bytes });
+  }
+  return out;
+}
+
+/**
+ * Points a row at its new module asset and drops the in-memory copy.
+ *
+ * Releasing the bytes matters: a migration walks the whole gallery, and holding
+ * every decode would push the PNG cache to evict rows that are actually on
+ * screen. The next read fetches from the module, which is where they now live.
+ */
+export async function setImageAssetPath(id: string, path: string, name: string): Promise<boolean> {
+  await openDb();
+  const k = String(id);
+  const row = memStores.images.get(k);
+  if (!row || !path) return false;
+  row.asset_path = path;
+  row.asset_name = name;
+  if (row.png) {
+    pngCacheBytes -= row.png.byteLength;
+    row.png = null;
+    row.hydrated = false;
+  }
+  row.durable = true;
+  schedulePersist('images');
+  return true;
+}
+
+/**
+ * The retention passes that boot used to run unconditionally, as one call.
+ * Returns how many rows each pass touched so the migration can report it.
+ */
+export async function runRetentionCleanup(): Promise<{ jobs: number; images: number; cards: number }> {
+  await openDb();
+  const jobs = pruneJobStoreUnlocked({ persist: false });
+  const images = stripImageLocationPreviewsUnlocked();
+  const cards = pruneCardPreviewsUnlocked({ persist: false });
+  if (jobs > 0) await persistStore('jobs');
+  if (images > 0) await persistStore('images');
+  if (cards > 0) await persistStore('cards');
+  return { jobs, images, cards };
+}
+
 /**
  * Updates placement metadata without hydrating PNG bytes.
  * `idbGet`+`idbPut` would decode base64 just to rewrite `location`.
@@ -816,14 +1145,15 @@ export async function putImageLocation(id: string, location: Record<string, unkn
   await openDb();
   const k = String(id);
   const row = memStores.images.get(k);
+  const loc = locationWithoutPreview(location) || {};
   if (row) {
-    row.location = location;
+    row.location = loc;
     schedulePersist('images');
     return;
   }
   memStores.images.set(k, {
     id: k,
-    location,
+    location: loc,
     png: null,
     has_png: false,
     png_bytes: 0,
@@ -841,8 +1171,8 @@ export function getBlobUrl(id: string): string | undefined {
   return blobUrlCache.get(String(id));
 }
 
-export function setBlobUrl(id: string, url: string): void {
-  blobUrlCache.set(String(id), url);
+export function setBlobUrl(id: string, url: string, byteLen?: number): void {
+  blobUrlCache.set(String(id), url, byteLen);
 }
 
 export function dropBlobUrl(id: string): void {
@@ -874,7 +1204,9 @@ export function resetStores(): void {
   for (const name of STORE_NAMES) (memStores[name] as Map<string, unknown>).clear();
   cardsBySession.clear();
   blobUrlCache.clear();
+  explorerThumbCache.clear();
   dirty.clear();
   pngCacheBytes = 0;
   storeReady = null;
+  resetDeviceStore();
 }

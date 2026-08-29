@@ -25,6 +25,15 @@ export {
   type PackedAssetTriggerGroup,
 } from './prompt-tags.ts';
 export { naiMetaHasNegative, pickNaiMeta, promptFromNaiMetadata } from './from-metadata.ts';
+export {
+  isComicNaiScene,
+  modelFromNaiSource,
+  randomNaiSeed,
+  sceneFromNaiMetadata,
+  t2iRequestFromScene,
+  type NaiScene,
+  type NaiSceneChar,
+} from './replay.ts';
 export { dimsForAspect, normalizeShotAspect, ASPECT_SIZES, type ShotAspect } from './aspect.ts';
 export {
   filterStylePresetPositive,

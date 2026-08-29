@@ -24,6 +24,8 @@ const MODULES = {
   'viewer-core': 'src/ui-contract/viewer-core.ts',
   'explorer-selection': 'src/ui-contract/explorer-selection.ts',
   'gallery-zip': 'src/ui-contract/gallery-zip.ts',
+  'unlink-match': 'src/domain/gallery/unlink-match.ts',
+  'preview-retention': 'src/domain/gallery/preview-retention.ts',
   'roster-merge': 'src/domain/character/roster.ts',
   'character-identity': 'src/domain/character/identity.ts',
   'lore-extra': 'src/domain/lore/extra.ts',
@@ -45,13 +47,20 @@ const MODULES = {
   'nai-meta-prompt-tags': 'src/domain/nai-meta/prompt-tags.ts',
   'nai-meta-match': 'src/domain/nai-meta/match.ts',
   'nai-meta-from-metadata': 'src/domain/nai-meta/from-metadata.ts',
+  'nai-meta-replay': 'src/domain/nai-meta/replay.ts',
+  'slim-cast': 'src/domain/gallery/slim-cast.ts',
+  'reroll-captions': 'src/domain/gallery/reroll-captions.ts',
+  'tag-studio-peel': 'src/tag-studio/peel.ts',
   'nai-meta-aspect': 'src/domain/nai-meta/aspect.ts',
   'nai-meta-style-preset': 'src/domain/nai-meta/style-preset.ts',
   'nai-meta-stealth': 'src/domain/nai-meta/stealth.ts',
   'nai-meta-png-rgba': 'src/domain/nai-meta/png-rgba.ts',
   'nai-meta-risu-asset-list': 'src/domain/nai-meta/risu-asset-list.ts',
   'text-util': 'src/core/util/text.ts',
+  'bytes-util': 'src/core/util/bytes.ts',
   'blob-url-cache': 'src/storage/blob-url-cache.ts',
+  'explorer-thumbs': 'src/storage/explorer-thumbs.ts',
+  'image-url-subs': 'src/storage/image-url-subs.ts',
   'prompt-codec': 'src/config/prompt-codec.ts',
   'style-preset-overrides': 'src/domain/style-preset-overrides.ts',
   'nai-routing': 'src/domain/nai/routing.ts',
@@ -64,6 +73,20 @@ const MODULES = {
   'char-ref-store': 'src/domain/character/char-ref-store.ts',
   'char-ref-seed': 'src/domain/character/char-ref-seed.ts',
   'char-ref-module': 'src/services/char-ref-module.ts',
+  'shot-assets': 'src/domain/gallery/shot-assets.ts',
+  'shot-module': 'src/storage/shot-module.ts',
+  stores: 'src/storage/stores.ts',
+  // One bundle per name means one *copy* of every module inside it, so a test
+  // that mixes two bundles gets two independent copies of the in-memory stores
+  // and cannot reset the one the code under test is using. An array here
+  // re-exports several modules into a single bundle to keep that state shared.
+  'storage-migrate': [
+    'src/services/storage-migrate.ts',
+    'src/storage/stores.ts',
+    'src/storage/device-store.ts',
+  ],
+  // Needs the same store copy it encodes from, so the test can seed real bytes.
+  'image-urls': ['src/storage/image-urls.ts', 'src/storage/stores.ts'],
   'chat-chrome': 'src/services/chat-chrome.ts',
   'style-preset-io': 'src/domain/style-presets/io.ts',
   'composition-leaves': 'src/domain/composition/leaves.ts',
@@ -73,16 +96,35 @@ const MODULES = {
   'curation-focus': 'src/domain/curation/focus.ts',
   'embedding-client': 'src/providers/embedding/client.ts',
   'shot-line': 'src/domain/tagging/shot-line.ts',
+  'comic-kind': 'src/domain/comic/kind.ts',
+  'comic-schedule': 'src/domain/comic/schedule.ts',
+  'comic-coords': 'src/domain/comic/coords.ts',
+  'comic-costume': 'src/domain/comic/costume.ts',
+  'comic-page': 'src/domain/comic/page.ts',
+  'comic-tags': 'src/domain/comic/tags.ts',
+  'comic-caption': 'src/domain/comic/caption.ts',
+  'comic-params': 'src/domain/comic/params.ts',
+  'job-retention': 'src/domain/jobs/retention.ts',
 };
 
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
 
+/** Several modules in one bundle: a virtual entry that re-exports each. */
+const barrelFor = (entries) => ({
+  stdin: {
+    contents: entries.map((e) => `export * from ${JSON.stringify(`./${e}`)};`).join('\n'),
+    resolveDir: root,
+    sourcefile: 'test-barrel.ts',
+    loader: 'ts',
+  },
+});
+
 await Promise.all(
   Object.entries(MODULES).map(([name, entry]) =>
     build({
       absWorkingDir: root,
-      entryPoints: [entry],
+      ...(Array.isArray(entry) ? barrelFor(entry) : { entryPoints: [entry] }),
       outfile: path.join(outdir, `${name}.mjs`),
       bundle: true,
       format: 'esm',

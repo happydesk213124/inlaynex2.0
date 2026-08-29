@@ -4,7 +4,11 @@ import type { FocusCharacterMode, FocusPromptMode } from '../core/types.ts';
 import { parseStreamKeywords } from '../domain/prompt/stream-keywords.ts';
 import { normalizeLlmRolesSettings } from '../domain/llm/roles.ts';
 import { naiStepsForFamily, normalizeNaiSampler, optionalNaiSampler } from '../domain/nai/samplers.ts';
+import { normalizeComicCoordsMode } from '../domain/comic/coords.ts';
+import { comicGenOn } from '../domain/comic/kind.ts';
+import { normalizeComicGenRatio, normalizeComicLlmBatch, normalizeComicMaxPages, normalizeComicSchedule } from '../domain/comic/params.ts';
 import { normalizeInlineMsgActions } from '../domain/inline-msg-actions.ts';
+import { normalizeImagePressInspect, normalizeToastAnchor } from '../domain/toast-press.ts';
 
 /** NovelAI base natural-language mode (replaces the old boolean toggle). */
 export type NaturalBaseMode = 'off' | 'short' | 'detailed' | 'supplement';
@@ -289,8 +293,16 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
       ? Math.max(25, Math.min(200, Math.round(raw)))
       : 100;
   }
+  {
+    const raw = Number(card.inline_chat_dom_radius);
+    card.inline_chat_dom_radius = Number.isFinite(raw) && raw > 0
+      ? Math.max(3, Math.min(20, Math.round(raw)))
+      : 4;
+  }
   if (card.progress_toast == null) card.progress_toast = false;
   else card.progress_toast = card.progress_toast === true || card.progress_toast === 'true' || card.progress_toast === 1 || card.progress_toast === '1';
+  card.toast_anchor = normalizeToastAnchor(card.toast_anchor);
+  card.image_press_inspect = normalizeImagePressInspect(card.image_press_inspect);
   {
     const mode = String(card.char_ref_mode || 'off').toLowerCase();
     card.char_ref_mode = mode === 'vibe' || mode === 'image' ? mode : 'off';
@@ -345,6 +357,56 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   card.nai_use_coords = card.nai_use_coords == null || card.nai_use_coords === ''
     ? true
     : flagOn(card.nai_use_coords, true);
+  card.comic_gen = comicGenOn(card) ? 'on' : 'off';
+  card.comic_author_note = String(card.comic_author_note ?? '').trim().slice(0, 8000);
+  card.comic_llm_batch = normalizeComicLlmBatch(card.comic_llm_batch);
+  card.comic_schedule = normalizeComicSchedule(card.comic_schedule);
+  card.comic_max_pages = normalizeComicMaxPages(card.comic_max_pages);
+  if (card.comic_gen_ratio == null || card.comic_gen_ratio === '') {
+    card.comic_gen_ratio = card.comic_max_pages === 0 ? 0 : 50;
+  } else {
+    card.comic_gen_ratio = normalizeComicGenRatio(card.comic_gen_ratio);
+  }
+  card.comic_coords = normalizeComicCoordsMode(card.comic_coords);
+  card.comic_prompt = String(card.comic_prompt ?? '').trim().slice(0, 8000);
+  card.comic_uc = String(card.comic_uc ?? '').trim().slice(0, 8000);
+  if (card.comic_prompt_prefix == null) {
+    card.comic_prompt_prefix = card.comic_prompt;
+  } else {
+    card.comic_prompt_prefix = String(card.comic_prompt_prefix).trim().slice(0, 8000);
+  }
+  card.comic_prompt_suffix = String(card.comic_prompt_suffix ?? '').trim().slice(0, 8000);
+  {
+    const optNum = (v: unknown): number | '' => {
+      if (v == null || v === '') return '';
+      const n = Number(v);
+      return Number.isFinite(n) ? n : '';
+    };
+    card.comic_steps = optNum(card.comic_steps);
+    card.comic_cfg_scale = optNum(card.comic_cfg_scale);
+    card.comic_cfg_rescale = optNum(card.comic_cfg_rescale);
+    card.comic_sampler = optionalNaiSampler(card.comic_sampler) || '';
+  }
+  if (!Array.isArray(card.command_presets)) card.command_presets = [];
+  else {
+    const out: Array<{ id: string; name: string; cmd: string; cmd_post?: string }> = [];
+    for (const raw of card.command_presets) {
+      if (!raw || typeof raw !== 'object') continue;
+      const p = raw as Record<string, unknown>;
+      const id = String(p.id || '').trim().slice(0, 120);
+      const name = String(p.name || '').trim().slice(0, 200);
+      const cmd = String(p.cmd || p.instruction || '').trim().slice(0, 4000);
+      const cmdPost = String(p.cmd_post || p.cmdPost || '').trim().slice(0, 2000);
+      if (!id && !name && !cmd) continue;
+      out.push({
+        id: id || `cmd_${out.length}`,
+        name: name || `명령 ${out.length + 1}`,
+        cmd,
+        ...(cmdPost ? { cmd_post: cmdPost } : {}),
+      });
+    }
+    card.command_presets = out;
+  }
   if (Array.isArray(card.presets)) {
     for (const raw of card.presets) {
       if (!raw || typeof raw !== 'object') continue;

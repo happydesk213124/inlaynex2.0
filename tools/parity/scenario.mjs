@@ -135,6 +135,7 @@ export async function runScenario(N, handles) {
     return {
       inline_chat_images: card.inline_chat_images === true,
       inline_msg_actions: card.inline_msg_actions === true,
+      inline_chat_dom_radius: Number(card.inline_chat_dom_radius ?? 4),
       progress_toast: card.progress_toast === true,
       viewer_minimize_mode: String(card.viewer_minimize_mode || 'icon'),
       llm_json_retry: card.llm_json_retry === true,
@@ -145,6 +146,12 @@ export async function runScenario(N, handles) {
       nai_use_coords: card.nai_use_coords !== false,
       v5_natural_lang: card.v5_natural_lang === 'ja' ? 'ja' : 'en',
       secondary_preset_id: String(card.secondary_preset_id || ''),
+      comic_gen: card.comic_gen === 'on',
+      comic_llm_batch: String(card.comic_llm_batch || 'once'),
+      comic_schedule: String(card.comic_schedule || 'overlap'),
+      comic_max_pages: Number(card.comic_max_pages ?? 2),
+      comic_gen_ratio: Number(card.comic_gen_ratio ?? 50),
+      comic_coords: String(card.comic_coords || 'llm'),
     };
   });
   // 2.4.7: leftover human_focus is forced to none (1.x kept human_focus).
@@ -326,6 +333,42 @@ export async function runScenario(N, handles) {
   const gallery = await rec('gallery.list', () => get('/v1/gallery?session_id=sess_main&limit=40'));
   const cardId = gallery?.items?.[0]?.id;
   await rec('gallery.first_card_is_data_url', () => String(gallery?.items?.[0]?.image_url ?? '').slice(0, 22));
+  await rec('gallery.display_url_scheme', () => {
+    const u = String(gallery?.items?.[0]?.image_url ?? '');
+    if (/^blob:/i.test(u)) return 'blob';
+    if (/^data:image\//i.test(u)) return 'data';
+    return 'other';
+  });
+  // 2.0 asks for a newest-first window and names the hashes it is about to
+  // paint, so an old shot still attaches without listing the whole session.
+  await rec('gallery.window_reports_total', () => {
+    const all = gallery?.items?.length ?? -1;
+    return { total: gallery?.total, matches_items: gallery?.total === all, window_oldest_at: gallery?.window_oldest_at };
+  });
+  await rec('gallery.window_excludes_beyond_limit', async () => {
+    const limit = 1;
+    const win = await get(`/v1/gallery?session_id=sess_main&limit=${limit}`);
+    const total = Number(win?.total);
+    const items = win?.items?.length ?? -1;
+    return {
+      items,
+      total,
+      // The window returns min(limit, total), and reports an edge only when it
+      // stopped short of the session — that edge is what a merge prunes against.
+      window_capped: items === Math.min(limit, total),
+      edge_only_when_short: (typeof win?.window_oldest_at === 'number') === (total > limit),
+    };
+  });
+  await rec('gallery.hash_outside_window_still_ships', async () => {
+    // limit=0: nothing from the window, only what the hash asks for.
+    const byHash = await get('/v1/gallery?session_id=sess_main&limit=0&hashes=hash_main');
+    const other = await get('/v1/gallery?session_id=sess_main&limit=0&hashes=no_such_hash');
+    return {
+      hashed_rows: byHash?.items?.length ?? -1,
+      all_match: (byHash?.items || []).every((r) => r.content_hash === 'hash_main'),
+      unknown_hash_rows: other?.items?.length ?? -1,
+    };
+  });
   await rec('gallery.explore', () => get('/v1/gallery/explore?limit=200'));
   await rec('gallery.favorites_empty', () => get('/v1/gallery/favorites'));
   await rec('gallery.favorites_set', () => post('/v1/gallery/favorites', { ids: cardId ? [cardId] : [] }));
@@ -344,6 +387,7 @@ export async function runScenario(N, handles) {
   // 2.0-only soft-stop route (1.x 404 → NEW_ONLY_STEPS). Idle session → stopped:0.
   await rec('job.stop_idle', () => post('/v1/jobs/stop', { session_id: 'sess_stop_idle' }));
 
+  await rec('cards.nai_prompt', () => get(`/v1/cards/${cardId}/nai-prompt`));
   await rec('cards.tags', () => post(`/v1/cards/${cardId}/tags`, {
     main_prompt: 'PARITY EDITED PROMPT',
     negative_prompt: 'parity negative',
@@ -374,6 +418,12 @@ export async function runScenario(N, handles) {
   // Restore default tagger JSON so later jobs are unaffected.
   handles.setLlmReply?.(DEFAULT_LLM_REPLY);
   await rec('cards.gallery_after_tags', () => get('/v1/gallery?session_id=sess_main&limit=40'));
+  // 2.0-only: studio commit writes tags (and optional canvas bytes) on the same card id.
+  await rec('cards.studio_commit', () => post(`/v1/cards/${cardId}/studio-commit`, {
+    main_prompt: 'STUDIO COMMIT',
+    negative_prompt: 'studio neg',
+    characters: [{ name: '태양', prompt: 'boy, black hair', action: 'sitting' }],
+  }));
   const reroll = await rec('cards.reroll', () => post(`/v1/cards/${cardId}/reroll`, { mode: 'nai' }));
   const rerolledId = reroll?.card?.id;
   await rec('cards.reroll_with_overrides', () => post(`/v1/cards/${rerolledId}/reroll`, {
@@ -512,9 +562,8 @@ export async function runScenario(N, handles) {
   }));
   await rec('presets.after_save', () => get('/v1/settings'));
 
-  // Distinctive style markers (not quality-tag vocabulary) so the swap is
-  // unambiguous. Intentional 2.0 behaviour: plain reroll rebuilds main against
-  // the active preset. 1.x kept main_prompt verbatim — see INTENTIONAL_DIFF_STEPS.
+  // Reroll replays the saved image (mock PNG base is "parity cafe"). The
+  // active preset must not replace that base — see INTENTIONAL_DIFF_STEPS.
   await rec('presets.save_swap_markers', () => put('/v1/settings', {
     card: {
       presets: [
@@ -540,10 +589,9 @@ export async function runScenario(N, handles) {
   }));
   const styleJobResult = await rec('presets.style_job_wait', () => waitForJob(styleJob?.job_id));
   const styleCardId = styleJobResult?.result?.cards?.[0]?.id;
-  const styleBefore = await rec('presets.style_before_swap', () => (
+  await rec('presets.style_before_swap', () => (
     styleCardId ? get(`/v1/gallery?session_id=sess_style&limit=5`) : { items: [] }
   ));
-  const beforeMain = String(styleBefore?.items?.[0]?.main_prompt || '');
   await rec('presets.activate_alpha', () => put('/v1/settings', {
     card: { active_preset_id: 'p1' },
   }));
@@ -552,12 +600,9 @@ export async function runScenario(N, handles) {
   ));
   const afterMain = String(styleReroll?.card?.main_prompt || '');
   await rec('presets.reroll_swaps_style', () => ({
-    had_beta: beforeMain.includes('parity_style_beta'),
-    has_alpha: afterMain.includes('parity_style_alpha'),
-    dropped_beta: !afterMain.includes('parity_style_beta'),
-    swapped: beforeMain.includes('parity_style_beta')
-      && afterMain.includes('parity_style_alpha')
-      && !afterMain.includes('parity_style_beta'),
+    kept_file: afterMain.includes('parity cafe'),
+    ignored_preset: !afterMain.includes('parity_style_alpha'),
+    swapped: false,
   }));
 
   // A reroll builds its prompt for one family (V5 natural / speech / family
@@ -572,7 +617,12 @@ export async function runScenario(N, handles) {
   await rec('presets.reroll_keeps_v5_model', () => {
     const sent = handles.naiRequests.filter((r) => r.kind === 'generate').slice(naiGenBefore);
     const model = String(sent[sent.length - 1]?.body?.model || '');
-    return { sent: sent.length, model, v5: model.includes('nai-diffusion-5') };
+    return {
+      sent: sent.length,
+      model,
+      v5: model.includes('nai-diffusion-5'),
+      keeps_file: model.includes('nai-diffusion-4-5') && !model.includes('nai-diffusion-5'),
+    };
   });
   await rec('presets.nai5_only_off', () => put('/v1/settings', { card: { nai5_only: false } }));
 
@@ -698,6 +748,40 @@ export async function runScenario(N, handles) {
     return { events: Array.isArray(d?.events) ? d.events.length <= 2 : null };
   });
 
+  // ── 2.5 storage migration ─────────────────────────────────────────────
+  // Last, because it runs the retention passes and stamps the store — both of
+  // which would change what the steps above see.
+  //
+  // In this run there is nothing to move: every shot the scenario generated
+  // already went straight to the gallery module, so `total` is 0. What this
+  // asserts is the route plumbing and that a run with no failures stamps and
+  // stops offering itself. Moving actual bytes is covered by the unit tests,
+  // which can seed a legacy row directly.
+  await rec('storage.migrate_before', async () => {
+    const info = await get('/v1/storage/migrate/status');
+    return { ok: info?.ok, running: info?.status?.running, phase: info?.status?.phase };
+  });
+  await rec('storage.migrate_run', async () => {
+    const started = await post('/v1/storage/migrate', {});
+    let status = started?.status;
+    for (let i = 0; i < 200 && status?.running; i += 1) {
+      await new Promise((r) => setTimeout(r, 25));
+      status = (await get('/v1/storage/migrate/status'))?.status;
+    }
+    return {
+      started: started?.started === true,
+      total: started?.total ?? null,
+      phase: status?.phase ?? null,
+      failed: status?.failed ?? null,
+      running: status?.running ?? null,
+    };
+  });
+  await rec('storage.migrate_after', async () => {
+    const info = await get('/v1/storage/migrate/status');
+    return { migrated_version: info?.migrated_version ?? null, pending_images: info?.pending_images ?? null };
+  });
+  await rec('storage.migrate_cancel_idle', () => post('/v1/storage/migrate/cancel', {}));
+
   // ── outbound traffic assertions ───────────────────────────────────────
   transcript.push({
     step: step + 1,
@@ -710,6 +794,12 @@ export async function runScenario(N, handles) {
       storageKeys: [...handles.storage.keys()].map((k) => k.replace(/^inx_nximg_.*/, 'inx_nximg_*')).sort()
         .filter((k, i, a) => a.indexOf(k) === i),
     },
+  });
+  transcript.push({
+    step: step + 2,
+    name: 'host.gallery_pixels',
+    ok: true,
+    value: [...handles.storage.keys()].some((k) => /^inx_nximg_/.test(k)) ? 'plugin' : 'module',
   });
 
   return transcript;

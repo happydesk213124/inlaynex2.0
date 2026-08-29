@@ -17,9 +17,10 @@ import { errorBody, isFetchError, makeFetchError } from '../core/errors';
 import { hostHas } from '../core/host';
 import { routeFetch } from '../api/router';
 import { getDeviceStore } from '../storage/device-store';
-import { ensureBlobUrl, pngToDataUrl, resolveImageUrl, warmImages, warmProgress, warmFocusProgress, onWarmProgress, pinImageUrls, retainImageUrls, dropImageUrl, prioritizeWarmFocus, clearWarmFocus } from '../storage/image-urls';
+import { ensureBlobUrl, pngToDataUrl, resolveImageUrl, subscribeImageUrl, warmImages, warmProgress, warmFocusProgress, onWarmProgress, pinImageUrls, retainImageUrls, dropImageUrl, prioritizeWarmFocus, clearWarmFocus } from '../storage/image-urls';
+import { dropExplorerThumbUrl, ensureExplorerThumbUrl, pinExplorerThumbs, resolveExplorerThumbUrl, retainExplorerThumbs, warmExplorerThumbs } from '../storage/explorer-thumbs';
 import { loadSettingsFromStorage } from '../storage/settings-store';
-import { blobUrlCount, idbGet, openDb, storeSize } from '../storage/stores';
+import { blobUrlCount, idbGet, isStorageMigrated, openDb, storeSize } from '../storage/stores';
 import {
   getRefPreviewUrl,
   getVibePreviewUrl,
@@ -30,6 +31,7 @@ import {
 import { migrateAppearanceToCharacters, migrateCharacterIdentity } from '../services/characters';
 import { hydratePresetVibePreviews } from '../services/nai-assets';
 import { seedPrompts } from '../services/settings';
+import { closeTagStudio, openTagStudio } from '../tag-studio/mount';
 
 let readyPromise: Promise<void> | null = null;
 
@@ -44,8 +46,12 @@ async function boot(): Promise<void> {
 
   setConfig(await loadSettingsFromStorage());
   await seedPrompts();
-  await migrateAppearanceToCharacters();
-  await migrateCharacterIdentity();
+  // Both only ever find pre-roster / schema-1 rows. Once the storage migration
+  // has run they are guaranteed to be no-ops, so skip the scans entirely.
+  if (!(await isStorageMigrated())) {
+    await migrateAppearanceToCharacters();
+    await migrateCharacterIdentity();
+  }
 
   // Both singletons are small and always visible in settings, so they are
   // encoded once here rather than on demand.
@@ -120,16 +126,27 @@ export function installNativeBridge(): void {
     refPreviewUrl: getRefPreviewUrl,
     vibePreviewUrl: getVibePreviewUrl,
     ensureImageUrl,
+    // Inline shots place their markers first and fill each cell as its own id
+    // resolves, so they never re-run a paint pass just to catch a late encode.
+    subscribeImageUrl,
     warmImages,
     pinImageUrls,
     prioritizeWarmFocus,
     clearWarmFocus,
     retainImageUrls,
     dropImageUrl,
+    resolveExplorerThumbUrl,
+    ensureExplorerThumbUrl,
+    warmExplorerThumbs,
+    dropExplorerThumbUrl,
+    retainExplorerThumbs,
+    pinExplorerThumbs,
     warmProgress,
     warmFocusProgress,
     onWarmProgress,
     debug: debugSnapshot,
     clearDebug,
+    openTagStudio,
+    closeTagStudio,
   });
 }

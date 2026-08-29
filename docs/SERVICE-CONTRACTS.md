@@ -230,9 +230,10 @@ Depends on: `generation` (location helpers).
 ## `cards.ts` — legacy 6076–6449
 
 ```ts
-export async function updateCardTags(cardId: string, body: Record<string, unknown>): Promise<ApiResult>; // 6076
-export async function rerollCard(cardId: string, mode: string, overrides: unknown): Promise<ApiResult>;  // 6150
-export async function rerollMessageCards(args: RerollMessageArgs): Promise<ApiResult>;                   // 6378
+export async function readCardNaiPrompts(cardId: string): Promise<ApiResult>;
+export async function updateCardTags(cardId: string, body: Record<string, unknown>): Promise<ApiResult>;
+export async function rerollCard(cardId: string, mode: string, overrides: unknown): Promise<ApiResult>;
+export async function rerollMessageCards(args: RerollMessageArgs): Promise<ApiResult>;
 ```
 
 Depends on: `generation`, `tagger`, `characters`, `gallery`, `settings`.

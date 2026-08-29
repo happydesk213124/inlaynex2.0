@@ -4,6 +4,7 @@
 import type { CardSettings, NaiSettings, StylePreset, TaggedShot } from '../../core/types.ts';
 import { isNaiV5, resolveModel } from '../../providers/nai/payload.ts';
 import { cleanText } from '../../core/util/text.ts';
+import { normalizeShotKind } from '../comic/kind.ts';
 
 export type NaiFamily = 'v5' | 'v4';
 
@@ -101,6 +102,7 @@ export function resolveShotFamily(
   nai: Pick<NaiSettings, 'model'>,
   shot: Pick<TaggedShot, 'complexity'> & Record<string, unknown>,
 ): NaiFamily {
+  if (normalizeShotKind((shot as { kind?: unknown }).kind) === 'comic') return 'v5';
   if (cardFlagOn(card.nai5_only, false)) return 'v5';
   if (!cardFlagOn(card.nai5_first, false)) {
     return naiFamilyOfModel(nai.model);
@@ -161,7 +163,7 @@ export function resolveShotRoute(
     model: modelForFamily(nai, family),
     preset,
     useV5Natural: family === 'v5',
-    useSpeech: speechOn && family === 'v5',
+    useSpeech: speechOn && family === 'v5' && normalizeShotKind(shot.kind) !== 'comic',
   };
 }
 

@@ -79,10 +79,13 @@ const isByStage = (key, node) =>
 
 const EVENT_LOG_MARKER = '__eventLog';
 
+/** 2.x warms object URLs; the work is the same display-url stage 1.x logged as image.data_url. */
+const aliasDebugStage = (stage) => (stage === 'image.blob_url' ? 'image.data_url' : stage);
+
 const summarizeEventLog = (events) => ({
   [EVENT_LOG_MARKER]: true,
-  stages: [...new Set(events.map((e) => String(e.stage)))].filter((s) => !s.startsWith('storage.')).sort(),
-  errors: events.filter((e) => e.level === 'error').map((e) => String(e.stage)).sort(),
+  stages: [...new Set(events.map((e) => aliasDebugStage(String(e.stage))))].filter((s) => !s.startsWith('storage.') && !s.startsWith('shot.module')).sort(),
+  errors: events.filter((e) => e.level === 'error').map((e) => aliasDebugStage(String(e.stage))).sort(),
 });
 
 const normalize = (root) => {
@@ -112,6 +115,9 @@ const normalize = (root) => {
       return Number.isInteger(node) ? node : Math.round(node * 1000) / 1000;
     }
     if (typeof node === 'string') {
+      // Display URLs are data:image (SafeDOM). Payload length is not behaviour.
+      // scenario.mjs asserts the scheme on gallery.display_url_scheme.
+      if (/^data:image\//i.test(node) || /^blob:/i.test(node)) return '<DISPLAY_URL>';
       if (key && VOLATILE_KEYS.has(key) && /^\d+$/.test(node)) return '<NUM>';
       if (key === 'version' && VERSION_RE.test(node)) return '<VERSION>';
       if (key && STAGE_NAME_KEYS.has(key)) return node ? '<STAGE>' : node;
@@ -152,9 +158,13 @@ const normalize = (root) => {
     if (isDebugEventLog(key, node)) return walk(summarizeEventLog(node), 'event_log_summary');
     if (isByStage(key, node)) {
       // Counts collapse to presence for the same window reason as the event log.
-      return { [EVENT_LOG_MARKER]: true, stages: Object.keys(node).filter((s) => !s.startsWith('storage.')).sort(), errors: [] };
+      return { [EVENT_LOG_MARKER]: true, stages: Object.keys(node).map(aliasDebugStage).filter((s) => !s.startsWith('storage.') && !s.startsWith('shot.module')).sort(), errors: [] };
     }
     if (Array.isArray(node)) {
+      // 2.x writes new shots to the gallery module; 1.x used inx_nximg_* base64 keys.
+      if (key === 'storageKeys' && node.every((v) => typeof v === 'string')) {
+        return node.filter((k) => k !== 'inx_nximg_*' && !String(k).startsWith('inx_nximg_')).map((v) => walk(v, key));
+      }
       // New 2.0-only prompts have no 1.x equivalent; comparing list length/order fails.
       if (
         key === 'prompts'
@@ -165,7 +175,7 @@ const normalize = (root) => {
           .filter((p) => {
             const k = String(p.key);
             if (k.startsWith('curation_')) return false;
-            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll' || k === 'lorefilter_scan' || k === 'asset_author_note') return false;
+            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll' || k === 'lorefilter_scan' || k === 'asset_author_note' || k === 'comic') return false;
             return true;
           })
           .map((v) => walk(v, key));
@@ -179,7 +189,7 @@ const normalize = (root) => {
         && node.includes('format')
       ) {
         return node
-          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll' && k !== 'lorefilter_scan' && k !== 'asset_author_note')
+          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll' && k !== 'lorefilter_scan' && k !== 'asset_author_note' && k !== 'comic')
           .map((v) => walk(v, key));
       }
       return node.map((v) => walk(v, key));
@@ -191,7 +201,33 @@ const normalize = (root) => {
       // objects had neither; unit tests assert the key helper, not this wire.
       const isGenCaption =
         'center_x' in node && 'prompt' in node && ('uc' in node || 'raw' in node);
+      // 2.0 card rows no longer copy NAI main/neg or baked look tags. Those live
+      // on the image file + roster. 1.x still echoed the last generate — the
+      // strings are not comparable. GET /nai-prompt + reroll unit/scenario
+      // assert the new source.
+      const isCardShape =
+        typeof node.id === 'string'
+        && ('image_url' in node || 'png_bytes' in node)
+        && ('shot_index' in node || 'paragraph' in node);
+      // ZIP manifest `meta` still had 1.x main/neg + baked look tags.
+      const isStoredCardMeta =
+        Array.isArray(node.characters)
+        && ('main_prompt' in node || 'negative_prompt' in node);
       for (const k of Object.keys(node).sort()) {
+        if ((isCardShape || isStoredCardMeta) && (k === 'main_prompt' || k === 'negative_prompt' || k === 'setup')) continue;
+        if ((isCardShape || isStoredCardMeta) && k === 'characters' && Array.isArray(node.characters)) {
+          // 2.0 persists shot staging (action/expression/…) on the card; 1.x
+          // left those on the baked prompt only. Name is the comparable identity.
+          out[k] = walk(
+            node.characters.map((ch) => {
+              if (!ch || typeof ch !== 'object') return ch;
+              const name = typeof ch.name === 'string' ? ch.name : '';
+              return name ? { name } : {};
+            }),
+            k,
+          );
+          continue;
+        }
         if (isGenCaption && (k === 'id' || k === 'scope')) continue;
         // 2.0 curation tab settings have no 1.x equivalent. Drop from wire compare;
         // unit tests + scenario assert the new behaviour. composition_curation is
@@ -218,13 +254,14 @@ const normalize = (root) => {
           || k === 'focus_character'
           || k === 'focus_weight'
           || k === 'focus_prompt'
+          || k === 'command_presets'
         ) continue;
         // 2.0 wear locks default ON (`!== false`). 1.x/legacy seeds stored false;
         // compose + unit tests assert lock behaviour — wire presence is not comparable.
         if (k === 'attire_locked' || k === 'accessories_locked') continue;
         // 2.0 bubble inline shots + progress toast — no 1.x card fields.
         // Defaults false; UI/schema + unit tests assert behaviour.
-        if (k === 'inline_chat_images' || k === 'inline_msg_actions' || k === 'progress_toast') continue;
+        if (k === 'inline_chat_images' || k === 'inline_msg_actions' || k === 'progress_toast' || k === 'toast_anchor' || k === 'image_press_inspect') continue;
         // 2.0 per-character NAI reference (dashboard mode + per-char image).
         // No 1.x fields; schema defaults + UI/unit tests assert behaviour.
         if (k === 'char_ref_mode' || k === 'char_ref_strength' || k === 'char_ref_fidelity' || k === 'char_ref_image_type') continue;
@@ -232,8 +269,9 @@ const normalize = (root) => {
         // 2.0 always-on fixed prompt wrappers around style/scene. No 1.x fields;
         // empty-string defaults; generation + card UI assert merge behaviour.
         if (k === 'fixed_prompt_prefix' || k === 'fixed_prompt_suffix') continue;
-        // 2.0 bubble inline scale % — no 1.x field; default 100.
-        if (k === 'inline_chat_scale_pct') continue;
+        // 2.0 bubble inline sizing/window controls — no 1.x fields. Scenario
+        // `settings.card_flags_2x` asserts the radius default instead.
+        if (k === 'inline_chat_scale_pct' || k === 'inline_chat_dom_radius') continue;
         // 2.0 character-tab "승자만 보기". 1.x folded winners into unified_chat_priority;
         // unit tests + unify listing assert the split toggle.
         if (k === 'unified_winners_only') continue;
@@ -265,6 +303,33 @@ const normalize = (root) => {
           || k === 'steps_v5'
           || k === 'steps_v4'
         ) continue;
+        // Stream rematch keeps assistant_preview on the newest 20 card metas
+        // only; the images index no longer copies the prose. 1.x wrote it on
+        // every location, so listings/export/unlink sidecars are not comparable.
+        // Retention + Dice gate are unit-tested.
+        if (k === 'assistant_preview') continue;
+        // 2.0 comic tab. Default off → same job path as 1.x; unit tests assert
+        // kind/range/coords/schedule. Wire keys have no 1.x equivalent.
+        if (
+          k === 'comic_gen'
+          || k === 'comic_author_note'
+          || k === 'comic_llm_batch'
+          || k === 'comic_schedule'
+          || k === 'comic_max_pages'
+          || k === 'comic_gen_ratio'
+          || k === 'comic_coords'
+          || k === 'comic_steps'
+          || k === 'comic_sampler'
+          || k === 'comic_prompt'
+          || k === 'comic_uc'
+          || k === 'comic_prompt_prefix'
+          || k === 'comic_prompt_suffix'
+          || k === 'comic_cfg_scale'
+          || k === 'comic_cfg_rescale'
+          || k === 'comic_page'
+          || k === 'comic_line_end'
+          || k === 'kind'
+        ) continue;
         // Sticky pin hover preview removed in 2.0 (force-off + default false).
         // 1.x defaulted true; comparing the wire value only hides the deletion.
         if (k === 'hover_preview' || k === 'hover_preview_anchor') continue;
@@ -277,6 +342,16 @@ const normalize = (root) => {
         // 2.0 message-reroll soft-stop flag (`stopped`). 1.x has no field; idle
         // reroll returns false — unit/scenario assert stop behaviour, not wire.
         if (k === 'stopped') continue;
+        // 2.0 /v1/gallery answers a window and names the hashes it needs, so it
+        // reports the session card count and the window's oldest timestamp for
+        // the caller to merge against. 1.x always listed the whole session and
+        // had neither. Scoped to the session listing (session_id + items, no
+        // folders) so the explorer payload's own `total` still compares.
+        // gallery.window_* / gallery.hash_* assert the values.
+        if (
+          (k === 'total' || k === 'window_oldest_at')
+          && 'session_id' in node && 'items' in node && !('folders' in node)
+        ) continue;
         out[k] = walk(node[k], k);
       }
       return out;
@@ -306,7 +381,7 @@ const diff = (a, b, at, into) => {
     // were evicted there that survive here. So the assertion worth making is that
     // no stage the old run recorded went missing; extra stages are the win.
     // Known 2.0 renames/drops (not regressions): allow these to disappear.
-    const ALLOW_GONE = new Set(['autotag.start', 'job.start', 'nai.read_bytes.done', 'nai.fetch.returned']);
+    const ALLOW_GONE = new Set(['autotag.start', 'job.start', 'nai.read_bytes.done', 'nai.fetch.returned', 'nai.generate.dims']);
     const gone = a.stages.filter((s) => !b.stages.includes(s) && !ALLOW_GONE.has(s));
     if (gone.length) into.push({ at: `${at}.stages`, old: gone.join(', '), new: '(absent)', note: 'stage no longer logged' });
     // An error appearing or disappearing is behaviour, so those match exactly.
@@ -340,6 +415,8 @@ const newRun = JSON.parse(fs.readFileSync(newPath, 'utf8'));
  * because that would force us to hide the new behaviour or break the suite.
  */
 const INTENTIONAL_DIFF_STEPS = new Set([
+  // Empty override characters[] no longer wipes the slim cast; 1.x sent zero chars.
+  'cards.reroll_with_overrides',
   'presets.reroll_after_swap',
   'presets.reroll_swaps_style',
   // Same preset-rebuild divergence as reroll_after_swap, plus 2.4.16: the reroll
@@ -383,6 +460,36 @@ const INTENTIONAL_DIFF_STEPS = new Set([
  */
 const NEW_ONLY_STEPS = new Map([
   [
+    'gallery.display_url_scheme',
+    (v) => (v === 'data'
+      ? null
+      : `2.x gallery image_url must be a data:image URL — SafeDOM strips blob: and cannot setAttribute src, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'gallery.window_reports_total',
+    (v) => (typeof v?.total === 'number' && v.total >= 1 && v.matches_items === true && v.window_oldest_at === null
+      ? null
+      : `2.0 /v1/gallery must report the session card count, and no window edge when the window covered it all, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'gallery.window_excludes_beyond_limit',
+    (v) => (v?.window_capped === true && v?.edge_only_when_short === true
+      ? null
+      : `2.0 /v1/gallery must cap at the limit and report a window edge exactly when it stopped short of the session, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'gallery.hash_outside_window_still_ships',
+    (v) => (Number(v?.hashed_rows) >= 1 && v?.all_match === true && Number(v?.unknown_hash_rows) === 0
+      ? null
+      : `2.0 must ship a named hash's cards with an empty window, and nothing for an unknown hash, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'host.gallery_pixels',
+    (v) => (v === 'module'
+      ? null
+      : `2.x must persist new shots as module assets, not inx_nximg_* keys, got ${JSON.stringify(v)}`),
+  ],
+  [
     'curation.strict_ids.enable',
     (v) => (v?.mode === 'off' && v?.strict_ids === true
       ? null
@@ -399,6 +506,18 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (v?.ok === true && v?.look_kept === true && v?.action === 'waving'
       ? null
       : `2.0 command-rewrite must keep look + apply action, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'cards.studio_commit',
+    (v) => (v?.ok === true && v?.card?.id
+      ? null
+      : `2.0 studio-commit must keep the card and write tags, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'cards.nai_prompt',
+    (v) => (v?.ok === true && String(v?.main_prompt || '').includes('parity cafe')
+      ? null
+      : `2.0 nai-prompt must return image base tags, got ${JSON.stringify(v)}`),
   ],
   [
     'job.stop_idle',
@@ -451,6 +570,32 @@ const NEW_ONLY_STEPS = new Map([
       ? null
       : `restore-chrome must return ok+remounted, got ${JSON.stringify(v)}`),
   ],
+  // 2.5 storage migration. 1.x had no concept of moving pixels into a Risu
+  // module, so the old run 404s on all three routes.
+  [
+    'storage.migrate_before',
+    (v) => (v?.ok === true && v?.running === false
+      ? null
+      : `status must answer with an idle engine before the first run, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'storage.migrate_run',
+    (v) => (v?.started === true && v?.phase === 'done' && v?.failed === 0 && v?.running === false
+      ? null
+      : `migrate must start, finish as done, and report no failures, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'storage.migrate_after',
+    (v) => (v?.migrated_version === 3 && v?.pending_images === 0
+      ? null
+      : `a clean run must stamp version 3 and leave nothing pending, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'storage.migrate_cancel_idle',
+    (v) => (v?.ok === true && v?.cancelling === false
+      ? null
+      : `cancel with nothing running must report cancelling:false, got ${JSON.stringify(v)}`),
+  ],
   [
     'nai.quota',
     (v) => (v?.ok === true && Array.isArray(v?.keys)
@@ -477,13 +622,13 @@ for (const name of oldSteps.keys()) {
   if (INTENTIONAL_DIFF_STEPS.has(name)) {
     if (!oldStep.ok) findings.push({ at: name, old: 'failed', new: '(intentional)', note: 'old step errored' });
     if (!newStep.ok) findings.push({ at: name, old: '(intentional)', new: 'failed', note: 'new step errored' });
-    // 2.0 must actually perform the style swap — that is the point of the step.
-    if (name === 'presets.reroll_swaps_style' && newStep.value?.swapped !== true) {
+    // Reroll replays the image file. Settings presets must not rewrite base.
+    if (name === 'presets.reroll_swaps_style' && newStep.value?.kept_file !== true) {
       findings.push({
         at: name,
         old: String(oldStep.value?.swapped),
-        new: String(newStep.value?.swapped),
-        note: '2.0 must report swapped:true after preset change + reroll',
+        new: JSON.stringify(newStep.value),
+        note: '2.0 reroll must keep the file base and ignore the active preset',
       });
     }
     if (name === 'presets.reroll_keeps_v4_from_complexity'
@@ -496,12 +641,12 @@ for (const name of oldSteps.keys()) {
       });
     }
     if (name === 'presets.reroll_keeps_v5_model'
-      && (newStep.value?.v5 !== true || !(newStep.value?.sent >= 1))) {
+      && (newStep.value?.keeps_file !== true || !(newStep.value?.sent >= 1))) {
       findings.push({
         at: name,
         old: String(oldStep.value?.model),
         new: JSON.stringify(newStep.value),
-        note: 'with nai5_only on, a reroll must generate on the V5 model it built the prompt for',
+        note: 'reroll must send the file model, not nai5_only from settings',
       });
     }
     if (name === 'speech.bubble_on_caption'

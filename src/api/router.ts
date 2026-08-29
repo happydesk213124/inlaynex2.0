@@ -36,7 +36,8 @@ import * as lorefilter from '../services/lorefilter';
 import * as charImport from '../services/char-import';
 import * as settings from '../services/settings';
 import * as curation from '../services/curation';
-import { authorized, parseQuery, q, type Headers, type Query } from './http';
+import * as storageMigrate from '../services/storage-migrate';
+import { authorized, parseQuery, q, qAll, type Headers, type Query } from './http';
 
 export interface RouteResult {
   status: number;
@@ -128,6 +129,10 @@ const GET_ROUTES: readonly Route[] = [
     match: exact('/v1/curation/catalog'),
     handler: async () => ok({ ok: true, catalog: await curation.loadCurationCatalog() }),
   },
+  {
+    match: exact('/v1/storage/migrate/status'),
+    handler: async () => ok(await storageMigrate.storageMigrateInfo()),
+  },
   { match: exact('/v1/prompts'), handler: async () => ok({ ok: true, prompts: await settings.listPrompts() }) },
   {
     match: exact('/v1/prompts/export'),
@@ -140,12 +145,19 @@ const GET_ROUTES: readonly Route[] = [
   { match: under('/v1/jobs/'), handler: async ({ param }) => ok(await jobs.getJob(param)) },
   {
     match: under('/v1/gallery/explore'),
-    handler: async ({ query }) => ok(await gallery.galleryExplore(Number(q(query, 'limit', '400')))),
+    handler: async ({ query }) => ok(await gallery.galleryExplore(Number(q(query, 'limit', '0')))),
   },
   { match: exact('/v1/gallery/favorites'), handler: async () => ok(await gallery.getExplorerFavorites()) },
   {
     match: under('/v1/gallery'),
-    handler: async ({ query }) => ok(await gallery.gallery(q(query, 'session_id'), Number(q(query, 'limit', '40')))),
+    handler: async ({ query }) =>
+      ok(
+        await gallery.gallery(
+          q(query, 'session_id'),
+          Number(q(query, 'limit', '40')),
+          [...qAll(query, 'hashes'), ...qAll(query, 'content_hash')],
+        ),
+      ),
   },
   {
     match: exact('/v1/nai/reference.png'),
@@ -217,6 +229,10 @@ const GET_ROUTES: readonly Route[] = [
   {
     match: under('/v1/appearance/'),
     handler: async ({ param }) => ok(await characters.getCharactersPayload(param)),
+  },
+  {
+    match: wrapped('/v1/cards/', '/nai-prompt'),
+    handler: async ({ param }) => ok(await cards.readCardNaiPrompts(param)),
   },
   {
     match: under('/v1/images/'),
@@ -381,6 +397,14 @@ const WRITE_ROUTES: readonly Route[] = [
     handler: async ({ param, body }) => ok(await cards.updateCardTags(param, body)),
   },
   {
+    match: wrapped('/v1/cards/', '/studio-generate'),
+    handler: async ({ param, body }) => ok(await cards.studioGenerate(param, body)),
+  },
+  {
+    match: wrapped('/v1/cards/', '/studio-commit'),
+    handler: async ({ param, body }) => ok(await cards.studioCommit(param, body)),
+  },
+  {
     match: wrapped('/v1/cards/', '/reroll'),
     handler: async ({ param, body }) => ok(await cards.rerollCard(param, String(body.mode || 'nai'), body.overrides)),
   },
@@ -507,6 +531,14 @@ const WRITE_ROUTES: readonly Route[] = [
   {
     match: exact('/v1/chat/restore-chrome'),
     handler: async () => ok(await chatChrome.remountChatCardChrome()),
+  },
+  {
+    match: exact('/v1/storage/migrate/cancel'),
+    handler: () => ok(storageMigrate.cancelStorageMigration()),
+  },
+  {
+    match: exact('/v1/storage/migrate'),
+    handler: async () => ok(await storageMigrate.startStorageMigration()),
   },
   { match: exact('/v1/characters', '/v1/characters/update'), handler: ({ body }) => updateCharacters(body) },
   {

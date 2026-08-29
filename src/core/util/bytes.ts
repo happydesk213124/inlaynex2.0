@@ -42,16 +42,60 @@ export async function bytesToBase64Async(bytes: BytesLike): Promise<string> {
   return btoa(binary);
 }
 
+/**
+ * `data:<mime>;base64,…` for image bytes, encoded natively when the host allows.
+ *
+ * `FileReader.readAsDataURL` base64-encodes off the JS heap, so a multi-MB image
+ * costs one task instead of an O(bytes) `fromCharCode` + `btoa` walk. Hosts with
+ * no `FileReader`/`Blob` (node unit tests, the parity host) fall back to the
+ * yielding loop, which produces a byte-identical string.
+ */
+export async function bytesToDataUrlAsync(bytes: BytesLike, mime: string): Promise<string> {
+  const u8 = asU8(bytes);
+  if (!u8.length) return '';
+  const type = mime || 'application/octet-stream';
+  const native = await dataUrlViaFileReader(u8, type);
+  if (native) return native;
+  return `data:${type};base64,${await bytesToBase64Async(u8)}`;
+}
+
+/** Resolves to '' — never rejects — so callers can fall back without a try. */
+function dataUrlViaFileReader(u8: Uint8Array, mime: string): Promise<string> {
+  if (typeof Blob !== 'function' || typeof FileReader !== 'function') return Promise.resolve('');
+  return new Promise<string>((resolve) => {
+    try {
+      // Our views are never SharedArrayBuffer-backed, which is the only reason
+      // `Uint8Array<ArrayBufferLike>` is not assignable to `BlobPart`.
+      const blob = new Blob([u8 as unknown as ArrayBufferView<ArrayBuffer>], { type: mime });
+      const reader = new FileReader();
+      reader.onload = () => {
+        const out = typeof reader.result === 'string' ? reader.result : '';
+        resolve(out ? withDataUrlMime(out, mime) : '');
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(blob);
+    } catch {
+      resolve('');
+    }
+  });
+}
+
+/**
+ * FileReader labels the payload from the Blob type, and a type the host refuses
+ * to keep yields `data:;base64,…`. Only the prefix differs, so swap it rather
+ * than re-encoding.
+ */
+function withDataUrlMime(dataUrl: string, mime: string): string {
+  const at = dataUrl.indexOf(';base64,');
+  if (at < 0) return '';
+  const want = `data:${mime}`;
+  return dataUrl.slice(0, at) === want ? dataUrl : `${want}${dataUrl.slice(at)}`;
+}
+
 /** Base64-encodes an ArrayBuffer, or `''` when there is nothing to encode. */
 export function abToBase64(buf: BytesLike): string {
   if (!buf) return '';
   return bytesToBase64(buf);
-}
-
-/** Yielding `abToBase64`, for buffers big enough to stall the iframe. */
-export async function abToBase64Async(buf: BytesLike): Promise<string> {
-  if (!buf) return '';
-  return bytesToBase64Async(buf);
 }
 
 /** Decodes base64 into bytes. */

@@ -16,25 +16,35 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 | `fetch` | `(path, {method, body}, timeoutMs) => Promise<any>` | `body` is a **plain object**, not a JSON string. Resolves with the parsed response; throws on error with `.status`/`.data` |
 | `resolveImageUrl` | `(cardOrId) => string` | Synchronous cache hit, else `""` |
 | `ensureImageUrl` | `(id) => Promise<string>` | Loads and caches |
-| `warmImages` | `(ids: string[]) => Promise<void>` | Fire-and-forget prefetch |
+| `subscribeImageUrl` | `(ids: string[], cb: (id, url) => void) => () => void` | Fires per id as it becomes displayable; replays ids already cached. Caller **must** run the returned unsubscribe |
+| `warmImages` | `(ids: string[]) => Promise<string[]>` | Prefetch. Queues onto the one shared encoder rather than encoding in parallel itself, so `prioritizeWarmFocus` / `pinImageUrls` genuinely decide who goes first. Resolves once every id has a URL **or has been given up on** — a missing image and an id evicted by `retainImageUrls` both settle |
 | `pinImageUrls` | `(ids: string[]) => void` | Pin sticky-window ids against data-URL LRU eviction; prioritizes their warm queue |
 | `warmProgress` | `() => { pending, active, done, total, pct, busy }` | Full background warm wave (viewer status) |
 | `warmFocusProgress` | `() => { pending, active, done, total, pct, busy }` | Selection-focus warm only — mint progress toast |
-| `prioritizeWarmFocus` | `(ids: string[]) => void` | Selection monopoly: encode these ids first; park others until done / `clearWarmFocus` |
-| `clearWarmFocus` | `() => void` | End selection monopoly and resume parked warm work |
+| `prioritizeWarmFocus` | `(ids: string[]) => void` | Move these ids to the front of the encode queue and scope `warmFocusProgress` to them. Priority only — nothing else is parked |
+| `clearWarmFocus` | `() => void` | End the selection-scoped progress readout |
 | `refPreviewUrl` | `() => string` | Reference-image preview `src` |
 | `vibePreviewUrl` | `() => string` | Vibe-image preview `src` |
 | `VERSION` | `string` | Not read by the UI; kept for diagnostics |
 | `debug` / `clearDebug` | `() => any` | Not read by the UI |
+| `openTagStudio` | `(card) => Promise<void>` | Shot-tag 도화지. Overlay only — `openCardTagEdit` owns `showContainer` / `hideContainer` like the old modal |
+| `closeTagStudio` | `() => void` | Dismiss the overlay. `closeCardTagEdit` calls this so the container pair still closes |
 
 > **Image URLs must be `data:image/...`.** The UI passes them through DOMPurify,
-> which strips `blob:`. Returning a `blob:` URL renders nothing.
+> which strips `blob:`. SafeElement `setAttribute` only allows `x-*` names, so
+> `setAttribute('src', blobUrl)` throws and cannot recover. Returning a `blob:`
+> URL renders the broken-image icon on every surface.
 >
 > Explorer thumbs: `/v1/gallery/explore` attaches URLs with `cachedOnly`, so the
 > grid paints from `resolveImageUrl` and fills in via `warmImages` /
 > `onWarmProgress`. While the explorer panel is open, warm progress must still
 > reapply `src` on `.explorer-card img` (build patch); otherwise freshly generated
 > cards stay on the broken-image icon until a full panel remount.
+>
+> Every surface shares one encode budget, so an explorer folder full of cold
+> thumbs and the selected bubble's shots compete for the same slots. That is why
+> the inline paint calls `prioritizeWarmFocus` — it is the only thing that decides
+> which of them the user sees first.
 >
 > Style presets may carry optional `cfg_scale` / `cfg_rescale` (empty → NAI
 > model defaults). Per-preset vibe is a device-local upload like NAI vibe
@@ -107,6 +117,35 @@ solo, costume, no humans. Off `nai5_first` uses the model-tab model for
 every shot. Dashboard save keeps the stored flags when those checkboxes
 are absent.
 
+Settings nav tab `comic_gen` (만화 생성, next to 생성 옵션) is
+`card.comic_gen` `off` | `on` (default `off`). Off leaves first-tagger + NAI
+identical to today. On lets the tagger emit `kind: comic` with `line` (start /
+pin, same as illustration) and `comic_line_end` (inclusive prose end). Slots
+are people/text boxes, not panels. `card.comic_llm_batch` is `once` | `per_shot`
+(default `once`). `card.comic_schedule` is `overlap` | `wait_taggers` (default
+`overlap`). `card.comic_gen_ratio` is 0–100 (default `50`): share of this
+message's shots that may be `kind: comic`. Extra comic shots become
+illustration. `card.comic_max_pages` is kept for old saves (0 pages →
+ratio 0). `card.comic_coords` is `ai_choice` | `llm` | `position` (default
+`llm`). Empty comic NAI overrides (`comic_steps`, `comic_sampler`,
+`comic_cfg_scale`, `comic_cfg_rescale`) fall back to the existing NAI tab +
+style preset. `card.comic_prompt_prefix` / `comic_prompt_suffix` wrap the
+comic main like the gen-option fixed prompts. Legacy `comic_prompt` copies
+into prefix when prefix is absent; `comic_uc` is no longer shown.
+`card.comic_author_note` is tone/world for the comic LLM, not an artist
+stack. Comic pages always use V5. Dashboard/tab save keeps stored comic
+fields when those controls are absent (`Ct()` + `assertOnce`).
+
+Dashboard also has `card.toast_anchor` (`tl` | `bl` | `tr` | `br` | `tc`,
+default `tc`) for progress / selection / host / attach toasts, and
+`card.inline_chat_dom_radius` (integer 3–20, default `4`) controls how many
+eligible bubbles on each side are prefetched and retained for inline frames.
+`card.image_press_inspect` (`off` | `hold` | `two` | `three` | `both`, default `hold`)
+for enlarge on inline/sticky shots. `two` is a fast double-tap on the same
+shot (saved `two` / `double-tap` normalize here). `three` is a fast triple-tap
+(`triple` / `triple-tap`). `hold` is a long press. `both` is hold plus double-tap. On plugin boot and the first enter of a chat session,
+an attach toast reads `인레이 넥서스 조각 불러오는중..` until chips and shots
+land, or 10 seconds, whichever is first. Later message clicks do not raise it.
 Dashboard also has `card.nai4_fallback`, `card.nai5_speech`,
 and `card.inline_msg_actions` as a 3-way select: `off` (사용안함),
 `legacy` (편의성, 오류율 있음 — DIV hosts + top bar on the content
@@ -119,7 +158,8 @@ bubble-root `prepend`). Chip rows and shot wraps are skipped when
 collecting hosts (`isInlayPaintHost`). Each bubble keeps at most one
 top bar and one bottom bar (`x-inlay-msg-end`); overlapping paints
 drop extras. If a header vanishes after `legacy`, use
-`POST /v1/chat/restore-chrome` (채팅 카드 복구).
+`POST /v1/chat/restore-chrome`. The route stays, but 2.5 dropped its dashboard
+button in favour of 2.4 데이터 이전 (see Storage migration).
 The character chip POSTs the selected DOM message to
 `/v1/characters/triggered` with the same session / unified / source ids as
 `/v1/jobs/create`. That route uses the tagger roster (`rosterForSession` +
@@ -139,6 +179,7 @@ Style presets may set `steps`, `sampler`, `scheduler`, `model_family` (`v4`|`v5`
 Empty `sampler` uses the Models-tab sampler for that family. The preset
 sampler list matches Models (Euler Ancestral … DPM++ SDE).
 `card.secondary_preset_id` is the green 2nd-priority preset.
+`card.command_presets` is `{id, name, cmd, cmd_post?}[]` for the shot-studio LLM command bar (default `[]`).
 `GET /v1/nai/quota` returns `{ keys: [{ family, suffix, ok, fixed, purchased, total, opus,
 v5_usage?, extra?, error? }] }`. Same token on V5 and V4 is one row with
 `family` `v5/v4`. `v5_usage.pct` is NovelAI `usage.percent` when present
@@ -326,7 +367,7 @@ lore_trigger_keys[], character_description, persona_description, force`.
 ### Gallery / cards
 | Route | Notes |
 |---|---|
-| `/v1/gallery?session_id=&limit=` | `{ items: Card[] }` |
+| `/v1/gallery?session_id=&limit=&hashes=` | `{ items: Card[], total, window_oldest_at }` — `items` is the newest `limit` cards **plus** every card whose `content_hash` is named in `hashes` (comma-separated or repeated), so a shot on an old message still ships. `total` is the session card count and `window_oldest_at` the oldest timestamp the window reached (`null` when it covered the session); a caller merging a window into a cache prunes against that edge |
 | `/v1/gallery/explore?limit=` | `{ folders[], items[] }` — folder rows use `key`, item rows use `folder_key` |
 | `/v1/gallery/favorites` · `POST` `{ids}` | explorer favourites |
 | `POST /v1/gallery/unlink` | `{session_id, content_hash, message_index}` |
@@ -334,8 +375,11 @@ lore_trigger_keys[], character_description, persona_description, force`.
 | `POST /v1/gallery/delete` | `{card_ids[]}` **or** `{folder_key}` |
 | `POST /v1/gallery/export` | `{all\|folder_key\|card_ids}` → `{ok, zip_base64, filename, count}` |
 | `POST /v1/gallery/import` | `{zip_base64, prefer_new_ids}` → `{ok, imported, report}` |
-| `POST /v1/cards/:id/tags` | `{main_prompt, negative_prompt, characters[]}` |
-| `POST /v1/cards/:id/reroll` | `{mode:"nai", overrides?}` → `{ok, card, replaced?}` |
+| `GET /v1/cards/:id/nai-prompt` | image NovelAI tags for the shot-tag form: `{ok, main_prompt, negative_prompt, characters[]}` — pixels of that one card |
+| `POST /v1/cards/:id/tags` | `{main_prompt, negative_prompt, characters[]}` — persist slim cast only; main/neg stay on the file |
+| `POST /v1/cards/:id/studio-generate` | assembled prompts → NAI replay bytes only (`{ok, image_data_url, seed}`). Does not replace the card |
+| `POST /v1/cards/:id/studio-commit` | center-canvas bytes + tags → same card id pixels + slim cast |
+| `POST /v1/cards/:id/reroll` | `{mode:"nai", overrides?}` → `{ok, card, replaced?}` — replay file sampler/size/base + new seed; keep file char captions; roster rebuild only when a slot prompt is empty. Comic never resolves names |
 | `POST /v1/messages/reroll` | `{session_id, content_hash, message_index}` |
 | `/v1/images/:id`, `/v1/images/:id.json` | raw bytes / placement sidecar |
 
@@ -394,6 +438,34 @@ then persisted.
 Text-chunk Description can fill positive without `uc`; extractor then keeps
 looking in stealth so file-open and paste both get the negative when it is
 still in the pixels.
+
+### Storage migration (2.4 → 2.5)
+One-time move of pre-2.5 gallery pixels into the Risu gallery module, plus the
+retention passes boot used to run on every start. Dashboard button
+`nx-migrate-legacy` (2.4 데이터 이전) starts it and polls status.
+
+| Route | Notes |
+|---|---|
+| `GET /v1/storage/migrate/status` | `{ok, migrated_version, pending_images, status}` |
+| `POST /v1/storage/migrate` | starts and returns immediately: `{ok, started, total, status}` |
+| `POST /v1/storage/migrate/cancel` | `{ok, cancelling}` — stops after the current batch |
+
+`status` is `{running, phase, done, total, failed, freed_bytes, error,
+finished_at, migrated_version}`; `phase` is one of `idle · images · cleanup ·
+purge · done · cancelled · error`. Polling every ~400 ms is enough — the engine
+commits one Risu DB write per 25 images.
+
+Deleting the originals is irreversible. It happens per image and only after the
+bytes have been read back out of the module, so `failed > 0` means those images
+kept their legacy rows. The completion stamp is written only when
+`failed === 0` and the run was not cancelled; until then boot keeps scanning and
+the button stays useful. Pressing it again resumes (a row that already has an
+asset path is not rescanned). `pending_images` is what the button badge shows.
+
+Legacy save-file keys (`nxstore_*`, `native_settings`, `nxref_image`,
+`nximg_*`) are only removed when the device store is IndexedDB — see
+`src/storage/device-store.ts`. On a host where `pluginStorage` *is* the device
+store those keys are the live data.
 
 ### Debug
 `/v1/debug`, `POST /v1/debug/clear` → `{ events[], by_stage{}, env{} }`

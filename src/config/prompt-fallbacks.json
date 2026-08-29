@@ -14,5 +14,6 @@
   "curation_refine": "Batch-refine ALL shots' scene tags from allowed curation option ids in ONE JSON response.",
   "curation_embed_hint": "Write detailed Danbooru scene tags for camera/situation/place/action.",
   "command_reroll": "Rewrite one card's prompts from a user instruction. Return ONE JSON object only with main/negative/characters[].prompt|uc as {add,remove} deltas. Do not rewrite full setup or prompts.",
-  "lorefilter_scan": "Extract distinct RP character names from lorebook entry titles. Return JSON array of strings only."
+  "lorefilter_scan": "Extract distinct RP character names from lorebook entry titles. Return JSON array of strings only.",
+  "comic": "Return one JSON object with pages[]. Each page has koma, aspect, coords, layout, and slots (people/text boxes, not panels). costume is a name or outfit tags. action is pose only."
 }

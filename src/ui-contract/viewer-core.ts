@@ -3100,7 +3100,7 @@ export function stickySegmentForInlineChat(opts: {
 // ── beta: chat-bubble inline images at newline lines ──────────────────────
 
 const INLAY_INLINE_ATTR = 'data-inlay-inline-shot';
-export const INLINE_FRAME_LAYOUT_VERSION = '5';
+export const INLINE_FRAME_LAYOUT_VERSION = '6';
 /**
  * Content hash of the bubble this marker was placed into.
  *
@@ -3495,13 +3495,25 @@ export function clampInlineChatScalePct(value: unknown): number {
   return Math.max(25, Math.min(200, n));
 }
 
-/** Img CSS for bubble illustrations at the given scale %. */
-export function inlineChatImgStyle(scalePct: unknown = 100): string {
-  const s = clampInlineChatScalePct(scalePct) / 100;
+/** Spinner is 10% larger than the dashboard illustration scale. */
+const INLINE_SPINNER_SCALE_BOOST = 1.1;
+
+function inlineChatBoxStyle(scalePct: unknown, boost: number): string {
+  const s = clampInlineChatScalePct(scalePct) / 100 * boost;
   const maxW = Math.min(100, Math.max(10, Math.round(78 * s)));
   const maxHVh = Math.max(10, Math.round(70 * s));
   const maxHPx = Math.max(120, Math.round(900 * s));
   return `width:auto;height:auto;max-width:min(${maxW}%,100%);max-height:min(${maxHVh}vh,${maxHPx}px);object-fit:contain;border-radius:8px;display:inline-block;vertical-align:top`;
+}
+
+/** Img CSS for bubble illustrations at the given scale %. */
+export function inlineChatImgStyle(scalePct: unknown = 100): string {
+  return inlineChatBoxStyle(scalePct, 1);
+}
+
+/** In-flow spinner — same caps as the photo, then +10%. */
+export function inlineChatSpinnerImgStyle(scalePct: unknown = 100): string {
+  return inlineChatBoxStyle(scalePct, INLINE_SPINNER_SCALE_BOOST);
 }
 
 /** Stack that keeps the spinner in flow and parks the photo on top. */
@@ -3821,7 +3833,7 @@ export function markerBlockHtml(
   // hit max-height first). Mobile narrow bubbles still shrink instead of clipping.
   // scalePct (dashboard) multiplies the 78%/70vh defaults.
   const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box';
-  const imgStyle = inlineChatImgStyle(scalePct);
+  const imgStyle = inlineChatSpinnerImgStyle(scalePct);
   const size = inlinePlaceholderSize(p);
   const sizeAttr = ` width="${size.width}" height="${size.height}"`;
   const placeholder = inlinePlaceholderSrc(p);

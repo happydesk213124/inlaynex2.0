@@ -341,7 +341,7 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   assert.match(out, /data-inlay-inline-shot="c2"/);
   assert.match(out, /<b>커피를 마셨다<\/b>/);
   assert.doesNotMatch(out, /data-inlay-inline-frame=/);
-  assert.match(out, /max-width:min\(78%,100%\)/);
+  assert.match(out, /max-width:min\(86%,100%\)/);
   // first coffee line is bold — marker for line 2 sits before <b>
   assert.match(out, /data-inlay-inline-shot="c1"[^>]*>[\s\S]*?<b>커피를 마셨다<\/b>/);
   // duplicate plain "커피를 마셨다" still gets line-3 marker (not string search of first)
@@ -372,7 +372,7 @@ test("markerBlockHtml parks a sized SVG and overlays the real image on top", () 
   assert.ok(pending.includes(`src="${placeholder}"`));
   assert.match(decodeURIComponent(placeholder), /width="1216"/);
   assert.match(decodeURIComponent(placeholder), /height="832"/);
-  assert.match(pending, /width:auto;height:auto;max-width:min\(78%,100%\)/);
+  assert.match(pending, /width:auto;height:auto;max-width:min\(86%,100%\)/);
   assert.match(pending, /position:absolute/);
   assert.match(pending, /opacity:0/);
   assert.match(pending, new RegExp(`data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}"`));
@@ -390,8 +390,8 @@ test("markerBlockHtml parks a sized SVG and overlays the real image on top", () 
   assert.ok(ready.includes(placeholder), "spinner stays under the photo so the box cannot collapse");
   assert.match(ready, /data:image\/png;base64,abc/);
   assert.match(ready, /opacity:1/);
-  assert.match(ready, /width:auto;height:auto;max-width:min\(78%,100%\)/);
-  assert.match(ready, /max-height:min\(70vh,900px\)/);
+  assert.match(ready, /width:auto;height:auto;max-width:min\(86%,100%\)/);
+  assert.match(ready, /max-height:min\(77vh,990px\)/);
   assert.doesNotMatch(ready, /data-inlay-inline-frame=/);
   assert.doesNotMatch(ready, /object-position:center top/);
   assert.doesNotMatch(ready, /data-inlay-inline-act=/);
@@ -402,8 +402,8 @@ test("markerBlockHtml parks a sized SVG and overlays the real image on top", () 
     shotIndex: 0,
     cardId: "c1",
   }, 50);
-  assert.match(scaled, /max-width:min\(39%,100%\)/);
-  assert.match(scaled, /max-height:min\(35vh,450px\)/);
+  assert.match(scaled, /max-width:min\(43%,100%\)/);
+  assert.match(scaled, /max-height:min\(39vh,495px\)/);
   const blobReady = markerBlockHtml({
     line: 2,
     src: "blob:https://host/abc",

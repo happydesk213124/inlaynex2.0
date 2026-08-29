@@ -9000,6 +9000,17 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           if (shot.src && !shot.pending && node && await patchShotSrc(node, shot.src)) {
             if (mark) mark.pending = !1;
           }
+          if (action.op === "fill" && node && id) {
+            try {
+              if (typeof node.setAttribute == "function") {
+                await node.setAttribute("data-inlay-inline-shot", id);
+                await node.setAttribute("x-inlay-inline-shot", id);
+                await node.setAttribute("data-inlay-inline-pending", "0");
+              }
+            } catch {
+            }
+            if (mark) mark.id = id, mark.pending = !1;
+          }
           if (id && node) shotNodes.set(id, node);
           placedHosts.add(hit.elementIndex);
           if (id) placedIds.add(id);
@@ -16062,6 +16073,9 @@ const loadVendorUi = (): string => {
     }
     if (out.includes('const wipeFirst = placements.length > 0')) {
       throw new Error('[build] live inject must not wipe existing shots');
+    }
+    if (!out.includes('action.op === "fill" && node && id') || !out.includes('setAttribute("data-inlay-inline-shot", id)')) {
+      throw new Error('[build] spinner-to-image fill must retarget the mounted marker id');
     }
     if (!out.includes('reconcileInlineShot') || !out.includes('desiredInlinePlacements')) {
       throw new Error('[build] live inject must reconcile desired vs live markers');

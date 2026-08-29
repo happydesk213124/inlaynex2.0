@@ -3443,11 +3443,13 @@ export function reconcileInlineShot(
     if (livePending) return { op: 'keep' };
     return { op: 'swap', placement: desired };
   }
+  if (livePending) {
+    // pending-* vs real card id: keep the spinner <img> and only change src.
+    // Swapping tears the box out and the bubble height collapses.
+    return { op: 'fill', placement: desired };
+  }
   if (liveId === wantId) {
-    // Same card, marker already mounted: the bytes belong in the <img> that is
-    // already there. Swapping would tear the node out and flash the bubble
-    // empty, which is the whole reason the spinner ships with an <img>.
-    return livePending ? { op: 'fill', placement: desired } : { op: 'keep' };
+    return { op: 'keep' };
   }
   return { op: 'swap', placement: desired };
 }
@@ -3810,18 +3812,20 @@ export function markerBlockHtml(
   // scalePct (dashboard) multiplies the 78%/70vh defaults.
   const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box';
   const imgStyle = inlineChatImgStyle(scalePct);
+  const size = inlinePlaceholderSize(p);
+  const sizeAttr = ` width="${size.width}" height="${size.height}"`;
   if (p.pending || !isReadyImageSrc(p.src)) {
     const placeholder = inlinePlaceholderSrc(p);
     return (
       `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-      + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(placeholder)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
+      + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(placeholder)}" alt=""${sizeAttr} style="${imgStyle}" loading="eager" decoding="sync"><br>`
       + `</div>`
     );
   }
   const embed = htmlSafeImageSrc(p.src);
   return (
     `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-    + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(embed)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
+    + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(embed)}" alt=""${sizeAttr} style="${imgStyle}" loading="eager" decoding="sync"><br>`
     + `</div>`
   );
 }

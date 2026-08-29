@@ -366,6 +366,7 @@ test("markerBlockHtml parks a sized SVG then swaps it for the real image", () =>
   });
   const placeholder = inlinePlaceholderSrc({ aspect: "landscape" });
   assert.match(pending, /data-inlay-inline-pending="1"/);
+  assert.match(pending, /<img[^>]*width="1216"[^>]*height="832"/);
   assert.ok(pending.includes(`src="${placeholder}"`));
   assert.match(decodeURIComponent(placeholder), /width="1216"/);
   assert.match(decodeURIComponent(placeholder), /height="832"/);
@@ -1388,8 +1389,12 @@ test("reconcileInlineShot pending replaces an old card marker", () => {
 
 test("reconcileInlineShot ready card replaces a spinner", () => {
   const ready = { line: 1, src: "data:image/png;base64,xx", cardId: "c3", pending: false };
-  assert.deepEqual(reconcileInlineShot(ready, { cardId: "pending-0", pending: true }), {
-    op: "swap",
+  assert.deepEqual(reconcileInlineShot(ready, {
+    cardId: "pending-0",
+    pending: true,
+    layoutVersion: INLINE_FRAME_LAYOUT_VERSION,
+  }), {
+    op: "fill",
     placement: ready,
   });
 });

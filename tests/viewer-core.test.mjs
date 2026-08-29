@@ -102,6 +102,7 @@ import {
   desiredInlinePlacements,
   runBoundedPool,
   canSkipInlineInject,
+  inlineAttachSucceeded,
   trackInlineEncodeAttempt,
   INLINE_ENCODE_RETRY_MAX,
   desiredInlinePaintKey,
@@ -1124,6 +1125,13 @@ test("a successful bake clears the miss count so a later eviction retries", () =
   assert.equal(trackInlineEncodeAttempt(attempts, "c1", true), false);
   assert.equal(attempts.has("c1"), false);
   assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), true);
+});
+
+test("attach is not done when cards exist but no img src landed", () => {
+  assert.equal(inlineAttachSucceeded({ wantCards: true, readyImgCount: 0 }), false);
+  assert.equal(inlineAttachSucceeded({ wantCards: true, readyImgCount: 1 }), true);
+  assert.equal(inlineAttachSucceeded({ wantCards: false, readyImgCount: 0 }), true);
+  assert.equal(inlineAttachSucceeded({ wantCards: true, readyImgCount: 0, skipHold: true }), false);
 });
 
 test("inject skip needs a live img src, not just leftover wrappers", () => {

@@ -8687,6 +8687,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
   // chat DOM, so the first paint can find nothing and there is no click coming
   // to try again. Retries are event-seeded and bounded — never a poll.
   const NX_ATTACH_BACKOFF = [200, 400, 800];
+  // Session hop waits for gallery/encode after the first chip-only paint.
+  // Event-seeded, not a poll — five gaps, ~5.4s worst case.
+  const NX_SESSION_ATTACH_BACKOFF = [200, 400, 800, 1500, 2500];
   // Session listing window. Wide enough for the viewer strip (8) plus the inline
   // window and normal browsing; older cards arrive by hash, not by raising this.
   const NX_GALLERY_WINDOW = 120;
@@ -8746,6 +8749,39 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const n = Number(res?.total);
     return Number.isFinite(n) ? n : 0;
   }
+  function nxAttachWaits(why) {
+    const w = String(why || "");
+    return w === "session" || w === "ledger" ? NX_SESSION_ATTACH_BACKOFF : NX_ATTACH_BACKOFF;
+  }
+  async function nxReadyInlineImgCount(el) {
+    if (!el || typeof el.querySelectorAll != "function") return 0;
+    const unwrap = async (arr) => {
+      if (!arr) return [];
+      if (typeof k.unwarpSafeArray == "function") {
+        try {
+          const u = await k.unwarpSafeArray(arr);
+          return Array.isArray(u) ? u : u ? [u] : [];
+        } catch {
+          return [];
+        }
+      }
+      return Array.isArray(arr) ? arr : [arr];
+    };
+    try {
+      const wraps = await unwrap(await el.querySelectorAll("[data-inlay-inline-shot]"));
+      let n = 0;
+      for (const wrap of wraps) {
+        if (!wrap || typeof wrap.querySelectorAll != "function") continue;
+        const imgs = await unwrap(await wrap.querySelectorAll("img"));
+        const img = imgs[0];
+        if (!img || typeof img.getAttribute != "function") continue;
+        if (nxReadyImg(String(await img.getAttribute("src") || ""))) n += 1;
+      }
+      return n;
+    } catch {
+      return 0;
+    }
+  }
   function nxResetAttachRetry() {
     t._inlineAttachTries = 0;
     if (t._inlineAttachTimer) {
@@ -8754,11 +8790,15 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
   }
   function nxScheduleAttachRetry(why) {
+    const waits = nxAttachWaits(why);
     const n = Number(t._inlineAttachTries || 0);
-    if (n >= NX_ATTACH_BACKOFF.length || t._inlineAttachTimer) return;
+    if (n >= waits.length || t._inlineAttachTimer) {
+      if (n >= waits.length) hideAttachToast({ done: 1 }).catch(() => {});
+      return;
+    }
     t._inlineAttachTries = n + 1;
-    const wait = NX_ATTACH_BACKOFF[n];
-    y("info", "inline.attach.retry", \`\${why} try=\${n + 1}/\${NX_ATTACH_BACKOFF.length} in=\${wait}ms\`);
+    const wait = waits[n];
+    y("info", "inline.attach.retry", \`\${why} try=\${n + 1}/\${waits.length} in=\${wait}ms\`);
     t._inlineAttachTimer = setTimeout(() => {
       t._inlineAttachTimer = null;
       // No force (keeps the cheap skip alive) and no rebind (no POST per retry).
@@ -9404,8 +9444,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       y("info", "inline.pass.ms", \`total=\${Date.now() - tPass} pre=\${msPre} paint=\${Date.now() - tPaint} bubbles=\${paintRows.length - reuseIdxs.size}/\${paintRows.length} DOM#\${selIdx}\`);
       t._inlinePaintedKeys = nextPaintedKeys;
       t._inlinePaintedCounts = nextPaintedCounts;
-      t._inlineAttachOk = 1;
-      hideAttachToast({ done: 1 }).catch(() => {});
+      const wantCards = !!(paintPlan && !paintPlan.skipInline && Array.isArray(paintPlan.cards) && paintPlan.cards.length);
+      const readyImgs = els[paintIdx] ? await nxReadyInlineImgCount(els[paintIdx]) : 0;
+      const attachOk = typeof VC?.inlineAttachSucceeded == "function"
+        ? VC.inlineAttachSucceeded({ wantCards, readyImgCount: readyImgs, skipHold: !!paintPlan?.skipInline })
+        : !paintPlan?.skipInline && (!wantCards || readyImgs > 0);
+      t._inlineAttachOk = attachOk ? 1 : 0;
+      if (attachOk) hideAttachToast({ done: 1 }).catch(() => {});
       try {
         if (typeof N?.clearWarmFocus == "function") N.clearWarmFocus();
       } catch {
@@ -15637,6 +15682,8 @@ const loadVendorUi = (): string => {
       assertOnce(out, 'if (Number(t._inlineInjectEncodeLeft) > 0) return;', 'unbaked bubble must not record a paint key');
       assertOnce(out, '&& !encodeLeftPrev', 'cheap keep skip must yield to encode debt');
       assertOnce(out, 't._inlineEncodeLeft = 0;', 'encode debt must reset once per pass');
+      assertOnce(out, 'const NX_SESSION_ATTACH_BACKOFF = [200, 400, 800, 1500, 2500];', 'session attach waits for a live img');
+      assertOnce(out, 'VC.inlineAttachSucceeded({', 'chip-only attach must not count as done');
       const applyByLine = body.indexOf('for (const [, shot] of byLine)');
       const bake = body.indexOf('ensureStickyCardImage');
       if (applyByLine < 0 || bake < 0 || applyByLine > bake) {

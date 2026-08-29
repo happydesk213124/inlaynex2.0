@@ -275,6 +275,8 @@ test('a spinner without bytes is retried instead of cached as painted', () => {
   const refresh = source.slice(end);
   assert.match(refresh, /if \(Number\(t\._inlineInjectEncodeLeft\) > 0\) return;/);
   assert.match(refresh, /&& !encodeLeftPrev/);
+  assert.match(refresh, /VC\.inlineAttachSucceeded\(\{/);
+  assert.match(refresh, /t\._inlineAttachOk = attachOk \? 1 : 0/);
   // Reset must land before the paint calls, or the debt of this pass is read as
   // the debt of the previous one.
   const reset = refresh.indexOf('t._inlineEncodeLeft = 0;');
@@ -459,11 +461,13 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   const bundle = read('dist', 'inlaynexus2.0.js');
   assert.doesNotMatch(bundle, /_inlineSelfOnly/);
   assert.match(bundle, /const NX_ATTACH_BACKOFF = \[200, 400, 800\];/);
+  assert.match(bundle, /const NX_SESSION_ATTACH_BACKOFF = \[200, 400, 800, 1500, 2500\];/);
   const retryStart = bundle.indexOf('function nxScheduleAttachRetry(why)');
   const retryEnd = bundle.indexOf('async function refreshSelectedInlineImages(force)', retryStart);
   assert.ok(retryStart >= 0 && retryEnd > retryStart, 'attach retry section not found');
   const retry = bundle.slice(retryStart, retryEnd);
-  assert.match(retry, /if \(n >= NX_ATTACH_BACKOFF\.length \|\| t\._inlineAttachTimer\) return;/);
+  assert.match(retry, /const waits = nxAttachWaits\(why\)/);
+  assert.match(retry, /if \(n >= waits\.length \|\| t\._inlineAttachTimer\)/);
   assert.match(retry, /t\._inlineNoRebind = 1;/);
   assert.match(retry, /refreshSelectedInlineImages\(\)\.then/);
   assert.doesNotMatch(retry, /refreshSelectedInlineImages\(!0\)/);

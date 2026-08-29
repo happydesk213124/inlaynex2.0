@@ -3155,6 +3155,20 @@ export function canSkipInlineInject(opts: {
   return want === 0 || ready === want;
 }
 
+/**
+ * First-pass attach is not done when chips landed on an empty shot slot.
+ * Session switch retries until this is true, or the bounded backoff runs out.
+ */
+export function inlineAttachSucceeded(opts: {
+  wantCards?: unknown;
+  readyImgCount?: unknown;
+  skipHold?: unknown;
+} = {}): boolean {
+  if (opts.skipHold) return false;
+  if (!opts.wantCards) return true;
+  return Math.max(0, Math.floor(finiteNumber(opts.readyImgCount, 0))) > 0;
+}
+
 export const INLINE_ENCODE_RETRY_MAX = 3;
 
 /**

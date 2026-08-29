@@ -14680,9 +14680,23 @@ ${Ye(250)}`;
       const patchShotSrc = async (wrap, src) => {
         if (!wrap || !src || !nxReadyImg(src)) return !1;
         try {
-          const photos = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-img]"));
-          const img = photos[0];
-          if (!img || typeof img.setAttribute != "function") return !1;
+          let photos = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-img]"));
+          let img = photos[0];
+          if (!img) {
+            // Keep-window evict removes only this layer. Recreate it on the
+            // still-mounted spinner instead of rebuilding the marker.
+            const stacks = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-stack]"));
+            const stack = stacks[0] || wrap;
+            const style = typeof VC.inlineChatOverlayImgStyle == "function" ? VC.inlineChatOverlayImgStyle(!0) : "";
+            const tmp = await H(doc, "div", {
+              html: '<img data-inlay-inline-img="1" alt="" style="' + style + '" loading="eager" decoding="sync">'
+            });
+            const kids = await unwrapSafe(typeof tmp?.getChildren == "function" ? await tmp.getChildren() : null);
+            img = kids[0];
+            if (!img || typeof stack.appendChild != "function") return !1;
+            await stack.appendChild(img);
+          }
+          if (typeof img.setAttribute != "function") return !1;
           await img.setAttribute("src", src);
           // Spinner stays in flow (holds height). Photo sits on top.
           if (typeof img.setStyleAttribute == "function" && typeof VC.inlineChatOverlayImgStyle == "function") {
@@ -15427,7 +15441,9 @@ ${Ye(250)}`;
         try {
           let nodes = [];
           try {
-            nodes = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-shot],[data-inlay-inline-pending],[x-inlay-msg-actions]"));
+            // Drop the photo bytes only. The marker, spinner and chip bar stay
+            // so the box cannot collapse while this bubble is outside the window.
+            nodes = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-img]"));
           } catch {
             nodes = [];
           }
@@ -15441,7 +15457,7 @@ ${Ye(250)}`;
         } catch {
         }
       };
-      // Diff strip only: drop markers leaving the keep window. Never wipe the
+      // Diff strip only: drop photos leaving the keep window. Never wipe the
       // whole chat when els.length grows (new user msg remounts last 6 bodies).
       //
       // Remembered by hash and element handle, never by DOM index. The chat is

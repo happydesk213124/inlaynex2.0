@@ -574,6 +574,7 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
     const injectTo = source.indexOf('async function refreshSelectedInlineImages(force) {', injectFrom);
     const inject = injectFrom >= 0 && injectTo > injectFrom ? source.slice(injectFrom, injectTo) : '';
     assert.match(inject, /querySelectorAll\("\[data-inlay-inline-img\]"\)/);
+    assert.match(inject, /querySelectorAll\("\[data-inlay-inline-stack\]"\)/);
     assert.match(inject, /VC\.inlineChatOverlayImgStyle\(!0\)/);
     assert.doesNotMatch(inject, /spin\.setStyleAttribute\("display:none"\)/);
     assert.doesNotMatch(inject, /typeof spin\.remove/);
@@ -584,6 +585,14 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
     const gone = goneFrom >= 0 && goneTo > goneFrom ? source.slice(goneFrom, goneTo) : '';
     assert.match(gone, /querySelectorAll\("\[data-inlay-inline-img\]"\)/);
     assert.doesNotMatch(gone, /querySelectorAll\("img"\)/);
+  }
+  {
+    const stripFrom = source.indexOf('const stripInlineMarkersIn = async (el) => {');
+    const stripTo = source.indexOf('// Diff strip only:', stripFrom);
+    const strip = stripFrom >= 0 && stripTo > stripFrom ? source.slice(stripFrom, stripTo) : '';
+    assert.match(strip, /querySelectorAll\("\[data-inlay-inline-img\]"\)/);
+    assert.doesNotMatch(strip, /data-inlay-inline-shot/);
+    assert.doesNotMatch(strip, /x-inlay-msg-actions/);
   }
   assert.match(source, /resolveInlinePaintCards\(\{ selIdx, paintIdx, selCards, paintCards \}\)/);
   assert.doesNotMatch(source, /injectChatInlineImages\(els\[paintIdx\], selCards,/);

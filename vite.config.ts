@@ -8793,9 +8793,23 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const patchShotSrc = async (wrap, src) => {
         if (!wrap || !src || !nxReadyImg(src)) return !1;
         try {
-          const photos = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-img]"));
-          const img = photos[0];
-          if (!img || typeof img.setAttribute != "function") return !1;
+          let photos = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-img]"));
+          let img = photos[0];
+          if (!img) {
+            // Keep-window evict removes only this layer. Recreate it on the
+            // still-mounted spinner instead of rebuilding the marker.
+            const stacks = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-stack]"));
+            const stack = stacks[0] || wrap;
+            const style = typeof VC.inlineChatOverlayImgStyle == "function" ? VC.inlineChatOverlayImgStyle(!0) : "";
+            const tmp = await H(doc, "div", {
+              html: '<img data-inlay-inline-img="1" alt="" style="' + style + '" loading="eager" decoding="sync">'
+            });
+            const kids = await unwrapSafe(typeof tmp?.getChildren == "function" ? await tmp.getChildren() : null);
+            img = kids[0];
+            if (!img || typeof stack.appendChild != "function") return !1;
+            await stack.appendChild(img);
+          }
+          if (typeof img.setAttribute != "function") return !1;
           await img.setAttribute("src", src);
           // Spinner stays in flow (holds height). Photo sits on top.
           if (typeof img.setStyleAttribute == "function" && typeof VC.inlineChatOverlayImgStyle == "function") {
@@ -9540,7 +9554,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         try {
           let nodes = [];
           try {
-            nodes = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-shot],[data-inlay-inline-pending],[x-inlay-msg-actions]"));
+            // Drop the photo bytes only. The marker, spinner and chip bar stay
+            // so the box cannot collapse while this bubble is outside the window.
+            nodes = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-img]"));
           } catch {
             nodes = [];
           }
@@ -9554,7 +9570,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         } catch {
         }
       };
-      // Diff strip only: drop markers leaving the keep window. Never wipe the
+      // Diff strip only: drop photos leaving the keep window. Never wipe the
       // whole chat when els.length grows (new user msg remounts last 6 bodies).
       //
       // Remembered by hash and element handle, never by DOM index. The chat is
@@ -15900,6 +15916,14 @@ const loadVendorUi = (): string => {
       if (!body.includes('querySelectorAll("[data-inlay-inline-img]")')) {
         throw new Error('[build] gone-check must read the photo layer, not the spinner');
       }
+      {
+        const stripFrom = body.indexOf('const stripInlineMarkersIn = async (el) => {');
+        const stripTo = body.indexOf('// Diff strip only:', stripFrom);
+        const strip = stripFrom >= 0 && stripTo > stripFrom ? body.slice(stripFrom, stripTo) : '';
+        if (!strip.includes('querySelectorAll("[data-inlay-inline-img]")') || strip.includes('data-inlay-inline-shot') || strip.includes('x-inlay-msg-actions')) {
+          throw new Error('[build] keep-window evict must drop the photo layer only');
+        }
+      }
     }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
     assertOnce(out, 'ensureScrollPhaseBus = () =>', 'scroll phase bus landed');
@@ -16167,6 +16191,9 @@ const loadVendorUi = (): string => {
       }
       if (!body.includes('querySelectorAll("[data-inlay-inline-img]")') || body.includes('spin.setStyleAttribute("display:none")')) {
         throw new Error('[build] ready image must overlay the spinner, not hide or replace it');
+      }
+      if (!body.includes('querySelectorAll("[data-inlay-inline-stack]")')) {
+        throw new Error('[build] an evicted photo must be recreated on the still-mounted spinner');
       }
       // A bubble repainted without dropping its watcher would keep filling nodes
       // that are no longer mounted, and the watcher would never be released.

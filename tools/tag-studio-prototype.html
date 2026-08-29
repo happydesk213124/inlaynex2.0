@@ -977,7 +977,12 @@ function assembleText() {
 function panelLlm() {
   const l = state.llm;
   return [
-    `<div class="sec"><div class="h" style="cursor:default"><span class="name">LLM 명령 프리셋</span></div>
+    `<div class="sec"><div class="h" style="cursor:default">
+      <span class="name">LLM 명령 프리셋</span>
+      <span class="grow"></span>
+      <button class="btn sm" data-act="llmExport" type="button">내보내기</button>
+      <button class="btn sm" data-act="llmImport" type="button">가져오기</button>
+    </div>
     <div class="c">
       ${optionBar({
         nameAttr: 'data-l="presetName"',
@@ -1514,6 +1519,50 @@ async function deleteLlmPreset() {
   renderPanel();
 }
 
+function exportLlmPresets() {
+  const list = namedPresets(LLM_PRESETS).map((p) => ({
+    name: p.name, cmd: p.cmd || "", cmdPost: p.cmdPost || "",
+  }));
+  if (!list.length) return toast("내보낼 명령 프리셋이 없습니다.");
+  const blob = new Blob([JSON.stringify({ kind: "inlay-llm-presets", presets: list }, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "llm-presets.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast(`${list.length}개 명령 프리셋을 내보냈습니다.`);
+}
+
+function importLlmPresets() {
+  const inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = "application/json,.json";
+  inp.addEventListener("change", async () => {
+    const f = inp.files?.[0];
+    if (!f) return;
+    let data;
+    try { data = JSON.parse(await f.text()); }
+    catch { return toast("JSON을 읽지 못했습니다."); }
+    const raw = Array.isArray(data) ? data : data?.presets;
+    if (!Array.isArray(raw)) return toast("명령 프리셋 목록이 없습니다.");
+    let n = 0;
+    raw.forEach((row) => {
+      const name = String(row?.name || "").trim();
+      if (!name) return;
+      const cmd = String(row.cmd || "");
+      const cmdPost = String(row.cmdPost || "");
+      const hit = namedPresets(LLM_PRESETS).find((p) => p.name === name);
+      if (hit) { hit.cmd = cmd; hit.cmdPost = cmdPost; }
+      else LLM_PRESETS.push({ id: nextId("l"), name, cmd, cmdPost });
+      n += 1;
+    });
+    if (!n) return toast("가져온 명령 프리셋이 없습니다.");
+    toast(`${n}개 명령 프리셋을 가져왔습니다.`);
+    renderPanel();
+  });
+  inp.click();
+}
+
 function saveChar() {
   const id = activeCharId();
   const c = state.chars[id];
@@ -1736,6 +1785,8 @@ function act(name) {
     case "llmRun": toast("도화지라서 LLM은 안 붙습니다. 칸 구조만 보세요."); break;
     case "llmSave": saveLlmPreset(); break;
     case "llmDel": void deleteLlmPreset(); break;
+    case "llmExport": exportLlmPresets(); break;
+    case "llmImport": importLlmPresets(); break;
     case "charSave": saveChar(); break;
     case "charDel": void deleteChar(); break;
     case "costumeSave": saveCostume(); break;

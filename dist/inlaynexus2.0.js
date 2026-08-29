@@ -8780,6 +8780,8 @@ ${Ye(250)}`;
   async function At() {
     // Flag first so La()/pin park while settings shell paints — do not await Ht here.
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
+    t._inspectGen = (t._inspectGen || 0) + 1;
+    if (typeof t.hideStickyInspect == "function") t.hideStickyInspect().catch(() => {});
     t.uiOpen = !0;
     // Re-open settings with whatever the viewer last selected.
     try {
@@ -8806,7 +8808,7 @@ ${Ye(250)}`;
       // One-shot hide only — no recurring DOM work while settings are open.
       const hide = "position:fixed;left:0;top:0;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden;";
       // Panel is position:fixed — must hide it too (root alone does not cover it).
-      for (const ui of [t.galleryUi?.root, t.galleryUi?.panel, t.overlayUi?.root, t.debugUi?.root, t.overlayUi?.pinned, t.overlayUi?.preview, t.overlayUi?.fullscreen]) {
+      for (const ui of [t.galleryUi?.root, t.galleryUi?.panel, t.overlayUi?.root, t.debugUi?.root, t.overlayUi?.pinned, t.overlayUi?.preview, t.overlayUi?.fullscreen, t.overlayUi?.actionMenu]) {
         if (ui && typeof ui.setStyleAttribute == "function") ui.setStyleAttribute(hide).catch(() => {
         });
       }
@@ -8833,6 +8835,7 @@ ${Ye(250)}`;
     Promise.resolve().then(() => {
       hideFloatingViewerForModal().catch(() => {});
       Ht().catch(() => {});
+      if (typeof t.hideStickyInspect == "function") t.hideStickyInspect().catch(() => {});
     });
     try {
       window.focus?.();
@@ -17327,8 +17330,11 @@ ${Ye(250)}`;
       // pointer-events:none when hidden — inset:0 + auto was able to steal viewer chip clicks.
       actionCard = null, inspectZones = [], inspectSheetEl = null, await actionMenu.setStyleAttribute("position:fixed;inset:0;display:none;z-index:100002;pointer-events:none;");
     }, hideInspect = async () => {
+      t._inspectGen = (t._inspectGen || 0) + 1;
       inspectOpen = !1, pendingSheetHit = null, await hideActionMenu(), await hideFullscreen();
-    }, hidePressFill = async () => {
+    };
+    t.hideStickyInspect = hideInspect;
+    const hidePressFill = async () => {
       // Don't clear InnerHTML — recreating via SafeDOM every press was a hitch source.
       try {
         await pressFill.setStyleAttribute("position:fixed;display:none;z-index:99973;pointer-events:none;");
@@ -17377,10 +17383,13 @@ ${Ye(250)}`;
       });
       return btn;
     }, showStickyInspect = async (f) => {
-      if (!f) return;
+      if (!f || t.uiOpen) return;
+      const inspectGen = (t._inspectGen = (t._inspectGen || 0) + 1);
       await hidePressFill();
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
       actionCard = f, inspectOpen = !0, pendingSheetHit = null, inspectGuardUntil = Date.now() + 400, inspectZones = [], inspectSheetEl = null;
       await showFullscreen(f);
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
       try {
         await actionMenu.setInnerHTML("");
       } catch {
@@ -17404,7 +17413,9 @@ ${Ye(250)}`;
       await sheet.appendChild(chipRow), await sheet.appendChild(actRow), await sheet.appendChild(closeRow);
       await actionMenu.appendChild(sheet);
       inspectSheetEl = sheet;
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
       await actionMenu.setStyleAttribute("position:fixed;inset:0;display:flex;z-index:100002;pointer-events:auto;background:transparent;align-items:flex-end;justify-content:center;padding:max(12px,env(safe-area-inset-bottom)) 12px 18px;box-sizing:border-box;");
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
     }, findActHit = async (x, I) => {
       for (const z of inspectZones) {
         if (!z?.el) continue;

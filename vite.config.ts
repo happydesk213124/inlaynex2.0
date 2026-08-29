@@ -5573,6 +5573,8 @@ const VENDOR_SETTINGS_OPEN_STICKY_NEEDLE = `  async function At() {
 const VENDOR_SETTINGS_OPEN_STICKY_PATCH = `  async function At() {
     // Flag first so La()/pin park while settings shell paints — do not await Ht here.
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
+    t._inspectGen = (t._inspectGen || 0) + 1;
+    if (typeof t.hideStickyInspect == "function") t.hideStickyInspect().catch(() => {});
     t.uiOpen = !0;
     // Re-open settings with whatever the viewer last selected.`;
 
@@ -5602,7 +5604,7 @@ const VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE = `      const hide = "position:fixed
     typeof k.showContainer == "function" && await k.showContainer("fullscreen");`;
 const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH = `      const hide = "position:fixed;left:0;top:0;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden;";
       // Panel is position:fixed — must hide it too (root alone does not cover it).
-      for (const ui of [t.galleryUi?.root, t.galleryUi?.panel, t.overlayUi?.root, t.debugUi?.root, t.overlayUi?.pinned, t.overlayUi?.preview, t.overlayUi?.fullscreen]) {
+      for (const ui of [t.galleryUi?.root, t.galleryUi?.panel, t.overlayUi?.root, t.debugUi?.root, t.overlayUi?.pinned, t.overlayUi?.preview, t.overlayUi?.fullscreen, t.overlayUi?.actionMenu]) {
         if (ui && typeof ui.setStyleAttribute == "function") ui.setStyleAttribute(hide).catch(() => {
         });
       }
@@ -5629,7 +5631,51 @@ const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH = `      const hide = "position:fixed;
     Promise.resolve().then(() => {
       hideFloatingViewerForModal().catch(() => {});
       Ht().catch(() => {});
+      if (typeof t.hideStickyInspect == "function") t.hideStickyInspect().catch(() => {});
     });`;
+
+/** Expose inspect close on t so At() can force-dismiss the enlarge sheet. */
+const VENDOR_HIDE_INSPECT_BIND_NEEDLE = `    }, hideInspect = async () => {
+      inspectOpen = !1, pendingSheetHit = null, await hideActionMenu(), await hideFullscreen();
+    }, hidePressFill = async () => {`;
+const VENDOR_HIDE_INSPECT_BIND_PATCH = `    }, hideInspect = async () => {
+      t._inspectGen = (t._inspectGen || 0) + 1;
+      inspectOpen = !1, pendingSheetHit = null, await hideActionMenu(), await hideFullscreen();
+    };
+    t.hideStickyInspect = hideInspect;
+    const hidePressFill = async () => {`;
+
+/** In-flight enlarge sheet must not finish after settings already opened. */
+const VENDOR_SHOW_INSPECT_ABORT_NEEDLE = `    }, showStickyInspect = async (f) => {
+      if (!f) return;
+      await hidePressFill();
+      actionCard = f, inspectOpen = !0, pendingSheetHit = null, inspectGuardUntil = Date.now() + 400, inspectZones = [], inspectSheetEl = null;
+      await showFullscreen(f);
+      try {
+        await actionMenu.setInnerHTML("");
+      } catch {
+      }`;
+const VENDOR_SHOW_INSPECT_ABORT_PATCH = `    }, showStickyInspect = async (f) => {
+      if (!f || t.uiOpen) return;
+      const inspectGen = (t._inspectGen = (t._inspectGen || 0) + 1);
+      await hidePressFill();
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
+      actionCard = f, inspectOpen = !0, pendingSheetHit = null, inspectGuardUntil = Date.now() + 400, inspectZones = [], inspectSheetEl = null;
+      await showFullscreen(f);
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
+      try {
+        await actionMenu.setInnerHTML("");
+      } catch {
+      }`;
+
+const VENDOR_SHOW_INSPECT_COMMIT_NEEDLE = `      inspectSheetEl = sheet;
+      await actionMenu.setStyleAttribute("position:fixed;inset:0;display:flex;z-index:100002;pointer-events:auto;background:transparent;align-items:flex-end;justify-content:center;padding:max(12px,env(safe-area-inset-bottom)) 12px 18px;box-sizing:border-box;");
+    }, findActHit = async (x, I) => {`;
+const VENDOR_SHOW_INSPECT_COMMIT_PATCH = `      inspectSheetEl = sheet;
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
+      await actionMenu.setStyleAttribute("position:fixed;inset:0;display:flex;z-index:100002;pointer-events:auto;background:transparent;align-items:flex-end;justify-content:center;padding:max(12px,env(safe-area-inset-bottom)) 12px 18px;box-sizing:border-box;");
+      if (t._inspectGen !== inspectGen || t.uiOpen) return hideInspect();
+    }, findActHit = async (x, I) => {`;
 
 /** Settings close (nx-close): hide first, flush in background; restore viewer; no duplicate he/Ce after it(). */
 const VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE = `    document.getElementById("nx-close")?.addEventListener("click", async () => {
@@ -14926,6 +14972,9 @@ const loadVendorUi = (): string => {
     [VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, 'char save close before POST'],
     [VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, 'settings open sticky hide'],
     [VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, 'settings At hide panel + rehide'],
+    [VENDOR_HIDE_INSPECT_BIND_NEEDLE, 'hideInspect bind on t'],
+    [VENDOR_SHOW_INSPECT_ABORT_NEEDLE, 'showStickyInspect abort start'],
+    [VENDOR_SHOW_INSPECT_COMMIT_NEEDLE, 'showStickyInspect abort commit'],
     [VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, 'settings close sticky restore'],
     [VENDOR_BLOCK_HOST_UNBLOCK_NEEDLE, 'blockHostChrome unblock style-only'],
     [VENDOR_SANGSI_TOGGLE_NEEDLE, 'viewer 상시 optimistic toggle'],
@@ -15326,6 +15375,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, VENDOR_CHAR_SAVE_CLOSE_FIRST_PATCH)
     .replace(VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, VENDOR_SETTINGS_OPEN_STICKY_PATCH)
     .replace(VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH)
+    .replace(VENDOR_HIDE_INSPECT_BIND_NEEDLE, VENDOR_HIDE_INSPECT_BIND_PATCH)
+    .replace(VENDOR_SHOW_INSPECT_ABORT_NEEDLE, VENDOR_SHOW_INSPECT_ABORT_PATCH)
+    .replace(VENDOR_SHOW_INSPECT_COMMIT_NEEDLE, VENDOR_SHOW_INSPECT_COMMIT_PATCH)
     .replace(VENDOR_SETTINGS_CLOSE_STICKY_NEEDLE, VENDOR_SETTINGS_CLOSE_STICKY_PATCH)
     .replace(VENDOR_BLOCK_HOST_UNBLOCK_NEEDLE, VENDOR_BLOCK_HOST_UNBLOCK_PATCH)
     .replace(VENDOR_SANGSI_TOGGLE_NEEDLE, VENDOR_SANGSI_TOGGLE_PATCH)
@@ -15632,6 +15684,9 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'const pw = Math.max(1, Math.round(Number(pin.w || pin.size) || 0));', 'sticky expand hit uses cluster width');
     assertOnce(out, '"opacity:.45", "background:rgba(15,23,42,.2)"', 'sticky count badges stay translucent over the image');
     assertOnce(out, 'if (dbl && card && typeof showStickyInspect == "function") {', 'count-chip double-click opens inspect');
+    assertOnce(out, 't.hideStickyInspect = hideInspect;', 'inspect close is exposed for settings');
+    assertOnce(out, 'if (!f || t.uiOpen) return;', 'inspect refuses to open while settings are up');
+    assertOnce(out, 't.overlayUi?.actionMenu]) {', 'settings hide also covers inspect actionMenu');
     assertOnce(out, 'openedInspect: !0', 'count-chip inspect fires on the second pointerdown');
     assertOnce(out, 'if (ov && ov._stickyThumbCollapsed) {', 'count-chip single tap only expands when folded');
     assertOnce(out, 'const stickyPins = t.overlayUi?.markers || [];', 'count-chip / pin hit is tested before the sticky image');

@@ -390,7 +390,7 @@ test("markerBlockHtml parks a sized SVG and overlays the real image on top", () 
   assert.ok(ready.includes(placeholder), "spinner stays under the photo so the box cannot collapse");
   assert.match(ready, /data:image\/png;base64,abc/);
   assert.match(ready, /opacity:1/);
-  assert.match(ready, /left:50%;top:50%;width:90%;height:90%;transform:translate\(-50%,-50%\)/);
+  assert.match(ready, /left:50%;top:45\.7%;width:90%;height:90%;transform:translate\(-50%,-50%\)/);
   assert.match(ready, /width:auto;height:auto;max-width:min\(86%,100%\)/);
   assert.match(ready, /max-height:min\(77vh,990px\)/);
   assert.doesNotMatch(ready, /data-inlay-inline-frame=/);

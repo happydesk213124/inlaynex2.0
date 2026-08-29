@@ -123,19 +123,24 @@
     background: var(--panel-2);
   }
   .tabrow { display: flex; align-items: stretch; min-height: 32px; }
-  .tabrow + .tabrow { border-top: 1px solid var(--line); }
-  .tabscroll { display: flex; overflow-x: auto; scrollbar-width: none; }
+  .tabscroll { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
   .tabscroll::-webkit-scrollbar { display: none; }
   .tab {
-    height: 32px; padding: 0 10px;
+    height: 32px; padding: 0 7px;
+    max-width: 72px;
     border: 0; border-right: 1px solid var(--line);
     background: transparent; color: var(--muted);
-    display: flex; align-items: center; gap: 6px; white-space: nowrap;
+    display: flex; align-items: center; gap: 4px;
+    flex: 0 0 auto; min-width: 0;
+  }
+  .tab .lab {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .tab.on { background: var(--panel); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
-  .tab .x { color: #7c8095; font-size: 14px; line-height: 1; padding: 0 1px; }
+  .tab .x { color: #7c8095; font-size: 14px; line-height: 1; padding: 0 1px; flex: 0 0 auto; }
   .tab .x:hover { color: #ff9db1; }
-  .tabrow .pick { flex: 1; min-width: 96px; padding: 3px 6px; }
+  .tabrow .pick { flex: 0 0 86px; min-width: 86px; padding: 3px 6px; }
   .tabrow .pick select { height: 26px; padding: 0 6px; font-size: 12px; }
   .tabadd {
     width: 34px; border: 0; border-left: 1px solid var(--line);
@@ -471,10 +476,7 @@
       <button class="foldbar" id="leftFold" type="button">▼</button>
       <div class="tabs">
         <div class="tabrow">
-          <div class="tabscroll" id="tabsFixed"></div>
-        </div>
-        <div class="tabrow">
-          <div class="tabscroll" id="tabsChar"></div>
+          <div class="tabscroll" id="tabsBar"></div>
           <div class="pick">
             <select id="charPick"></select>
           </div>
@@ -1060,7 +1062,7 @@ function panelChar(tabId) {
         <label class="k">x<input type="number" step="0.05" min="0" max="1" data-c="x" data-tab="${tabId}" value="${c.x.toFixed(2)}"/></label>
         <label class="k">y<input type="number" step="0.05" min="0" max="1" data-c="y" data-tab="${tabId}" value="${c.y.toFixed(2)}"/></label>
       </div>
-      <p class="hint">${state.coordVisible ? "그림 위 C1 C2 C3를 끌어서 옮겨도 됩니다." : "점·격자는 숨겼습니다. 숫자는 그대로 생성에 넣습니다."}</p>`),
+      <p class="hint">${state.coordVisible ? "그림 위 C1~C6를 끌어서 옮겨도 됩니다." : "점·격자는 숨겼습니다. 숫자는 그대로 생성에 넣습니다."}</p>`),
 
     sec(`gs-${tabId}`, `<span class="name">설정</span>`, genSettings()),
   ].join("");
@@ -1069,12 +1071,14 @@ function panelChar(tabId) {
 function chip(t, on) { return `<span class="chip ${on ? "on" : ""}">${esc(t)}</span>`; }
 
 function renderTabs() {
-  $("#tabsFixed").innerHTML = state.tabs.filter((t) => t.kind !== "char")
-    .map((t) => `<button class="tab ${state.active === t.id ? "on" : ""}" data-tab="${t.id}" type="button">${esc(t.label)}</button>`).join("");
-  $("#tabsChar").innerHTML = state.tabs.filter((t) => t.kind === "char")
-    .map((t) => `<button class="tab ${state.active === t.id ? "on" : ""}" data-tab="${t.id}" type="button">
-        <span>${esc(t.label)}</span><span class="x" data-del="${t.id}">×</span>
-      </button>`).join("");
+  $("#tabsBar").innerHTML = state.tabs.map((t) => {
+    const on = state.active === t.id ? "on" : "";
+    const lab = `<span class="lab">${esc(t.label)}</span>`;
+    if (t.kind !== "char") {
+      return `<button class="tab ${on}" data-tab="${t.id}" type="button" title="${esc(t.label)}">${lab}</button>`;
+    }
+    return `<button class="tab ${on}" data-tab="${t.id}" type="button" title="${esc(t.label)}">${lab}<span class="x" data-del="${t.id}">×</span></button>`;
+  }).join("");
   $("#charPick").innerHTML = opts([["", "캐릭터 고르기"], ...ROSTER.filter((r) => r.id).map((r) => [r.id, r.name])], "");
 }
 
@@ -1350,10 +1354,14 @@ function fakeImage() {
   charList().forEach((ch) => {
     const x = (state.coordMode === "ai" ? 0.5 : ch.x) * w;
     const y = (state.coordMode === "ai" ? 0.5 : ch.y) * h;
+    const r = Math.min(w, h) * 0.11;
     c.fillStyle = "rgba(255,255,255,.16)";
     c.beginPath();
-    c.arc(x, y, Math.min(w, h) * 0.16, 0, Math.PI * 2);
+    c.arc(x, y, r, 0, Math.PI * 2);
     c.fill();
+    c.fillStyle = "rgba(255,255,255,.9)";
+    c.font = `700 ${Math.max(14, Math.floor(w / 28))}px sans-serif`;
+    c.fillText(`C${ch.i + 1}`, x, y + w / 80);
   });
   c.fillStyle = "rgba(255,255,255,.85)";
   c.textAlign = "center";
@@ -1687,7 +1695,7 @@ function act(name) {
       if (state.coordMode !== "manual") {
         state.coordMode = "manual";
         state.coordVisible = true;
-        toast("좌표보기. C1 C2 C3를 끌어서 옮기세요.");
+        toast("좌표보기. C1~C6를 끌어서 옮기세요.");
       } else {
         state.coordVisible = !state.coordVisible;
         toast(state.coordVisible ? "좌표·격자를 다시 보여 줍니다." : "좌표·격자만 숨겼습니다. 생성에는 그대로 넣습니다.");
@@ -1891,18 +1899,21 @@ function relabel() {
   });
 }
 
+const CHAR_SLOTS = [[0.3, 0.5], [0.7, 0.5], [0.5, 0.28], [0.22, 0.78], [0.78, 0.78], [0.5, 0.55]];
+
 function addCharTab(rosterId) {
   if (charList().length >= 6) return toast("캐릭터 칸은 6개까지");
   const id = nextId("c");
   const r = roster(rosterId);
   const firstCos = r?.costumes?.find((x) => x.name);
+  const slot = CHAR_SLOTS[charList().length] || [0.5, 0.5];
   state.chars[id] = {
     rosterId: rosterId || "", lookId: "", costume: firstCos?.name || "",
     charName: r?.name || "",
     costumeName: firstCos?.name || "",
     costumeTags: firstCos?.attire || "",
     tags: r?.appearance || "", post: "", uc: "",
-    x: 0.5, y: 0.5, auto: true, lock: false,
+    x: slot[0], y: slot[1], auto: true, lock: false,
   };
   state.tabs.push({ id, kind: "char", label: "" });
   relabel();

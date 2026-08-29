@@ -27,7 +27,8 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 | `vibePreviewUrl` | `() => string` | Vibe-image preview `src` |
 | `VERSION` | `string` | Not read by the UI; kept for diagnostics |
 | `debug` / `clearDebug` | `() => any` | Not read by the UI |
-| `openTagStudio` | `(card) => Promise<void>` | Shot-tag 도화지. Added; frozen UI calls it via an asserted `openCardTagEdit` hook |
+| `openTagStudio` | `(card) => Promise<void>` | Shot-tag 도화지. Overlay only — `openCardTagEdit` owns `showContainer` / `hideContainer` like the old modal |
+| `closeTagStudio` | `() => void` | Dismiss the overlay. `closeCardTagEdit` calls this so the container pair still closes |
 
 > **Image URLs must be `data:image/...`.** The UI passes them through DOMPurify,
 > which strips `blob:`. SafeElement `setAttribute` only allows `x-*` names, so

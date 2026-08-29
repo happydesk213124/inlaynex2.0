@@ -4982,7 +4982,28 @@ const VENDOR_STICKY_OPEN_CARD_NEEDLE = `  async function openCardTagEdit(e) {
 const VENDOR_STICKY_OPEN_CARD_PATCH = `  async function openCardTagEdit(e) {
     if (!e?.id) return;
     if (typeof globalThis.__INLAY_NATIVE__?.openTagStudio == "function") {
-      return globalThis.__INLAY_NATIVE__.openTagStudio(e);
+      if (typeof document > "u" || !document.body) {
+        y("error", "card.tags.open", "plugin document unavailable");
+        return;
+      }
+      t._editOpenGen = (t._editOpenGen || 0) + 1;
+      const studioGen = t._editOpenGen;
+      await closeCharacterCreateModal().catch(() => null);
+      await closeCardTagEdit();
+      if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
+      const openedShell = !t.uiOpen;
+      if (openedShell && typeof k.showContainer == "function") {
+        await k.showContainer("fullscreen");
+        document.body.style.cssText = "margin:0;min-height:100vh;background:transparent;font:13px/1.45 Segoe UI,sans-serif;color:#e2e8f0;";
+      }
+      t.cardTagUi = { openedContainer: openedShell, _studio: !0 };
+      await hideFloatingViewerForModal();
+      try {
+        await globalThis.__INLAY_NATIVE__.openTagStudio(e);
+      } finally {
+        if (studioGen === t._editOpenGen) await closeCardTagEdit();
+      }
+      return;
     }
     if (typeof document > "u" || !document.body) {
       y("error", "card.tags.open", "plugin document unavailable");
@@ -5378,10 +5399,20 @@ const VENDOR_STICKY_CLOSE_CARD_NEEDLE = `  async function closeCardTagEdit() {
   }`;
 
 const VENDOR_STICKY_CLOSE_CARD_PATCH = `  async function closeCardTagEdit() {
+    if (t._closingCardTag) return;
+    t._closingCardTag = !0;
+    try {
     const e = t.cardTagUi, n = e?.root || (typeof document < "u" ? document.getElementById("nx-card-tag-modal") : null);
     try {
       n?.remove?.();
     } catch {
+    }
+    try {
+      document.getElementById("nx-tag-studio")?.remove?.();
+    } catch {
+    }
+    if (e?._studio && typeof globalThis.__INLAY_NATIVE__?.closeTagStudio == "function") {
+      globalThis.__INLAY_NATIVE__.closeTagStudio();
     }
     const o = !!e?.openedContainer;
     t.cardTagUi = null;
@@ -5390,6 +5421,9 @@ const VENDOR_STICKY_CLOSE_CARD_PATCH = `  async function closeCardTagEdit() {
     if (!t.charEditUi && !t.uiOpen) {
       void restoreFloatingViewerAfterModal();
       void Ht();
+    }
+    } finally {
+      t._closingCardTag = !1;
     }
   }`;
 
@@ -15796,6 +15830,9 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'char-looks-row" style="margin-top:8px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px"', 'char edit looks row is one line without settings CSS');
     assertOnce(out, '캐릭터 태그 수정</div><div style="margin-top:3px;color:#9aa6b8;font-size:11px">불러오는 중…', 'char edit stub uses real modal chrome');
     assertOnce(out, '샷 태그 수정</div><div style="margin-top:3px;color:#9aa6b8;font-size:11px">불러오는 중…', 'shot tag stub uses real modal chrome');
+    assertOnce(out, 't.cardTagUi = { openedContainer: openedShell, _studio: !0 }', 'studio reuses the old shot-tag container');
+    assertOnce(out, 'await globalThis.__INLAY_NATIVE__.openTagStudio(e);', 'studio overlay waits for close then hideContainer');
+    assertOnce(out, 't._closingCardTag = !0;', 'card-tag close is re-entry safe');
     assertOnce(out, 'const dismissCharStub = () => {', 'char edit stub can close while loading');
     assertOnce(out, 'if (!f || t.uiOpen) return;', 'inspect refuses to open while settings are up');
     assertOnce(out, 't.overlayUi?.actionMenu]) {', 'settings hide also covers inspect actionMenu');

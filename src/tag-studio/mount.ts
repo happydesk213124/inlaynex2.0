@@ -1,4 +1,3 @@
-import { risuHost } from '../core/host.ts';
 import { cleanText } from '../core/util/text.ts';
 import { composeCharacterCaptionTags } from '../domain/character/tags.ts';
 import { resolveCharacter } from '../domain/character/roster.ts';
@@ -60,6 +59,10 @@ type CostumeRow = { name: string; attire: string; note: string; accessories: str
 type NativeImg = { ensureImageUrl?: (id: string) => Promise<string> };
 
 let activeClose: (() => void) | null = null;
+
+export function closeTagStudio(): void {
+  if (activeClose) activeClose();
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -221,11 +224,6 @@ export async function openTagStudio(card: unknown): Promise<void> {
   const sessionId = cleanText(rec.session_id, 200);
   const characterId = cleanText(rec.character_id, 200);
   const fallbackUrl = cleanText(rec.image_url, 2_000_000);
-
-  const host = risuHost();
-  if (typeof host?.showContainer === 'function') {
-    void host.showContainer('fullscreen');
-  }
 
   const root = document.createElement('div');
   root.id = 'nx-tag-studio';

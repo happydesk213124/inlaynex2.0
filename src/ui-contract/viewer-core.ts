@@ -1949,8 +1949,8 @@ export interface StickyV2PinBox {
 }
 
 /**
- * ▲N | expand | ▼N in one row. The expand pin is transparent and oversized so
- * either count badge is still a hit — badges themselves do not take pointers.
+ * ▲N | expand | ▼N in one row. The pin is a transparent hit over both chips:
+ * one click expands, two opens inspect. Badges do not take pointers.
  */
 export function stickyV2CountCluster(cx: unknown, cy: unknown, pinSize: unknown): {
   pin: StickyV2PinBox;

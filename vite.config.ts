@@ -4544,28 +4544,12 @@ const VENDOR_STICKY_CLICK_NEEDLE = `      if (fPress.source === "sticky-thumb") 
 const VENDOR_STICKY_CLICK_PATCH = `      if (fPress.source === "sticky-thumb") {
         await hidePressFill();
         const ov = t.overlayUi;
-        const now = Date.now();
-        const id = String(fPress.card?.id || "");
-        const prev = t._stickyThumbTap;
-        const expanded = !ov?._stickyThumbCollapsed;
-        const dbl = !!(expanded && prev && prev.id === id && now - Number(prev.at || 0) < 400);
-        t._stickyThumbTap = { id, at: now };
-        if (t._stickyThumbHideTimer) {
-          clearTimeout(t._stickyThumbHideTimer);
-          t._stickyThumbHideTimer = null;
+        if (ov) ov._stickyThumbCollapsed = !0;
+        try {
+          await Ht();
+        } catch {
         }
-        // Expanded + two clicks on the active sticky image → 크게보기, not fold.
-        if (dbl && fPress.card && typeof showStickyInspect == "function") {
-          t._stickyThumbTap = null;
-          showStickyInspect(fPress.card).catch(() => {});
-          return;
-        }
-        t._stickyThumbHideTimer = setTimeout(() => {
-          t._stickyThumbHideTimer = null;
-          if (ov) ov._stickyThumbCollapsed = !ov._stickyThumbCollapsed;
-          Ht().catch(() => {});
-          y("info", ov?._stickyThumbCollapsed ? "sticky.thumb.hide" : "sticky.thumb.show", id.slice(0, 8));
-        }, 280);
+        y("info", "sticky.thumb.hide", String(fPress.card?.id || "").slice(0, 8));
         return;
       }
       if (fPress.source === "inline-shot") {
@@ -4573,7 +4557,18 @@ const VENDOR_STICKY_CLICK_PATCH = `      if (fPress.source === "sticky-thumb") {
         return;
       }
       if (fPress.source === "sticky-pin") {
+        await hidePressFill();
         const ov = t.overlayUi;
+        const now = Date.now();
+        const prev = t._stickyPinTap;
+        const dbl = !!(prev && now - Number(prev.at || 0) < 400);
+        t._stickyPinTap = { at: now };
+        const card = fPress.card || (ov?.markers || []).find((m) => m?.active)?.card;
+        if (dbl && card && typeof showStickyInspect == "function") {
+          t._stickyPinTap = null;
+          showStickyInspect(card).catch(() => {});
+          return;
+        }
         if (ov) ov._stickyThumbCollapsed = !1;
         try {
           await Ht();
@@ -4754,8 +4749,29 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
         } catch {
         }
       }
-      // Sticky always-image: short-tap hide / long-press fullscreen+sheet.
-      if (Nt() && !inspectOpen) {`;
+      // Sticky always-image: pin/chips expand or inspect; the image only folds.
+      if (Nt() && !inspectOpen) {
+        const stickyPins = t.overlayUi?.markers || [];
+        for (const g of stickyPins) {
+          if (!g?.el || typeof hitEl != "function" || !await hitEl(g.el, x, I)) continue;
+          if (mobilePress) {
+            cancelMobilePress();
+            return;
+          }
+          mobilePress = {
+            x,
+            y: I,
+            card: g.card,
+            source: "sticky-pin",
+            pointerId: f.pointerId,
+            long: !1,
+            timer: null
+          };
+          pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
+          return;
+        }
+
+`;
 
 const VENDOR_STICKY_INSPECT_PRESS_NEEDLE =
   `          if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;
@@ -4786,15 +4802,7 @@ const VENDOR_STICKY_INSPECT_PRESS_NEEDLE =
 const VENDOR_STICKY_INSPECT_PRESS_PATCH =
   `          if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;
           if (!await hitEl(g.thumb, x, I)) continue;
-          if (nxFireTap(g.card)) return;
-          nxNotePressDown();
-          if (mobilePress && (mobilePress.source === "inline-shot" || mobilePress.source === "sticky-thumb")) {
-            if (typeof f.preventDefault == "function") f.preventDefault();
-            if (nxInspectAllowed()) showPressFill(g.thumb, x, I).catch(() => {
-            });
-            nxArmInspect(mobilePress);
-            return;
-          }
+          // Image surface: one tap folds to 0. Hold / double / triple never inspect here.
           if (mobilePress) {
             cancelMobilePress();
             return;
@@ -4809,10 +4817,8 @@ const VENDOR_STICKY_INSPECT_PRESS_PATCH =
             timer: null,
             thumb: g.thumb
           };
-          if (nxInspectAllowed()) showPressFill(g.thumb, x, I).catch(() => {
-          });
-          nxArmInspect(F);
           mobilePress = F;
+          pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
           return;`;
 
 const VENDOR_MSG_CHIP_UP_NEEDLE =
@@ -15588,7 +15594,11 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'async function nxActivateStickyByCardId', 'nx sticky by cardId landed');
     assertOnce(out, 'const pw = Math.max(1, Math.round(Number(pin.w || pin.size) || 0));', 'sticky expand hit uses cluster width');
     assertOnce(out, '"opacity:.45", "background:rgba(15,23,42,.2)"', 'sticky count badges stay translucent over the image');
-    assertOnce(out, 'if (dbl && fPress.card && typeof showStickyInspect == "function") {', 'expanded sticky double-click opens inspect');
+    assertOnce(out, 'if (dbl && card && typeof showStickyInspect == "function") {', 'count-chip double-click opens inspect');
+    assertOnce(out, 'const stickyPins = t.overlayUi?.markers || [];', 'count-chip / pin hit is tested before the sticky image');
+    if (out.includes('if (nxFireTap(g.card)) return;')) {
+      throw new Error('[build] sticky image must not fire tap-inspect');
+    }
     assertOnce(out, 'async function nxHostToast', 'nxHostToast landed');
     assertOnce(out, 'async function showSelectionToast', 'selection toast landed');
     assertOnce(out, 'async function showAttachToast()', 'attach spinner toast landed');
@@ -15604,8 +15614,8 @@ const loadVendorUi = (): string => {
     if (out.includes('_imagePressIds')) {
       throw new Error('[build] image press still counts pointerIds — two fingers can dedupe into one');
     }
-    if ((out.match(/nxNotePressDown\(\);/g) || []).length !== 2) {
-      throw new Error('[build] both inline-shot and sticky hit-tests must record a press down');
+    if ((out.match(/nxNotePressDown\(\);/g) || []).length !== 1) {
+      throw new Error('[build] only inline-shot records a press down — sticky image does not inspect');
     }
     assertOnce(out, 'VCUp.noteImagePressUp(t._imagePressDowns)', 'pointerup releases one press slot');
     assertOnce(out, 'select id="nx-toast-anchor"', 'toast position select landed');
@@ -15618,8 +15628,8 @@ const loadVendorUi = (): string => {
     }
     assertOnce(out, 'VC.imagePressTapHits({', 'image tap-streak helper landed');
     assertOnce(out, 'const nxFireTap = (card) => {', 'tap-streak helper defined');
-    if ((out.match(/nxFireTap\(/g) || []).length !== 2) {
-      throw new Error('[build] tap-streak must fire from both inline-shot and sticky hit-tests');
+    if ((out.match(/nxFireTap\(/g) || []).length !== 1) {
+      throw new Error('[build] tap-streak inspect is inline-shot only — not the sticky image');
     }
     if (out.includes('두손으로 꾸욱')) {
       throw new Error('[build] two-finger press label must not remain');

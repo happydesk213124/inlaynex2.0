@@ -17835,21 +17835,34 @@ ${Ye(250)}`;
         } catch {
         }
       }
-      // Sticky always-image: short-tap hide / long-press fullscreen+sheet.
+      // Sticky always-image: pin/chips expand or inspect; the image only folds.
       if (Nt() && !inspectOpen) {
+        const stickyPins = t.overlayUi?.markers || [];
+        for (const g of stickyPins) {
+          if (!g?.el || typeof hitEl != "function" || !await hitEl(g.el, x, I)) continue;
+          if (mobilePress) {
+            cancelMobilePress();
+            return;
+          }
+          mobilePress = {
+            x,
+            y: I,
+            card: g.card,
+            source: "sticky-pin",
+            pointerId: f.pointerId,
+            long: !1,
+            timer: null
+          };
+          pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
+          return;
+        }
+
+
         const stickyMarkers = t.overlayUi?.markers || [];
         for (const g of stickyMarkers) {
           if (!g?.active || !g.thumb || t.overlayUi?._stickyThumbCollapsed) continue;
           if (!await hitEl(g.thumb, x, I)) continue;
-          if (nxFireTap(g.card)) return;
-          nxNotePressDown();
-          if (mobilePress && (mobilePress.source === "inline-shot" || mobilePress.source === "sticky-thumb")) {
-            if (typeof f.preventDefault == "function") f.preventDefault();
-            if (nxInspectAllowed()) showPressFill(g.thumb, x, I).catch(() => {
-            });
-            nxArmInspect(mobilePress);
-            return;
-          }
+          // Image surface: one tap folds to 0. Hold / double / triple never inspect here.
           if (mobilePress) {
             cancelMobilePress();
             return;
@@ -17864,10 +17877,8 @@ ${Ye(250)}`;
             timer: null,
             thumb: g.thumb
           };
-          if (nxInspectAllowed()) showPressFill(g.thumb, x, I).catch(() => {
-          });
-          nxArmInspect(F);
           mobilePress = F;
+          pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
           return;
         }
       }
@@ -18089,28 +18100,12 @@ ${Ye(250)}`;
       if (fPress.source === "sticky-thumb") {
         await hidePressFill();
         const ov = t.overlayUi;
-        const now = Date.now();
-        const id = String(fPress.card?.id || "");
-        const prev = t._stickyThumbTap;
-        const expanded = !ov?._stickyThumbCollapsed;
-        const dbl = !!(expanded && prev && prev.id === id && now - Number(prev.at || 0) < 400);
-        t._stickyThumbTap = { id, at: now };
-        if (t._stickyThumbHideTimer) {
-          clearTimeout(t._stickyThumbHideTimer);
-          t._stickyThumbHideTimer = null;
+        if (ov) ov._stickyThumbCollapsed = !0;
+        try {
+          await Ht();
+        } catch {
         }
-        // Expanded + two clicks on the active sticky image → 크게보기, not fold.
-        if (dbl && fPress.card && typeof showStickyInspect == "function") {
-          t._stickyThumbTap = null;
-          showStickyInspect(fPress.card).catch(() => {});
-          return;
-        }
-        t._stickyThumbHideTimer = setTimeout(() => {
-          t._stickyThumbHideTimer = null;
-          if (ov) ov._stickyThumbCollapsed = !ov._stickyThumbCollapsed;
-          Ht().catch(() => {});
-          y("info", ov?._stickyThumbCollapsed ? "sticky.thumb.hide" : "sticky.thumb.show", id.slice(0, 8));
-        }, 280);
+        y("info", "sticky.thumb.hide", String(fPress.card?.id || "").slice(0, 8));
         return;
       }
       if (fPress.source === "inline-shot") {
@@ -18118,7 +18113,18 @@ ${Ye(250)}`;
         return;
       }
       if (fPress.source === "sticky-pin") {
+        await hidePressFill();
         const ov = t.overlayUi;
+        const now = Date.now();
+        const prev = t._stickyPinTap;
+        const dbl = !!(prev && now - Number(prev.at || 0) < 400);
+        t._stickyPinTap = { at: now };
+        const card = fPress.card || (ov?.markers || []).find((m) => m?.active)?.card;
+        if (dbl && card && typeof showStickyInspect == "function") {
+          t._stickyPinTap = null;
+          showStickyInspect(card).catch(() => {});
+          return;
+        }
         if (ov) ov._stickyThumbCollapsed = !1;
         try {
           await Ht();

@@ -1522,6 +1522,27 @@ export function resolveClickSelectionAction({
   return { action: 'ignore' };
 }
 
+/**
+ * Scroll delta after a click select. Visible bubbles stay put — the user
+ * already pointed at them. Only a fully off-screen rect is nudged nearest
+ * (no 45% recenter).
+ */
+export function messageClickScrollDelta(
+  rect: { top?: unknown; bottom?: unknown } | null | undefined,
+  viewportH: unknown,
+): number {
+  const top = finiteNumber(rect?.top, Number.NaN);
+  const bottom = finiteNumber(rect?.bottom, Number.NaN);
+  const vh = Math.max(1, finiteNumber(viewportH, 0));
+  if (!Number.isFinite(top) || !Number.isFinite(bottom)) return 0;
+  if (bottom > 0 && top < vh) return 0;
+  const viewTop = 72;
+  const viewBot = vh - 48;
+  if (top >= vh) return Math.round(top - viewBot);
+  if (bottom <= 0) return Math.round(bottom - viewTop);
+  return 0;
+}
+
 /** True when a text-drag gesture should select the message under the pointer. */
 export function shouldSelectMessageByTextDrag({
   enabled = true,

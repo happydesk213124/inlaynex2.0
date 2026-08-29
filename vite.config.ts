@@ -10413,6 +10413,27 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
   }
   async function ensureMessageInView(el) {`;
 
+const VENDOR_ENSURE_IN_VIEW_NEEDLE =
+  `      const o = typeof window < "u" && window.innerHeight || 800;
+      if (n.top >= 72 && n.bottom <= o - 48) return;
+      const a = await findScrollParent(el), r = n.top + n.height * 0.5 - o * 0.45;
+      if (a) {
+        const i = await getScrollTopSafe(a);
+        if (await setScrollTopSafe(a, i + r)) return;
+      }
+      typeof window < "u" && window.scrollBy?.({ top: r, behavior: "auto" });`;
+const VENDOR_ENSURE_IN_VIEW_PATCH =
+  `      const o = typeof window < "u" && window.innerHeight || 800;
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      const r = typeof VC?.messageClickScrollDelta == "function" ? VC.messageClickScrollDelta(n, o) : 0;
+      if (!r) return;
+      const a = await findScrollParent(el);
+      if (a) {
+        const i = await getScrollTopSafe(a);
+        if (await setScrollTopSafe(a, i + r)) return;
+      }
+      typeof window < "u" && window.scrollBy?.({ top: r, behavior: "auto" });`;
+
 const VENDOR_INLINE_CALL_NEEDLE =
   `    return await onSelectionChanged("content"), scheduleOverlayPlace(80), t.debugUi?.refreshSoon && t.debugUi.refreshSoon(), (source === "click" || source === "text") && await ensureMessageInView(o), source === "provisional" ? !0 : !isSelectedCharRole(l) ? (y("info", "select.user", "유저 메시지 — 자동 생성 안 함"), !0) : u.length ? (y("info", "select.hasImage", \`cards=\${u.length} · 재생성은 뷰어 버튼\`), !0) : (y("info", "select.noImage", "해시 이미지 없음 → 태그부터 생성"), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
   }`;
@@ -15687,6 +15708,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_DA_QA_NEEDLE, VENDOR_DA_QA_PATCH)
     .replace(VENDOR_BIND_QA_NEEDLE, VENDOR_BIND_QA_PATCH)
     .replace(VENDOR_INLINE_INJECT_FN_NEEDLE, VENDOR_INLINE_INJECT_FN_PATCH)
+    .replace(VENDOR_ENSURE_IN_VIEW_NEEDLE, VENDOR_ENSURE_IN_VIEW_PATCH)
     .replace(VENDOR_INLINE_CALL_NEEDLE, VENDOR_INLINE_CALL_PATCH)
     .replace(VENDOR_INLINE_SAME_NEEDLE, VENDOR_INLINE_SAME_PATCH)
     .replace(VENDOR_INLINE_POLL_NEEDLE, VENDOR_INLINE_POLL_PATCH)
@@ -16249,6 +16271,12 @@ const loadVendorUi = (): string => {
     }
     if (out.includes('refreshSelectedInlineImages(source === "scroll")')) {
       throw new Error('[build] scroll inline must not force-refresh (cheap keep skip)');
+    }
+    if (out.includes('n.top + n.height * 0.5 - o * 0.45')) {
+      throw new Error('[build] click select must not yank the bubble to 45%');
+    }
+    if (!out.includes('VC.messageClickScrollDelta(n, o)')) {
+      throw new Error('[build] ensureMessageInView must use messageClickScrollDelta');
     }
     if ((out.match(/source === "provisional" && opts\.auto/g) || []).length !== 2) {
       throw new Error('[build] both inline paint gates must open for auto provisional select');

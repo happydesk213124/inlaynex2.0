@@ -451,6 +451,17 @@ test('bind pointer repaint keeps boot scheduling and queues a delayed fallback',
   assert.equal(timers.get(t._pointerSelectBindTimer)?.delay, 1000);
 });
 
+test('click select scroll uses nearest-offscreen delta, not 45% recenter', () => {
+  const source = read('vite.config.ts');
+  assert.match(source, /VENDOR_ENSURE_IN_VIEW_PATCH/);
+  assert.match(source, /messageClickScrollDelta/);
+  const patch = source.slice(
+    source.indexOf('const VENDOR_ENSURE_IN_VIEW_PATCH'),
+    source.indexOf('const VENDOR_INLINE_CALL_NEEDLE'),
+  );
+  assert.doesNotMatch(patch, /n\.height \* 0\.5 - o \* 0\.45/);
+});
+
 test('in-message action bar uses the same H+prepend host path as inline shots', () => {
   const source = read('vite.config.ts');
   const start = source.indexOf('async function openSettingsTab');

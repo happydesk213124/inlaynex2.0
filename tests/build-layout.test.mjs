@@ -566,7 +566,7 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /VC\.roleForInlineBubble\(\{/);
   assert.match(source, /VC\.cardsForInlineBubble\(\{/);
   assert.match(source, /VC\.inlineRoleDisposition\(opts\.role/);
-  assert.match(source, /if \(roleDisposition === "hold"\) return/);
+  assert.match(source, /if \(roleDisposition === "hold" && !haveWork\) return/);
   assert.match(source, /forceStrip: roleDisposition === "deny"/);
   assert.match(source, /getAttribute\("data-inlay-inline-layout"\)/);
   assert.match(source, /layoutVersion: mark\.layoutVersion/);
@@ -594,6 +594,8 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
     assert.match(refresh, /VC\.shouldOverlayInlinePhoto\(\{/);
     assert.match(refresh, /wantPhotos: nextPhotoIdx\.has\(idx\)/);
     assert.match(refresh, /evictPhotosIn/);
+    assert.match(refresh, /if \(idx === selIdx && sel\)/);
+    assert.match(refresh, /row = \{ idx, msg: sel,/);
     assert.doesNotMatch(refresh, /data-inlay-inline-shot\],\[data-inlay-inline-pending\],\[x-inlay-msg-actions\]/);
   }
   assert.match(source, /nxPatchInlinePhotoByCardId/);

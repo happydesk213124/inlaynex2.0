@@ -366,10 +366,11 @@ test("inlineDomWindow stays around the selection and never walks the chat", () =
   assert.deepEqual(inlineDomWindow(5, 6, 1), [4, 5]);
 });
 
-test("shouldOverlayInlinePhoto is selected ±1 char only", () => {
+test("shouldOverlayInlinePhoto is selected ±1 unless that bubble is a user turn", () => {
   assert.equal(shouldOverlayInlinePhoto({ idx: 5, selIdx: 5, length: 20, role: "char" }), true);
   assert.equal(shouldOverlayInlinePhoto({ idx: 4, selIdx: 5, length: 20, role: "assistant" }), true);
   assert.equal(shouldOverlayInlinePhoto({ idx: 6, selIdx: 5, length: 20, role: "char" }), true);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 5, selIdx: 5, length: 20, role: "" }), true);
   assert.equal(shouldOverlayInlinePhoto({ idx: 6, selIdx: 5, length: 20, role: "user" }), false);
   assert.equal(shouldOverlayInlinePhoto({ idx: 7, selIdx: 5, length: 20, role: "char" }), false);
 });
@@ -1101,6 +1102,7 @@ test("cardsForInlineBubble drops char shots on user and on drift", () => {
   const cards = [{ id: "c1" }];
   assert.deepEqual(cardsForInlineBubble({ cards, role: "user", allRoles: false }), []);
   assert.deepEqual(cardsForInlineBubble({ cards, role: "char", allRoles: false }), cards);
+  assert.deepEqual(cardsForInlineBubble({ cards, role: "", allRoles: false }), cards);
   assert.deepEqual(cardsForInlineBubble({
     cards,
     role: "char",

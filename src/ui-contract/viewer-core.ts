@@ -721,7 +721,11 @@ export function cardsForInlineBubble<T>(opts: {
 } = {}): T[] {
   const list = Array.isArray(opts.cards) ? [...opts.cards] : [];
   if (opts.isSelectionSlot && selectionSlotDrifted(opts.selHash, opts.liveHash)) return [];
-  if (!allowInlineImagesOnRole(opts.role, !!opts.allRoles)) return [];
+  const role = normalizeMessageRole(opts.role);
+  // Unresolved is not a user turn. Dropping cards here left first-boot / tag-gen
+  // with chips but no spinner, then a spinner that never received its photo.
+  if (!role) return list;
+  if (!allowInlineImagesOnRole(role, !!opts.allRoles)) return [];
   return list;
 }
 
@@ -785,7 +789,7 @@ export function inlineDomWindow(selIdx: unknown, length: unknown, radius: unknow
   return out;
 }
 
-/** Photos sit on selected ±1, and only when that bubble is a char turn. */
+/** Photos sit on selected ±1 unless that bubble is a verified user turn. */
 export function shouldOverlayInlinePhoto(opts: {
   idx?: unknown;
   selIdx?: unknown;
@@ -795,7 +799,7 @@ export function shouldOverlayInlinePhoto(opts: {
   const idx = Math.floor(Number(opts.idx));
   if (!Number.isInteger(idx) || idx < 0) return false;
   if (!inlineDomWindow(opts.selIdx, opts.length, 1).includes(idx)) return false;
-  return isCharMessageRole(typeof opts.role === 'string' ? opts.role : String(opts.role || ''));
+  return normalizeMessageRole(opts.role) !== 'user';
 }
 
 /** Selected bubble plus this many DOM slots each side — 5 asks when the chat is long enough. */

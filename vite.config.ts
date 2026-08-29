@@ -8696,25 +8696,19 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         : String(opts.role || "")
           ? (typeof VC.allowInlineImagesOnRole == "function" && VC.allowInlineImagesOnRole(opts.role, !!t.backendSettings?.card?.generate_all_roles) ? "allow" : "deny")
           : "hold";
-    // A failed DOM/API match is transient. Removing a mounted frame here made a
-    // same-bubble click flash empty before the next pass resolved the role.
-    if (roleDisposition === "hold") return;
+    // Hold must not block a first stamp. It only means "don't tear mounted
+    // frames as if this were a user turn" when we still have nothing to place.
+    const haveWork = (Array.isArray(cards) && cards.length) || (Array.isArray(pendingRows) && pendingRows.length);
+    if (roleDisposition === "hold" && !haveWork) return;
     const denyRole = roleDisposition === "deny";
     const list = denyRole ? [] : (Array.isArray(cards) ? cards : []);
-    // Pending spinners follow auto-gen roles — never on user bubbles when
-    // "모든 메시지 이미지 생성" is off (same gate as Ka / select).
-    const allowPending = typeof isSelectedCharRole == "function"
-      ? isSelectedCharRole(t.selectedMessage?.role)
-      : !/^(user|human)$/i.test(String(t.selectedMessage?.role || ""));
-    // Only the job's own message may show spinners — never a finished turn.
-    const selMsgIdx = Number(t.selectedMessage?.chatIndex ?? -1);
-    const pendingMsgIdx = Number(t._inlinePendingMsgIndex ?? -1);
-    const pendingForThisMsg = allowPending
-      && Number.isFinite(selMsgIdx) && selMsgIdx >= 0
-      && selMsgIdx === pendingMsgIdx;
-    const pending = pendingForThisMsg
-      ? Array.isArray(pendingRows) ? pendingRows : Array.isArray(t._inlinePending) ? t._inlinePending : []
-      : [];
+    // Caller already scoped pending to this bubble (selected ± window). A
+    // chatIndex mismatch used to drop tag-gen spinners while chips still painted.
+    const pending = denyRole
+      ? []
+      : Array.isArray(pendingRows) && pendingRows.length
+        ? pendingRows
+        : [];
     const resolveSrc = (card) => {
       try {
         const N = globalThis.__INLAY_NATIVE__;
@@ -9333,14 +9327,18 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         try {
           const raw = await De(els[idx]);
           const text = w(raw || "");
-          if (text.length >= 4) {
+          // Da already bound this bubble. Re-matching it through qa was how a
+          // refresh/re-enter dropped the cards the chips were already using.
+          if (idx === selIdx && sel) {
+            row = { idx, msg: sel, text: text.length >= 4 ? text : w(sel.text || "") || text };
+          } else if (text.length >= 4) {
             const hit = typeof qa == "function"
               ? qa(text, msgs, idx, els.length, {})
               : null;
             row = { idx, msg: hit || { text, hash: "", role: "", chatIndex: idx }, text };
           }
         } catch {
-          row = null;
+          row = idx === selIdx && sel ? { idx, msg: sel, text: w(sel.text || "") } : null;
         }
         msgCache.set(idx, row);
         return row;
@@ -15420,6 +15418,9 @@ const loadVendorUi = (): string => {
       if (!body.includes('wantPhotos: nextPhotoIdx.has(idx)') || !body.includes('evictPhotosIn')) {
         throw new Error('[build] photos outside ±1 must be evicted without tearing spinners');
       }
+      if (!body.includes('if (idx === selIdx && sel)') || !body.includes('row = { idx, msg: sel,')) {
+        throw new Error('[build] selected bubble must reuse Da cards, not qa-miss empty hash');
+      }
     }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
     assertOnce(out, 'ensureScrollPhaseBus = () =>', 'scroll phase bus landed');
@@ -15644,7 +15645,7 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'y("info", "inline.inject.hold",', 'empty-desired hold must keep live shots');
     assertOnce(out, 'confirmedEmpty: !!t._inlineConfirmedEmpty', 'force retag may confirm empty desired');
     assertOnce(out, 'VC.inlineRoleDisposition(opts.role,', 'inline role gate must distinguish unresolved from user');
-    assertOnce(out, 'if (roleDisposition === "hold") return;', 'unresolved role must preserve mounted frames');
+    assertOnce(out, 'if (roleDisposition === "hold" && !haveWork) return;', 'unresolved role must still stamp when cards or pending exist');
     assertOnce(out, 'forceStrip: roleDisposition === "deny"', 'verified wrong-role leftover shots must strip');
     assertOnce(out, 'VC.roleForInlineBubble({', 'inline role must not trust drifted sel.role');
     assertOnce(out, 'cards = VC.cardsForInlineBubble({', 'user bubbles must drop char cards');

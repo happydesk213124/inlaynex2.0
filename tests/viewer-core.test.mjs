@@ -366,6 +366,7 @@ test("markerBlockHtml reserves one aspect-sized frame for pending and ready imag
   assert.match(ready, /data-inlay-inline-frame="1"/);
   assert.match(ready, /aspect-ratio:1216\/832/);
   assert.match(ready, /data-inlay-inline-img="1"/);
+  assert.match(ready, /object-position:center top/);
   const frameStyle = (html) => html.match(/data-inlay-inline-frame="1" style="([^"]+)"/)?.[1];
   assert.equal(frameStyle(pending), frameStyle(ready));
   assert.doesNotMatch(ready, /data-inlay-inline-act=/);

@@ -3442,7 +3442,7 @@ export function inlineChatFrameStyle(
 
 /** Image fills the pre-sized shell; changing src cannot alter bubble height. */
 export function inlineChatImgStyle(): string {
-  return 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;border-radius:8px;display:block;vertical-align:top';
+  return 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center top;border-radius:8px;display:block;vertical-align:top';
 }
 
 type MappedChar = { ch: string; htmlIndex: number };

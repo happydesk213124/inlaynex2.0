@@ -667,6 +667,7 @@ test('character tab and edit popup pack identity and looks onto compact rows', (
   assert.match(looks, /<span>머리<\/span>/);
   assert.doesNotMatch(looks, /머리색/);
   assert.match(edit, /char-looks-row/);
+  assert.match(edit, /grid-template-columns:repeat\(6,minmax\(0,1fr\)\)/);
   assert.match(edit, /<span>스타일<\/span>/);
   assert.match(source, /data-ce-appearance rows="3"/);
   assert.match(source, /min-height:72px/);

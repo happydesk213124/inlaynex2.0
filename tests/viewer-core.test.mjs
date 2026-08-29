@@ -113,6 +113,7 @@ import {
   desiredInlinePaintKey,
   pendingInlineKey,
   INLINE_FRAME_LAYOUT_VERSION,
+  INLINE_PLACEHOLDER_SRC,
   reconcileInlineShot,
   shouldStripLeftoverInlineId,
   shouldScanInlineLeftovers,
@@ -337,8 +338,8 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   assert.match(out, /data-inlay-inline-shot="c1"/);
   assert.match(out, /data-inlay-inline-shot="c2"/);
   assert.match(out, /<b>커피를 마셨다<\/b>/);
-  assert.match(out, /data-inlay-inline-frame="1"/);
-  assert.match(out, /width:min\(78%,/);
+  assert.doesNotMatch(out, /data-inlay-inline-frame=/);
+  assert.match(out, /max-width:min\(78%,100%\)/);
   // first coffee line is bold — marker for line 2 sits before <b>
   assert.match(out, /data-inlay-inline-shot="c1"[^>]*>[\s\S]*?<b>커피를 마셨다<\/b>/);
   // duplicate plain "커피를 마셨다" still gets line-3 marker (not string search of first)
@@ -346,18 +347,7 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   assert.equal(htmlToPlainLn(stripped), htmlToPlainLn(rich));
 });
 
-test("markerBlockHtml reserves one aspect-sized frame for pending and ready image", () => {
-  const portrait = markerBlockHtml({
-    line: 2,
-    src: "",
-    shotIndex: 0,
-    pending: true,
-    cardId: "pending-portrait",
-    aspect: "portrait",
-  });
-  assert.match(portrait, /width:min\(78%,47\.89vh,616px\)/);
-  assert.doesNotMatch(portrait, /calc\([^)]*vh\s*\*/);
-  assert.match(portrait, new RegExp(`data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}"`));
+test("markerBlockHtml uses a tiny placeholder then natural image size, not a reserved frame", () => {
   const pending = markerBlockHtml({
     line: 2,
     src: "",
@@ -368,8 +358,11 @@ test("markerBlockHtml reserves one aspect-sized frame for pending and ready imag
   });
   assert.match(pending, /data-inlay-inline-pending="1"/);
   assert.match(pending, /animateTransform/);
-  assert.match(pending, /data-inlay-inline-frame="1"/);
-  assert.match(pending, /aspect-ratio:1216\/832/);
+  assert.ok(pending.includes(`src="${INLINE_PLACEHOLDER_SRC}"`));
+  assert.match(pending, new RegExp(`data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}"`));
+  assert.doesNotMatch(pending, /data-inlay-inline-frame=/);
+  assert.doesNotMatch(pending, /aspect-ratio:/);
+  assert.doesNotMatch(pending, /overflow:hidden/);
   const ready = markerBlockHtml({
     line: 2,
     src: "data:image/png;base64,abc",
@@ -377,12 +370,11 @@ test("markerBlockHtml reserves one aspect-sized frame for pending and ready imag
     cardId: "c1",
     aspect: "landscape",
   });
-  assert.match(ready, /data-inlay-inline-frame="1"/);
-  assert.match(ready, /aspect-ratio:1216\/832/);
   assert.match(ready, /data-inlay-inline-img="1"/);
-  assert.match(ready, /object-position:center top/);
-  const frameStyle = (html) => html.match(/data-inlay-inline-frame="1" style="([^"]+)"/)?.[1];
-  assert.equal(frameStyle(pending), frameStyle(ready));
+  assert.match(ready, /width:auto;height:auto;max-width:min\(78%,100%\)/);
+  assert.match(ready, /max-height:min\(70vh,900px\)/);
+  assert.doesNotMatch(ready, /data-inlay-inline-frame=/);
+  assert.doesNotMatch(ready, /object-position:center top/);
   assert.doesNotMatch(ready, /data-inlay-inline-act=/);
   assert.doesNotMatch(ready, /data-inlay-chrome-act=/);
   const scaled = markerBlockHtml({
@@ -391,7 +383,7 @@ test("markerBlockHtml reserves one aspect-sized frame for pending and ready imag
     shotIndex: 0,
     cardId: "c1",
   }, 50);
-  assert.match(scaled, /width:min\(39%,/);
+  assert.match(scaled, /max-width:min\(39%,100%\)/);
   assert.match(scaled, /max-height:min\(35vh,450px\)/);
   const blobReady = markerBlockHtml({
     line: 2,
@@ -707,6 +699,7 @@ test("sticky v2 shot counts and pure-image html", () => {
 test("isReadyImageSrc accepts data and blob; htmlSafeImageSrc drops blob", () => {
   assert.equal(isReadyImageSrc("data:image/png;base64,xx"), true);
   assert.equal(isReadyImageSrc("blob:https://host/abc"), true);
+  assert.equal(isReadyImageSrc(INLINE_PLACEHOLDER_SRC), false);
   assert.equal(isReadyImageSrc(""), false);
   assert.equal(isReadyImageSrc("https://x/a.png"), false);
   assert.equal(htmlSafeImageSrc("data:image/webp;base64,yy"), "data:image/webp;base64,yy");

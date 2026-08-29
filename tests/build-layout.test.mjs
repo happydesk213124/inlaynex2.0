@@ -553,6 +553,7 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /getAttribute\("data-inlay-inline-layout"\)/);
   assert.match(source, /layoutVersion: mark\.layoutVersion/);
   assert.match(source, /VC\.INLINE_FRAME_LAYOUT_VERSION/);
+  assert.match(source, /VC\.inlineChatImgStyle\(scaleNow\)/);
   assert.match(source, /id="nx-inline-dom-radius" type="number" min="3" max="20" step="1"/);
   assert.match(source, /inline_chat_dom_radius: Math\.max\(3, Math\.min\(20,/);
   assert.match(source, /inline_chat_dom_radius\) \|\| 4/);

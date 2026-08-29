@@ -8783,7 +8783,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           // The spinner marker ships its <img> hidden. Reveal it and hide the
           // overlay in the same frame — re-inserting the marker is what flashes.
           if (typeof img.setStyleAttribute != "function" || typeof VC.inlineChatImgStyle != "function") return !1;
-          await img.setStyleAttribute(VC.inlineChatImgStyle());
+          await img.setStyleAttribute(VC.inlineChatImgStyle(scaleNow));
           const spins = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-spin]"));
           for (const spin of spins) {
             try {

@@ -2221,8 +2221,11 @@ export function stickyV2CornerLayout(opts: {
  * Display URLs the UI can point an <img> at. `blob:` is valid on setAttribute
  * but SafeDOM/DOMPurify strips it from setInnerHTML — never embed those in HTML.
  */
+export const INLINE_PLACEHOLDER_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
 export function isReadyImageSrc(src: unknown): boolean {
   const s = String(src || '');
+  if (!s || s === INLINE_PLACEHOLDER_SRC) return false;
   return /^data:image\//i.test(s) || /^blob:/i.test(s);
 }
 
@@ -3073,7 +3076,7 @@ export function stickySegmentForInlineChat(opts: {
 // ── beta: chat-bubble inline images at newline lines ──────────────────────
 
 const INLAY_INLINE_ATTR = 'data-inlay-inline-shot';
-export const INLINE_FRAME_LAYOUT_VERSION = '2';
+export const INLINE_FRAME_LAYOUT_VERSION = '3';
 /**
  * Content hash of the bubble this marker was placed into.
  *
@@ -3466,41 +3469,13 @@ export function clampInlineChatScalePct(value: unknown): number {
   return Math.max(25, Math.min(200, n));
 }
 
-type InlineFrameAspectInput = {
-  aspect?: unknown;
-  width?: unknown;
-  height?: unknown;
-};
-
-/** Stable dimensions for the shell mounted before image bytes arrive. */
-export function inlineFrameDimensions(input: InlineFrameAspectInput | null | undefined): { width: number; height: number } {
-  const width = Math.floor(finiteNumber(input?.width, 0));
-  const height = Math.floor(finiteNumber(input?.height, 0));
-  if (width > 0 && height > 0) return { width, height };
-  const aspect = String(input?.aspect || '').trim().toLowerCase();
-  if (aspect === 'square') return { width: 1024, height: 1024 };
-  if (aspect === 'landscape') return { width: 1216, height: 832 };
-  return { width: 832, height: 1216 };
-}
-
-/** Fixed frame CSS: pending and ready states occupy exactly the same box. */
-export function inlineChatFrameStyle(
-  input: InlineFrameAspectInput | null | undefined,
-  scalePct: unknown = 100,
-): string {
+/** Img CSS for bubble illustrations at the given scale %. */
+export function inlineChatImgStyle(scalePct: unknown = 100): string {
   const s = clampInlineChatScalePct(scalePct) / 100;
   const maxW = Math.min(100, Math.max(10, Math.round(78 * s)));
   const maxHVh = Math.max(10, Math.round(70 * s));
   const maxHPx = Math.max(120, Math.round(900 * s));
-  const { width, height } = inlineFrameDimensions(input);
-  const ratioPx = Math.max(1, Math.round(maxHPx * width / height));
-  const ratioVh = Math.round(maxHVh * width / height * 100) / 100;
-  return `position:relative;display:inline-grid;place-items:center;width:min(${maxW}%,${ratioVh}vh,${ratioPx}px);max-width:100%;max-height:min(${maxHVh}vh,${maxHPx}px);aspect-ratio:${width}/${height};overflow:hidden;border-radius:8px;vertical-align:top;background:rgba(124,108,255,.08);border:1px solid rgba(196,181,253,.22)`;
-}
-
-/** Image fills the pre-sized shell; changing src cannot alter bubble height. */
-export function inlineChatImgStyle(): string {
-  return 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center top;border-radius:8px;display:block;vertical-align:top';
+  return `width:auto;height:auto;max-width:min(${maxW}%,100%);max-height:min(${maxHVh}vh,${maxHPx}px);object-fit:contain;border-radius:8px;display:inline-block;vertical-align:top`;
 }
 
 type MappedChar = { ch: string; htmlIndex: number };
@@ -3784,28 +3759,23 @@ export function markerBlockHtml(
   // hit max-height first). Mobile narrow bubbles still shrink instead of clipping.
   // scalePct (dashboard) multiplies the 78%/70vh defaults.
   const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box';
-  const frameStyle = inlineChatFrameStyle(p, scalePct);
-  const imgStyle = inlineChatImgStyle();
-  const spinStyle = 'position:absolute;inset:0;display:grid;place-items:center;background:rgba(124,108,255,.12)';
-  const frameStart = `<span data-inlay-inline-frame="1" style="${frameStyle}">`;
+  const imgStyle = inlineChatImgStyle(scalePct);
   if (p.pending || !isReadyImageSrc(p.src)) {
     const spin = '<svg width="28" height="28" viewBox="0 0 28 28" style="display:inline-block;vertical-align:middle" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="#c4b5fd" stroke-width="3" stroke-linecap="round" stroke-dasharray="18 52"><animateTransform attributeName="transform" type="rotate" from="0 14 14" to="360 14 14" dur="0.75s" repeatCount="indefinite"/></circle></svg>';
-    // The <img> ships with the spinner even though it has no bytes yet, so a URL
-    // arriving later is `setAttribute('src')` + `setStyleAttribute` on nodes that
-    // are already mounted. Re-inserting the marker instead would flash the bubble
-    // empty, which is exactly what the subscription exists to avoid. No `src`
-    // attribute at all — an empty one renders the broken-image icon.
+    // Tiny placeholder keeps a real <img> in the tree so a later URL is only a
+    // src swap. The 1×1 gif is excluded from isReadyImageSrc so it never counts
+    // as a finished illustration.
     return (
       `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-      + `<br>${frameStart}<span data-inlay-inline-spin="1" style="${spinStyle}">${spin}</span>`
-      + `<img data-inlay-inline-img="1" alt="" style="${imgStyle};display:none" loading="eager" decoding="async"></span><br>`
+      + `<br><br><span data-inlay-inline-spin="1" style="display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:48px;padding:10px;border-radius:12px;background:rgba(124,108,255,.12);border:1px solid rgba(196,181,253,.35)">${spin}</span>`
+      + `<img data-inlay-inline-img="1" src="${INLINE_PLACEHOLDER_SRC}" alt="" style="display:none" loading="eager" decoding="async"><br><br>`
       + `</div>`
     );
   }
   const embed = htmlSafeImageSrc(p.src);
   return (
     `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-    + `<br>${frameStart}<img data-inlay-inline-img="1" src="${escapeHtmlAttr(embed)}" alt="" style="${imgStyle}" loading="eager" decoding="async"></span><br>`
+    + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(embed)}" alt="" style="${imgStyle}" loading="eager" decoding="async"><br>`
     + `</div>`
   );
 }

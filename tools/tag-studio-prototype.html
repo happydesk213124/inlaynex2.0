@@ -122,32 +122,23 @@
     border-bottom: 1px solid var(--line);
     background: var(--panel-2);
   }
-  .tabrow { display: flex; align-items: stretch; min-height: 44px; }
-  .tabscroll { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-  .tabscroll::-webkit-scrollbar { display: none; }
+  .tabrow { display: flex; flex-wrap: wrap; align-items: stretch; min-height: 32px; }
+  .tabscroll { display: contents; }
   .tab {
-    height: auto; min-height: 44px; padding: 4px 6px;
-    max-width: 80px;
+    height: 32px; padding: 0 8px;
+    max-width: 11em;
     border: 0; border-right: 1px solid var(--line);
     background: transparent; color: var(--muted);
-    display: flex; align-items: center; gap: 3px;
-    flex: 0 0 auto; min-width: 0;
+    display: flex; align-items: center; gap: 4px;
+    flex: 0 0 auto;
   }
   .tab .lab {
-    flex: 1; min-width: 0;
-    display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
-    line-height: 1.2; font-size: 11.5px;
-    white-space: normal; word-break: keep-all; overflow-wrap: anywhere;
-  }
-  .tab .lab b { font-weight: 700; }
-  .tab .lab span {
-    max-width: 100%;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .tab.on { background: var(--panel); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
-  .tab .x { color: #7c8095; font-size: 14px; line-height: 1; padding: 0 1px; flex: 0 0 auto; align-self: flex-start; }
+  .tab .x { color: #7c8095; font-size: 14px; line-height: 1; padding: 0 1px; flex: 0 0 auto; }
   .tab .x:hover { color: #ff9db1; }
-  .tabrow .pick { flex: 0 0 86px; min-width: 86px; padding: 3px 6px; display: flex; align-items: center; }
+  .tabrow .pick { flex: 0 0 86px; min-width: 86px; padding: 3px 6px; }
   .tabrow .pick select { height: 26px; padding: 0 6px; font-size: 12px; }
   .tabadd {
     width: 34px; border: 0; border-left: 1px solid var(--line);
@@ -1080,18 +1071,11 @@ function chip(t, on) { return `<span class="chip ${on ? "on" : ""}">${esc(t)}</s
 function renderTabs() {
   $("#tabsBar").innerHTML = state.tabs.map((t) => {
     const on = state.active === t.id ? "on" : "";
-    let lab;
-    if (t.kind === "char") {
-      const m = String(t.label).match(/^(C\d+)\s*(.*)$/);
-      lab = `<span class="lab"><b>${esc(m ? m[1] : t.label)}</b><span>${esc(m ? m[2] : "")}</span></span>`;
-      return `<button class="tab ${on}" data-tab="${t.id}" type="button" title="${esc(t.label)}">${lab}<span class="x" data-del="${t.id}">×</span></button>`;
+    const lab = `<span class="lab">${esc(t.label)}</span>`;
+    if (t.kind !== "char") {
+      return `<button class="tab ${on}" data-tab="${t.id}" type="button" title="${esc(t.label)}">${lab}</button>`;
     }
-    if (t.id === "llm") {
-      lab = `<span class="lab"><b>LLM</b><span>명령수정</span></span>`;
-    } else {
-      lab = `<span class="lab">${esc(t.label)}</span>`;
-    }
-    return `<button class="tab ${on}" data-tab="${t.id}" type="button" title="${esc(t.label)}">${lab}</button>`;
+    return `<button class="tab ${on}" data-tab="${t.id}" type="button" title="${esc(t.label)}">${lab}<span class="x" data-del="${t.id}">×</span></button>`;
   }).join("");
   $("#charPick").innerHTML = opts([["", "캐릭터 고르기"], ...ROSTER.filter((r) => r.id).map((r) => [r.id, r.name])], "");
 }

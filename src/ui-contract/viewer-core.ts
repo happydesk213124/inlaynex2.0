@@ -635,6 +635,21 @@ export function allowInlineImagesOnRole(role: unknown, allRoles = false): boolea
   return isCharMessageRole(String(role || ''));
 }
 
+export type InlineRoleDisposition = 'allow' | 'deny' | 'hold';
+
+/**
+ * Missing role evidence is not evidence of a user turn. Keep mounted shots
+ * untouched until the DOM/API match is conclusive; only a verified user role
+ * may remove them.
+ */
+export function inlineRoleDisposition(role: unknown, allRoles = false): InlineRoleDisposition {
+  if (allRoles) return 'allow';
+  const normalized = normalizeMessageRole(role);
+  if (!normalized) return 'hold';
+  if (isCharMessageRole(normalized)) return 'allow';
+  return normalized === 'user' ? 'deny' : 'hold';
+}
+
 /** Selection still names the old char hash after a new user message stole DOM#0. */
 export function selectionSlotDrifted(selHash: unknown, liveHash: unknown): boolean {
   const sel = String(selHash || '');
@@ -707,6 +722,43 @@ export function cardsForInlineBubble<T>(opts: {
   if (opts.isSelectionSlot && selectionSlotDrifted(opts.selHash, opts.liveHash)) return [];
   if (!allowInlineImagesOnRole(opts.role, !!opts.allRoles)) return [];
   return list;
+}
+
+/** Retain unresolved bubbles only when the same hash already owns mounted frames. */
+export function retainHeldInlineKeepIndices(opts: {
+  keepIndices?: unknown;
+  previousHashes?: unknown;
+  rows?: unknown;
+} = {}): number[] {
+  const keep = new Set<number>();
+  if (Array.isArray(opts.keepIndices)) {
+    for (const raw of opts.keepIndices) {
+      const idx = Number(raw);
+      if (Number.isInteger(idx) && idx >= 0) keep.add(idx);
+    }
+  }
+  const previous = new Set(
+    Array.isArray(opts.previousHashes)
+      ? opts.previousHashes.map((value) => String(value || '')).filter(Boolean)
+      : [],
+  );
+  if (previous.size && Array.isArray(opts.rows)) {
+    for (const raw of opts.rows) {
+      const row = raw as { idx?: unknown; hash?: unknown; disposition?: unknown } | null;
+      const idx = Number(row?.idx);
+      const hash = String(row?.hash || '');
+      if (
+        Number.isInteger(idx)
+        && idx >= 0
+        && row?.disposition === 'hold'
+        && hash
+        && previous.has(hash)
+      ) {
+        keep.add(idx);
+      }
+    }
+  }
+  return [...keep].sort((a, b) => a - b);
 }
 
 /** Max char bubbles kept above/below selection when inline skips user roles. */

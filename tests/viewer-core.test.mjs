@@ -91,10 +91,12 @@ import {
   roleFromGenerationInfo,
   isCharMessageRole,
   allowInlineImagesOnRole,
+  inlineRoleDisposition,
   selectionSlotDrifted,
   liveBubbleHash,
   roleForInlineBubble,
   cardsForInlineBubble,
+  retainHeldInlineKeepIndices,
   pickInlineKeepDomIndices,
   prefetchInlineRoleDomIndices,
   INLINE_ROLE_PREFETCH_RADIUS,
@@ -978,6 +980,15 @@ test("allowInlineImagesOnRole blocks user unless allRoles", () => {
   assert.equal(allowInlineImagesOnRole("user", true), true);
 });
 
+test("inlineRoleDisposition holds an unresolved role instead of treating it as user", () => {
+  assert.equal(inlineRoleDisposition("", false), "hold");
+  assert.equal(inlineRoleDisposition(null, false), "hold");
+  assert.equal(inlineRoleDisposition("char", false), "allow");
+  assert.equal(inlineRoleDisposition("assistant", false), "allow");
+  assert.equal(inlineRoleDisposition("user", false), "deny");
+  assert.equal(inlineRoleDisposition("user", true), "allow");
+});
+
 test("selectionSlotDrifted detects newest-first steal", () => {
   assert.equal(selectionSlotDrifted("char-hash", "user-hash"), true);
   assert.equal(selectionSlotDrifted("same", "same"), false);
@@ -1042,6 +1053,19 @@ test("cardsForInlineBubble drops char shots on user and on drift", () => {
     selHash: "old",
     liveHash: "new",
   }), []);
+});
+
+test("same-bubble unresolved role retains only an already-mounted inline frame", () => {
+  assert.deepEqual(retainHeldInlineKeepIndices({
+    keepIndices: [4],
+    previousHashes: ["char-a", "char-b"],
+    rows: [
+      { idx: 2, hash: "char-a", disposition: "hold" },
+      { idx: 4, hash: "char-b", disposition: "allow" },
+      { idx: 6, hash: "new-unknown", disposition: "hold" },
+      { idx: 8, hash: "old-user", disposition: "deny" },
+    ],
+  }), [2, 4]);
 });
 
 test("pickInlineKeepDomIndices can still request a smaller explicit window", () => {

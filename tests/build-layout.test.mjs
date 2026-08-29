@@ -546,7 +546,10 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /role: roleAt\(paintIdx\)/);
   assert.match(source, /VC\.roleForInlineBubble\(\{/);
   assert.match(source, /VC\.cardsForInlineBubble\(\{/);
-  assert.match(source, /forceStrip: denyRole/);
+  assert.match(source, /VC\.inlineRoleDisposition\(opts\.role/);
+  assert.match(source, /if \(roleDisposition === "hold"\) return/);
+  assert.match(source, /forceStrip: roleDisposition === "deny"/);
+  assert.match(source, /heldKeepHashes/);
   assert.match(source, /spin\.setStyleAttribute\("display:none"\)/);
   assert.doesNotMatch(source, /typeof spin\.remove/);
   assert.match(source, /resolveInlinePaintCards\(\{ selIdx, paintIdx, selCards, paintCards \}\)/);

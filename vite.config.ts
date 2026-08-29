@@ -8664,9 +8664,18 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     if (typeof VC?.findElementIndexForLineWithFallback != "function" || typeof VC?.markerBlockHtml != "function") return;
     const doc = t.hostDoc;
     if (!doc || typeof doc.createElement != "function") return;
-    const denyRole = typeof VC.allowInlineImagesOnRole == "function"
-      && opts && Object.prototype.hasOwnProperty.call(opts, "role")
-      && !VC.allowInlineImagesOnRole(opts.role, !!t.backendSettings?.card?.generate_all_roles);
+    const hasRole = !!opts && Object.prototype.hasOwnProperty.call(opts, "role");
+    const roleDisposition = !hasRole
+      ? "allow"
+      : typeof VC.inlineRoleDisposition == "function"
+        ? VC.inlineRoleDisposition(opts.role, !!t.backendSettings?.card?.generate_all_roles)
+        : String(opts.role || "")
+          ? (typeof VC.allowInlineImagesOnRole == "function" && VC.allowInlineImagesOnRole(opts.role, !!t.backendSettings?.card?.generate_all_roles) ? "allow" : "deny")
+          : "hold";
+    // A failed DOM/API match is transient. Removing a mounted frame here made a
+    // same-bubble click flash empty before the next pass resolved the role.
+    if (roleDisposition === "hold") return;
+    const denyRole = roleDisposition === "deny";
     const list = denyRole ? [] : (Array.isArray(cards) ? cards : []);
     // Pending spinners follow auto-gen roles — never on user bubbles when
     // "모든 메시지 이미지 생성" is off (same gate as Ka / select).
@@ -8801,7 +8810,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           ? VC.shouldStripEmptyInlineDesired({
             liveShotCount: prev.length,
             confirmedEmpty: !!t._inlineConfirmedEmpty,
-            forceStrip: denyRole
+            forceStrip: roleDisposition === "deny"
           })
           : denyRole || !prev.length;
         if (!stripEmpty) {
@@ -9357,6 +9366,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (idx === selIdx && sel.role != null && String(sel.role).length) return String(sel.role);
         return "";
       };
+      const roleDispositionAt = (idx) => typeof VC?.inlineRoleDisposition == "function"
+        ? VC.inlineRoleDisposition(roleAt(idx), allRoles)
+        : allRoles || isCharAtSync(idx) ? "allow" : roleAt(idx) ? "deny" : "hold";
       const isCharAtSync = (idx) => {
         const role = roleAt(idx);
         if (!role) return !1;
@@ -9424,6 +9436,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (canKeepAt(i)) found += 1;
       }
       }
+      const prevKeep = Array.isArray(t._inlineKeepEls) ? t._inlineKeepEls : [];
+      const heldKeepHashes = new Set(prevKeep.map((row) => String(row?.hash || "")).filter(Boolean));
       const keepIdxs = headFirst
         ? (canKeepAt(paintIdx) ? [paintIdx] : [])
         : typeof VC?.pickInlineKeepDomIndices == "function"
@@ -9457,7 +9471,22 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
           return out;
         })();
-      const keep = new Set(keepIdxs);
+      // Keep already-mounted bubbles whose role could not be resolved this pass.
+      // They may not receive new cards, but a transient miss must not tear down
+      // their frames and immediately rebuild them on the next click.
+      const heldRows = [...msgCache].map(([idx, row]) => ({
+        idx,
+        hash: String(row?.msg?.hash || ""),
+        disposition: roleDispositionAt(idx)
+      }));
+      const stableKeepIdxs = typeof VC?.retainHeldInlineKeepIndices == "function"
+        ? VC.retainHeldInlineKeepIndices({
+          keepIndices: keepIdxs,
+          previousHashes: [...heldKeepHashes],
+          rows: heldRows
+        })
+        : keepIdxs;
+      const keep = new Set(stableKeepIdxs);
       const neighborMsgs = [];
       for (const idx of keep) {
         if (idx === paintIdx) continue;
@@ -9509,7 +9538,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         }
         return live || (idx === selIdx ? String(sel.hash || "") : "");
       };
-      const prevKeep = Array.isArray(t._inlineKeepEls) ? t._inlineKeepEls : [];
       const nextKeep = [...keep].sort((a, b) => a - b).map((idx) => ({ hash: bubbleHashAt(idx), el: els[idx] }));
       const nextKeepHashes = new Set(nextKeep.map((row) => row.hash).filter(Boolean));
       const listChanged = !fromCache || t._inlineKeepDoc !== doc || Number(t._inlineKeepElsLen) !== els.length;
@@ -16047,7 +16075,10 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'y("info", "inline.inject.repaint",', 'repaint reason log landed');
     assertOnce(out, 'y("info", "inline.inject.hold",', 'empty-desired hold must keep live shots');
     assertOnce(out, 'confirmedEmpty: !!t._inlineConfirmedEmpty', 'force retag may confirm empty desired');
-    assertOnce(out, 'forceStrip: denyRole', 'wrong-role leftover shots must strip');
+    assertOnce(out, 'VC.inlineRoleDisposition(opts.role,', 'inline role gate must distinguish unresolved from user');
+    assertOnce(out, 'if (roleDisposition === "hold") return;', 'unresolved role must preserve mounted frames');
+    assertOnce(out, 'forceStrip: roleDisposition === "deny"', 'verified wrong-role leftover shots must strip');
+    assertOnce(out, 'const heldKeepHashes = new Set(', 'unresolved kept bubbles must survive a selection pass');
     assertOnce(out, 'VC.roleForInlineBubble({', 'inline role must not trust drifted sel.role');
     assertOnce(out, 'paintPlan.cards = VC.cardsForInlineBubble({', 'user bubbles must drop char cards');
     assertOnce(out, 'VC.liveBubbleHash({', 'keep identity must prefer live DOM hash');

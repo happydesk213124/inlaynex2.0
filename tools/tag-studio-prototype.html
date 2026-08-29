@@ -74,6 +74,7 @@
   }
   .btn:hover { background: var(--panel-2); border-color: var(--line-2); }
   .btn.on { background: #2b2350; border-color: #57499a; color: #ddd3ff; }
+  .btn.ok { background: #14241d; border-color: #2d5a48; color: var(--ok); }
   .btn.sm { height: 27px; padding: 0 8px; font-size: 12px; }
   .btn.warn { color: #ff9db1; }
 
@@ -683,6 +684,7 @@ const state = {
   history: [],
   historyPick: -1,
   coordMode: "ai",
+  coordVisible: true,
   showPeek: false,
   loop: null,
   selChar: "",
@@ -1051,7 +1053,7 @@ function panelChar(tabId) {
         <label class="k">x<input type="number" step="0.05" min="0" max="1" data-c="x" data-tab="${tabId}" value="${c.x.toFixed(2)}"/></label>
         <label class="k">y<input type="number" step="0.05" min="0" max="1" data-c="y" data-tab="${tabId}" value="${c.y.toFixed(2)}"/></label>
       </div>
-      <p class="hint">그림 위 C1 C2 C3를 끌어서 옮겨도 됩니다.</p>`),
+      <p class="hint">${state.coordVisible ? "그림 위 C1 C2 C3를 끌어서 옮겨도 됩니다." : "점·격자는 숨겼습니다. 숫자는 그대로 생성에 넣습니다."}</p>`),
 
     sec(`gs-${tabId}`, `<span class="name">설정</span>`, genSettings()),
   ].join("");
@@ -1094,12 +1096,13 @@ function renderPeek() {
 function renderDots() {
   const host = $("#dots");
   const manual = state.coordMode === "manual";
-  host.classList.toggle("hide", !manual);
-  host.classList.toggle("grid", manual);
-  host.innerHTML = charList().map((c) => {
+  const show = manual && state.coordVisible;
+  host.classList.toggle("hide", !show);
+  host.classList.toggle("grid", show);
+  host.innerHTML = show ? charList().map((c) => {
     const cls = ["dot", state.selChar === c.tab.id ? "sel" : ""].join(" ");
     return `<div class="${cls}" role="button" aria-label="C${c.i + 1}" data-dot="${c.tab.id}" data-label="C${c.i + 1}" draggable="false" style="left:${c.x * 100}%;top:${c.y * 100}%"></div>`;
-  }).join("");
+  }).join("") : "";
   $("#coord").textContent = manual
     ? (() => {
       const c = charList().find((x) => x.tab.id === state.selChar);
@@ -1107,7 +1110,10 @@ function renderDots() {
     })()
     : "NAI AI choice";
   $$("[data-act=auto]").forEach((b) => b.classList.toggle("on", state.coordMode === "ai"));
-  $$("[data-act=grid]").forEach((b) => b.classList.toggle("on", manual));
+  $$("[data-act=grid]").forEach((b) => {
+    b.classList.toggle("on", manual && state.coordVisible);
+    b.classList.toggle("ok", manual && !state.coordVisible);
+  });
   $$("[data-act=history]").forEach((b) => b.classList.toggle("on", !$("#rightPane").classList.contains("collapsed")));
   $$("[data-act=peek]").forEach((b) => b.classList.toggle("on", state.showPeek));
 }
@@ -1245,7 +1251,7 @@ function bindViewport() {
 }
 
 function canDragCoords() {
-  return state.coordMode === "manual";
+  return state.coordMode === "manual" && state.coordVisible;
 }
 
 function dragDot(el, e) {
@@ -1671,15 +1677,22 @@ function act(name) {
   const g = state.gen;
   switch (name) {
     case "grid":
-      state.coordMode = "manual";
+      if (state.coordMode !== "manual") {
+        state.coordMode = "manual";
+        state.coordVisible = true;
+        toast("좌표보기. C1 C2 C3를 끌어서 옮기세요.");
+      } else {
+        state.coordVisible = !state.coordVisible;
+        toast(state.coordVisible ? "좌표·격자를 다시 보여 줍니다." : "좌표·격자만 숨겼습니다. 생성에는 그대로 넣습니다.");
+      }
       renderDots();
       renderPanel();
-      toast("좌표보기. C1 C2 C3를 끌어서 옮기세요.");
       break;
     case "fit": fitView(); break;
     case "peek": state.showPeek = !state.showPeek; renderPeek(); break;
     case "auto":
       state.coordMode = "ai";
+      state.coordVisible = true;
       renderDots();
       renderPanel();
       toast("AI 좌표. 생성할 때 NAI API에 AI choice를 넣습니다.");

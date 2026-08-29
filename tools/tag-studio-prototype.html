@@ -86,7 +86,7 @@
     background: var(--panel);
     border-right: 1px solid var(--line);
     display: flex; flex-direction: column; min-height: 0;
-    transition: margin-left .22s ease;
+    transition: margin-left .22s ease, height .22s ease;
   }
   .side:not(.right).collapsed { margin-left: -340px; }
   .right {
@@ -101,18 +101,17 @@
 
   .handle {
     position: absolute; top: 50%; transform: translateY(-50%);
-    width: 18px; height: 74px;
+    width: 22px; height: 72px;
     border: 1px solid var(--line); background: var(--panel-2);
     color: var(--muted);
-    writing-mode: vertical-rl; text-orientation: mixed;
-    font-size: 11px; letter-spacing: .1em;
+    font-size: 16px; line-height: 1;
     display: grid; place-items: center;
     z-index: 6;
   }
   .handle:hover { color: var(--ink); background: var(--head); }
   .handle.l { left: 0; border-left: 0; border-radius: 0 8px 8px 0; }
   .handle.r {
-    left: -18px; right: auto;
+    left: -22px; right: auto;
     border-right: 0; border-radius: 8px 0 0 8px;
     z-index: 13;
   }
@@ -195,7 +194,10 @@
   .viewport.grabbing { cursor: grabbing; }
   .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
   .frame canvas { display: block; border-radius: 4px; box-shadow: var(--shadow); }
-  .dots { position: absolute; inset: 0; }
+  .dots {
+    position: absolute; left: 0; top: 0;
+    pointer-events: none;
+  }
   .dots.grid {
     background-image:
       linear-gradient(rgba(255,255,255,.14) 1px, transparent 1px),
@@ -210,16 +212,23 @@
     background: var(--accent); border-radius: 999px;
     box-shadow: 0 0 0 4px rgba(183,164,255,.28);
     cursor: grab; touch-action: none; white-space: nowrap;
+    pointer-events: auto;
   }
   .dots.hide { display: none; }
   .foldbar {
     display: none;
-    height: 34px;
+    height: 36px;
     border: 0;
     border-bottom: 1px solid var(--line);
     background: var(--panel-2);
     color: var(--muted);
-    font-size: 12px;
+    font-size: 18px;
+    line-height: 1;
+  }
+  .rhead .hclose {
+    display: none;
+    width: 32px; height: 28px; padding: 0;
+    font-size: 16px;
   }
   .dot.auto { background: #4a4f66; color: #cfd2e0; box-shadow: none; }
   .dot.sel { background: var(--pink); color: #fff; box-shadow: 0 0 0 3px rgba(232,90,140,.25); }
@@ -350,7 +359,10 @@
       border-top: 1px solid var(--line);
       margin-left: 0;
     }
-    .side:not(.right).collapsed { height: 34px; }
+    .side:not(.right).collapsed {
+      margin-left: 0;
+      height: 36px;
+    }
     .side:not(.right).collapsed .tabs,
     .side:not(.right).collapsed .body { display: none; }
     .foldbar { display: block; }
@@ -363,8 +375,15 @@
       margin: 0;
       box-shadow: var(--shadow);
     }
-    .right.collapsed { transform: translateX(calc(100% - 18px)); }
-    .handle.r { display: grid; }
+    .right.collapsed { transform: translateX(calc(100% - 36px)); margin-right: 0; }
+    .handle.r {
+      display: grid;
+      width: 36px;
+      height: 96px;
+      left: -36px;
+      font-size: 22px;
+    }
+    .rhead .hclose { display: inline-grid; place-items: center; }
     .floor .tools { display: flex; }
     .floor .tools .btn { height: 36px; }
     .floor .tools .loop { height: 36px; }
@@ -395,7 +414,7 @@
 
     <!-- ── LEFT ─────────────────────────────────────────── -->
     <aside class="side" id="left">
-      <button class="foldbar" id="leftFold" type="button">▾ 접기펼치기</button>
+      <button class="foldbar" id="leftFold" type="button">▼</button>
       <div class="tabs">
         <div class="tabrow">
           <div class="tabscroll" id="tabsFixed"></div>
@@ -423,8 +442,8 @@
       <div class="viewport" id="viewport">
         <div class="frame" id="frame">
           <canvas id="cv"></canvas>
-          <div class="dots" id="dots"></div>
         </div>
+        <div class="dots" id="dots"></div>
       </div>
 
       <div class="peek" id="peek">
@@ -444,15 +463,16 @@
 
       <div class="spinveil" id="spinveil"><div class="spin" aria-hidden="true"></div></div>
 
-      <button class="handle l" id="hL" type="button">접기펼치기</button>
+      <button class="handle l" id="hL" type="button">◀</button>
     </main>
 
     <!-- ── RIGHT ────────────────────────────────────────── -->
     <aside class="side right" id="rightPane">
-      <button class="handle r" id="hR" type="button">접기펼치기</button>
+      <button class="handle r" id="hR" type="button">◀</button>
       <div class="rhead">
         <span>이미지 히스토리</span>
         <span class="count" id="hcount">0</span>
+        <button class="btn sm hclose" id="hClose" type="button">▶</button>
       </div>
       <div class="hgrid" id="hgrid"></div>
       <div class="rfoot">
@@ -986,7 +1006,7 @@ function renderDots() {
   host.classList.toggle("grid", manual);
   host.innerHTML = charList().map((c) => {
     const cls = ["dot", state.selChar === c.tab.id ? "sel" : ""].join(" ");
-    return `<div class="${cls}" data-dot="${c.tab.id}" style="left:${c.x * 100}%;top:${c.y * 100}%;transform:translate(-50%,-50%) scale(${1 / (view.scale || 1)})">C${c.i + 1}</div>`;
+    return `<div class="${cls}" data-dot="${c.tab.id}" style="left:${c.x * 100}%;top:${c.y * 100}%">C${c.i + 1}</div>`;
   }).join("");
   $("#coord").textContent = manual
     ? (() => {
@@ -1020,10 +1040,11 @@ let loaded = null;
 function applyView() {
   $("#frame").style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
   $("#zoom").textContent = `${Math.round(view.scale * 100)}%`;
-  const inv = 1 / (view.scale || 1);
-  $$("[data-dot]").forEach((el) => {
-    el.style.transform = `translate(-50%, -50%) scale(${inv})`;
-  });
+  const host = $("#dots");
+  host.style.left = `${view.x}px`;
+  host.style.top = `${view.y}px`;
+  host.style.width = `${cv.width * view.scale}px`;
+  host.style.height = `${cv.height * view.scale}px`;
 }
 
 function fitView() {
@@ -1127,26 +1148,32 @@ function dragDot(el, e) {
   const c = state.chars[tabId];
   if (!c) return;
   state.selChar = tabId;
-  el.setPointerCapture(e.pointerId);
+  e.stopPropagation();
+  e.preventDefault();
+  try { el.setPointerCapture(e.pointerId); } catch (_) {}
   const host = $("#dots");
   const move = (ev) => {
+    ev.preventDefault();
     const r = host.getBoundingClientRect();
+    if (!r.width || !r.height) return;
     c.x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
     c.y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
     if (state.coordMode === "manual") {
       c.x = Math.round(c.x * 10) / 10;
       c.y = Math.round(c.y * 10) / 10;
     }
-    renderDots();
-    renderPeek();
+    el.style.left = `${c.x * 100}%`;
+    el.style.top = `${c.y * 100}%`;
+    $("#coord").textContent = `${c.x.toFixed(2)}, ${c.y.toFixed(2)}`;
   };
   const up = () => {
-    el.removeEventListener("pointermove", move);
-    el.removeEventListener("pointerup", up);
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", up);
+    renderPeek();
     renderPanel();
   };
-  el.addEventListener("pointermove", move);
-  el.addEventListener("pointerup", up);
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up);
   move(e);
 }
 
@@ -1373,10 +1400,7 @@ function act(name) {
       toast("AI 좌표. 생성할 때 NAI API에 AI choice를 넣습니다.");
       break;
     case "history":
-      $("#rightPane").classList.toggle("collapsed");
-      syncRightFold();
-      renderDots();
-      setTimeout(fitView, 240);
+      toggleHistory();
       break;
     case "settings": {
       $("#left").classList.remove("collapsed");
@@ -1580,15 +1604,17 @@ function addCharTab(rosterId) {
 function syncLeftFold() {
   const folded = $("#left").classList.contains("collapsed");
   const bar = $("#leftFold");
-  if (bar) bar.textContent = folded ? "▸ 펼치기" : "▾ 접기";
+  if (bar) bar.textContent = folded ? "▲" : "▼";
   const hL = $("#hL");
-  if (hL) hL.textContent = folded ? "펼치기" : "접기펼치기";
+  if (hL) hL.textContent = folded ? "▶" : "◀";
 }
 
 function syncRightFold() {
   const folded = $("#rightPane").classList.contains("collapsed");
   const hR = $("#hR");
-  if (hR) hR.textContent = folded ? "펼치기" : "접기펼치기";
+  if (hR) hR.textContent = folded ? "◀" : "▶";
+  const close = $("#hClose");
+  if (close) close.textContent = "▶";
 }
 
 function setLoopUi(on) {
@@ -1629,12 +1655,14 @@ $("#hL").addEventListener("click", () => {
   syncLeftFold();
   setTimeout(fitView, 240);
 });
-$("#hR").addEventListener("click", () => {
+function toggleHistory() {
   $("#rightPane").classList.toggle("collapsed");
   syncRightFold();
   renderDots();
   setTimeout(fitView, 240);
-});
+}
+$("#hR").addEventListener("click", toggleHistory);
+$("#hClose").addEventListener("click", toggleHistory);
 $("#tabAdd").addEventListener("click", () => addCharTab($("#charPick").value));
 $("#charPick").addEventListener("change", (e) => {
   if (!e.target.value) return;

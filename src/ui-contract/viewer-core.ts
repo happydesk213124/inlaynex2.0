@@ -3100,7 +3100,7 @@ export function stickySegmentForInlineChat(opts: {
 // ── beta: chat-bubble inline images at newline lines ──────────────────────
 
 const INLAY_INLINE_ATTR = 'data-inlay-inline-shot';
-export const INLINE_FRAME_LAYOUT_VERSION = '7';
+export const INLINE_FRAME_LAYOUT_VERSION = '8';
 /**
  * Content hash of the bubble this marker was placed into.
  *
@@ -3523,7 +3523,7 @@ export function inlineChatStackStyle(): string {
 
 /** Photo layer. Hidden until src is ready so the spinner keeps the box. */
 export function inlineChatOverlayImgStyle(visible = false): string {
-  return `position:absolute;left:50%;top:50%;width:96%;height:96%;transform:translate(-50%,-50%);object-fit:contain;border-radius:8px;display:block;pointer-events:none;opacity:${visible ? 1 : 0}`;
+  return `position:absolute;left:50%;top:50%;width:90%;height:90%;transform:translate(-50%,-50%);object-fit:contain;border-radius:8px;display:block;pointer-events:none;opacity:${visible ? 1 : 0}`;
 }
 
 type InlinePlaceholderInput = {

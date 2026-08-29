@@ -2621,10 +2621,12 @@ export function toastAnchorStyle(anchor: unknown, opts: {
   const z = Math.max(1, Math.round(finiteNumber(opts.zIndex, 99999)));
   const box = `z-index:${z};pointer-events:${pe};width:min(280px,92vw);box-sizing:border-box;display:${vis}`;
   const along = inset + shift;
+  // Bottom corners sit above Risu's input chrome; 16px hugs that bar.
+  const bottom = along + 20;
   if (a === 'tl') return `position:fixed;top:${along}px;left:${inset}px;${box};`;
   if (a === 'tr') return `position:fixed;top:${along}px;right:${inset}px;${box};`;
-  if (a === 'bl') return `position:fixed;bottom:${along}px;left:${inset}px;${box};`;
-  if (a === 'br') return `position:fixed;bottom:${along}px;right:${inset}px;${box};`;
+  if (a === 'bl') return `position:fixed;bottom:${bottom}px;left:${inset}px;${box};`;
+  if (a === 'br') return `position:fixed;bottom:${bottom}px;right:${inset}px;${box};`;
   return `position:fixed;top:${along}px;left:50%;transform:translateX(-50%);${box};`;
 }
 

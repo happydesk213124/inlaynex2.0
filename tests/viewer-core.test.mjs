@@ -1364,8 +1364,11 @@ test("toastAnchorStyle pins the chip to the chosen corner", () => {
   assert.equal(normalizeToastAnchor("nope"), "tc");
   assert.equal(normalizeToastAnchor("bottom-right"), "br");
   const br = toastAnchorStyle("br", { visible: true });
-  assert.match(br, /bottom:16px/);
+  assert.match(br, /bottom:36px/);
   assert.match(br, /right:16px/);
+  const bl = toastAnchorStyle("bl", { visible: true });
+  assert.match(bl, /bottom:36px/);
+  assert.match(bl, /left:16px/);
   assert.doesNotMatch(br, /translateX/);
   const stacked = toastAnchorStyle("tc", { shiftPx: 48, visible: true });
   assert.match(stacked, /top:64px/);

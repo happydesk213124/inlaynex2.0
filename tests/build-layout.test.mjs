@@ -547,10 +547,12 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /VC\.roleForInlineBubble\(\{/);
   assert.match(source, /VC\.cardsForInlineBubble\(\{/);
   assert.match(source, /forceStrip: denyRole/);
+  assert.match(source, /spin\.setStyleAttribute\("display:none"\)/);
+  assert.doesNotMatch(source, /typeof spin\.remove/);
   assert.match(source, /resolveInlinePaintCards\(\{ selIdx, paintIdx, selCards, paintCards \}\)/);
   assert.doesNotMatch(source, /injectChatInlineImages\(els\[paintIdx\], selCards,/);
   assert.match(source, /injectChatMsgActions\(els\[row\.idx\], row\.cards, row\.idx\)/);
-  // Automatic selection must take the same char±1 path a click takes. Nothing
+  // Automatic selection must take the same char±4 path a click takes. Nothing
   // reschedules it any more — the images come to the markers, not the other way.
   const bundle = read('dist', 'inlaynexus2.0.js');
   assert.doesNotMatch(bundle, /_inlineSelfOnly/);

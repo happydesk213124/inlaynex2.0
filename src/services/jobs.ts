@@ -391,6 +391,8 @@ export async function requestJobStop(args: { session_id?: string } = {}): Promis
 
 // ── progress and state ─────────────────────────────────────────────────────
 
+type PendingInlineRow = { shot_index: number; line: number; aspect?: string };
+
 interface ProgressExtra {
   shot_count?: number;
   shot_index?: number;
@@ -400,7 +402,7 @@ interface ProgressExtra {
   message?: string;
   cards_so_far?: number;
   /** Known line slots for bubble inline placeholders (spinner until image ready). */
-  pending_inline?: Array<{ shot_index: number; line: number }>;
+  pending_inline?: PendingInlineRow[];
   /** Message index the pending rows belong to — UI must not paint them on other turns. */
   pending_message_index?: number;
 }
@@ -949,13 +951,13 @@ async function runJob(jobId: string): Promise<void> {
     if (await cancelJobIfStale(jobId, 'superseded before generate')) return;
     const pendingMessageIndex =
       request.message_index != null ? toInt(request.message_index, -1) : -1;
-    const pendingInline = shots
-      .map((shot, i) => {
-        const line = Math.floor(Number((shot as { line?: unknown }).line));
-        if (!Number.isFinite(line) || line < 1) return null;
-        return { shot_index: i, line };
-      })
-      .filter((row): row is { shot_index: number; line: number } => !!row);
+    const pendingInline: PendingInlineRow[] = [];
+    shots.forEach((shot, i) => {
+      const line = Math.floor(Number((shot as { line?: unknown }).line));
+      if (!Number.isFinite(line) || line < 1) return;
+      const aspect = cleanText(shot.aspect || '', 20);
+      pendingInline.push({ shot_index: i, line, ...(aspect ? { aspect } : {}) });
+    });
     await setJob(
       jobId,
       'generating',

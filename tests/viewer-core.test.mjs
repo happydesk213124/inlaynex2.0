@@ -334,7 +334,8 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   assert.match(out, /data-inlay-inline-shot="c1"/);
   assert.match(out, /data-inlay-inline-shot="c2"/);
   assert.match(out, /<b>커피를 마셨다<\/b>/);
-  assert.match(out, /max-width:min\(78%,100%\)/);
+  assert.match(out, /data-inlay-inline-frame="1"/);
+  assert.match(out, /width:min\(78%,/);
   // first coffee line is bold — marker for line 2 sits before <b>
   assert.match(out, /data-inlay-inline-shot="c1"[^>]*>[\s\S]*?<b>커피를 마셨다<\/b>/);
   // duplicate plain "커피를 마셨다" still gets line-3 marker (not string search of first)
@@ -342,19 +343,31 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   assert.equal(htmlToPlainLn(stripped), htmlToPlainLn(rich));
 });
 
-test("markerBlockHtml ready is image-only", () => {
-  const pending = markerBlockHtml({ line: 2, src: "", shotIndex: 0, pending: true, cardId: "pending-0" });
+test("markerBlockHtml reserves one aspect-sized frame for pending and ready image", () => {
+  const pending = markerBlockHtml({
+    line: 2,
+    src: "",
+    shotIndex: 0,
+    pending: true,
+    cardId: "pending-0",
+    aspect: "landscape",
+  });
   assert.match(pending, /data-inlay-inline-pending="1"/);
   assert.match(pending, /animateTransform/);
-  assert.match(pending, /<br><br>/);
+  assert.match(pending, /data-inlay-inline-frame="1"/);
+  assert.match(pending, /aspect-ratio:1216\/832/);
   const ready = markerBlockHtml({
     line: 2,
     src: "data:image/png;base64,abc",
     shotIndex: 0,
     cardId: "c1",
+    aspect: "landscape",
   });
-  assert.match(ready, /max-width:min\(78%,100%\)/);
+  assert.match(ready, /data-inlay-inline-frame="1"/);
+  assert.match(ready, /aspect-ratio:1216\/832/);
   assert.match(ready, /data-inlay-inline-img="1"/);
+  const frameStyle = (html) => html.match(/data-inlay-inline-frame="1" style="([^"]+)"/)?.[1];
+  assert.equal(frameStyle(pending), frameStyle(ready));
   assert.doesNotMatch(ready, /data-inlay-inline-act=/);
   assert.doesNotMatch(ready, /data-inlay-chrome-act=/);
   const scaled = markerBlockHtml({
@@ -363,7 +376,7 @@ test("markerBlockHtml ready is image-only", () => {
     shotIndex: 0,
     cardId: "c1",
   }, 50);
-  assert.match(scaled, /max-width:min\(39%,100%\)/);
+  assert.match(scaled, /width:min\(39%,/);
   assert.match(scaled, /max-height:min\(35vh,450px\)/);
   const blobReady = markerBlockHtml({
     line: 2,
@@ -849,24 +862,23 @@ test("selection role uses message.role, not generationInfo presence", () => {
   assert.equal(hit.matchMethod, "reverse");
 });
 
-test("pickInlineKeepDomIndices allRoles keeps selected ±1", () => {
-  const roles = ["user", "char", "user", "char", "user"];
+test("pickInlineKeepDomIndices allRoles keeps selected ±4", () => {
+  const roles = Array.from({ length: 11 }, (_, i) => i % 2 ? "char" : "user");
   const isCharAt = (i) => isCharMessageRole(roles[i]);
   assert.deepEqual(
-    pickInlineKeepDomIndices({ selIdx: 2, length: 5, allRoles: true, isCharAt }).sort((a, b) => a - b),
-    [1, 2, 3],
+    pickInlineKeepDomIndices({ selIdx: 5, length: 11, allRoles: true, isCharAt }).sort((a, b) => a - b),
+    [1, 2, 3, 4, 5, 6, 7, 8, 9],
   );
-  assert.equal(INLINE_KEEP_MAX_PER_SIDE, 1);
+  assert.equal(INLINE_KEEP_MAX_PER_SIDE, 4);
 });
 
-test("pickInlineKeepDomIndices skips users and keeps 1 char each side", () => {
-  // DOM newest-first: idx0 below … idx8 above. Selected user at 4.
-  // Roles: C U C U [U] U C U C → nearest char below=2, above=6
-  const roles = ["char", "user", "char", "user", "user", "user", "char", "user", "char"];
+test("pickInlineKeepDomIndices skips users and keeps 4 eligible chars each side", () => {
+  // DOM newest-first. User turns are crossed but never retained.
+  const roles = ["char", "user", "char", "user", "char", "user", "char", "user", "user", "user", "char", "user", "char", "user", "char", "user", "char"];
   const isCharAt = (i) => isCharMessageRole(roles[i]);
   assert.deepEqual(
-    pickInlineKeepDomIndices({ selIdx: 4, length: 9, allRoles: false, isCharAt }).sort((a, b) => a - b),
-    [2, 6],
+    pickInlineKeepDomIndices({ selIdx: 8, length: 17, allRoles: false, isCharAt }).sort((a, b) => a - b),
+    [0, 2, 4, 6, 10, 12, 14, 16],
   );
 });
 
@@ -877,13 +889,13 @@ test("pickInlineKeepDomIndices skips lightboard-only bodies like users", () => {
   const isSkipBodyAt = (i) => skip.has(i);
   assert.deepEqual(
     pickInlineKeepDomIndices({ selIdx: 4, length: 9, allRoles: false, isCharAt, isSkipBodyAt }).sort((a, b) => a - b),
-    [1, 4, 7],
+    [0, 1, 4, 7, 8],
   );
 });
 
-test("prefetchInlineRoleDomIndices asks sel ±2 and clamps to the chat", () => {
-  assert.equal(INLINE_ROLE_PREFETCH_RADIUS, 2);
-  assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 4, length: 9 }), [2, 3, 4, 5, 6]);
+test("prefetchInlineRoleDomIndices asks sel ±4 and clamps to the chat", () => {
+  assert.equal(INLINE_ROLE_PREFETCH_RADIUS, 4);
+  assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 4, length: 9 }), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
   assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 0, length: 2 }), [0, 1]);
   assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 1, length: 2 }), [0, 1]);
   assert.deepEqual(prefetchInlineRoleDomIndices({ selIdx: 0, length: 1 }), [0]);
@@ -1031,12 +1043,18 @@ test("cardsForInlineBubble drops char shots on user and on drift", () => {
   }), []);
 });
 
-test("pickInlineKeepDomIndices keeps selected char plus 1 each side (max 3)", () => {
+test("pickInlineKeepDomIndices can still request a smaller explicit window", () => {
   // C U C U [C] U C U C — selected char at 4 → sel + 1 above + 1 below
   const roles = ["char", "user", "char", "user", "char", "user", "char", "user", "char"];
   const isCharAt = (i) => isCharMessageRole(roles[i]);
   assert.deepEqual(
-    pickInlineKeepDomIndices({ selIdx: 4, length: 9, allRoles: false, isCharAt }).sort((a, b) => a - b),
+    pickInlineKeepDomIndices({
+      selIdx: 4,
+      length: 9,
+      allRoles: false,
+      isCharAt,
+      maxPerSide: 1,
+    }).sort((a, b) => a - b),
     [2, 4, 6],
   );
 });
@@ -1170,8 +1188,8 @@ test("desiredInlinePlacements claims ready cards before pending on the same line
 
 test("desiredInlinePlacements holds a linked card without bytes so pending cannot cover it", () => {
   const got = desiredInlinePlacements(
-    [{ id: "c2", line: 3, shot_index: 1 }],
-    [{ line: 3, shot_index: 1 }, { line: 4, shot_index: 2 }],
+    [{ id: "c2", line: 3, shot_index: 1, aspect: "square" }],
+    [{ line: 3, shot_index: 1, aspect: "portrait" }, { line: 4, shot_index: 2, aspect: "landscape" }],
     () => "",
   );
   assert.deepEqual(got.encodeLater.map((c) => c.id), ["c2"]);
@@ -1182,6 +1200,7 @@ test("desiredInlinePlacements holds a linked card without bytes so pending canno
       { line: 4, cardId: "pending-2", pending: true },
     ],
   );
+  assert.deepEqual(got.placements.map((p) => p.aspect), ["square", "landscape"]);
 });
 
 test("runBoundedPool caps concurrency at the limit", async () => {

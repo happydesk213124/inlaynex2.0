@@ -96,6 +96,7 @@ type GalleryRow = {
   paragraph: number;
   y_percent: number | null;
   line?: number | null;
+  aspect?: string;
   message_index: number;
   message_role: string;
   content_hash: string;
@@ -300,6 +301,7 @@ export async function gallery(
       paragraph: Object.keys(sidecar).length ? loc.paragraph : row.paragraph,
       y_percent: loc.y_percent,
       line: loc.line,
+      aspect: cleanText(meta.aspect || '', 20) || undefined,
       message_index: loc.message_index ?? -1,
       message_role: loc.message_role || '',
       content_hash: loc.content_hash || '',

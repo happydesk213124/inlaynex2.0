@@ -8762,15 +8762,14 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           const img = imgs[0];
           if (!img || typeof img.setAttribute != "function") return !1;
           await img.setAttribute("src", src);
-          // The spinner marker ships its <img> hidden. Reveal it and drop the
-          // spinner in place — re-inserting the marker is what flashes.
-          if (typeof img.setStyleAttribute == "function" && typeof VC.inlineChatImgStyle == "function") {
-            await img.setStyleAttribute(VC.inlineChatImgStyle(t.backendSettings?.card?.inline_chat_scale_pct ?? 100));
-          }
+          // The spinner marker ships its <img> hidden. Reveal it and hide the
+          // overlay in the same frame — re-inserting the marker is what flashes.
+          if (typeof img.setStyleAttribute != "function" || typeof VC.inlineChatImgStyle != "function") return !1;
+          await img.setStyleAttribute(VC.inlineChatImgStyle());
           const spins = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-spin]"));
           for (const spin of spins) {
             try {
-              if (spin && typeof spin.remove == "function") await spin.remove();
+              if (spin && typeof spin.setStyleAttribute == "function") await spin.setStyleAttribute("display:none");
             } catch {
             }
           }
@@ -9276,7 +9275,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const allRoles = !!t.backendSettings?.card?.generate_all_roles;
       const maxPerSide = Number(VC?.INLINE_KEEP_MAX_PER_SIDE) > 0
         ? Number(VC.INLINE_KEEP_MAX_PER_SIDE)
-        : 1;
+        : 4;
       const scope = await Za().catch(() => null);
       const msgs = scope?.messages || [];
       const roleCache = new Map();
@@ -9378,14 +9377,14 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (isSkipBodyAt(idx)) return !1;
         return allRoles ? !0 : isCharAtSync(idx);
       };
-      // First wave: sel ±2 in parallel (5 DOM when the chat is long enough).
-      // The ± walk still decides keep and asks further if this wave missed a char.
+      // First wave: sel ±4 in parallel. The role-aware walk may continue past
+      // users and short bodies until it finds four eligible bubbles per side.
       const prefetchIdxs = typeof VC?.prefetchInlineRoleDomIndices == "function"
         ? VC.prefetchInlineRoleDomIndices({ selIdx, length: els.length })
         : (() => {
           const out = [];
-          const lo = Math.max(0, selIdx - 2);
-          const hi = Math.min(els.length - 1, selIdx + 2);
+          const lo = Math.max(0, selIdx - 4);
+          const hi = Math.min(els.length - 1, selIdx + 4);
           for (let i = lo; i <= hi; i += 1) out.push(i);
           return out;
         })();
@@ -9550,7 +9549,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       t._inlineKeepPendingKey = pendingKey;
       t._inlineKeepLinkedKey = linkedKey;
       t._inlineKeepMsgActions = nxMsgAct();
-      const mode = allRoles ? "±1" : \`char±\${maxPerSide}\`;
+      const mode = allRoles ? \`±\${maxPerSide}\` : \`char±\${maxPerSide}\`;
       y("info", "inline.keep", \`DOM#\${selIdx}\${mode} keep=\${[...keep].sort((a, b) => a - b).join(",")}/\${els.length} strip=diff\`);
       const N = globalThis.__INLAY_NATIVE__;
       let selCards = [];
@@ -16037,7 +16036,7 @@ const loadVendorUi = (): string => {
       throw new Error('[build] inline keep must diff-strip only (no full-chat wipe)');
     }
     if (!out.includes('prefetchInlineRoleDomIndices') || !out.includes('Promise.all(prefetchIdxs.map')) {
-      throw new Error('[build] inline role prefetch must ask sel±2 in parallel');
+      throw new Error('[build] inline role prefetch must ask sel±4 in parallel');
     }
     assertOnce(out, 'VC.pickInlineRepaintIndices({ rows: paintRows, painted: prevPaintedKeys })', 'per-bubble repaint split landed');
     // Both paint sites must consult the reuse set, or half the keep window still
@@ -16076,6 +16075,9 @@ const loadVendorUi = (): string => {
       }
       if (!body.includes('awaitingCount: awaiting')) {
         throw new Error('[build] inject skip must count cells a live subscription owns');
+      }
+      if (!body.includes('spin.setStyleAttribute("display:none")') || body.includes('spin.remove()')) {
+        throw new Error('[build] ready image must fill the existing spinner frame');
       }
       // A bubble repainted without dropping its watcher would keep filling nodes
       // that are no longer mounted, and the watcher would never be released.

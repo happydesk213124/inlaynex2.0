@@ -49,7 +49,7 @@ import type { CardRow, CharacterRecord, JobRow, MetaRow, StoreName } from '../co
 import { cardIdsToStripPreview } from '../domain/gallery/preview-retention';
 import { jobIdsToPrune } from '../domain/jobs/retention';
 import { psGet, psRemove, psSet, resetDeviceStore } from './device-store';
-import { blobUrlCache } from './blob-url-cache';
+import { blobUrlCache, explorerThumbCache } from './blob-url-cache';
 import { dropShotAsset, putShotAsset, readShotAssetBytes } from './shot-module';
 
 /** Rows as held in memory. Images carry metadata even when pixels are absent. */
@@ -979,6 +979,43 @@ export async function idbDelete(store: StoreName, key: unknown): Promise<boolean
   return true;
 }
 
+/**
+ * Drop many card+image rows, persist each store once, then wipe disk bytes.
+ * Per-id `idbDelete` was a persist + psRemove round-trip each time.
+ */
+export async function removeCardImageRows(ids: readonly string[]): Promise<string[]> {
+  await openDb();
+  const deleted: string[] = [];
+  const disk: string[] = [];
+  for (const raw of ids) {
+    const k = String(raw || '');
+    if (!k) continue;
+    const card = memStores.cards.get(k);
+    if (card) {
+      deindexCard(card);
+      memStores.cards.delete(k);
+    }
+    const prev = memStores.images.get(k);
+    if (prev) {
+      if (prev.png) pngCacheBytes -= prev.png.byteLength;
+      memStores.images.delete(k);
+      disk.push(k);
+    }
+    dropBlobUrl(k);
+    explorerThumbCache.drop(k);
+    if (card || prev) deleted.push(k);
+  }
+  if (deleted.length) {
+    schedulePersist('cards');
+    schedulePersist('images');
+  }
+  await Promise.all(disk.map(async (k) => {
+    await dropShotAsset(k).catch(() => false);
+    await psRemove(IMAGE_KEY(k));
+  }));
+  return deleted;
+}
+
 export async function idbGetAll<S extends StoreName>(store: S): Promise<Array<RowOf<S>>> {
   await openDb();
   return [...(memStores[store] as Map<string, unknown>).values()] as Array<RowOf<S>>;
@@ -1167,6 +1204,7 @@ export function resetStores(): void {
   for (const name of STORE_NAMES) (memStores[name] as Map<string, unknown>).clear();
   cardsBySession.clear();
   blobUrlCache.clear();
+  explorerThumbCache.clear();
   dirty.clear();
   pngCacheBytes = 0;
   storeReady = null;

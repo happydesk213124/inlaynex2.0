@@ -57,6 +57,7 @@ const MODULES = {
   'text-util': 'src/core/util/text.ts',
   'bytes-util': 'src/core/util/bytes.ts',
   'blob-url-cache': 'src/storage/blob-url-cache.ts',
+  'explorer-thumbs': 'src/storage/explorer-thumbs.ts',
   'image-url-subs': 'src/storage/image-url-subs.ts',
   'prompt-codec': 'src/config/prompt-codec.ts',
   'style-preset-overrides': 'src/domain/style-preset-overrides.ts',

@@ -24,7 +24,7 @@ import type { ApiResult, CardRow } from '../core/types';
 import { asU8, base64ToBytes, bytesToBase64, u8ToArrayBuffer } from '../core/util/bytes';
 import { ASSISTANT_PREVIEW_LIMIT, cleanText, toInt, toOptionalFloat, uuid } from '../core/util/text';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
-import { cardsForSession, idbDelete, idbGet, idbGetAll, idbPut, imageMeta, imagePng } from '../storage/stores';
+import { cardsForSession, idbDelete, idbGet, idbGetAll, idbPut, imageMeta, imagePng, removeCardImageRows } from '../storage/stores';
 import type { ZipEntryInput } from '../ui-contract/gallery-zip';
 import { buildGalleryManifest, packGalleryZip, resolveReattach, unpackGalleryZip } from '../ui-contract/gallery-zip';
 import {
@@ -164,9 +164,10 @@ async function rowLocation(id: string, meta: Record<string, unknown>) {
  * rows directly while `galleryExplore` still hands the UI a plain result.
  */
 async function exploreCards(limit: number): Promise<ExplorePayload> {
-  const rows = (await idbGetAll('cards'))
-    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-    .slice(0, Math.max(1, Math.min(2000, limit)));
+  const all = (await idbGetAll('cards'))
+    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  const cap = Math.floor(Number(limit));
+  const rows = Number.isFinite(cap) && cap > 0 ? all.slice(0, cap) : all;
   const folders: Record<string, ExploreFolder> = {};
   const items: ExploreRow[] = [];
   for (const row of rows) {
@@ -250,7 +251,7 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
   return payload;
 }
 
-export async function galleryExplore(limit = 400): Promise<ApiResult> {
+export async function galleryExplore(limit = 0): Promise<ApiResult> {
   return exploreCards(limit);
 }
 
@@ -478,11 +479,7 @@ export async function deleteCard(cardId: string): Promise<ApiResult> {
 
 export async function deleteCards(cardIds: unknown[] = []): Promise<ApiResult> {
   const ids = [...new Set((cardIds || []).map((id) => cleanText(id, 80)).filter(Boolean))];
-  const deleted: string[] = [];
-  for (const id of ids) {
-    const result = await removeCard(id);
-    if (result.ok) deleted.push(id);
-  }
+  const deleted = await removeCardImageRows(ids);
   return { ok: true, deleted: deleted.length, ids: deleted };
 }
 
@@ -494,13 +491,13 @@ export async function getExplorerFavorites(): Promise<ApiResult> {
 }
 
 export async function setExplorerFavorites(ids: unknown[] = []): Promise<ApiResult> {
-  const clean = [...new Set((ids || []).map((id) => cleanText(id, 80)).filter(Boolean))].slice(0, 5000);
+  const clean = [...new Set((ids || []).map((id) => cleanText(id, 80)).filter(Boolean))];
   await idbPut('meta', { key: 'explorer_favorites', ids: clean, updated_at: Date.now() / 1000 });
   return { ok: true, ids: clean };
 }
 
 export async function exportGalleryZip(body: Record<string, unknown> = {}): Promise<ApiResult> {
-  const explore = await exploreCards(2000);
+  const explore = await exploreCards(0);
   let items = explore.items;
   const folderKey = cleanText(body.folder_key || '', 400);
   if (body.all) {
@@ -546,7 +543,7 @@ export async function importGalleryZip(body: Record<string, unknown> = {}): Prom
   }
   const { manifest, images } = unpackGalleryZip(raw);
   if (!manifest?.items?.length) return { ok: false, ...errorBody('manifest.items missing', 'bad_request') };
-  const explore = await exploreCards(2000);
+  const explore = await exploreCards(0);
   const existing = explore.items;
   const imported: Array<{ id: string; reattach: string; content_hash: string }> = [];
   const report = { exact: 0, candidate: 0, orphan: 0, skipped: 0 };
@@ -620,16 +617,16 @@ export async function deleteFolder(folderKey: string): Promise<ApiResult> {
   const cid = cleanText(characterId, 200) || 'unknown';
   const chid = cleanText(chatId, 200) || 'unknown';
   const rows = await idbGetAll('cards');
-  const deletedIds: string[] = [];
+  const want: string[] = [];
   for (const row of rows) {
     const meta = parseMeta(row);
     const loc = await locationFieldsForCard(row.id, meta);
     const rowCid = cleanText(loc.character_id || '', 200) || 'unknown';
     const rowChid = cleanText(loc.chat_id || '', 200) || 'unknown';
     if (rowCid !== cid || rowChid !== chid) continue;
-    const result = await removeCard(row.id);
-    if (result.ok) deletedIds.push(row.id);
+    want.push(row.id);
   }
+  const deletedIds = await removeCardImageRows(want);
   return { ok: true, deleted: deletedIds.length, ids: deletedIds, folder_key: `${cid}|${chid}` };
 }
 

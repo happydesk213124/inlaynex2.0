@@ -145,7 +145,7 @@ const GET_ROUTES: readonly Route[] = [
   { match: under('/v1/jobs/'), handler: async ({ param }) => ok(await jobs.getJob(param)) },
   {
     match: under('/v1/gallery/explore'),
-    handler: async ({ query }) => ok(await gallery.galleryExplore(Number(q(query, 'limit', '400')))),
+    handler: async ({ query }) => ok(await gallery.galleryExplore(Number(q(query, 'limit', '0')))),
   },
   { match: exact('/v1/gallery/favorites'), handler: async () => ok(await gallery.getExplorerFavorites()) },
   {

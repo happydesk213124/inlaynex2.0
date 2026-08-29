@@ -18,6 +18,7 @@ import { hostHas } from '../core/host';
 import { routeFetch } from '../api/router';
 import { getDeviceStore } from '../storage/device-store';
 import { ensureBlobUrl, pngToDataUrl, resolveImageUrl, subscribeImageUrl, warmImages, warmProgress, warmFocusProgress, onWarmProgress, pinImageUrls, retainImageUrls, dropImageUrl, prioritizeWarmFocus, clearWarmFocus } from '../storage/image-urls';
+import { dropExplorerThumbUrl, ensureExplorerThumbUrl, pinExplorerThumbs, resolveExplorerThumbUrl, retainExplorerThumbs, warmExplorerThumbs } from '../storage/explorer-thumbs';
 import { loadSettingsFromStorage } from '../storage/settings-store';
 import { blobUrlCount, idbGet, isStorageMigrated, openDb, storeSize } from '../storage/stores';
 import {
@@ -133,6 +134,12 @@ export function installNativeBridge(): void {
     clearWarmFocus,
     retainImageUrls,
     dropImageUrl,
+    resolveExplorerThumbUrl,
+    ensureExplorerThumbUrl,
+    warmExplorerThumbs,
+    dropExplorerThumbUrl,
+    retainExplorerThumbs,
+    pinExplorerThumbs,
     warmProgress,
     warmFocusProgress,
     onWarmProgress,

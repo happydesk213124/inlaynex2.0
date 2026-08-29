@@ -1719,7 +1719,8 @@ const VENDOR_EXPLORER_THUMB_PAINT_PATCH = `    document.querySelectorAll("[data-
       const img = el.querySelector("img");
       if (img && id) {
         try {
-          const src = Ie({ id });
+          const N = globalThis.__INLAY_NATIVE__;
+          const src = (typeof N?.resolveExplorerThumbUrl == "function" ? N.resolveExplorerThumbUrl(id) : "") || Ie({ id });
           const VC = globalThis.__INLAY_VIEWER_CORE__;
           const ready = typeof VC?.isReadyImageSrc == "function" ? VC.isReadyImageSrc(src) : typeof src == "string" && (/^data:image\\//i.test(src) || /^blob:/i.test(src));
           if (ready) {
@@ -1999,7 +2000,27 @@ const VENDOR_EXPLORER_SELBAR_LABELS_PATCH =
             <button type="button" id="nx-explorer-save-one" class="secondary" style="min-height:28px;padding:4px 10px">저장</button>
             <button type="button" id="nx-explorer-favonly" class="secondary ex-mobile-select \${e.favOnly ? "active" : ""}" style="min-height:28px;padding:4px 10px" title="별 표시한 이미지만 보기">\${e.favOnly ? "★" : "☆"}</button>
             <button type="button" id="nx-explorer-delete-sel" style="min-height:28px;padding:4px 10px">삭제</button>
+            <button type="button" id="nx-explorer-select-all" class="secondary" style="min-height:28px;padding:4px 10px">전체선택</button>
             <button type="button" id="nx-explorer-clear-sel" class="secondary" style="min-height:28px;padding:4px 10px">선택해제</button>`;
+
+const VENDOR_EXPLORER_LIMIT_NEEDLE =
+  `    const n = await K("/v1/gallery/explore?limit=500", { method: "GET" }, 2e4), o = n?.folders || [], a = n?.items || [];`;
+const VENDOR_EXPLORER_LIMIT_PATCH =
+  `    const n = await K("/v1/gallery/explore?limit=0", { method: "GET" }, 6e4), o = n?.folders || [], a = n?.items || [];`;
+
+const VENDOR_EXPLORER_SELECT_ALL_NEEDLE =
+  `    document.getElementById("nx-explorer-delete-sel")?.addEventListener("click", () => explorerDeleteSelected());
+    document.getElementById("nx-explorer-clear-sel")?.addEventListener("click", () => {`;
+const VENDOR_EXPLORER_SELECT_ALL_PATCH =
+  `    document.getElementById("nx-explorer-delete-sel")?.addEventListener("click", () => explorerDeleteSelected());
+    document.getElementById("nx-explorer-select-all")?.addEventListener("click", () => {
+      const EX = exHelpers();
+      const ids = (typeof Ze == "function" ? Ze().items : ensureExplorerState().items) || [];
+      const list = ids.map((x) => x && x.id).filter(Boolean);
+      ensureExplorerState().selection = EX.selectAll ? EX.selectAll(t.explorer.selection, list) : { selected: new Set(list), anchorId: list[0] || "", focusId: list[0] || "" };
+      paintExplorerSelectionUi();
+    });
+    document.getElementById("nx-explorer-clear-sel")?.addEventListener("click", () => {`;
 
 const VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE =
   `favBtn && (favBtn.classList.toggle("active", !!ex.favOnly), favBtn.textContent = ex.favOnly ? "★ 즐겨찾기만" : "☆ 즐겨찾기만");`;
@@ -2063,7 +2084,7 @@ const VENDOR_EXPLORER_ET_FN_PATCH =
     const folderKey = String(t.explorer?.folderKey || "");
     if (t._explorerActiveFolder !== folderKey) {
       for (const id of t._explorerWarmedIds || []) {
-        if (typeof N?.dropImageUrl == "function") N.dropImageUrl(id);
+        if (typeof N?.dropExplorerThumbUrl == "function") N.dropExplorerThumbUrl(id);
       }
       t._explorerWarmedIds = new Set();
       t._explorerActiveFolder = folderKey;
@@ -2071,10 +2092,11 @@ const VENDOR_EXPLORER_ET_FN_PATCH =
     const prev = t._explorerWarmedIds instanceof Set ? t._explorerWarmedIds : new Set();
     const keep = new Set(list);
     for (const id of prev) {
-      if (!keep.has(id) && typeof N?.dropImageUrl == "function") N.dropImageUrl(id);
+      if (!keep.has(id) && typeof N?.dropExplorerThumbUrl == "function") N.dropExplorerThumbUrl(id);
     }
     t._explorerWarmedIds = keep;
-    if (typeof N?.pinImageUrls == "function") N.pinImageUrls(list);
+    if (typeof N?.pinExplorerThumbs == "function") N.pinExplorerThumbs(list);
+    else if (typeof N?.retainExplorerThumbs == "function") N.retainExplorerThumbs(list);
   }
   function warmExplorerVisible(ids, opts) {
     try {
@@ -2082,7 +2104,7 @@ const VENDOR_EXPLORER_ET_FN_PATCH =
       const list = [...new Set((ids || []).map(String).filter(Boolean))];
       const missing = list.filter((id) => {
         try {
-          const src = Ie({ id });
+          const src = (typeof N?.resolveExplorerThumbUrl == "function" ? N.resolveExplorerThumbUrl(id) : "") || Ie({ id });
           const VC = globalThis.__INLAY_VIEWER_CORE__;
           return !(typeof VC?.isReadyImageSrc == "function" ? VC.isReadyImageSrc(src) : typeof src == "string" && (/^data:image\\//i.test(src) || /^blob:/i.test(src)));
         } catch {
@@ -2100,8 +2122,8 @@ const VENDOR_EXPLORER_ET_FN_PATCH =
         done();
         return;
       }
-      if (typeof N?.warmImages == "function") N.warmImages(missing).then(done).catch(done);
-      else if (typeof N?.ensureImageUrl == "function") Promise.all(missing.map((id) => N.ensureImageUrl(id).catch(() => ""))).then(done).catch(done);
+      if (typeof N?.warmExplorerThumbs == "function") N.warmExplorerThumbs(missing).then(done).catch(done);
+      else if (typeof N?.ensureExplorerThumbUrl == "function") Promise.all(missing.map((id) => N.ensureExplorerThumbUrl(id).catch(() => ""))).then(done).catch(done);
       else done();
     } catch {
       if (opts?.onDone) opts.onDone();
@@ -14801,6 +14823,8 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE, 'explorer folders html');
   assertOnce(raw, VENDOR_EXPLORER_GRID_HTML_NEEDLE, 'explorer grid html');
   assertOnce(raw, VENDOR_EXPLORER_SELBAR_LABELS_NEEDLE, 'explorer selbar short labels');
+  assertOnce(raw, VENDOR_EXPLORER_LIMIT_NEEDLE, 'explorer explore limit 500');
+  assertOnce(raw, VENDOR_EXPLORER_SELECT_ALL_NEEDLE, 'explorer select-all bind');
   assertOnce(raw, VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE, 'explorer favonly paint star-only');
   assertOnce(raw, VENDOR_EXPLORER_ET_FN_NEEDLE, 'explorer et windowed');
   assertOnce(raw, VENDOR_EXPLORER_HA_NEEDLE, 'explorer ha window paint');
@@ -15208,6 +15232,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_EXPLORER_FOLDERS_HTML_NEEDLE, VENDOR_EXPLORER_FOLDERS_HTML_PATCH)
     .replace(VENDOR_EXPLORER_GRID_HTML_NEEDLE, VENDOR_EXPLORER_GRID_HTML_PATCH)
     .replace(VENDOR_EXPLORER_SELBAR_LABELS_NEEDLE, VENDOR_EXPLORER_SELBAR_LABELS_PATCH)
+    .replace(VENDOR_EXPLORER_LIMIT_NEEDLE, VENDOR_EXPLORER_LIMIT_PATCH)
+    .replace(VENDOR_EXPLORER_SELECT_ALL_NEEDLE, VENDOR_EXPLORER_SELECT_ALL_PATCH)
     .replace(VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE, VENDOR_EXPLORER_FAVONLY_PAINT_PATCH)
     .replace(VENDOR_EXPLORER_ET_FN_NEEDLE, VENDOR_EXPLORER_ET_FN_PATCH)
     .replace(VENDOR_EXPLORER_TAB_LOAD_NEEDLE, VENDOR_EXPLORER_TAB_LOAD_PATCH)
@@ -15609,6 +15635,15 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'openedInspect: !0', 'count-chip inspect fires on the second pointerdown');
     assertOnce(out, 'if (ov && ov._stickyThumbCollapsed) {', 'count-chip single tap only expands when folded');
     assertOnce(out, 'const stickyPins = t.overlayUi?.markers || [];', 'count-chip / pin hit is tested before the sticky image');
+    assertOnce(out, '/v1/gallery/explore?limit=0', 'explorer listing is uncapped');
+    assertOnce(out, 'id="nx-explorer-select-all"', 'explorer select-all button landed');
+    assertOnce(out, 'N.warmExplorerThumbs(missing)', 'explorer warms object-URL thumbs');
+    if (out.includes('/v1/gallery/explore?limit=500')) {
+      throw new Error('[build] explorer still requests a 500-card listing cap');
+    }
+    if (out.includes('N.warmImages(missing)')) {
+      throw new Error('[build] explorer still encodes data URLs for thumbs');
+    }
     if (out.includes('if (nxFireTap(g.card)) return;')) {
       throw new Error('[build] sticky image must not fire tap-inspect');
     }

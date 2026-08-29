@@ -1,10 +1,11 @@
 /**
- * Bounded display-URL cache for gallery/sticky/inline thumbs.
+ * Bounded display-URL cache for explorer / gallery / sticky / inline thumbs.
  *
- * The budget is source bytes, passed at `set`, not character length: a `blob:`
- * URL is a short string standing for a large buffer, so charging by string length
- * would let an unbounded amount of image data stay resident. `data:` URLs cost
- * roughly 4/3 of the bytes they are charged. Eviction revokes object URLs.
+ * Explorer entries are `blob:` object URLs. Overlay still keeps a separate
+ * `data:` map. The budget is source bytes, passed at `set`, not character
+ * length: a `blob:` URL is a short string standing for a large buffer, so
+ * charging by string length would let an unbounded amount of image data stay
+ * resident. Eviction revokes object URLs.
  */
 
 function revokeDisplayUrl(url: string): void {
@@ -137,3 +138,6 @@ export class BlobUrlCache {
 export const BLOB_URL_BUDGET_CHARS = 64 * 1024 * 1024;
 
 export const blobUrlCache = new BlobUrlCache(BLOB_URL_BUDGET_CHARS);
+
+/** Explorer grid only — object URLs, never data URLs. */
+export const explorerThumbCache = new BlobUrlCache(BLOB_URL_BUDGET_CHARS);

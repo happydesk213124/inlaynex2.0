@@ -224,9 +224,10 @@ test('new chat/reply schedules a pointer-near message select', () => {
   assert.match(source, /schedulePointerSelect\("boot"\)/);
   assert.match(source, /schedulePointerSelect\("reply"\)/);
   assert.match(source, /source: "provisional"/);
-  // A switch waits 250ms for the new chat DOM, then retries exactly once at 700ms.
-  // Boot/reply poll at 200ms instead of a fixed 1s wait.
-  assert.match(source, /freshBoot \|\| freshReply \? 200 : freshSession \? 250 : rawWait/);
+  // A switch polls for the newest bubble, then retries exactly once at 700ms.
+  assert.match(source, /async function nxWaitNewestDom/);
+  assert.match(source, /freshBoot \|\| freshReply \|\| freshSession \? 0 : rawWait/);
+  assert.match(source, /t\._inlineHeadFirst = 1/);
   assert.match(source, /schedulePointerSelect\("session", 7e2\)/);
   assert.match(source, /schedulePointerSelect\("boot", 200\)/);
   assert.match(source, /async function dtNewest/);

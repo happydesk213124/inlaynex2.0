@@ -8148,6 +8148,25 @@ const VENDOR_DT_FN_PATCH =
     }
     return [];
   }
+  async function nxWaitNewestDom(doc, maxMs) {
+    // Character switch: Risu remounts the chat after we notice the session.
+    // A fixed 250 ms is early on a phone and late on localhost. Ask for the
+    // newest bubble until it exists, then stop — do not watch the whole tree.
+    const cap = Number(maxMs) > 0 ? Number(maxMs) : 2000;
+    const t0 = Date.now();
+    while (Date.now() - t0 <= cap) {
+      let root = doc;
+      try {
+        if (typeof qe == "function") root = await qe(doc) || doc;
+      } catch {
+        root = doc;
+      }
+      const newest = typeof dtNewest == "function" ? await dtNewest(root) : [];
+      if (Array.isArray(newest) && newest.length) return newest;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return [];
+  }
   async function dtNewest(e) {
     if (!e) return [];
     const unwrap = async (sel) => {
@@ -8962,7 +8981,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           for (let i = lo; i <= hi; i += 1) out.push(i);
           return out;
         })();
-      await Promise.all(prefetchIdxs.map((i) => resolveAt(i)));
+      const headFirst = !!t._inlineHeadFirst;
+      t._inlineHeadFirst = 0;
+      if (!headFirst) await Promise.all(prefetchIdxs.map((i) => resolveAt(i)));
       // Prefetch roles/text along walk so pickInlineKeepDomIndices can stay sync.
       await resolveAt(selIdx);
       let paintIdx = selIdx;
@@ -8984,6 +9005,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         }
       }
+      if (!headFirst) {
       let found = 0;
       for (let i = selIdx + 1; i < els.length && found < maxPerSide; i += 1) {
         await resolveAt(i);
@@ -8994,7 +9016,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         await resolveAt(i);
         if (canKeepAt(i)) found += 1;
       }
-      const keepIdxs = typeof VC?.pickInlineKeepDomIndices == "function"
+      }
+      const keepIdxs = headFirst
+        ? (canKeepAt(paintIdx) ? [paintIdx] : [])
+        : typeof VC?.pickInlineKeepDomIndices == "function"
         ? VC.pickInlineKeepDomIndices({
           selIdx: paintIdx,
           length: els.length,
@@ -9246,6 +9271,62 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           await injectChatInlineImages(els[paintIdx], paintPlan.cards, t._inlinePending);
           const row = paintRows.find((r) => r.idx === paintIdx);
           if (row) await notePainted(paintIdx, row.hash, row.key);
+        }
+      }
+      if (headFirst) {
+        y("info", "inline.head.first", \`DOM#\${paintIdx} then neighbours\`);
+        await Promise.all(prefetchIdxs.map((i) => resolveAt(i)));
+        let foundN = 0;
+        for (let i = selIdx + 1; i < els.length && foundN < maxPerSide; i += 1) {
+          await resolveAt(i);
+          if (canKeepAt(i)) foundN += 1;
+        }
+        foundN = 0;
+        for (let i = selIdx - 1; i >= 0 && foundN < maxPerSide; i -= 1) {
+          await resolveAt(i);
+          if (canKeepAt(i)) foundN += 1;
+        }
+        const laterKeep = typeof VC?.pickInlineKeepDomIndices == "function"
+          ? VC.pickInlineKeepDomIndices({
+            selIdx: paintIdx,
+            length: els.length,
+            allRoles,
+            isCharAt: isCharAtSync,
+            isSkipBodyAt,
+            maxPerSide
+          })
+          : keepIdxs;
+        for (const idx of laterKeep) keep.add(Number(idx));
+        t._inlineKeepIdxs = [...keep].sort((a, b) => a - b);
+        neighborMsgs.length = 0;
+        for (const idx of keep) {
+          if (idx === paintIdx) continue;
+          const row = msgCache.get(idx) || await resolveAt(idx);
+          neighborMsgs.push(row || { idx, msg: null });
+        }
+        neighborCardLists.length = 0;
+        for (const row of neighborMsgs) {
+          if (row?.idx == null || !els[row.idx] || !row.msg) continue;
+          let nbCards = [];
+          try {
+            nbCards = linkedCards(row.msg);
+            if (!nbCards.length) nbCards = await nxRebind(row.msg, []);
+          } catch {
+            nbCards = [];
+          }
+          neighborCardLists.push({
+            idx: row.idx,
+            hash: String(row.msg?.hash || ""),
+            cards: nbCards
+          });
+          paintRows.push({ idx: row.idx, hash: String(row.msg?.hash || ""), key: paintKeyOf(nbCards, !1, row.idx) });
+        }
+        neighborIds.length = 0;
+        for (const row of neighborCardLists) {
+          for (const card of row.cards) {
+            const id = String(card?.id || "");
+            if (id) neighborIds.push(id);
+          }
         }
       }
       try {
@@ -12372,7 +12453,7 @@ const VENDOR_POINTER_SELECT_PATCH =
         }
       }).catch(() => {
       });
-    }, freshBoot || freshReply ? 200 : freshSession ? 250 : rawWait);
+    }, freshBoot || freshReply || freshSession ? 0 : rawWait);
   }
   async function runPointerSelect(reason) {
     if (t.uiOpen || t._hostChromeBlocked) return !1;
@@ -12383,18 +12464,17 @@ const VENDOR_POINTER_SELECT_PATCH =
     const why = String(reason || "");
     const fast = why === "boot" || why === "session" || why === "reply";
     if (fast) {
-      let root = doc;
-      try {
-        if (typeof qe == "function") root = await qe(doc) || doc;
-      } catch {
-        root = doc;
-      }
-      const newest = typeof dtNewest == "function" ? await dtNewest(root) : [];
+      const newest = typeof nxWaitNewestDom == "function"
+        ? await nxWaitNewestDom(doc, 2000)
+        : typeof dtNewest == "function" ? await dtNewest(doc) : [];
       if (!newest.length) return !1;
-      y("info", "select.pointer", \`reason=\${why} newest\`);
-      // Full char±1 attach, same as a click. Then seed the bounded retry: this
-      // fires before Risu finishes swapping the chat DOM often enough that a
-      // single attempt is what made shots and chips need a click to show up.
+      y("info", "select.pointer", \`reason=\${why} newest wait\`);
+      // Head first: this chat's DOM#0, then neighbours. Previous keep/paint
+      // fingerprints belong to the last session and would strip or skip wrong.
+      t._inlineHeadFirst = 1;
+      t._inlineKeepIdxs = [];
+      t._inlinePaintedKeys = {};
+      t._inlinePaintedCounts = {};
       nxResetAttachRetry();
       await Da(0, newest, { source: "provisional", auto: 1 });
       if (!t._inlineAttachOk) nxScheduleAttachRetry(why);
@@ -15315,6 +15395,19 @@ const loadVendorUi = (): string => {
         throw new Error('[build] bind pointer must not raise the attach toast');
       }
     }
+    assertOnce(out, 'async function nxWaitNewestDom(', 'session attach waits for the newest bubble');
+    assertOnce(out, 't._inlineHeadFirst = 1;', 'session attach paints the newest bubble first');
+    {
+      const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
+      const to = out.indexOf('async function openSettingsTab(tab) {', from);
+      const body = from >= 0 && to > from ? out.slice(from, to) : '';
+      const headAt = body.indexOf('inline.head.first');
+      const laterAt = body.indexOf('await Promise.all(prefetchIdxs.map', headAt);
+      const injectAt = body.indexOf('await injectChatInlineImages(els[paintIdx]');
+      if (headAt < 0 || laterAt < 0 || injectAt < 0 || !(injectAt < headAt && headAt < laterAt)) {
+        throw new Error('[build] head-first must inject DOM#0 before neighbour prefetch');
+      }
+    }
     {
       const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
       const to = out.indexOf('async function openSettingsTab(tab) {', from);
@@ -15527,8 +15620,8 @@ const loadVendorUi = (): string => {
     if ((out.match(/nxScopeCheckSoon\(\);/g) || []).length !== 3) {
       throw new Error('[build] scope recheck must ride the existing pointermove/capture/scroll handlers');
     }
-    if (!out.includes('freshSession ? 250 : rawWait') || !out.includes('schedulePointerSelect("session", 7e2)')) {
-      throw new Error('[build] session pointer select must try at 250ms and retry once');
+    if (!out.includes('nxWaitNewestDom(doc, 2000)') || !out.includes('schedulePointerSelect("session", 7e2)')) {
+      throw new Error('[build] session pointer select must wait for the newest bubble and retry once');
     }
     if (!out.includes('_paintStatusKey') || !out.includes('_seFp') || !out.includes('_deTextCache')) {
       throw new Error('[build] missing same-feel skip caches (status/Se/De)');

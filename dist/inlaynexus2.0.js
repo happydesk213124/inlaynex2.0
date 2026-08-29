@@ -13193,6 +13193,25 @@ ${Ye(250)}`;
     }
     return [];
   }
+  async function nxWaitNewestDom(doc, maxMs) {
+    // Character switch: Risu remounts the chat after we notice the session.
+    // A fixed 250 ms is early on a phone and late on localhost. Ask for the
+    // newest bubble until it exists, then stop — do not watch the whole tree.
+    const cap = Number(maxMs) > 0 ? Number(maxMs) : 2000;
+    const t0 = Date.now();
+    while (Date.now() - t0 <= cap) {
+      let root = doc;
+      try {
+        if (typeof qe == "function") root = await qe(doc) || doc;
+      } catch {
+        root = doc;
+      }
+      const newest = typeof dtNewest == "function" ? await dtNewest(root) : [];
+      if (Array.isArray(newest) && newest.length) return newest;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return [];
+  }
   async function dtNewest(e) {
     if (!e) return [];
     const unwrap = async (sel) => {
@@ -14355,7 +14374,9 @@ ${Ye(250)}`;
           for (let i = lo; i <= hi; i += 1) out.push(i);
           return out;
         })();
-      await Promise.all(prefetchIdxs.map((i) => resolveAt(i)));
+      const headFirst = !!t._inlineHeadFirst;
+      t._inlineHeadFirst = 0;
+      if (!headFirst) await Promise.all(prefetchIdxs.map((i) => resolveAt(i)));
       // Prefetch roles/text along walk so pickInlineKeepDomIndices can stay sync.
       await resolveAt(selIdx);
       let paintIdx = selIdx;
@@ -14377,6 +14398,7 @@ ${Ye(250)}`;
           }
         }
       }
+      if (!headFirst) {
       let found = 0;
       for (let i = selIdx + 1; i < els.length && found < maxPerSide; i += 1) {
         await resolveAt(i);
@@ -14387,7 +14409,10 @@ ${Ye(250)}`;
         await resolveAt(i);
         if (canKeepAt(i)) found += 1;
       }
-      const keepIdxs = typeof VC?.pickInlineKeepDomIndices == "function"
+      }
+      const keepIdxs = headFirst
+        ? (canKeepAt(paintIdx) ? [paintIdx] : [])
+        : typeof VC?.pickInlineKeepDomIndices == "function"
         ? VC.pickInlineKeepDomIndices({
           selIdx: paintIdx,
           length: els.length,
@@ -14639,6 +14664,62 @@ ${Ye(250)}`;
           await injectChatInlineImages(els[paintIdx], paintPlan.cards, t._inlinePending);
           const row = paintRows.find((r) => r.idx === paintIdx);
           if (row) await notePainted(paintIdx, row.hash, row.key);
+        }
+      }
+      if (headFirst) {
+        y("info", "inline.head.first", `DOM#${paintIdx} then neighbours`);
+        await Promise.all(prefetchIdxs.map((i) => resolveAt(i)));
+        let foundN = 0;
+        for (let i = selIdx + 1; i < els.length && foundN < maxPerSide; i += 1) {
+          await resolveAt(i);
+          if (canKeepAt(i)) foundN += 1;
+        }
+        foundN = 0;
+        for (let i = selIdx - 1; i >= 0 && foundN < maxPerSide; i -= 1) {
+          await resolveAt(i);
+          if (canKeepAt(i)) foundN += 1;
+        }
+        const laterKeep = typeof VC?.pickInlineKeepDomIndices == "function"
+          ? VC.pickInlineKeepDomIndices({
+            selIdx: paintIdx,
+            length: els.length,
+            allRoles,
+            isCharAt: isCharAtSync,
+            isSkipBodyAt,
+            maxPerSide
+          })
+          : keepIdxs;
+        for (const idx of laterKeep) keep.add(Number(idx));
+        t._inlineKeepIdxs = [...keep].sort((a, b) => a - b);
+        neighborMsgs.length = 0;
+        for (const idx of keep) {
+          if (idx === paintIdx) continue;
+          const row = msgCache.get(idx) || await resolveAt(idx);
+          neighborMsgs.push(row || { idx, msg: null });
+        }
+        neighborCardLists.length = 0;
+        for (const row of neighborMsgs) {
+          if (row?.idx == null || !els[row.idx] || !row.msg) continue;
+          let nbCards = [];
+          try {
+            nbCards = linkedCards(row.msg);
+            if (!nbCards.length) nbCards = await nxRebind(row.msg, []);
+          } catch {
+            nbCards = [];
+          }
+          neighborCardLists.push({
+            idx: row.idx,
+            hash: String(row.msg?.hash || ""),
+            cards: nbCards
+          });
+          paintRows.push({ idx: row.idx, hash: String(row.msg?.hash || ""), key: paintKeyOf(nbCards, !1, row.idx) });
+        }
+        neighborIds.length = 0;
+        for (const row of neighborCardLists) {
+          for (const card of row.cards) {
+            const id = String(card?.id || "");
+            if (id) neighborIds.push(id);
+          }
         }
       }
       try {
@@ -15296,7 +15377,7 @@ ${Ye(250)}`;
         }
       }).catch(() => {
       });
-    }, freshBoot || freshReply ? 200 : freshSession ? 250 : rawWait);
+    }, freshBoot || freshReply || freshSession ? 0 : rawWait);
   }
   async function runPointerSelect(reason) {
     if (t.uiOpen || t._hostChromeBlocked) return !1;
@@ -15307,18 +15388,17 @@ ${Ye(250)}`;
     const why = String(reason || "");
     const fast = why === "boot" || why === "session" || why === "reply";
     if (fast) {
-      let root = doc;
-      try {
-        if (typeof qe == "function") root = await qe(doc) || doc;
-      } catch {
-        root = doc;
-      }
-      const newest = typeof dtNewest == "function" ? await dtNewest(root) : [];
+      const newest = typeof nxWaitNewestDom == "function"
+        ? await nxWaitNewestDom(doc, 2000)
+        : typeof dtNewest == "function" ? await dtNewest(doc) : [];
       if (!newest.length) return !1;
-      y("info", "select.pointer", `reason=${why} newest`);
-      // Full char±1 attach, same as a click. Then seed the bounded retry: this
-      // fires before Risu finishes swapping the chat DOM often enough that a
-      // single attempt is what made shots and chips need a click to show up.
+      y("info", "select.pointer", `reason=${why} newest wait`);
+      // Head first: this chat's DOM#0, then neighbours. Previous keep/paint
+      // fingerprints belong to the last session and would strip or skip wrong.
+      t._inlineHeadFirst = 1;
+      t._inlineKeepIdxs = [];
+      t._inlinePaintedKeys = {};
+      t._inlinePaintedCounts = {};
       nxResetAttachRetry();
       await Da(0, newest, { source: "provisional", auto: 1 });
       if (!t._inlineAttachOk) nxScheduleAttachRetry(why);

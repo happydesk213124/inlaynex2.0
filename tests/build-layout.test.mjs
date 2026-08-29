@@ -267,6 +267,7 @@ test('a spinner without bytes is retried instead of cached as painted', () => {
   // Ids alone would match the spinner the previous pass placed under the card's
   // own id, and the bake loop below would never run again.
   assert.match(inject, /VC\.canSkipInlineInject\(\{/);
+  assert.match(inject, /readyImgCount:\s*readyImgs/);
   assert.doesNotMatch(inject, /if \(prev\.length === wantIds\.length && t\._inlinePaintScale === scaleNow\) \{/);
   assert.ok(inject.includes('encodeLeft += 1'), 'failed bake must count as debt');
   assert.match(inject, /VC\.trackInlineEncodeAttempt\(t\._inlineEncodeMiss/);

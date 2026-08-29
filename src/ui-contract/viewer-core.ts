@@ -3133,18 +3133,26 @@ export async function runBoundedPool<T>(
  * A cache-miss card owns a spinner marker under its *own* id, so matching ids
  * and marker counts no longer proves the paint finished — anything still in
  * `encodeLater` has to reach the bake loop or its spinner never becomes an image.
+ *
+ * Cached cards are worse: leftover wrappers keep the count/id match after Risu
+ * (or a chat hop) strips the `<img src>`. Skipping then leaves chips on an
+ * empty slot. `readyImgCount` is how many wrappers actually show a display URL.
  */
 export function canSkipInlineInject(opts: {
   scaleMatches?: unknown;
   liveShotCount?: unknown;
   wantIdCount?: unknown;
   encodeLaterCount?: unknown;
+  readyImgCount?: unknown;
 } = {}): boolean {
   if (!opts.scaleMatches) return false;
   if (Math.max(0, Math.floor(finiteNumber(opts.encodeLaterCount, 0))) > 0) return false;
   const live = Math.max(0, Math.floor(finiteNumber(opts.liveShotCount, 0)));
   const want = Math.max(0, Math.floor(finiteNumber(opts.wantIdCount, 0)));
-  return live === want;
+  if (live !== want) return false;
+  if (opts.readyImgCount == null) return true;
+  const ready = Math.max(0, Math.floor(finiteNumber(opts.readyImgCount, 0)));
+  return want === 0 || ready === want;
 }
 
 export const INLINE_ENCODE_RETRY_MAX = 3;

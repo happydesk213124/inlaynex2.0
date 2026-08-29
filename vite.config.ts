@@ -8297,14 +8297,26 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const scaleNow = Math.max(25, Math.min(200, Math.round(Number(t.backendSettings?.card?.inline_chat_scale_pct) || 100)));
       let prev = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
       let htmlProbe = "n/a";
+      let readyImgs = 0;
+      for (const wrap of prev) {
+        try {
+          const imgs = await unwrapSafe(await wrap.querySelectorAll("img"));
+          const img = imgs[0];
+          if (!img || typeof img.getAttribute != "function") continue;
+          const src = String(await img.getAttribute("src") || "");
+          if (nxReadyImg(src)) readyImgs += 1;
+        } catch {
+        }
+      }
       const skipOk = typeof VC.canSkipInlineInject == "function"
         ? VC.canSkipInlineInject({
           scaleMatches: t._inlinePaintScale === scaleNow,
           liveShotCount: prev.length,
           wantIdCount: wantIds.length,
-          encodeLaterCount: encodeLater.length
+          encodeLaterCount: encodeLater.length,
+          readyImgCount: readyImgs
         })
-        : prev.length === wantIds.length && t._inlinePaintScale === scaleNow && !encodeLater.length;
+        : prev.length === wantIds.length && t._inlinePaintScale === scaleNow && !encodeLater.length && readyImgs === wantIds.length;
       if (skipOk) {
         if (!wantIds.length) {
           y("info", "inline.inject.skip", "shots=0 already");
@@ -8871,7 +8883,23 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
         };
         try {
-          if ((probeLinkedKey || pendingKey) && !(await unwrapGone("[data-inlay-inline-shot],[data-inlay-inline-pending]")).length) return !0;
+          if (probeLinkedKey || pendingKey) {
+            const wraps = await unwrapGone("[data-inlay-inline-shot],[data-inlay-inline-pending]");
+            if (!wraps.length) return !0;
+            let ready = 0;
+            for (const wrap of wraps) {
+              try {
+                const rawImgs = wrap && typeof wrap.querySelectorAll == "function" ? await wrap.querySelectorAll("img") : null;
+                const imgs = typeof k.unwarpSafeArray == "function" && rawImgs ? await k.unwarpSafeArray(rawImgs) : [];
+                const img = Array.isArray(imgs) ? imgs[0] : imgs;
+                if (!img || typeof img.getAttribute != "function") continue;
+                const src = String(await img.getAttribute("src") || "");
+                if (nxReadyImg(src)) ready += 1;
+              } catch {
+              }
+            }
+            if (!ready) return !0;
+          }
           if (wantActions && !(await unwrapGone("[x-inlay-msg-actions]")).length) return !0;
           return !1;
         } catch {
@@ -9253,6 +9281,21 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (!hasCards) return;
         const n = await markerCount(els[idx]);
         if (n < 0) return;
+        // Wrappers/chips alone are not a finished paint — the next hop would
+        // reuse this bubble and never patch the stripped <img src>.
+        try {
+          const wraps = await unwrapSafe(await els[idx].querySelectorAll("[data-inlay-inline-shot]"));
+          let ready = 0;
+          for (const wrap of wraps) {
+            const imgs = await unwrapSafe(await wrap.querySelectorAll("img"));
+            const img = imgs[0];
+            if (!img || typeof img.getAttribute != "function") continue;
+            if (nxReadyImg(String(await img.getAttribute("src") || ""))) ready += 1;
+          }
+          if (!ready) return;
+        } catch {
+          return;
+        }
         nextPaintedKeys[hash] = key;
         nextPaintedCounts[hash] = n;
       };
@@ -15554,6 +15597,8 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'confirmedEmpty: !!t._inlineConfirmedEmpty', 'force retag may confirm empty desired');
     assertOnce(out, 't._inlineConfirmedEmpty = !0', 'force retag sets confirmed-empty before inject');
     assertOnce(out, 'VC.inlinePaintKeyHasCards(key)', 'empty paint keys must not be reused');
+    assertOnce(out, 'Wrappers/chips alone are not a finished paint', 'reuse must require a live img src');
+    assertOnce(out, 'if (!ready) return !0;', 'cheap keep must treat empty-src wrappers as gone');
     {
       const from = out.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows) {');
       const to = out.indexOf('async function refreshSelectedInlineImages(force) {', from);
@@ -15575,6 +15620,9 @@ const loadVendorUi = (): string => {
       }
       if (!body.includes('VC.canSkipInlineInject({')) {
         throw new Error('[build] inject skip must go through canSkipInlineInject');
+      }
+      if (!body.includes('readyImgCount: readyImgs')) {
+        throw new Error('[build] inject skip must count live img srcs, not just wrappers');
       }
       if (!body.includes('encodeLeft += 1')) {
         throw new Error('[build] a failed bake must be counted as encode debt');

@@ -1126,6 +1126,31 @@ test("a successful bake clears the miss count so a later eviction retries", () =
   assert.equal(trackInlineEncodeAttempt(attempts, "c1", false), true);
 });
 
+test("inject skip needs a live img src, not just leftover wrappers", () => {
+  // Chat hop / Risu rewrite can keep data-inlay-inline-shot wrappers after the
+  // <img src> is gone. Count/id match used to skip — chips stayed, picture did not.
+  assert.equal(
+    canSkipInlineInject({
+      scaleMatches: true,
+      liveShotCount: 1,
+      wantIdCount: 1,
+      encodeLaterCount: 0,
+      readyImgCount: 0,
+    }),
+    false,
+  );
+  assert.equal(
+    canSkipInlineInject({
+      scaleMatches: true,
+      liveShotCount: 1,
+      wantIdCount: 1,
+      encodeLaterCount: 0,
+      readyImgCount: 1,
+    }),
+    true,
+  );
+});
+
 test("inject skip still needs matching scale and marker count", () => {
   assert.equal(
     canSkipInlineInject({ scaleMatches: false, liveShotCount: 1, wantIdCount: 1, encodeLaterCount: 0 }),

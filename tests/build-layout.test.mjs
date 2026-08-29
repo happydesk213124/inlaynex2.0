@@ -564,13 +564,27 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /getAttribute\("data-inlay-inline-layout"\)/);
   assert.match(source, /layoutVersion: mark\.layoutVersion/);
   assert.match(source, /VC\.INLINE_FRAME_LAYOUT_VERSION/);
-  assert.match(source, /VC\.inlineChatImgStyle\(scaleNow\)/);
+  assert.match(source, /VC\.inlineChatOverlayImgStyle/);
   assert.match(source, /id="nx-inline-dom-radius" type="number" min="3" max="20" step="1"/);
   assert.match(source, /inline_chat_dom_radius: Math\.max\(3, Math\.min\(20,/);
   assert.match(source, /inline_chat_dom_radius\) \|\| 4/);
   assert.match(source, /prefetchInlineRoleDomIndices\(\{ selIdx, length: els\.length, radius: maxPerSide \}\)/);
-  assert.match(source, /spin\.setStyleAttribute\("display:none"\)/);
-  assert.doesNotMatch(source, /typeof spin\.remove/);
+  {
+    const injectFrom = source.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
+    const injectTo = source.indexOf('async function refreshSelectedInlineImages(force) {', injectFrom);
+    const inject = injectFrom >= 0 && injectTo > injectFrom ? source.slice(injectFrom, injectTo) : '';
+    assert.match(inject, /querySelectorAll\("\[data-inlay-inline-img\]"\)/);
+    assert.match(inject, /VC\.inlineChatOverlayImgStyle\(!0\)/);
+    assert.doesNotMatch(inject, /spin\.setStyleAttribute\("display:none"\)/);
+    assert.doesNotMatch(inject, /typeof spin\.remove/);
+  }
+  {
+    const goneFrom = source.indexOf('const inlineGoneFromSel = async () => {');
+    const goneTo = source.indexOf('// Cheap skip before any SafeDOM', goneFrom);
+    const gone = goneFrom >= 0 && goneTo > goneFrom ? source.slice(goneFrom, goneTo) : '';
+    assert.match(gone, /querySelectorAll\("\[data-inlay-inline-img\]"\)/);
+    assert.doesNotMatch(gone, /querySelectorAll\("img"\)/);
+  }
   assert.match(source, /resolveInlinePaintCards\(\{ selIdx, paintIdx, selCards, paintCards \}\)/);
   assert.doesNotMatch(source, /injectChatInlineImages\(els\[paintIdx\], selCards,/);
   assert.match(source, /injectChatMsgActions\(els\[row\.idx\], row\.cards, row\.idx\)/);

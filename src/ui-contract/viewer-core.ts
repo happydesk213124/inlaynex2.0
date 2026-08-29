@@ -3100,7 +3100,7 @@ export function stickySegmentForInlineChat(opts: {
 // ── beta: chat-bubble inline images at newline lines ──────────────────────
 
 const INLAY_INLINE_ATTR = 'data-inlay-inline-shot';
-export const INLINE_FRAME_LAYOUT_VERSION = '4';
+export const INLINE_FRAME_LAYOUT_VERSION = '5';
 /**
  * Content hash of the bubble this marker was placed into.
  *
@@ -3504,6 +3504,16 @@ export function inlineChatImgStyle(scalePct: unknown = 100): string {
   return `width:auto;height:auto;max-width:min(${maxW}%,100%);max-height:min(${maxHVh}vh,${maxHPx}px);object-fit:contain;border-radius:8px;display:inline-block;vertical-align:top`;
 }
 
+/** Stack that keeps the spinner in flow and parks the photo on top. */
+export function inlineChatStackStyle(): string {
+  return 'position:relative;display:inline-block;line-height:0;max-width:100%;box-sizing:border-box;vertical-align:top';
+}
+
+/** Photo layer. Hidden until src is ready so the spinner keeps the box. */
+export function inlineChatOverlayImgStyle(visible = false): string {
+  return `position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;border-radius:8px;display:block;pointer-events:none;opacity:${visible ? 1 : 0}`;
+}
+
 type InlinePlaceholderInput = {
   aspect?: unknown;
   width?: unknown;
@@ -3814,18 +3824,16 @@ export function markerBlockHtml(
   const imgStyle = inlineChatImgStyle(scalePct);
   const size = inlinePlaceholderSize(p);
   const sizeAttr = ` width="${size.width}" height="${size.height}"`;
-  if (p.pending || !isReadyImageSrc(p.src)) {
-    const placeholder = inlinePlaceholderSrc(p);
-    return (
-      `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" data-inlay-inline-pending="1" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-      + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(placeholder)}" alt=""${sizeAttr} style="${imgStyle}" loading="eager" decoding="sync"><br>`
-      + `</div>`
-    );
-  }
-  const embed = htmlSafeImageSrc(p.src);
+  const placeholder = inlinePlaceholderSrc(p);
+  const showPhoto = !p.pending && isReadyImageSrc(p.src);
+  const embed = showPhoto ? htmlSafeImageSrc(p.src) : '';
+  const pendingAttr = showPhoto ? '' : ' data-inlay-inline-pending="1"';
   return (
-    `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
-    + `<br><img data-inlay-inline-img="1" src="${escapeHtmlAttr(embed)}" alt=""${sizeAttr} style="${imgStyle}" loading="eager" decoding="sync"><br>`
+    `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}"${pendingAttr} x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
+    + `<br><span data-inlay-inline-stack="1" style="${inlineChatStackStyle()}">`
+    + `<img data-inlay-inline-spin="1" src="${escapeHtmlAttr(placeholder)}" alt=""${sizeAttr} style="${imgStyle}" loading="eager" decoding="sync">`
+    + `<img data-inlay-inline-img="1"${embed ? ` src="${escapeHtmlAttr(embed)}"` : ''} alt="" style="${inlineChatOverlayImgStyle(!!embed)}" loading="eager" decoding="sync">`
+    + `</span><br>`
     + `</div>`
   );
 }

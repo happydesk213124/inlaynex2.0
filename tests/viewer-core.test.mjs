@@ -355,7 +355,7 @@ test("inlinePlaceholderSize follows the first-tagger aspect aliases", () => {
   assert.deepEqual(inlinePlaceholderSize({}), { width: 832, height: 1216 });
 });
 
-test("markerBlockHtml parks a sized SVG then swaps it for the real image", () => {
+test("markerBlockHtml parks a sized SVG and overlays the real image on top", () => {
   const pending = markerBlockHtml({
     line: 2,
     src: "",
@@ -366,14 +366,17 @@ test("markerBlockHtml parks a sized SVG then swaps it for the real image", () =>
   });
   const placeholder = inlinePlaceholderSrc({ aspect: "landscape" });
   assert.match(pending, /data-inlay-inline-pending="1"/);
+  assert.match(pending, /data-inlay-inline-spin="1"/);
+  assert.match(pending, /data-inlay-inline-img="1"/);
   assert.match(pending, /<img[^>]*width="1216"[^>]*height="832"/);
   assert.ok(pending.includes(`src="${placeholder}"`));
   assert.match(decodeURIComponent(placeholder), /width="1216"/);
   assert.match(decodeURIComponent(placeholder), /height="832"/);
   assert.match(pending, /width:auto;height:auto;max-width:min\(78%,100%\)/);
+  assert.match(pending, /position:absolute/);
+  assert.match(pending, /opacity:0/);
   assert.match(pending, new RegExp(`data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}"`));
   assert.doesNotMatch(pending, /data-inlay-inline-frame=/);
-  assert.doesNotMatch(pending, /data-inlay-inline-spin=/);
   assert.doesNotMatch(pending, /overflow:hidden/);
   const ready = markerBlockHtml({
     line: 2,
@@ -382,7 +385,11 @@ test("markerBlockHtml parks a sized SVG then swaps it for the real image", () =>
     cardId: "c1",
     aspect: "landscape",
   });
+  assert.match(ready, /data-inlay-inline-spin="1"/);
   assert.match(ready, /data-inlay-inline-img="1"/);
+  assert.ok(ready.includes(placeholder), "spinner stays under the photo so the box cannot collapse");
+  assert.match(ready, /data:image\/png;base64,abc/);
+  assert.match(ready, /opacity:1/);
   assert.match(ready, /width:auto;height:auto;max-width:min\(78%,100%\)/);
   assert.match(ready, /max-height:min\(70vh,900px\)/);
   assert.doesNotMatch(ready, /data-inlay-inline-frame=/);

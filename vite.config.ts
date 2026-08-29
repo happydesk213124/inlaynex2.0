@@ -8443,8 +8443,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           id = String(await node.getAttribute("data-inlay-inline-shot") || "");
           layoutVersion = String(await node.getAttribute("data-inlay-inline-layout") || "");
         }
-        const imgs = await unwrapSafe(await node.querySelectorAll("img"));
-        const img = imgs[0];
+        const photos = await unwrapSafe(await node.querySelectorAll("[data-inlay-inline-img]"));
+        const img = photos[0];
         if (img && typeof img.getAttribute == "function") src = String(await img.getAttribute("src") || "");
       } catch {
       }
@@ -8793,20 +8793,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const patchShotSrc = async (wrap, src) => {
         if (!wrap || !src || !nxReadyImg(src)) return !1;
         try {
-          const imgs = await unwrapSafe(await wrap.querySelectorAll("img"));
-          const img = imgs[0];
+          const photos = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-img]"));
+          const img = photos[0];
           if (!img || typeof img.setAttribute != "function") return !1;
           await img.setAttribute("src", src);
-          // The spinner marker ships its <img> hidden. Reveal it and hide the
-          // overlay in the same frame — re-inserting the marker is what flashes.
-          if (typeof img.setStyleAttribute != "function" || typeof VC.inlineChatImgStyle != "function") return !1;
-          await img.setStyleAttribute(VC.inlineChatImgStyle(scaleNow));
-          const spins = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-spin]"));
-          for (const spin of spins) {
-            try {
-              if (spin && typeof spin.setStyleAttribute == "function") await spin.setStyleAttribute("display:none");
-            } catch {
-            }
+          // Spinner stays in flow (holds height). Photo sits on top.
+          if (typeof img.setStyleAttribute == "function" && typeof VC.inlineChatOverlayImgStyle == "function") {
+            await img.setStyleAttribute(VC.inlineChatOverlayImgStyle(!0));
           }
           return !0;
         } catch {
@@ -8942,8 +8935,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
               markId = String(await mark.getAttribute("data-inlay-inline-shot") || "");
               layoutVersion = String(await mark.getAttribute("data-inlay-inline-layout") || "");
             }
-            const imgs = await unwrapSafe(await mark.querySelectorAll("img"));
-            const img = imgs[0];
+            const photos = await unwrapSafe(await mark.querySelectorAll("[data-inlay-inline-img]"));
+            const img = photos[0];
             if (img && typeof img.getAttribute == "function") src = String(await img.getAttribute("src") || "");
           } catch {
             markId = "";
@@ -9280,7 +9273,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             if (!wraps.length) return !0;
             const srcs = await Promise.all(wraps.map(async (wrap) => {
               try {
-                const rawImgs = wrap && typeof wrap.querySelectorAll == "function" ? await wrap.querySelectorAll("img") : null;
+                const rawImgs = wrap && typeof wrap.querySelectorAll == "function" ? await wrap.querySelectorAll("[data-inlay-inline-img]") : null;
                 const imgs = typeof k.unwarpSafeArray == "function" && rawImgs ? await k.unwarpSafeArray(rawImgs) : [];
                 const img = Array.isArray(imgs) ? imgs[0] : imgs;
                 if (!img || typeof img.getAttribute != "function") return "";
@@ -15904,6 +15897,9 @@ const loadVendorUi = (): string => {
       if (body.includes('First session attach only') === false) {
         throw new Error('[build] attach toast must wait for the already-painted skip');
       }
+      if (!body.includes('querySelectorAll("[data-inlay-inline-img]")')) {
+        throw new Error('[build] gone-check must read the photo layer, not the spinner');
+      }
     }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
     assertOnce(out, 'ensureScrollPhaseBus = () =>', 'scroll phase bus landed');
@@ -16169,8 +16165,8 @@ const loadVendorUi = (): string => {
       if (!body.includes('awaitingCount: awaiting')) {
         throw new Error('[build] inject skip must count cells a live subscription owns');
       }
-      if (!body.includes('spin.setStyleAttribute("display:none")') || body.includes('spin.remove()')) {
-        throw new Error('[build] ready image must fill the existing spinner frame');
+      if (!body.includes('querySelectorAll("[data-inlay-inline-img]")') || body.includes('spin.setStyleAttribute("display:none")')) {
+        throw new Error('[build] ready image must overlay the spinner, not hide or replace it');
       }
       // A bubble repainted without dropping its watcher would keep filling nodes
       // that are no longer mounted, and the watcher would never be released.

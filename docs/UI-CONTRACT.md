@@ -27,6 +27,7 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 | `vibePreviewUrl` | `() => string` | Vibe-image preview `src` |
 | `VERSION` | `string` | Not read by the UI; kept for diagnostics |
 | `debug` / `clearDebug` | `() => any` | Not read by the UI |
+| `openTagStudio` | `(card) => Promise<void>` | Shot-tag 도화지. Added; frozen UI calls it via an asserted `openCardTagEdit` hook |
 
 > **Image URLs must be `data:image/...`.** The UI passes them through DOMPurify,
 > which strips `blob:`. SafeElement `setAttribute` only allows `x-*` names, so
@@ -175,6 +176,7 @@ Style presets may set `steps`, `sampler`, `scheduler`, `model_family` (`v4`|`v5`
 Empty `sampler` uses the Models-tab sampler for that family. The preset
 sampler list matches Models (Euler Ancestral … DPM++ SDE).
 `card.secondary_preset_id` is the green 2nd-priority preset.
+`card.command_presets` is `{id, name, cmd, cmd_post?}[]` for the shot-studio LLM command bar (default `[]`).
 `GET /v1/nai/quota` returns `{ keys: [{ family, suffix, ok, fixed, purchased, total, opus,
 v5_usage?, extra?, error? }] }`. Same token on V5 and V4 is one row with
 `family` `v5/v4`. `v5_usage.pct` is NovelAI `usage.percent` when present
@@ -372,7 +374,9 @@ lore_trigger_keys[], character_description, persona_description, force`.
 | `POST /v1/gallery/import` | `{zip_base64, prefer_new_ids}` → `{ok, imported, report}` |
 | `GET /v1/cards/:id/nai-prompt` | image NovelAI tags for the shot-tag form: `{ok, main_prompt, negative_prompt, characters[]}` — pixels of that one card |
 | `POST /v1/cards/:id/tags` | `{main_prompt, negative_prompt, characters[]}` — persist slim cast only; main/neg stay on the file |
-| `POST /v1/cards/:id/reroll` | `{mode:"nai", overrides?}` → `{ok, card, replaced?}` — replay file sampler/size/base + new seed; illustration char captions from roster + costume pick / action |
+| `POST /v1/cards/:id/studio-generate` | assembled prompts → NAI replay bytes only (`{ok, image_data_url, seed}`). Does not replace the card |
+| `POST /v1/cards/:id/studio-commit` | center-canvas bytes + tags → same card id pixels + slim cast |
+| `POST /v1/cards/:id/reroll` | `{mode:"nai", overrides?}` → `{ok, card, replaced?}` — replay file sampler/size/base + new seed; keep file char captions; roster rebuild only when a slot prompt is empty. Comic never resolves names |
 | `POST /v1/messages/reroll` | `{session_id, content_hash, message_index}` |
 | `/v1/images/:id`, `/v1/images/:id.json` | raw bytes / placement sidecar |
 

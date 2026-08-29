@@ -254,6 +254,7 @@ const normalize = (root) => {
           || k === 'focus_character'
           || k === 'focus_weight'
           || k === 'focus_prompt'
+          || k === 'command_presets'
         ) continue;
         // 2.0 wear locks default ON (`!== false`). 1.x/legacy seeds stored false;
         // compose + unit tests assert lock behaviour — wire presence is not comparable.
@@ -504,6 +505,12 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (v?.ok === true && v?.look_kept === true && v?.action === 'waving'
       ? null
       : `2.0 command-rewrite must keep look + apply action, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'cards.studio_commit',
+    (v) => (v?.ok === true && v?.card?.id
+      ? null
+      : `2.0 studio-commit must keep the card and write tags, got ${JSON.stringify(v)}`),
   ],
   [
     'cards.nai_prompt',

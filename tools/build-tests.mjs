@@ -49,6 +49,8 @@ const MODULES = {
   'nai-meta-from-metadata': 'src/domain/nai-meta/from-metadata.ts',
   'nai-meta-replay': 'src/domain/nai-meta/replay.ts',
   'slim-cast': 'src/domain/gallery/slim-cast.ts',
+  'reroll-captions': 'src/domain/gallery/reroll-captions.ts',
+  'tag-studio-peel': 'src/tag-studio/peel.ts',
   'nai-meta-aspect': 'src/domain/nai-meta/aspect.ts',
   'nai-meta-style-preset': 'src/domain/nai-meta/style-preset.ts',
   'nai-meta-stealth': 'src/domain/nai-meta/stealth.ts',

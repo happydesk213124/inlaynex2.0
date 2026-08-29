@@ -4981,6 +4981,9 @@ const VENDOR_STICKY_OPEN_CARD_NEEDLE = `  async function openCardTagEdit(e) {
 
 const VENDOR_STICKY_OPEN_CARD_PATCH = `  async function openCardTagEdit(e) {
     if (!e?.id) return;
+    if (typeof globalThis.__INLAY_NATIVE__?.openTagStudio == "function") {
+      return globalThis.__INLAY_NATIVE__.openTagStudio(e);
+    }
     if (typeof document > "u" || !document.body) {
       y("error", "card.tags.open", "plugin document unavailable");
       return;

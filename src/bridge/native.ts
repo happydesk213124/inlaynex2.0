@@ -31,6 +31,7 @@ import {
 import { migrateAppearanceToCharacters, migrateCharacterIdentity } from '../services/characters';
 import { hydratePresetVibePreviews } from '../services/nai-assets';
 import { seedPrompts } from '../services/settings';
+import { openTagStudio } from '../tag-studio/mount';
 
 let readyPromise: Promise<void> | null = null;
 
@@ -145,5 +146,6 @@ export function installNativeBridge(): void {
     onWarmProgress,
     debug: debugSnapshot,
     clearDebug,
+    openTagStudio,
   });
 }

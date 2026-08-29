@@ -381,6 +381,26 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     card.comic_cfg_rescale = optNum(card.comic_cfg_rescale);
     card.comic_sampler = optionalNaiSampler(card.comic_sampler) || '';
   }
+  if (!Array.isArray(card.command_presets)) card.command_presets = [];
+  else {
+    const out: Array<{ id: string; name: string; cmd: string; cmd_post?: string }> = [];
+    for (const raw of card.command_presets) {
+      if (!raw || typeof raw !== 'object') continue;
+      const p = raw as Record<string, unknown>;
+      const id = String(p.id || '').trim().slice(0, 120);
+      const name = String(p.name || '').trim().slice(0, 200);
+      const cmd = String(p.cmd || p.instruction || '').trim().slice(0, 4000);
+      const cmdPost = String(p.cmd_post || p.cmdPost || '').trim().slice(0, 2000);
+      if (!id && !name && !cmd) continue;
+      out.push({
+        id: id || `cmd_${out.length}`,
+        name: name || `명령 ${out.length + 1}`,
+        cmd,
+        ...(cmdPost ? { cmd_post: cmdPost } : {}),
+      });
+    }
+    card.command_presets = out;
+  }
   if (Array.isArray(card.presets)) {
     for (const raw of card.presets) {
       if (!raw || typeof raw !== 'object') continue;

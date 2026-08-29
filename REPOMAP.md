@@ -129,6 +129,7 @@ main.ts                     entry: builds the bridge, publishes globals
 | Gallery / explorer queries | `src/services/gallery.ts` |
 | Anything the UI reads off `globalThis` | `src/bridge/ui-globals.ts` |
 | The bridge object itself (`fetch`, `ready`) | `src/bridge/native.ts` |
+| Shot-tag 도화지 (갤러리 「샷 태그 수정」) | `src/tag-studio/` — peel/assemble in `peel.ts`/`model.ts`, overlay in `mount.ts` |
 | Reaching the Risu host API | `src/core/host.ts` — the only place that touches `globalThis.risuai` |
 
 ---

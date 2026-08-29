@@ -22,6 +22,13 @@ export type LlmSource = 'custom' | 'main' | 'aux';
 export type LlmRoleId = 'autotag' | 'asset_char' | 'curator';
 export type ImageBackend = 'nai' | 'comfy';
 
+export interface CommandPreset {
+  id: string;
+  name: string;
+  cmd: string;
+  cmd_post?: string;
+}
+
 export interface StylePreset {
   id: string;
   name: string;
@@ -149,6 +156,8 @@ export interface CardSettings {
   active_preset_id: string;
   /** 2nd-priority style preset (green). Empty = none. */
   secondary_preset_id: string;
+  /** Shot-studio LLM command presets (name + instruction + trailing note). */
+  command_presets: CommandPreset[];
   /** When true, simple→V4 and dynamic→V5. Off → selected model for every shot. */
   nai5_first: boolean;
   /** When true, every shot uses V5. Wins over nai5_first and the model-tab pick. */

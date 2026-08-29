@@ -397,6 +397,14 @@ const WRITE_ROUTES: readonly Route[] = [
     handler: async ({ param, body }) => ok(await cards.updateCardTags(param, body)),
   },
   {
+    match: wrapped('/v1/cards/', '/studio-generate'),
+    handler: async ({ param, body }) => ok(await cards.studioGenerate(param, body)),
+  },
+  {
+    match: wrapped('/v1/cards/', '/studio-commit'),
+    handler: async ({ param, body }) => ok(await cards.studioCommit(param, body)),
+  },
+  {
     match: wrapped('/v1/cards/', '/reroll'),
     handler: async ({ param, body }) => ok(await cards.rerollCard(param, String(body.mode || 'nai'), body.overrides)),
   },

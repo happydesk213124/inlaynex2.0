@@ -4,10 +4,11 @@
  * Two things here are easy to get wrong.
  *
  * **A reroll replays the saved image's NAI metadata** (sampler, size, base,
- * model) with a new seed. Illustration char captions are rebuilt from the
- * current roster + the card's costume pick / action / speech. Comic pages
- * keep the file captions. Tag-popup overrides replace base (and char prompts
- * when the form sent them). The settings tab is not applied.
+ * model) with a new seed. Character captions stay on the file (and any stored
+ * prompt). The live roster is a fallback only when that prompt is empty.
+ * Comic pages never resolve slot names against the roster. Tag-popup
+ * overrides replace base (and char prompts when the form sent them). The
+ * settings tab is not applied.
  *
  * **A reroll allocates a new card id** and deletes the old row, so callers must
  * follow `replaced` rather than assume the id survived. The image location
@@ -25,7 +26,6 @@ import { QUALITY_TAGS } from '../config/defaults';
 import {
   ASSISTANT_PREVIEW_LIMIT,
   cleanText,
-  joinTags,
   splitTagTokens,
   stripCbs,
   toInt,
@@ -33,11 +33,11 @@ import {
   unifiedSessionIdForCharacter,
   uuid,
 } from '../core/util/text';
-import { characterMaxLimit, composeCharacterCaptionTags, stripPersonCountTags } from '../domain/character/tags';
+import { characterMaxLimit, stripPersonCountTags } from '../domain/character/tags';
 import { collectStylePositives } from '../domain/prompt/reroll-setup';
 import { modelToNaia } from '../providers/nai/payload';
-import { resolveCharacter } from '../domain/character/roster';
 import { slimCardCharacters } from '../domain/gallery/slim-cast';
+import { resolveRerollCharacters } from '../domain/gallery/reroll-captions';
 import { extractNaiMetadata } from '../domain/nai-meta';
 import {
   isComicNaiScene,
@@ -70,7 +70,7 @@ import { deleteCard, getImageBytes } from './gallery';
 import { busyReplyForRequest, jobKey } from './job-locks';
 import { createJob } from './jobs';
 import { getPrompt } from './settings';
-import { speechCaptionTag } from '../domain/nai/speech';
+import { bytesToDataUrlAsync, base64ToAb } from '../core/util/bytes';
 
 function parseJsonOr(raw: unknown, fallback: unknown): unknown {
   try {
@@ -90,28 +90,6 @@ async function loadCardImageScene(cardId: string): Promise<NaiScene> {
     throw new Error('메타데이터에 프롬프트가 없습니다.');
   }
   return scene;
-}
-
-function illustrationCaptionsFromCast(
-  chars: unknown,
-  roster: Parameters<typeof resolveCharacter>[1],
-): NaiScene['characters'] {
-  const slots = slimCardCharacters(chars);
-  return slots.map((slot) => {
-    const name = cleanText(slot.name, 200);
-    const stored = name ? resolveCharacter(name, roster) : null;
-    const raw = slot.raw && typeof slot.raw === 'object' ? slot.raw as Record<string, unknown> : {};
-    const shot = { ...raw, ...slot };
-    let prompt = joinTags(composeCharacterCaptionTags(stored, shot)) || 'girl';
-    const tag = speechCaptionTag(shot.speech, shot.speech_lang);
-    if (tag && !/speechbubble/i.test(prompt)) prompt = `${prompt}, ${tag}`;
-    return {
-      prompt,
-      uc: cleanText(shot.uc, 4000),
-      center_x: Number(slot.center_x ?? 0.5),
-      center_y: Number(slot.center_y ?? 0.5),
-    };
-  });
 }
 
 /** Image NAI tags for the shot-tag popup (one card — pixels are OK). */
@@ -242,6 +220,79 @@ export async function updateCardTags(cardId: string, body: Record<string, unknow
   };
   await attachImageUrls(card);
   return { ok: true, card };
+}
+
+function applyScenePromptOverrides(scene: NaiScene, ov: Record<string, unknown> | null): void {
+  if (!ov) return;
+  if ('main_prompt' in ov) {
+    const ovMain = cleanText(ov.main_prompt || '', 8000);
+    if (ovMain) scene.main = ovMain;
+  }
+  if ('negative_prompt' in ov && cleanText(ov.negative_prompt || '', 8000)) {
+    scene.negative = cleanText(ov.negative_prompt || '', 8000);
+  }
+}
+
+function decodeStudioImage(body: Record<string, unknown>): ArrayBuffer | null {
+  const dataUrl = cleanText(body.image_data_url || body.image_url, 20_000_000);
+  const matched = dataUrl.match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/s);
+  if (matched?.[1]) return base64ToAb(matched[1]);
+  const b64 = cleanText(body.image_b64, 20_000_000);
+  return b64 ? base64ToAb(b64) : null;
+}
+
+/** NAI replay into bytes only — does not replace the card. */
+export async function studioGenerate(cardId: string, body: Record<string, unknown> = {}): Promise<ApiResult> {
+  const id = cleanText(cardId, 80);
+  const row = await idbGet('cards', id);
+  if (!row) return { ok: false, error: { code: 'not_found', message: 'card not found' } };
+  let scene: NaiScene;
+  try {
+    scene = await loadCardImageScene(id);
+  } catch (err) {
+    return { ok: false, error: { code: 'no_meta', message: String((err as Error)?.message || err) } };
+  }
+  applyScenePromptOverrides(scene, body);
+  const ovChars = Array.isArray(body.characters) ? body.characters : null;
+  const ovHasCharPrompts = Boolean(
+    ovChars?.some((ch) => ch && typeof ch === 'object' && cleanText((ch as Record<string, unknown>).prompt)),
+  );
+  scene.characters = resolveRerollCharacters({
+    comic: true,
+    sceneChars: scene.characters,
+    stored: [],
+    fromMeta: [],
+    roster: [],
+    overrideChars: ovChars,
+    overrideHasPrompts: ovHasCharPrompts,
+    limit: characterMaxLimit(getConfig().card || {}),
+  });
+  if (!cleanText(scene.model)) {
+    return { ok: false, error: { code: 'no_model', message: '이미지 메타에 모델이 없습니다.' } };
+  }
+  const ovSeed = 'seed' in body ? Number(body.seed) : NaN;
+  const seedOverride = Number.isFinite(ovSeed) && ovSeed > 0 ? Math.floor(ovSeed) : undefined;
+  const { bytes, seed } = await generateFromNaiReplay(
+    t2iRequestFromScene(scene, seedOverride || randomNaiSeed()),
+  );
+  return {
+    ok: true,
+    image_data_url: await bytesToDataUrlAsync(bytes, 'image/png'),
+    seed,
+  };
+}
+
+/** Replace this card's pixels with the studio canvas and write tags. Same card id. */
+export async function studioCommit(cardId: string, body: Record<string, unknown> = {}): Promise<ApiResult> {
+  const id = cleanText(cardId, 80);
+  const row = await idbGet('cards', id);
+  if (!row) return { ok: false, error: { code: 'not_found', message: 'card not found' } };
+  const bytes = decodeStudioImage(body);
+  if (bytes?.byteLength) {
+    const loc = await locationFieldsForCard(id, parseJsonOr(row.meta_json || '{}', {}) as Record<string, unknown>);
+    await publishImage(id, bytes, loc);
+  }
+  return updateCardTags(id, body);
 }
 
 /**
@@ -395,23 +446,18 @@ export async function rerollCard(
     ovChars?.some((ch) => ch && typeof ch === 'object' && cleanText((ch as Record<string, unknown>).prompt)),
   );
   const comic = cleanText(meta.kind, 20) === 'comic' || isComicNaiScene(scene);
-  if (ovHasCharPrompts && ovChars) {
-    const limit = characterMaxLimit(getConfig().card || {});
-    scene.characters = ovChars.slice(0, limit).map((ch, i) => {
-      const c = (ch && typeof ch === 'object' ? ch : {}) as Record<string, unknown>;
-      const prev = scene.characters[i];
-      return {
-        prompt: cleanText(c.prompt, 8000) || prev?.prompt || 'girl',
-        uc: cleanText(c.uc, 4000) || prev?.uc || '',
-        center_x: Number(c.center_x ?? prev?.center_x ?? 0.5),
-        center_y: Number(c.center_y ?? prev?.center_y ?? 0.5),
-      };
-    });
-  } else if (!comic) {
-    const stored = parseJsonOr(row.characters_json || '[]', []);
-    const fromMeta = slimCardCharacters(meta.characters);
-    scene.characters = illustrationCaptionsFromCast(fromMeta.length ? fromMeta : stored, roster);
-  }
+  const stored = parseJsonOr(row.characters_json || '[]', []);
+  const fromMeta = slimCardCharacters(meta.characters);
+  scene.characters = resolveRerollCharacters({
+    comic,
+    sceneChars: scene.characters,
+    stored,
+    fromMeta,
+    roster,
+    overrideChars: ovChars,
+    overrideHasPrompts: ovHasCharPrompts,
+    limit: characterMaxLimit(getConfig().card || {}),
+  });
 
   if (!cleanText(scene.model)) {
     return { ok: false, error: { code: 'no_model', message: '이미지 메타에 모델이 없습니다.' } };

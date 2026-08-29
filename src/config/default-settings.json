@@ -94,6 +94,7 @@
     ],
     "active_preset_id": "프리셋_닭장_0_14izz",
     "secondary_preset_id": "",
+    "command_presets": [],
     "nai5_first": false,
     "nai5_only": false,
     "nai4_fallback": false,

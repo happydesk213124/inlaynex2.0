@@ -417,6 +417,12 @@ export async function runScenario(N, handles) {
   // Restore default tagger JSON so later jobs are unaffected.
   handles.setLlmReply?.(DEFAULT_LLM_REPLY);
   await rec('cards.gallery_after_tags', () => get('/v1/gallery?session_id=sess_main&limit=40'));
+  // 2.0-only: studio commit writes tags (and optional canvas bytes) on the same card id.
+  await rec('cards.studio_commit', () => post(`/v1/cards/${cardId}/studio-commit`, {
+    main_prompt: 'STUDIO COMMIT',
+    negative_prompt: 'studio neg',
+    characters: [{ name: '태양', prompt: 'boy, black hair', action: 'sitting' }],
+  }));
   const reroll = await rec('cards.reroll', () => post(`/v1/cards/${cardId}/reroll`, { mode: 'nai' }));
   const rerolledId = reroll?.card?.id;
   await rec('cards.reroll_with_overrides', () => post(`/v1/cards/${rerolledId}/reroll`, {

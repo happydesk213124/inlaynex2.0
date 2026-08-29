@@ -100,8 +100,8 @@
   .right.collapsed { margin-right: -216px; }
 
   .handle {
-    position: absolute; top: 50%; transform: translateY(-50%);
-    width: 22px; height: 72px;
+    position: absolute; top: 58px;
+    width: 22px; height: 44px;
     border: 1px solid var(--line); background: var(--panel-2);
     color: var(--muted);
     font-size: 16px; line-height: 1;
@@ -149,7 +149,8 @@
   .sec { border: 1px solid var(--line); border-radius: 11px; overflow: hidden; background: var(--panel-2); }
   .sec > .h {
     display: flex; align-items: center; gap: 6px;
-    padding: 7px 9px; background: var(--head);
+    min-height: 36px;
+    padding: 0 9px; background: var(--head);
     cursor: pointer; user-select: none;
   }
   .sec > .h .name { font-weight: 650; font-size: 12px; white-space: nowrap; }
@@ -312,8 +313,20 @@
     color: #fff; font-weight: 800; letter-spacing: .04em;
   }
   .gen:active { transform: translateY(1px); }
-  .foot .btn { height: 40px; }
-  .loop { height: 40px; padding: 0 10px; line-height: 1.1; font-size: 11px; }
+  .foot .btn, .gen {
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .foot .mobset { flex: 0 0 auto; }
+  .loop {
+    height: 40px; padding: 0 10px; font-size: 11px;
+    flex-direction: column; line-height: 1.15; gap: 1px;
+  }
   .loop b { display: block; font-size: 12px; }
 
   .toast {
@@ -402,29 +415,28 @@
     .foldbar { display: block; }
     .right {
       position: absolute;
-      top: 0; right: 0; bottom: 0;
+      top: 0; right: 0; bottom: auto;
       z-index: 12;
       width: 200px;
-      height: auto;
+      height: calc(100% - 62vh);
       margin: 0;
       box-shadow: var(--shadow);
     }
-    .right.collapsed { transform: translateX(calc(100% - 36px)); margin-right: 0; }
-    .handle.r {
-      display: grid;
-      width: 36px;
-      height: 96px;
-      left: -36px;
-      font-size: 22px;
+    .stage.left-folded .right { height: calc(100% - 36px); }
+    .right.collapsed {
+      transform: translateX(100%);
+      margin-right: 0;
+      pointer-events: none;
     }
+    .handle.r { display: none; }
     .rhead .hclose { display: inline-grid; place-items: center; }
     .floor .tools { display: flex; }
-    .floor .tools .btn { height: 36px; }
+    .floor .tools .btn { height: 36px; display: inline-flex; align-items: center; justify-content: center; }
     .floor .tools .loop { height: 36px; }
     .peek { top: 8px; }
     .foot { z-index: 8; border-top: 0; padding-top: 4px; }
     .foot .btn.deskonly { display: none; }
-    .foot .mobset { display: inline-flex; }
+    .foot .mobset { display: inline-flex; align-items: center; justify-content: center; }
     textarea.t { min-height: 160px; }
     textarea.t.big { min-height: 220px; }
   }
@@ -1678,9 +1690,11 @@ function act(name) {
     case "settings": {
       $("#left").classList.remove("collapsed");
       syncLeftFold();
-      state.fold.gset = false;
+      Object.keys(state.fold).forEach((k) => {
+        if (k === "gset" || k.startsWith("gs-")) state.fold[k] = false;
+      });
       renderPanel();
-      const sec = $("[data-sec=gset]");
+      const sec = $("[data-sec=gset], [data-sec^=gs-]");
       if (sec) {
         sec.classList.remove("fold");
         sec.scrollIntoView({ block: "nearest" });
@@ -1879,6 +1893,7 @@ function addCharTab(rosterId) {
 
 function syncLeftFold() {
   const folded = $("#left").classList.contains("collapsed");
+  $("#stage").classList.toggle("left-folded", folded);
   const bar = $("#leftFold");
   if (bar) bar.textContent = folded ? "▲" : "▼";
   const hL = $("#hL");

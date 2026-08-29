@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.2';
+const PLUGIN_VERSION = '2.5.3';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -762,6 +762,16 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.3</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>채팅 안 이미지: 잘리던 예약 프레임을 없앴습니다. 비율에 맞는 가벼운 SVG를 먼저 두고, 그림이 오면 그 src만 바꿉니다</li>
+            <li>스피너가 탐색할 말풍선 숫자를 대시보드에서 3–20으로 정할 수 있습니다</li>
+            <li>유저 말풍선에 근처 캐릭터 그림이 붙던 문제를 고쳤습니다</li>
+            <li>같은 말풍선을 다시 눌러도 그림이 깜빡이지 않습니다</li>
+            <li>샷 태그 창을 닫을 때 회색 화면이 남던 문제를 고쳤습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.2</strong>
@@ -11749,8 +11759,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.2",
-    body: "채팅 안 이미지가 훨씬 빨리 붙습니다. 글이 그대로인 말풍선은 자리 계산을 다시 하지 않고, 보고 있는 말풍선의 이미지가 썸네일보다 먼저 만들어집니다. 업데이트 내역 탭 참고."
+    title: "2.5.3",
+    body: "채팅 안 이미지는 비율에 맞는 SVG를 먼저 두고 그림이 오면 바꿉니다. 말풍선 탐색 숫자는 대시보드에서 조절합니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

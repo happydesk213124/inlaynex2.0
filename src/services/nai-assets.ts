@@ -27,6 +27,7 @@ import { cleanText } from '../core/util/text';
 import { lookBytesForTarget, refSeedTargets } from '../domain/character/char-ref-seed';
 import { sanitizeHash } from '../domain/character/char-ref-store';
 import { collectBestLookAssets } from './asset-tags';
+import { vibeEncodeToken } from '../domain/nai/keys';
 import { modelToNaia, resolveModel } from '../providers/nai/payload';
 import { encodeVibe } from '../providers/nai/vibe';
 import { pngToDataUrl } from '../storage/image-urls';
@@ -58,6 +59,18 @@ const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 
 /** Anything smaller than this cannot be a real image header. */
 const MIN_IMAGE_BYTES = 32;
+
+function requireVibeEncodeToken(forUpload: boolean): string {
+  const token = vibeEncodeToken(getConfig().nai);
+  if (!token) {
+    throw new Error(
+      forUpload
+        ? 'NAI api_key가 설정되지 않았습니다. encode-vibe에 키가 필요합니다.'
+        : 'NAI api_key가 설정되지 않았습니다.',
+    );
+  }
+  return token;
+}
 
 // ── image reference ────────────────────────────────────────────────────────
 
@@ -141,8 +154,7 @@ export async function setVibeTransfer(png: ArrayBuffer, opts: VibeOptions = {}):
   if (!png || png.byteLength < MIN_IMAGE_BYTES) throw new Error('Vibe 이미지가 비어 있습니다');
   if (png.byteLength > MAX_IMAGE_BYTES) throw new Error('Vibe 이미지가 너무 큽니다 (최대 12MB)');
   const cfg = getConfig();
-  const token = cleanText(cfg.nai.api_key);
-  if (!token) throw new Error('NAI api_key가 설정되지 않았습니다. encode-vibe에 키가 필요합니다.');
+  const token = requireVibeEncodeToken(true);
   const model = modelToNaia(opts.model || cfg.nai.model || 'nai-diffusion-4-5-full');
   const ie = normalizeInformationExtracted(opts.information_extracted ?? cfg.nai.vibe_transfer_information_extracted);
   const encoded = await encodeVibe(token, png, model, ie);
@@ -189,8 +201,7 @@ export async function ensureVibeEncoded(): Promise<MetaRow | null> {
   const vibe = await getVibeTransfer();
   if (!vibe?.png || vibe.png.byteLength < MIN_IMAGE_BYTES) return null;
   const cfg = getConfig();
-  const token = cleanText(cfg.nai.api_key);
-  if (!token) throw new Error('NAI api_key가 설정되지 않았습니다.');
+  const token = requireVibeEncodeToken(false);
   const model = resolveModel(modelToNaia(cfg.nai.model || 'nai-diffusion-4-5-full'));
   const ie = normalizeInformationExtracted(cfg.nai.vibe_transfer_information_extracted);
   const needEncode =
@@ -234,8 +245,7 @@ export async function setPresetVibeTransfer(
   if (!png || png.byteLength < MIN_IMAGE_BYTES) throw new Error('Vibe 이미지가 비어 있습니다');
   if (png.byteLength > MAX_IMAGE_BYTES) throw new Error('Vibe 이미지가 너무 큽니다 (최대 12MB)');
   const cfg = getConfig();
-  const token = cleanText(cfg.nai.api_key);
-  if (!token) throw new Error('NAI api_key가 설정되지 않았습니다. encode-vibe에 키가 필요합니다.');
+  const token = requireVibeEncodeToken(true);
   const model = modelToNaia(opts.model || cfg.nai.model || 'nai-diffusion-4-5-full');
   const ie = normalizeInformationExtracted(opts.information_extracted ?? cfg.nai.vibe_transfer_information_extracted);
   const encoded = await encodeVibe(token, png, model, ie);
@@ -296,8 +306,7 @@ export async function ensurePresetVibeEncoded(presetId: string): Promise<MetaRow
   const vibe = await getPresetVibeTransfer(presetId);
   if (!vibe?.png || vibe.png.byteLength < MIN_IMAGE_BYTES) return null;
   const cfg = getConfig();
-  const token = cleanText(cfg.nai.api_key);
-  if (!token) throw new Error('NAI api_key가 설정되지 않았습니다.');
+  const token = requireVibeEncodeToken(false);
   const model = resolveModel(modelToNaia(cfg.nai.model || 'nai-diffusion-4-5-full'));
   const ie = normalizeInformationExtracted(cfg.nai.vibe_transfer_information_extracted);
   const needEncode =
@@ -513,8 +522,7 @@ export async function ensureCharRefVibeEncoded(
   const png = hash ? await getCharRefImageBytes(scope, characterId) : null;
   if (!hash || !png || png.byteLength < MIN_IMAGE_BYTES) return null;
   const cfg = getConfig();
-  const token = cleanText(cfg.nai.api_key);
-  if (!token) throw new Error('NAI api_key가 설정되지 않았습니다.');
+  const token = requireVibeEncodeToken(false);
   const model = resolveModel(modelToNaia(cfg.nai.model || 'nai-diffusion-4-5-full'));
   const ie = normalizeInformationExtracted(
     informationExtracted ?? cfg.card?.char_ref_fidelity ?? 1,

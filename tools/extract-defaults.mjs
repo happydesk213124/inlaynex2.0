@@ -6,6 +6,10 @@
  * presets) is the highest-risk part of the port, so we do not transcribe it — we
  * evaluate the original literal and serialise the result. Re-run after touching
  * `reference/native-backend.js`.
+ *
+ * Do not overwrite `src/config/default-settings.json` or
+ * `src/config/reset-factory.json` with this tool. The factory pack is
+ * reset-factory.json; default-settings.json is the first-boot floor.
  */
 import fs from 'node:fs';
 import path from 'node:path';

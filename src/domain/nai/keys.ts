@@ -22,6 +22,14 @@ export function maskNaiToken(token: string): string {
   return t.slice(-4);
 }
 
+/**
+ * encode-vibe is a V4-family NovelAI call. Prefer `api_keys_v4`, then the
+ * legacy single `api_key` — never the V5 list.
+ */
+export function vibeEncodeToken(nai: NaiSettings): string {
+  return tokensForFamily(nai, 'v4')[0] || '';
+}
+
 /** Tokens for one family. Empty list → fall back to legacy `api_key`. */
 export function tokensForFamily(nai: NaiSettings, family: NaiFamily): string[] {
   const extra = family === 'v5' ? nai.api_keys_v5 : nai.api_keys_v4;

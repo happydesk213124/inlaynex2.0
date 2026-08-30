@@ -5,6 +5,7 @@ import {
   migrateSettings,
   exportSettings,
   importSettings,
+  applySettingsResetKeeps,
 } from "../.test-build/settings-schema.mjs";
 
 test("person_tag_weight migrates to 0–5 (default 3)", () => {
@@ -231,6 +232,40 @@ test("comic tab defaults off and migrates enums", () => {
   assert.equal(copied.card.comic_prompt_prefix, "wet ink");
   const kept = migrateSettings({ card: { comic_prompt: "old", comic_prompt_prefix: "" } });
   assert.equal(kept.card.comic_prompt_prefix, "");
+});
+
+test("settings reset keeps window pin and card presets on the factory blob", () => {
+  const next = {
+    card: {
+      overlay_x_pct: 10,
+      overlay_y_pct: 20,
+      overlay_pin_unit: "pct",
+      overlay_pin_origin: "bl",
+      presets: [{ id: "factory", name: "팩" }],
+      active_preset_id: "factory",
+    },
+  };
+  applySettingsResetKeeps({
+    card: {
+      overlay_x_pct: 77,
+      overlay_y_pct: 12,
+      overlay_x_offset: 652,
+      overlay_y_offset: 238,
+      overlay_pin_unit: "pct",
+      overlay_pin_origin: "tr",
+      presets: [{ id: "mine", name: "내꺼" }],
+      active_preset_id: "mine",
+      secondary_preset_id: "other",
+    },
+  }, next);
+  assert.equal(next.card.overlay_x_pct, 77);
+  assert.equal(next.card.overlay_y_pct, 12);
+  assert.equal(next.card.overlay_x_offset, 652);
+  assert.equal(next.card.overlay_y_offset, 238);
+  assert.equal(next.card.overlay_pin_origin, "tr");
+  assert.equal(next.card.active_preset_id, "mine");
+  assert.equal(next.card.secondary_preset_id, "other");
+  assert.deepEqual(next.card.presets, [{ id: "mine", name: "내꺼" }]);
 });
 
 test("overlay_markers is canonical for left-line overlay + inline previews", () => {

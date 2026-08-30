@@ -729,7 +729,8 @@ test('an old image subscription cannot overwrite a rerolled frame', () => {
 test('a queued subscription callback cannot repaint after an alias-proxy clear', async () => {
   const bundle = read('dist', 'inlaynexus2.0.js');
   const from = bundle.indexOf('function nxInlineSubIds(lockKey) {');
-  const to = bundle.indexOf('/**\n   * One host scan per bubble', from);
+  const toMatch = bundle.slice(from).search(/\/\*\*\r?\n   \* One host scan per bubble/);
+  const to = toMatch >= 0 ? from + toMatch : -1;
   assert.ok(from >= 0 && to > from, 'inline subscription runtime not found');
   const state = {};
   const runtime = Function(

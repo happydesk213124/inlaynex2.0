@@ -15,7 +15,7 @@ import {
   normalizeNaiSampler,
 } from '../.test-build/nai-samplers.mjs';
 import { shouldUseNaiCoords } from '../.test-build/nai-coords.mjs';
-import { allUniqueNaiTokens, quotaTokenGroups, tokensForFamily } from '../.test-build/nai-keys.mjs';
+import { allUniqueNaiTokens, quotaTokenGroups, tokensForFamily, vibeEncodeToken } from '../.test-build/nai-keys.mjs';
 import {
   captionWithSpeech,
   speechCaptionTag,
@@ -167,6 +167,24 @@ test('family sampler falls back to shared nai.sampler and drops unknown ids', ()
   assert.equal(normalizeNaiSampler('ddim_v3'), 'k_euler_ancestral');
   assert.equal(naiSamplerForFamily({ sampler: 'k_dpmpp_sde' }, 'v5'), 'k_dpmpp_sde');
   assert.equal(naiStepsForFamily({ steps: 18 }, 'v4'), 18);
+});
+
+test('vibe encode uses the V4 key list, not V5', () => {
+  assert.equal(vibeEncodeToken({
+    api_key: 'pst-legacy',
+    api_keys_v5: ['pst-v5'],
+    api_keys_v4: ['pst-v4a', 'pst-v4b'],
+  }), 'pst-v4a');
+  assert.equal(vibeEncodeToken({
+    api_key: 'pst-legacy',
+    api_keys_v5: ['pst-v5'],
+    api_keys_v4: [],
+  }), 'pst-legacy');
+  assert.equal(vibeEncodeToken({
+    api_key: '',
+    api_keys_v5: ['pst-v5'],
+    api_keys_v4: [],
+  }), '');
 });
 
 test('legacy api_key fills both families when lists are empty', () => {

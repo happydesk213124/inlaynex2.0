@@ -1,21 +1,25 @@
 /**
  * Frozen default configuration and prompt fallbacks.
  *
- * The JSON files beside this module were extracted verbatim from the 1.x
- * backend by `tools/extract-defaults.mjs` rather than retyped, because every
- * key here is a settings key a user may already have stored — a typo would
- * silently reset that setting on upgrade. Regenerate them with that tool; do
- * not hand-edit.
+ * `default-settings.json` is the first-boot / schema floor (the 1.x extract
+ * plus later keys). `reset-factory.json` is the “잘 모르면 임포트” pack.
+ * `POST /v1/settings/reset` copies the factory pack, keeps API keys, window
+ * pin and card presets, then resets prompts like the prompts-tab default
+ * button. Do not re-run `tools/extract-defaults.mjs` over either file.
  */
 
 import type { Settings } from '../core/types';
 import defaultSettings from './default-settings.json';
+import resetFactory from './reset-factory.json';
 import models from './models.json';
 import promptFallbacks from './prompt-fallbacks.json';
 import qualityTags from './quality-tags.json';
 import ucPresets from './uc-presets.json';
 
 export const DEFAULT_CONFIG = defaultSettings as unknown as Settings;
+
+/** Recommended pack applied by 전체 초기화 (not first-boot). */
+export const RESET_FACTORY_CONFIG = resetFactory as unknown as Settings;
 
 export const PROMPT_FALLBACKS: Readonly<Record<string, string>> = promptFallbacks;
 

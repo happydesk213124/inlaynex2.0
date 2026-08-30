@@ -49,7 +49,8 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 > Style presets may carry optional `cfg_scale` / `cfg_rescale` (empty → NAI
 > model defaults). Per-preset vibe is a device-local upload like NAI vibe
 > (`POST /v1/nai/vibe` with `preset_id`); when set it replaces the NAI vibe for
-> that generation. JSON export does not embed vibe bytes.
+> that generation. `encode-vibe` uses `api_keys_v4` (then legacy `api_key`).
+> JSON export does not embed vibe bytes.
 
 ## 2. Other globals the UI reads
 
@@ -86,7 +87,7 @@ skipped for health/debug.
 | `POST /v1/settings/update` | alias of the above |
 | `/v1/settings/export` | `{ json }` — drops `api_key`/`auth_token`/`password`/`secret`, but **not** `service_account_json`; see the note in `src/config/schema.ts` |
 | `POST /v1/settings/import` | `{ json }` |
-| `POST /v1/settings/reset` | `{}` → `{ settings }`; **keeps API keys + presets** |
+| `POST /v1/settings/reset` | `{}` → `{ settings }`; applies the recommended pack; **keeps API keys, window pin, card presets**; then `POST /v1/prompts/reset-defaults` `{ keep_author_note: true }` |
 
 The UI guards writes with a `settingsWriteGen` counter and merges pending patches,
 so out-of-order responses are discarded client-side. The backend just answers.

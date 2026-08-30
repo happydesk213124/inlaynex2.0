@@ -16,9 +16,9 @@
  *    the previous secrets forward rather than accepting new ones.
  */
 
-import { DEFAULT_CONFIG } from '../config/defaults';
+import { DEFAULT_CONFIG, RESET_FACTORY_CONFIG } from '../config/defaults';
 import { promptText } from '../config/prompts';
-import { exportSettings, importSettings } from '../config/schema';
+import { applySettingsResetKeeps, exportSettings, importSettings } from '../config/schema';
 import { FORCE_PROMPT_KEYS, PROMPT_KEYS, PROMPT_PACK, VERSION } from '../core/constants';
 import { getEventCount, getFocusStage, getLastError, getLastStage } from '../core/debug';
 import type { ApiResult, StylePreset } from '../core/types';
@@ -213,21 +213,48 @@ export async function importSettingsJson(json: string): Promise<ApiResult> {
 export async function resetSettings(): Promise<ApiResult> {
   const previous = deepcopy(getConfig());
   await idbPut('meta', { key: 'settings_backup', value: previous, updated_at: Date.now() / 1000 });
-  const next = deepcopy(DEFAULT_CONFIG);
-  next.llm = { ...next.llm, api_key: previous.llm?.api_key || '' };
-  next.nai = { ...next.nai, api_key: previous.nai?.api_key || '' };
-  next.auth_token = previous.auth_token || '';
-  // Card style presets are user content — never wipe on settings reset.
-  const prevCard = previous.card;
-  next.card = {
-    ...next.card,
-    presets: Array.isArray(prevCard.presets) ? deepcopy(prevCard.presets) : next.card.presets || [],
-    active_preset_id: String(prevCard.active_preset_id || next.card.active_preset_id || ''),
-    custom_pos: String(prevCard.custom_pos ?? next.card.custom_pos ?? ''),
-    custom_neg: String(prevCard.custom_neg ?? next.card.custom_neg ?? ''),
+  const next = deepcopy(RESET_FACTORY_CONFIG);
+  next.llm = {
+    ...next.llm,
+    api_key: previous.llm?.api_key || '',
+    service_account_json: previous.llm?.service_account_json || '',
   };
+  next.nai = {
+    ...next.nai,
+    api_key: previous.nai?.api_key || '',
+    api_keys_v5: Array.isArray(previous.nai?.api_keys_v5) ? deepcopy(previous.nai.api_keys_v5) : [],
+    api_keys_v4: Array.isArray(previous.nai?.api_keys_v4) ? deepcopy(previous.nai.api_keys_v4) : [],
+  };
+  next.auth_token = previous.auth_token || '';
+  const prevCuration = previous.curation as { embedding?: { api_key?: unknown } } | undefined;
+  const nextCuration = next.curation as { embedding?: Record<string, unknown> } | undefined;
+  const prevEmbedKey = prevCuration?.embedding && typeof prevCuration.embedding === 'object'
+    ? String(prevCuration.embedding.api_key || '')
+    : '';
+  if (prevEmbedKey && nextCuration?.embedding) {
+    next.curation = {
+      ...nextCuration,
+      embedding: { ...nextCuration.embedding, api_key: prevEmbedKey },
+    };
+  }
+  const prevRoles = previous.llm_roles;
+  if (next.llm_roles && prevRoles) {
+    for (const id of LLM_ROLE_IDS) {
+      const role = next.llm_roles[id];
+      const prev = prevRoles[id];
+      if (!role || !prev) continue;
+      next.llm_roles[id] = {
+        ...role,
+        api_key: String(prev.api_key || ''),
+        service_account_json: String(prev.service_account_json || ''),
+      };
+    }
+  }
+  applySettingsResetKeeps(previous as Record<string, unknown>, next as Record<string, unknown>);
   setConfig(next);
   await saveConfig();
+  // Same as the prompts-tab “기본값” button: pack text, author notes kept.
+  await resetPromptsToDefaults({ keep_author_note: true });
   return { ok: true, settings: publicSettings() };
 }
 

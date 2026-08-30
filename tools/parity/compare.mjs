@@ -459,6 +459,10 @@ const INTENTIONAL_DIFF_STEPS = new Set([
   'chars.unified_patch_single',
   'chars.delete_cascade',
   'chars.chat_b_after_delete',
+  // 2.5.9 reset applies the recommended pack (not 1.x extract) and resets prompts.
+  // The sharper check is settings.reset_factory_floor.
+  'settings.reset',
+  'settings.after_reset',
 ]);
 
 /**
@@ -563,6 +567,13 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (v?.ok === true && Array.isArray(v?.selected) && v.selected.includes('t:alice')
       ? null
       : `2.0 lorefilter GET after set must keep selected, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'settings.reset_factory_floor',
+    (v) => (v?.image_min === 6 && v?.image_max === 8 && v?.execute === 'manual'
+      && v?.lore_extra === 'full' && v?.asset_nai_tags === 'prepass' && v?.tagger_wiped === true
+      ? null
+      : `2.5.9 reset must apply the recommended pack and wipe dirty prompts, got ${JSON.stringify(v)}`),
   ],
   [
     'chars.import_picker_persona',

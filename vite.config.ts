@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.8';
+const PLUGIN_VERSION = '2.5.10';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -764,6 +764,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.10</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>전체 초기화: 추천 설정 팩을 임포트하고 프롬프트도 기본값으로 되돌립니다. API 키·창 위치·카드 프리셋은 유지합니다</li>
+            <li>설정 프리셋 Vibe Transfer encode는 V4 API 키를 씁니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.8</strong>
@@ -8041,7 +8048,7 @@ const VENDOR_RESET_HELP_NEEDLE =
     "nx-reset-settings": { title: "모든 설정 초기화", body: "카드·LLM·NAI 등 설정을 기본값으로 되돌립니다. API 키·창 위치·카드 프리셋은 유지됩니다." },`;
 const VENDOR_RESET_HELP_PATCH =
   `    "nx-reset-windows": { title: "창위치 초기화", body: "뷰어·접힘 아이콘·핀이 화면 밖으로 나가 안 보일 때 기본 위치로 되돌립니다." },
-    "nx-reset-settings": { title: "전체 초기화", body: "카드·LLM·NAI 등 설정을 기본값으로 되돌립니다. API 키·창 위치·카드 프리셋은 유지됩니다." },
+    "nx-reset-settings": { title: "전체 초기화", body: "잘 모르면 임포트 팩을 적용합니다. API 키·창 위치·카드 프리셋은 유지하고, 프롬프트는 기본값 버튼을 누른 것과 같이 되돌립니다(작가 노트·에셋태그 노트 유지)." },
     "nx-reset-char-refs": { title: "레퍼런스 이미지 초기화", body: "모든 캐릭터 참고이미지 해시를 지우고, 기기 IDB와 Inlay 모듈 에셋을 삭제합니다. 설정은 유지됩니다." },
     "nx-migrate-legacy": { title: "2.4 데이터 이전", body: "2.4까지 쓰던 이미지 저장 방식을 2.5 방식으로 옮깁니다. 켤 때마다 하던 전체 점검이 사라져 부팅이 빨라지고, Risu 세이브파일도 가벼워집니다. 옮긴 뒤 옛 원본은 지워지므로 2.4로는 되돌릴 수 없습니다. 남은 장수가 있으면 버튼에 점이 붙습니다." },`;
 
@@ -12561,8 +12568,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.8",
-    body: "샷 태그는 매칭 없으면 메타 원문. 말풍선은 한 장씩만 붙이고 완료 때 다시 그리지 않습니다. 업데이트 내역 탭 참고."
+    title: "2.5.10",
+    body: "전체 초기화는 추천 팩 + 프롬프트 기본값. 프리셋 vibe는 V4 키. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

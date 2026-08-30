@@ -483,6 +483,43 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   return settings as MigratedSettings;
 }
 
+/** Viewer pin + style presets the user asked reset not to wipe. */
+const RESET_WINDOW_KEYS = [
+  'overlay_x_offset',
+  'overlay_y_offset',
+  'overlay_x_pct',
+  'overlay_y_pct',
+  'overlay_pin_unit',
+  'overlay_pin_origin',
+] as const;
+
+/**
+ * Copy the window pin and card presets onto a factory-reset blob.
+ * Secrets stay in the settings service.
+ */
+export function applySettingsResetKeeps(
+  previous: Record<string, unknown>,
+  next: Record<string, unknown>,
+): void {
+  const prevCard = previous.card && typeof previous.card === 'object' && !Array.isArray(previous.card)
+    ? previous.card as Record<string, unknown>
+    : undefined;
+  const nextCard = next.card && typeof next.card === 'object' && !Array.isArray(next.card)
+    ? next.card as Record<string, unknown>
+    : undefined;
+  if (!prevCard || !nextCard) return;
+  for (const key of RESET_WINDOW_KEYS) {
+    if (key === 'overlay_pin_unit' || key === 'overlay_pin_origin') {
+      if (typeof prevCard[key] === 'string' && prevCard[key]) nextCard[key] = prevCard[key];
+      continue;
+    }
+    if (Number.isFinite(Number(prevCard[key]))) nextCard[key] = Number(prevCard[key]);
+  }
+  if (Array.isArray(prevCard.presets)) nextCard.presets = jsonClone(prevCard.presets);
+  if ('active_preset_id' in prevCard) nextCard.active_preset_id = prevCard.active_preset_id;
+  if ('secondary_preset_id' in prevCard) nextCard.secondary_preset_id = prevCard.secondary_preset_id;
+}
+
 /** Migrated settings as pretty JSON, minus `SECRET_KEYS` — read its note first. */
 export function exportSettings(input: unknown): string {
   return JSON.stringify(redactSecrets(migrateSettings(input)), null, 2);

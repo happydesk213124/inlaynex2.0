@@ -7,7 +7,15 @@
  * Add a step whenever a route or bridge method gains behaviour — this file is the
  * executable definition of "feature parity".
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DEFAULT_LLM_REPLY, PNG_1X1 } from './host.mjs';
+
+const RESET_FLOOR_JSON = fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '../../src/config/default-settings.json'),
+  'utf8',
+);
 // The 1.x reader, used as an oracle for both targets so the assertion does not
 // depend on the code under test.
 import { parseStoreZip } from '../../reference/gallery-zip.js';
@@ -567,10 +575,50 @@ export async function runScenario(N, handles) {
   await rec('gallery.explore_after_folder_delete', () => get('/v1/gallery/explore?limit=200'));
 
   // ── settings import / reset ───────────────────────────────────────────
-  const exportForImport = await rec('settings.export_for_import', () => get('/v1/settings/export'));
+  const exportForImport =   await rec('settings.export_for_import', () => get('/v1/settings/export'));
   await rec('settings.import', () => post('/v1/settings/import', { json: exportForImport?.json ?? '{}' }));
+  await rec('settings.tagger_dirty_before_reset', () => put('/v1/prompts/tagger', { text: 'FACTORY RESET MUST WIPE' }));
   await rec('settings.reset', () => post('/v1/settings/reset', {}));
   await rec('settings.after_reset', () => get('/v1/settings'));
+  await rec('settings.reset_factory_floor', async () => {
+    const card = (await get('/v1/settings'))?.settings?.card || {};
+    const tagger = await get('/v1/prompts/tagger');
+    return {
+      image_min: card.image_min,
+      image_max: card.image_max,
+      execute: card.execute,
+      lore_extra: card.lore_extra,
+      asset_nai_tags: card.asset_nai_tags,
+      tagger_wiped: !String(tagger?.text || '').includes('FACTORY RESET MUST WIPE'),
+    };
+  });
+  // Reset now loads the recommended pack. Re-apply the boot extract + the
+  // opening put so later jobs stay comparable to 1.x.
+  await post('/v1/settings/import', { json: RESET_FLOOR_JSON });
+  await put('/v1/settings', {
+    llm: {
+      source: 'custom',
+      provider: 'openai',
+      endpoint: 'https://api.openai.com/v1/chat/completions',
+      model: 'gpt-test',
+      api_key: 'sk-parity',
+      temperature: 0.4,
+      max_tokens: 2048,
+      reasoning_effort: 'medium',
+    },
+    nai: {
+      backend: 'nai',
+      api_key: 'pst-parity',
+      model: 'nai-diffusion-4-5-full',
+      width: 832,
+      height: 1216,
+      steps: 23,
+      cfg_scale: 5,
+      sampler: 'k_euler_ancestral',
+      apply_quality_tags: true,
+    },
+    card: { power: true, image_max: 1, image_min: 1, character_max: 4, execute: 'auto' },
+  });
 
   // ── style presets ─────────────────────────────────────────────────────
   await rec('presets.save', () => put('/v1/settings', {

@@ -1352,7 +1352,7 @@ test('inline refresh is a DOM window, not a keep-list keyed on index', () => {
   const refresh = source.slice(start, end);
   assert.doesNotMatch(refresh, /_inlineKeepIdxs/);
   assert.doesNotMatch(refresh, /_inlineKeepEls = nextKeep/);
-  assert.match(refresh, /VC\.inlineDomWindow\(selIdx, els\.length, radius\)/);
+  assert.match(refresh, /VC\.inlineDomWindowFromSel\(selIdx, els\.length, radius\)/);
   assert.match(source, /setAttribute\("x-inlay-msg-index", String\(msgIdx\)\)/);
 });
 
@@ -1553,7 +1553,8 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /id="nx-inline-dom-radius" type="number" min="3" max="20" step="1"/);
   assert.match(source, /inline_chat_dom_radius: Math\.max\(3, Math\.min\(20,/);
   assert.match(source, /inline_chat_dom_radius\) \|\| 4/);
-  assert.match(source, /VC\.inlineDomWindow\(selIdx, els\.length, radius\)/);
+  assert.match(source, /VC\.inlineDomWindowFromSel\(selIdx, els\.length, radius\)/);
+  assert.match(source, /N\?\.prioritizeWarmFocus/);
   {
     const injectFrom = source.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
     const injectTo = source.indexOf('async function refreshSelectedInlineImages(force', injectFrom);
@@ -1568,7 +1569,8 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
     const refreshFrom = source.indexOf('async function refreshSelectedInlineImages(force');
     const refreshTo = source.indexOf('async function openSettingsTab(tab) {', refreshFrom);
     const refresh = refreshFrom >= 0 && refreshTo > refreshFrom ? source.slice(refreshFrom, refreshTo) : '';
-    assert.match(refresh, /VC\.inlineDomWindow\(selIdx, els\.length, radius\)/);
+    assert.match(refresh, /VC\.inlineDomWindowFromSel\(selIdx, els\.length, radius\)/);
+    assert.match(refresh, /N\?\.prioritizeWarmFocus/);
     assert.match(refresh, /VC\.shouldOverlayInlinePhoto\(\{/);
     assert.match(refresh, /wantPhotos: nextPhotoIdx\.has\(idx\)/);
     assert.match(refresh, /evictPhotosIn/);

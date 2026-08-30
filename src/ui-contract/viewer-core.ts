@@ -822,6 +822,23 @@ export function inlineDomWindow(selIdx: unknown, length: unknown, radius: unknow
   return out;
 }
 
+/** Same window, but selected first then ±1, ±2, … so stamp/encode radiate out. */
+export function inlineDomWindowFromSel(selIdx: unknown, length: unknown, radius: unknown): number[] {
+  const range = inlineDomWindow(selIdx, length, radius);
+  if (!range.length) return [];
+  const sel = Math.floor(Number(selIdx));
+  const r = Math.max(0, Math.floor(Number(radius)));
+  const out: number[] = [];
+  if (range.includes(sel)) out.push(sel);
+  for (let d = 1; d <= r; d += 1) {
+    const left = sel - d;
+    const right = sel + d;
+    if (range.includes(left)) out.push(left);
+    if (range.includes(right)) out.push(right);
+  }
+  return out;
+}
+
 /** Photos sit on selected ±1 unless that bubble is a verified user turn. */
 export function shouldOverlayInlinePhoto(opts: {
   idx?: unknown;

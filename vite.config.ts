@@ -9202,9 +9202,11 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const selIdx = selDom;
     if (!Number.isFinite(selIdx) || selIdx < 0 || !els[selIdx]) return;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
-    const photoIdxs = typeof VC?.inlineDomWindow == "function"
-      ? VC.inlineDomWindow(selIdx, els.length, 1)
-      : [selIdx];
+    const photoIdxs = typeof VC?.inlineDomWindowFromSel == "function"
+      ? VC.inlineDomWindowFromSel(selIdx, els.length, 1)
+      : typeof VC?.inlineDomWindow == "function"
+        ? VC.inlineDomWindow(selIdx, els.length, 1)
+        : [selIdx];
     const selectedCards = linkedCards(sel) || [];
     const selectedConfirmedEmpty = !selectedCards.length
       && String(t._galleryCache?.sessionId || "") === String(sel.sessionId || "");
@@ -10245,9 +10247,11 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         : Math.max(3, Math.min(20, Math.round(Number(t.backendSettings?.card?.inline_chat_dom_radius) || 4)));
       const spinnerIdxs = onlySel
         ? [selIdx]
-        : typeof VC?.inlineDomWindow == "function"
-          ? VC.inlineDomWindow(selIdx, els.length, radius)
-          : [];
+        : typeof VC?.inlineDomWindowFromSel == "function"
+          ? VC.inlineDomWindowFromSel(selIdx, els.length, radius)
+          : typeof VC?.inlineDomWindow == "function"
+            ? VC.inlineDomWindow(selIdx, els.length, radius)
+            : [];
       const scope = await Za().catch(() => null);
       const msgs = scope?.messages || [];
       const roleCache = new Map();
@@ -10323,6 +10327,20 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (wantPhoto) nextPhotoEls.push({ idx, el: els[idx] });
       }
       const nextPhotoIdx = new Set(nextPhotoEls.map((row) => row.idx));
+      try {
+        const N = globalThis.__INLAY_NATIVE__;
+        const focusIds = [];
+        for (const row of nextPhotoEls) {
+          const msg = msgCache.get(row.idx)?.msg;
+          const cards = msg ? linkedCards(msg) || [] : [];
+          for (const card of cards) {
+            const id = String(card?.id || "");
+            if (id && !focusIds.includes(id)) focusIds.push(id);
+          }
+        }
+        if (typeof N?.prioritizeWarmFocus == "function" && focusIds.length) N.prioritizeWarmFocus(focusIds);
+      } catch {
+      }
       if (!onlySel) {
         for (const prev of Array.isArray(t._inlinePhotoEls) ? t._inlinePhotoEls : []) {
           if (nextPhotoIdx.has(Number(prev?.idx)) && prev.el === els[prev.idx]) continue;
@@ -16414,7 +16432,7 @@ const loadVendorUi = (): string => {
       if ((body.match(/maybeRebindAndLink\(/g) || []).length !== 1) {
         throw new Error('[build] refreshSelectedInlineImages must reach maybeRebindAndLink only through nxRebind');
       }
-      if (!body.includes('VC.shouldOverlayInlinePhoto({') || !body.includes('VC.inlineDomWindow(selIdx, els.length, radius)')) {
+      if (!body.includes('VC.shouldOverlayInlinePhoto({') || !body.includes('VC.inlineDomWindowFromSel(selIdx, els.length, radius)')) {
         throw new Error('[build] inline refresh must stamp ±radius and overlay ±1 char only');
       }
       if (!body.includes('wantPhotos: nextPhotoIdx.has(idx)') || !body.includes('evictPhotosIn')) {
@@ -16638,7 +16656,7 @@ const loadVendorUi = (): string => {
     if (out.includes('inlineGoneFromSel') || out.includes('inline.keep.skip') || out.includes('stripInlineMarkersIn')) {
       throw new Error('[build] the keep-window driver must stay gone');
     }
-    assertOnce(out, 'VC.inlineDomWindow(selIdx, els.length, radius)', 'spinner stamp is selected ± dashboard radius');
+    assertOnce(out, 'VC.inlineDomWindowFromSel(selIdx, els.length, radius)', 'spinner stamp radiates from the selected bubble');
     if ((out.match(/VC.shouldOverlayInlinePhoto\(\{/g) || []).length !== 2) {
       throw new Error('[build] photos overlay selected ±1 char only');
     }

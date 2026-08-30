@@ -110,6 +110,7 @@ import {
   INLINE_KEEP_MAX_PER_SIDE,
   clampInlineDomRadius,
   inlineDomWindow,
+  inlineDomWindowFromSel,
   shouldOverlayInlinePhoto,
   desiredInlinePlacements,
   runBoundedPool,
@@ -365,6 +366,9 @@ test("inlineDomWindow stays around the selection and never walks the chat", () =
   assert.deepEqual(inlineDomWindow(10, 30, 4), [6, 7, 8, 9, 10, 11, 12, 13, 14]);
   assert.deepEqual(inlineDomWindow(0, 3, 4), [0, 1, 2]);
   assert.deepEqual(inlineDomWindow(5, 6, 1), [4, 5]);
+  assert.deepEqual(inlineDomWindowFromSel(10, 30, 4), [10, 9, 11, 8, 12, 7, 13, 6, 14]);
+  assert.deepEqual(inlineDomWindowFromSel(0, 3, 4), [0, 1, 2]);
+  assert.deepEqual(inlineDomWindowFromSel(5, 6, 1), [5, 4]);
 });
 
 test("shouldOverlayInlinePhoto is selected ±1 unless that bubble is a user turn", () => {

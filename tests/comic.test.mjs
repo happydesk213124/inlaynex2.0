@@ -17,6 +17,7 @@ import { assignComicPagesToShots, parseComicPages } from "../.test-build/comic-p
 import { stripComicKomaFromUc, stripComicPageStyleTags, stripComicStyleWords } from "../.test-build/comic-tags.mjs";
 import { comicSpeechCaption, composeComicSlotCaption } from "../.test-build/comic-caption.mjs";
 import { resolveComicNaiParams } from "../.test-build/comic-params.mjs";
+import { COMIC_FULL_MESSAGE_REF, comicProseBlockForLlm } from "../.test-build/comic-llm-prose.mjs";
 
 test("normalizeShotKind maps comic aliases", () => {
   assert.equal(normalizeShotKind("comic"), "comic");
@@ -28,6 +29,24 @@ test("comicGenOn is off unless on", () => {
   assert.equal(comicGenOn({}), false);
   assert.equal(comicGenOn({ comic_gen: "off" }), false);
   assert.equal(comicGenOn({ comic_gen: "on" }), true);
+});
+
+test("comic LLM prose is the page range plus a compressed full-message reference", () => {
+  const css = ".chattext .x-risu-ngs-card{position:relative;display:flex;padding:8px}";
+  const msg = ["one", "two", "three", css, "five"].join("\n");
+  const block = comicProseBlockForLlm(msg, 3, 5);
+  assert.match(block, /^L3\|three\nL4\|maybeCSSCode<< /);
+  assert.match(block, /\nL5\|five\n\n/);
+  assert.ok(block.includes(COMIC_FULL_MESSAGE_REF));
+  assert.match(block, /L1\|one/);
+  assert.match(block, /L4\|maybeCSSCode<< /);
+  assert.ok(!block.includes("padding:8px}"));
+});
+
+test("comic LLM prose skips a duplicate full copy when the range is the whole message", () => {
+  const block = comicProseBlockForLlm("a\nb\nc", 1, 3);
+  assert.equal(block, "L1|a\nL2|b\nL3|c");
+  assert.ok(!block.includes(COMIC_FULL_MESSAGE_REF));
 });
 
 test("comicLineRange clamps and never uses a neighbor", () => {

@@ -29,10 +29,12 @@ export function looksLikeCssLine(line: unknown): boolean {
   return false;
 }
 
-function lineForTaggerPrompt(line: string): string {
-  if (!looksLikeCssLine(line)) return line;
-  const preview = line.slice(0, CSS_PREVIEW_CHARS);
-  const more = line.length > CSS_PREVIEW_CHARS ? '…' : '';
+/** LLM-only: same line index, CSS rows collapsed. Never used for placement. */
+export function formatLineForTaggerPrompt(line: unknown): string {
+  const s = String(line ?? '');
+  if (!looksLikeCssLine(s)) return s;
+  const preview = s.slice(0, CSS_PREVIEW_CHARS);
+  const more = s.length > CSS_PREVIEW_CHARS ? '…' : '';
   return `maybeCSSCode<< ${preview}${more}`;
 }
 
@@ -40,7 +42,7 @@ function lineForTaggerPrompt(line: string): string {
 export function numberMessageLinesForTagger(text: unknown): string {
   const lines = splitTaggerMessageLines(text);
   if (!lines.length) return '';
-  return lines.map((line, i) => `L${i + 1}|${lineForTaggerPrompt(line)}`).join('\n');
+  return lines.map((line, i) => `L${i + 1}|${formatLineForTaggerPrompt(line)}`).join('\n');
 }
 
 /** True when lines are exactly 1..N in order (lazy shot-index fill). */

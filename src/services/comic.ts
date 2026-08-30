@@ -11,20 +11,13 @@ import {
   formatComicNowWearingBlock,
   resolveComicSlotCostume,
 } from '../domain/comic/costume.ts';
-import { comicLineRange } from '../domain/comic/kind.ts';
+import { comicProseBlockForLlm } from '../domain/comic/llm-prose.ts';
 import { normalizeComicLlmBatch } from '../domain/comic/params.ts';
 import { assignComicPagesToShots, parseComicPages, type ComicPage } from '../domain/comic/page.ts';
 import { resolveShotAspect } from '../domain/nai-meta/aspect.ts';
-import { splitTaggerMessageLines } from '../domain/tagging/shot-line.ts';
 import { callLlm } from '../providers/llm/client.ts';
 import { getConfig } from './context.ts';
 import { getPrompt } from './settings.ts';
-
-function sliceLines(text: unknown, start: unknown, end: unknown): string {
-  const lines = splitTaggerMessageLines(text);
-  const [a, b] = comicLineRange(start, end, lines.length);
-  return lines.slice(a - 1, b).map((line, i) => `L${a + i}|${line}`).join('\n');
-}
 
 function rosterBlock(
   names: string[],
@@ -89,7 +82,7 @@ export async function fillComicPagesForShots(args: {
   const packOne = (i: number): string => {
     const shot = shots[i]!;
     const names = (shot.characters || []).map((c) => cleanText(c.name, 200)).filter(Boolean);
-    const prose = sliceLines(assistantText, shot.line, shot.comic_line_end);
+    const prose = comicProseBlockForLlm(assistantText, shot.line, shot.comic_line_end);
     return [
       `shot_index: ${i}`,
       `line: ${shot.line ?? ''}–${shot.comic_line_end ?? shot.line ?? ''}`,

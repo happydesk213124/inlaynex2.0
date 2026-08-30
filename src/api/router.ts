@@ -355,6 +355,7 @@ const WRITE_ROUTES: readonly Route[] = [
           String(body.session_id || ''),
           String(body.content_hash || ''),
           body.message_index,
+          body.host_message_id || body.hostMessageId,
         ),
       ),
   },

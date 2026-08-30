@@ -33,6 +33,31 @@ test("unlink matches a late comic through its resolved location identity", () =>
   );
 });
 
+test("unlink matches the host message id even when hash and index drifted", () => {
+  assert.equal(
+    cardMatchesMessageUnlink({
+      hashes: ["old-hash"],
+      messageIndexes: [4],
+      hostIds: ["risu-m1"],
+      wantHash: "new-hash",
+      wantMessageIndex: 9,
+      wantHostId: "risu-m1",
+    }),
+    true,
+  );
+  assert.equal(
+    cardMatchesMessageUnlink({
+      hashes: ["same"],
+      messageIndexes: [4],
+      hostIds: ["other"],
+      wantHash: "same",
+      wantMessageIndex: 4,
+      wantHostId: "risu-m1",
+    }),
+    false,
+  );
+});
+
 test("cleared location hash does not revive the meta hash", () => {
   assert.equal(resolveStoredContentHash({ content_hash: "" }, { content_hash: "old" }), "");
   assert.equal(resolveStoredContentHash({}, { content_hash: "old" }), "old");

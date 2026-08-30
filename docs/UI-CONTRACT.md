@@ -396,7 +396,7 @@ lore_trigger_keys[], character_description, persona_description, force`.
 | `/v1/gallery?session_id=&limit=&hashes=` | `{ items: Card[], total, window_oldest_at }` — `items` is the newest `limit` cards **plus** every card whose `content_hash` is named in `hashes` (comma-separated or repeated), so a shot on an old message still ships. `total` is the session card count and `window_oldest_at` the oldest timestamp the window reached (`null` when it covered the session); a caller merging a window into a cache prunes against that edge |
 | `/v1/gallery/explore?limit=` | `{ folders[], items[] }` — folder rows use `key`, item rows use `folder_key` |
 | `/v1/gallery/favorites` · `POST` `{ids}` | explorer favourites |
-| `POST /v1/gallery/unlink` | `{session_id, content_hash, message_index}` |
+| `POST /v1/gallery/unlink` | `{session_id, content_hash, message_index, host_message_id?}` — force retag clears hash, index, and host id so shots cannot reattach |
 | `POST /v1/gallery/rebind-hash` | `{session_id, card_ids[], to_hash, assistant_preview}` |
 | `POST /v1/gallery/delete` | `{card_ids[]}` **or** `{folder_key}` |
 | `POST /v1/gallery/export` | `{all\|folder_key\|card_ids}` → `{ok, zip_base64, filename, count}` |

@@ -446,6 +446,9 @@ const INTENTIONAL_DIFF_STEPS = new Set([
   // markers stay in appearance instead of spilling into attire via "chat"⊃"hat".
   'chars.seed_sess_chat_a',
   'chars.seed_sess_chat_b',
+  // Hashes are not unique when two messages have identical text. 2.0 makes a
+  // stored message index authoritative so force-tag cannot unlink both bubbles.
+  'gallery.unlink_duplicate_hash_isolated',
   // 2.0 unified view is a live concat of root chats; 1.x wrote a cache row and
   // fanned patches/deletes to every linked session.
   'chars.unified_patch',
@@ -638,6 +641,15 @@ for (const name of oldSteps.keys()) {
         old: String(oldStep.value?.swapped),
         new: JSON.stringify(newStep.value),
         note: '2.0 reroll must keep the file base and ignore the active preset',
+      });
+    }
+    if (name === 'gallery.unlink_duplicate_hash_isolated'
+      && (newStep.value?.kept !== true || Number(newStep.value?.unlinked) !== 0)) {
+      findings.push({
+        at: name,
+        old: JSON.stringify(oldStep.value),
+        new: JSON.stringify(newStep.value),
+        note: 'duplicate hashes must not override a mismatched stored message index',
       });
     }
     if (name === 'presets.reroll_keeps_v4_from_complexity'

@@ -140,6 +140,29 @@ Dashboard also has `card.toast_anchor` (`tl` | `bl` | `tr` | `br` | `tc`,
 default `tc`) for progress / selection / host / attach toasts, and
 `card.inline_chat_dom_radius` (integer 3–20, default `4`) controls how many
 eligible bubbles on each side are prefetched and retained for inline frames.
+Settings → 디버그 → **스크롤** lists `scroll.*` events for the chat scroll
+pipeline (listener → phase bus → track/Da → inline/sticky). Mid-scroll samples
+are coalesced (~200ms) and do not refresh the debug panel; settle and Da do.
+Scroll-end sticky activate is one scheduler (`nxScheduleStickyScrollSnap`);
+sticky thumb innerHTML is `data:image` only (`composeStickyV2ThumbHtml` — blob
+becomes a transparent placeholder, not `src=""`).
+Canonical inline frames are append-only for the lifetime of a Risu message DOM:
+the spinner keeps the layout height, while two permanent photo cells swap only
+after the incoming URL has decoded. SafeDOM cannot mutate an image `src`, so a
+hidden cell receives its child through `setInnerHTML`; only that child changes,
+never the frame or either cell. Runtime metadata is mirrored onto readable
+`x-inlay-inline-*` attributes. Re-clicking an intact selected message is a
+no-op, and ordinary selection parking only changes opacity. A tag action alone
+removes that bubble's spinner frames and photo cells, then restamps after the
+tagger finishes; reroll/regeneration retargets the stable shot slot in place. Frame keys include the API message index as well as
+session and content hash, so two identical message texts do not share clears or
+image subscriptions. Injection locks use session + API message index without
+the mutable content hash, while owner generations serialize both metadata and
+photo writes so an older subscription cannot repaint a rerolled frame. Placement
+keeps one card per stable shot slot (line is only the fallback when no shot index
+exists), so distinct shots may share a paragraph without collapsing. If a legacy
+or raced DOM already contains repeated wrappers for one slot, the runtime keeps
+the desired card's wrapper and removes only the proven duplicates.
 `card.image_press_inspect` (`off` | `hold` | `two` | `three` | `both`, default `hold`)
 for enlarge on inline/sticky shots. `two` is a fast double-tap on the same
 shot (saved `two` / `double-tap` normalize here). `three` is a fast triple-tap
@@ -149,9 +172,9 @@ land, or 10 seconds, whichever is first. Later message clicks do not raise it.
 Dashboard also has `card.nai4_fallback`, `card.nai5_speech`,
 and `card.inline_msg_actions` as a 3-way select: `off` (사용안함),
 `legacy` (편의성, 오류율 있음 — DIV hosts + top bar on the content
-parent; leftover empty-shot cleanup may `setInnerHTML` the card),
+parent),
 `compat` (호환성 — body tags `p`/`li`/`h*`/`blockquote` only, host
-mount, leftover markers `remove()` only). Saved checkbox `true`
+mount). Neither mode removes mounted inline frames. Saved checkbox `true`
 migrates to `compat`. Same neighbor rule as `inline_chat_images`.
 Chips still use SafeDOM `H()` (not `insertAdjacentHTML`, not
 bubble-root `prepend`). Chip rows and shot wraps are skipped when

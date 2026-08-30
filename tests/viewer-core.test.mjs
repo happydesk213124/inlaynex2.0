@@ -51,6 +51,7 @@ import {
   readingPercentInMessage,
   resolveCardAnchorPercent,
   resolveClickSelectionAction,
+  messageClickScrollDelta,
   resolveStoredPinPercent,
   scaleInlineThumbnail,
   shouldRefreshGallery,
@@ -107,6 +108,10 @@ import {
   resolveInlinePaintCards,
   mergeSessionGallery,
   INLINE_KEEP_MAX_PER_SIDE,
+  clampInlineDomRadius,
+  inlineDomWindow,
+  inlineDomWindowFromSel,
+  shouldOverlayInlinePhoto,
   desiredInlinePlacements,
   runBoundedPool,
   canSkipInlineInject,
@@ -115,6 +120,7 @@ import {
   INLINE_FRAME_LAYOUT_VERSION,
   inlinePlaceholderSrc,
   inlinePlaceholderSize,
+  inlinePlacementSlotKey,
   reconcileInlineShot,
   shouldStripLeftoverInlineId,
   shouldScanInlineLeftovers,
@@ -340,12 +346,38 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   assert.match(out, /data-inlay-inline-shot="c2"/);
   assert.match(out, /<b>커피를 마셨다<\/b>/);
   assert.doesNotMatch(out, /data-inlay-inline-frame=/);
-  assert.match(out, /max-width:min\(78%,100%\)/);
+  assert.match(out, /max-width:min\(86%,100%\)/);
   // first coffee line is bold — marker for line 2 sits before <b>
   assert.match(out, /data-inlay-inline-shot="c1"[^>]*>[\s\S]*?<b>커피를 마셨다<\/b>/);
   // duplicate plain "커피를 마셨다" still gets line-3 marker (not string search of first)
   const stripped = stripInlayInlineHtml(out);
   assert.equal(htmlToPlainLn(stripped), htmlToPlainLn(rich));
+});
+
+test("inlinePlaceholderSrc is a still ring, not a spinning SVG", () => {
+  const src = inlinePlaceholderSrc({ aspect: "portrait" });
+  assert.doesNotMatch(decodeURIComponent(src), /animateTransform/);
+  assert.match(decodeURIComponent(src), /circle/);
+});
+
+test("inlineDomWindow stays around the selection and never walks the chat", () => {
+  assert.equal(clampInlineDomRadius(4), 4);
+  assert.equal(clampInlineDomRadius(99), 20);
+  assert.deepEqual(inlineDomWindow(10, 30, 4), [6, 7, 8, 9, 10, 11, 12, 13, 14]);
+  assert.deepEqual(inlineDomWindow(0, 3, 4), [0, 1, 2]);
+  assert.deepEqual(inlineDomWindow(5, 6, 1), [4, 5]);
+  assert.deepEqual(inlineDomWindowFromSel(10, 30, 4), [10, 9, 11, 8, 12, 7, 13, 6, 14]);
+  assert.deepEqual(inlineDomWindowFromSel(0, 3, 4), [0, 1, 2]);
+  assert.deepEqual(inlineDomWindowFromSel(5, 6, 1), [5, 4]);
+});
+
+test("shouldOverlayInlinePhoto is selected ±1 unless that bubble is a user turn", () => {
+  assert.equal(shouldOverlayInlinePhoto({ idx: 5, selIdx: 5, length: 20, role: "char" }), true);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 4, selIdx: 5, length: 20, role: "assistant" }), true);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 6, selIdx: 5, length: 20, role: "char" }), true);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 5, selIdx: 5, length: 20, role: "" }), true);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 6, selIdx: 5, length: 20, role: "user" }), false);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 7, selIdx: 5, length: 20, role: "char" }), false);
 });
 
 test("inlinePlaceholderSize follows the first-tagger aspect aliases", () => {
@@ -354,7 +386,7 @@ test("inlinePlaceholderSize follows the first-tagger aspect aliases", () => {
   assert.deepEqual(inlinePlaceholderSize({}), { width: 832, height: 1216 });
 });
 
-test("markerBlockHtml parks a sized SVG then swaps it for the real image", () => {
+test("markerBlockHtml parks a sized SVG and overlays the real image on top", () => {
   const pending = markerBlockHtml({
     line: 2,
     src: "",
@@ -365,13 +397,25 @@ test("markerBlockHtml parks a sized SVG then swaps it for the real image", () =>
   });
   const placeholder = inlinePlaceholderSrc({ aspect: "landscape" });
   assert.match(pending, /data-inlay-inline-pending="1"/);
+  assert.match(pending, /data-inlay-inline-spin="1"/);
+  assert.equal((pending.match(/data-inlay-inline-img="1"/g) || []).length, 2);
+  assert.match(pending, /x-inlay-inline-layer="a"/);
+  assert.match(pending, /x-inlay-inline-layer="b"/);
+  assert.match(pending, /x-inlay-inline-active=""/);
+  assert.match(pending, /x-inlay-inline-pending="1"/);
+  assert.match(pending, /x-inlay-inline-slot="s0"/);
+  assert.match(pending, /x-inlay-inline-layout="12"/);
+  assert.match(pending, /data-inlay-inline-slot="s0"/);
+  assert.match(pending, /<img[^>]*width="1216"[^>]*height="832"/);
   assert.ok(pending.includes(`src="${placeholder}"`));
   assert.match(decodeURIComponent(placeholder), /width="1216"/);
   assert.match(decodeURIComponent(placeholder), /height="832"/);
-  assert.match(pending, /width:auto;height:auto;max-width:min\(78%,100%\)/);
+  assert.match(pending, /width:auto;height:auto;max-width:min\(86%,100%\)/);
+  assert.match(pending, /data-inlay-inline-spin="1"[^>]*pointer-events:none/);
+  assert.match(pending, /position:absolute/);
+  assert.match(pending, /opacity:0/);
   assert.match(pending, new RegExp(`data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}"`));
   assert.doesNotMatch(pending, /data-inlay-inline-frame=/);
-  assert.doesNotMatch(pending, /data-inlay-inline-spin=/);
   assert.doesNotMatch(pending, /overflow:hidden/);
   const ready = markerBlockHtml({
     line: 2,
@@ -380,9 +424,21 @@ test("markerBlockHtml parks a sized SVG then swaps it for the real image", () =>
     cardId: "c1",
     aspect: "landscape",
   });
-  assert.match(ready, /data-inlay-inline-img="1"/);
-  assert.match(ready, /width:auto;height:auto;max-width:min\(78%,100%\)/);
-  assert.match(ready, /max-height:min\(70vh,900px\)/);
+  assert.match(ready, /data-inlay-inline-spin="1"/);
+  assert.equal((ready.match(/data-inlay-inline-img="1"/g) || []).length, 2);
+  assert.equal((ready.match(/x-inlay-inline-cell="1"/g) || []).length, 2);
+  assert.match(ready, /x-inlay-inline-slot="s0"/);
+  assert.match(ready, /x-inlay-inline-layout="12"/);
+  assert.match(ready, /x-inlay-inline-pending="0"/);
+  assert.match(ready, /x-inlay-inline-active="a"/);
+  assert.ok(ready.includes(placeholder), "spinner stays under the photo so the box cannot collapse");
+  assert.match(ready, /data:image\/png;base64,abc/);
+  assert.match(ready, /data-inlay-inline-photo="1"[^>]*pointer-events:auto/);
+  assert.match(ready, /opacity:1/);
+  assert.match(ready, /transition:opacity 80ms linear/);
+  assert.match(ready, /left:50%;top:45\.7%;width:90%;height:90%;transform:translate\(-50%,-50%\)/);
+  assert.match(ready, /width:auto;height:auto;max-width:min\(86%,100%\)/);
+  assert.match(ready, /max-height:min\(77vh,990px\)/);
   assert.doesNotMatch(ready, /data-inlay-inline-frame=/);
   assert.doesNotMatch(ready, /object-position:center top/);
   assert.doesNotMatch(ready, /data-inlay-inline-act=/);
@@ -393,8 +449,8 @@ test("markerBlockHtml parks a sized SVG then swaps it for the real image", () =>
     shotIndex: 0,
     cardId: "c1",
   }, 50);
-  assert.match(scaled, /max-width:min\(39%,100%\)/);
-  assert.match(scaled, /max-height:min\(35vh,450px\)/);
+  assert.match(scaled, /max-width:min\(43%,100%\)/);
+  assert.match(scaled, /max-height:min\(39vh,495px\)/);
   const blobReady = markerBlockHtml({
     line: 2,
     src: "blob:https://host/abc",
@@ -406,6 +462,12 @@ test("markerBlockHtml parks a sized SVG then swaps it for the real image", () =>
   assert.doesNotMatch(blobReady, /data-inlay-inline-pending/);
 });
 
+test("inlinePlacementSlotKey stays stable when reroll changes the card id", () => {
+  assert.equal(inlinePlacementSlotKey({ shotIndex: 2, line: 9, cardId: "old" }), "s2");
+  assert.equal(inlinePlacementSlotKey({ shotIndex: 2, line: 4, cardId: "new" }), "s2");
+  assert.equal(inlinePlacementSlotKey({ line: 4, cardId: "new" }), "l4");
+});
+
 test("markerBlockHtml stamps the bubble hash so a repaint can skip the scan", () => {
   const shot = { line: 2, src: "data:image/png;base64,abc", shotIndex: 0, cardId: "c1" };
   const pendingShot = { line: 2, src: "", shotIndex: 0, pending: true, cardId: "pending-0" };
@@ -413,6 +475,8 @@ test("markerBlockHtml stamps the bubble hash so a repaint can skip the scan", ()
   // has no cached scan to validate.
   assert.doesNotMatch(markerBlockHtml(shot), /data-inlay-inline-key/);
   assert.match(markerBlockHtml(shot, 100, "h4a9"), /data-inlay-inline-key="h4a9"/);
+  assert.match(markerBlockHtml(shot, 100, "h4a9"), /x-inlay-inline-key="h4a9"/);
+  assert.match(markerBlockHtml(shot, 100, "h4a9", "owner7"), /x-inlay-inline-owner="owner7"/);
   assert.match(markerBlockHtml(pendingShot, 100, "h4a9"), /data-inlay-inline-key="h4a9"/);
   // The stamp must not shield the marker from the strip that runs before hashing,
   // or the bubble's own text would be read back with our blocks still in it.
@@ -504,6 +568,12 @@ test("click selection action supports provisional then confirm in double mode", 
   assert.equal(resolveClickSelectionAction({ gesture: "single", detail: 1 }).action, "confirm");
   assert.equal(resolveClickSelectionAction({ gesture: "context", detail: 1, targetDomIndex: 1 }).action, "ignore");
   assert.equal(resolveClickSelectionAction({ gesture: "longpress", detail: 1, targetDomIndex: 1 }).action, "ignore");
+});
+
+test("messageClickScrollDelta never moves the chat", () => {
+  assert.equal(messageClickScrollDelta({ top: 100, bottom: 780 }, 800), 0);
+  assert.equal(messageClickScrollDelta({ top: 900, bottom: 1100 }, 800), 0);
+  assert.equal(messageClickScrollDelta({ top: -200, bottom: -20 }, 800), 0);
 });
 
 test("text drag selects message only after real drag with selection", () => {
@@ -629,12 +699,15 @@ test("fitBoxInside preserves landscape/square/portrait inside envelope", () => {
 });
 
 test("composeStickyThumbHtml uses contain (full image, no crop)", () => {
-  const html = composeStickyThumbHtml("new", "old");
-  assert.match(html, /new/);
+  const html = composeStickyThumbHtml("data:image/png;base64,xx", "old");
+  assert.match(html, /data:image\/png;base64,xx/);
   assert.match(html, /object-fit:contain/);
   assert.match(html, /background:transparent/);
   assert.doesNotMatch(html, /background:#0b0f18/);
   assert.equal((html.match(/<img/g) || []).length, 1);
+  const blobHtml = composeStickyThumbHtml("blob:https://host/abc", "");
+  assert.doesNotMatch(blobHtml, /<img /);
+  assert.doesNotMatch(blobHtml, /blob:/);
 });
 
 test("composeStickyThumbHtml empty placeholder is transparent", () => {
@@ -702,8 +775,9 @@ test("sticky v2 shot counts and pure-image html", () => {
   assert.doesNotMatch(html, /object-fit:contain/);
   assert.match(html, /src="data:image\/png;base64,xx"/);
   const blobHtml = composeStickyV2ThumbHtml("blob:https://host/abc");
-  assert.match(blobHtml, /<img /);
+  assert.doesNotMatch(blobHtml, /<img /);
   assert.doesNotMatch(blobHtml, /blob:/);
+  assert.match(blobHtml, /background:transparent/);
 });
 
 test("isReadyImageSrc accepts data and blob; htmlSafeImageSrc drops blob", () => {
@@ -717,9 +791,12 @@ test("isReadyImageSrc accepts data and blob; htmlSafeImageSrc drops blob", () =>
 });
 
 test("stickyThumbNeedsHtmlPaint skips when already painted", () => {
-  assert.equal(stickyThumbNeedsHtmlPaint("x", "x", "a", "a"), false);
-  assert.equal(stickyThumbNeedsHtmlPaint("x", "y", "a", "a"), true);
-  assert.equal(stickyThumbNeedsHtmlPaint("x", "x", "a", "b"), true);
+  const a = "data:image/png;base64,aa";
+  const b = "data:image/png;base64,bb";
+  assert.equal(stickyThumbNeedsHtmlPaint(a, a, "a", "a"), false);
+  assert.equal(stickyThumbNeedsHtmlPaint(a, b, "a", "a"), true);
+  assert.equal(stickyThumbNeedsHtmlPaint(a, a, "a", "b"), true);
+  assert.equal(stickyThumbNeedsHtmlPaint("", "blob:https://host/abc", "a", "a"), false);
 });
 
 test("stickyThumbSizeForImage uses max-edge budget so landscape is not crushed", () => {
@@ -1060,6 +1137,7 @@ test("cardsForInlineBubble drops char shots on user and on drift", () => {
   const cards = [{ id: "c1" }];
   assert.deepEqual(cardsForInlineBubble({ cards, role: "user", allRoles: false }), []);
   assert.deepEqual(cardsForInlineBubble({ cards, role: "char", allRoles: false }), cards);
+  assert.deepEqual(cardsForInlineBubble({ cards, role: "", allRoles: false }), cards);
   assert.deepEqual(cardsForInlineBubble({
     cards,
     role: "char",
@@ -1243,6 +1321,97 @@ test("desiredInlinePlacements holds a linked card without bytes so pending canno
   assert.deepEqual(got.placements.map((p) => p.aspect), ["square", "landscape"]);
 });
 
+test("desiredInlinePlacements keeps distinct pending shot slots on one line", () => {
+  const got = desiredInlinePlacements(
+    [],
+    [
+      { line: 2, shot_index: 0 },
+      { line: 2, shot_index: 1 },
+    ],
+    () => "",
+  );
+  assert.deepEqual(
+    got.placements.map((p) => ({ id: p.cardId, line: p.line, shot: p.shotIndex })),
+    [
+      { id: "pending-0", line: 2, shot: 0 },
+      { id: "pending-1", line: 2, shot: 1 },
+    ],
+  );
+});
+
+test("desiredInlinePlacements emits one frame per stable shot slot", () => {
+  const got = desiredInlinePlacements(
+    [
+      { id: "first", line: 2, shot_index: 0 },
+      { id: "duplicate-slot", line: 5, shot_index: 0 },
+      { id: "duplicate-line", line: 2, shot_index: 3 },
+    ],
+    [],
+    () => "data:image/png;base64,same",
+  );
+  assert.deepEqual(
+    got.placements.map((p) => ({ id: p.cardId, line: p.line, shot: p.shotIndex })),
+    [
+      { id: "first", line: 2, shot: 0 },
+      { id: "duplicate-line", line: 2, shot: 3 },
+    ],
+  );
+});
+
+test("duplicate mounted frames keep the desired card for each stable slot", async () => {
+  const viewerCore = await import("../.test-build/viewer-core.mjs");
+  assert.equal(typeof viewerCore.partitionInlineFrameDuplicates, "function");
+  const rows = [
+    { id: "old", slot: "s0", ready: true, duplicate: false },
+    { id: "current", slot: "s0", ready: true, duplicate: false },
+    { id: "slot-1", slot: "s1", ready: true, duplicate: false },
+    { id: "slot-1-copy", slot: "s1", ready: false, duplicate: true },
+    { id: "current", slot: "l2", ready: true, duplicate: false },
+  ];
+  assert.deepEqual(
+    viewerCore.partitionInlineFrameDuplicates(rows, [
+      { cardId: "current", shotIndex: 0, line: 2, src: "data:image/png;base64,a" },
+      { cardId: "slot-1", shotIndex: 1, line: 4, src: "data:image/png;base64,b" },
+    ]),
+    { keep: [1, 2], duplicates: [0, 3, 4] },
+  );
+  assert.deepEqual(
+    viewerCore.partitionInlineFrameDuplicates(
+      [{ id: "only", slot: "s0", ready: true, duplicate: true }],
+      [],
+    ),
+    { keep: [0], duplicates: [] },
+  );
+  assert.deepEqual(
+    viewerCore.partitionInlineFrameDuplicates(
+      [
+        { id: "slot-a", slot: "s0", ready: true },
+        { id: "slot-b", slot: "s0", ready: true },
+        { id: "slot-b", slot: "s1", ready: true },
+      ],
+      [
+        { cardId: "slot-a", shotIndex: 0, line: 2, src: "data:image/png;base64,a" },
+        { cardId: "slot-b", shotIndex: 1, line: 4, src: "data:image/png;base64,b" },
+      ],
+    ),
+    { keep: [0, 2], duplicates: [1] },
+  );
+  assert.deepEqual(
+    viewerCore.partitionInlineFrameDuplicates(
+      [
+        { id: "slot-b", slot: "s0", ready: true },
+        { id: "slot-a", slot: "s9", ready: true },
+        { id: "other", slot: "s1", ready: true },
+      ],
+      [
+        { cardId: "slot-a", shotIndex: 0, line: 2, src: "data:image/png;base64,a" },
+        { cardId: "slot-b", shotIndex: 1, line: 4, src: "data:image/png;base64,b" },
+      ],
+    ),
+    { keep: [0, 2], duplicates: [1] },
+  );
+});
+
 test("runBoundedPool caps concurrency at the limit", async () => {
   const delays = [80, 40, 10];
   let inflight = 0;
@@ -1361,18 +1530,22 @@ test("pendingInlineKey uses shot and line so empty cardId still changes", () => 
   assert.notEqual(pendingInlineKey([{ shot_index: 0, line: 2 }]), "");
 });
 
-test("reconcileInlineShot pending replaces an old card marker", () => {
+test("reconcileInlineShot retargets an old frame without replacing it", () => {
   const pending = { line: 1, src: "", cardId: "pending-0", pending: true };
   assert.deepEqual(reconcileInlineShot(pending, { cardId: "old-card", pending: false }), {
-    op: "swap",
+    op: "fill",
     placement: pending,
   });
 });
 
 test("reconcileInlineShot ready card replaces a spinner", () => {
   const ready = { line: 1, src: "data:image/png;base64,xx", cardId: "c3", pending: false };
-  assert.deepEqual(reconcileInlineShot(ready, { cardId: "pending-0", pending: true }), {
-    op: "swap",
+  assert.deepEqual(reconcileInlineShot(ready, {
+    cardId: "pending-0",
+    pending: true,
+    layoutVersion: INLINE_FRAME_LAYOUT_VERSION,
+  }), {
+    op: "fill",
     placement: ready,
   });
 });
@@ -1386,20 +1559,17 @@ test("reconcileInlineShot same ready id stays put", () => {
   }).op, "keep");
 });
 
-test("reconcileInlineShot replaces a same-card marker from an older frame layout", () => {
+test("reconcileInlineShot keeps a same-card frame from an older layout", () => {
   const ready = { line: 1, src: "data:image/png;base64,xx", cardId: "c3", pending: false };
-  assert.deepEqual(reconcileInlineShot(ready, {
+  assert.equal(reconcileInlineShot(ready, {
     cardId: "c3",
     pending: false,
     layoutVersion: "",
-  }), {
-    op: "swap",
-    placement: ready,
-  });
+  }).op, "keep");
 });
 
-test("reconcileInlineShot strips a live marker when nothing is desired", () => {
-  assert.deepEqual(reconcileInlineShot(null, { cardId: "old-card" }), { op: "strip" });
+test("reconcileInlineShot never strips a live frame when nothing is desired", () => {
+  assert.deepEqual(reconcileInlineShot(null, { cardId: "old-card" }), { op: "keep" });
 });
 
 test("reconcileInlineShot prepends when the host is empty", () => {
@@ -1407,24 +1577,24 @@ test("reconcileInlineShot prepends when the host is empty", () => {
   assert.deepEqual(reconcileInlineShot(pending, null), { op: "prepend", placement: pending });
 });
 
-test("reconcileInlineShot swaps an unread live marker instead of stacking a second shot", () => {
+test("reconcileInlineShot retargets an unread live frame instead of replacing it", () => {
   const pending = { line: 1, src: "", cardId: "pending-0", pending: true };
   assert.deepEqual(reconcileInlineShot(pending, { cardId: "", pending: false }), {
-    op: "swap",
+    op: "fill",
     placement: pending,
   });
 });
 
-test("reconcileInlineShot keeps an existing spinner even when ids do not match", () => {
+test("reconcileInlineShot retargets an existing spinner when ids do not match", () => {
   const pending = { line: 1, src: "", cardId: "pending-0", pending: true };
   const layoutVersion = INLINE_FRAME_LAYOUT_VERSION;
-  assert.equal(reconcileInlineShot(pending, { cardId: "", pending: true, layoutVersion }).op, "keep");
-  assert.equal(reconcileInlineShot(pending, { cardId: "pending-1", pending: true, layoutVersion }).op, "keep");
+  assert.equal(reconcileInlineShot(pending, { cardId: "", pending: true, layoutVersion }).op, "fill");
+  assert.equal(reconcileInlineShot(pending, { cardId: "pending-1", pending: true, layoutVersion }).op, "fill");
 });
 
-test("reconcileInlineShot holds a linked card that still has no bytes", () => {
+test("reconcileInlineShot retargets a linked card that still has no bytes", () => {
   const hold = { line: 3, src: "", cardId: "c2", pending: false };
-  assert.equal(reconcileInlineShot(hold, { cardId: "pending-1", pending: true }).op, "keep");
+  assert.equal(reconcileInlineShot(hold, { cardId: "pending-1", pending: true }).op, "fill");
 });
 
 test("leftover strip ignores unread ids so a just-placed shot is not deleted", () => {
@@ -1838,6 +2008,42 @@ test("linkCardsForMessage is exact hash only", () => {
   assert.deepEqual(linkCardsForMessage(cards, { hash: "h-missing", text: full }), []);
 });
 
+test("linkCardsForMessage isolates equal hashes by stored message index", () => {
+  const cards = [
+    { id: "turn-4", content_hash: "same", message_index: 4, paragraph: 0, shot_index: 0, created_at: 1 },
+    { id: "turn-7", content_hash: "same", message_index: 7, paragraph: 1, shot_index: 1, created_at: 2 },
+    { id: "legacy", content_hash: "same", message_index: -1, paragraph: 2, shot_index: 2, created_at: 3 },
+  ];
+  assert.deepEqual(
+    linkCardsForMessage(cards, { hash: "same", messageIndex: 7 }).map((card) => card.id),
+    ["turn-7", "legacy"],
+  );
+  assert.deepEqual(
+    linkCardsForMessage(cards, { hash: "same", messageIndex: 4 }).map((card) => card.id),
+    ["turn-4", "legacy"],
+  );
+});
+
+test("inline inject ownership stays stable when the same message hash changes", async () => {
+  const viewerCore = await import("../.test-build/viewer-core.mjs");
+  assert.equal(typeof viewerCore.inlineInjectOwnerKey, "function");
+  const before = {
+    sessionId: "session-a",
+    messageIndex: 7,
+    hash: "streaming-hash",
+  };
+  const after = {
+    sessionId: "session-a",
+    messageIndex: 7,
+    hash: "final-hash",
+  };
+  assert.equal(viewerCore.inlineInjectOwnerKey(before, 3), viewerCore.inlineInjectOwnerKey(after, 3));
+  assert.notEqual(
+    viewerCore.inlineInjectOwnerKey(before, 3),
+    viewerCore.inlineInjectOwnerKey({ ...after, messageIndex: 8 }, 3),
+  );
+});
+
 test("findCardsForMessageIdentity matches turn without hash/Dice", () => {
   const base = {
     id: "c1",
@@ -1964,7 +2170,7 @@ test("canRetargetJobSaveHash requires identity + Dice>=60% and skips already-ret
   );
 });
 
-test("gallery match ignores stale message_index without content_hash", () => {
+test("gallery match requires both hash and a compatible stored message index", () => {
   const cards = [
     { id: "a", content_hash: "old-hash", message_index: 3, paragraph: 0, created_at: 1 },
   ];
@@ -1972,7 +2178,7 @@ test("gallery match ignores stale message_index without content_hash", () => {
   assert.equal(gallerySelectedCount(cards, { hash: "new-hash", chatIndex: 3 }), 0);
   assert.equal(galleryForMessage(cards, { hash: "new-hash", chatIndex: 3 }, 8)[0]?.id, "a");
   assert.notEqual(galleryForMessage(cards, { hash: "new-hash", chatIndex: 3 }, 8)[0]?.content_hash, "new-hash");
-  assert.equal(gallerySelectedCount(cards, { hash: "old-hash", chatIndex: 99 }), 1);
+  assert.equal(gallerySelectedCount(cards, { hash: "old-hash", chatIndex: 99 }), 0);
 });
 
 test("short user word still maps by reverse DOM index only", () => {

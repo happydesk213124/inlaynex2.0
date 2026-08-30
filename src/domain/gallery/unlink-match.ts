@@ -24,18 +24,17 @@ export function cardMatchesMessageUnlink(args: {
   wantHash: string;
   wantMessageIndex: number | null;
 }): boolean {
-  const wantHash = cleanText(args.wantHash, 128);
-  if (wantHash) {
-    for (const raw of args.hashes) {
-      const h = cleanText(raw, 128);
-      if (h && h === wantHash) return true;
-    }
-  }
   const wantMsg = args.wantMessageIndex;
   if (wantMsg != null && wantMsg >= 0) {
-    for (const raw of args.messageIndexes) {
-      if (toInt(raw, -1) === wantMsg) return true;
-    }
+    const stored = toInt(args.messageIndexes[0], -1);
+    // Identical message text produces the same hash. When a card has an index,
+    // that index is the only way to avoid unlinking both bubbles.
+    if (stored >= 0) return stored === wantMsg;
+  }
+  const wantHash = cleanText(args.wantHash, 128);
+  if (wantHash) {
+    const storedHash = cleanText(args.hashes[0], 128);
+    if (storedHash && storedHash === wantHash) return true;
   }
   return false;
 }

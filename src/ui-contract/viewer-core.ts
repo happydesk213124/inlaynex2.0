@@ -2889,28 +2889,6 @@ export function composeSingleProgressBarHtml(args: {
   return `<span style="display:block;width:100%;height:3px;border-radius:2px;background:#1e2633;overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:${color};border-radius:2px"></span></span>`;
 }
 
-/**
- * Toast `n/m` while a job runs. `shot_done` is finished count, so the last
- * in-flight shot would otherwise sit at (m-1)/m until `done`.
- */
-export function jobShotLabel(opts: {
-  state?: unknown;
-  shot_done?: unknown;
-  shot_index?: unknown;
-  shot_count?: unknown;
-} = {}): string {
-  const shotCount = Math.max(0, Math.floor(finiteNumber(opts.shot_count, 0)));
-  if (shotCount <= 0) return '';
-  const shotDone = Math.max(0, Math.floor(finiteNumber(opts.shot_done, 0)));
-  const shotIndex = Math.max(0, Math.floor(finiteNumber(opts.shot_index, 0)));
-  const state = String(opts.state || '');
-  const generating = state === 'generating' || state === 'running';
-  const shown = generating
-    ? Math.min(shotCount, Math.max(shotDone + 1, shotIndex + 1, 1))
-    : Math.min(shotCount, shotDone);
-  return `${shown}/${shotCount}`;
-}
-
 /** Elapsed label for progress toast (`18s`, `1m 05s`). */
 export function formatProgressElapsedSec(ms: unknown): string {
   const n = Math.max(0, Math.floor(finiteNumber(ms, 0) / 1000));

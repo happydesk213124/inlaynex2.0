@@ -1244,24 +1244,6 @@ async function runJob(jobId: string): Promise<void> {
         };
         const done = cardsDone();
         dbg('job.shot.revealed', { shot: idx, card_id: cardId, has_url: Boolean(resolveImageUrl(cardId)) });
-        // Announce shot_done only after the card row exists. The last shot's
-        // next poll is often `done`, which does not force-reload the gallery —
-        // if this write trails the announcement, 1/2/3 appear and N/N never does
-        // until a full refresh.
-        await idbPut('cards', {
-          id: cardId,
-          job_id: jobId,
-          session_id: sessionId,
-          shot_index: idx,
-          paragraph: Number(shot.paragraph || 0),
-          main_prompt: '',
-          negative_prompt: '',
-          characters_json: JSON.stringify(slimCardCharacters(meta.characters || [])),
-          seed,
-          meta_json: JSON.stringify(cardMeta),
-          created_at: now,
-        });
-        dbg('job.shot.saved', { shot: idx, card_id: cardId });
         await setJob(
           jobId,
           'generating',
@@ -1277,6 +1259,21 @@ async function runJob(jobId: string): Promise<void> {
             pending_message_index: pendingMessageIndex,
           }),
         );
+        // Card row persist can trail the visible swap; next NAI already overlaps.
+        await idbPut('cards', {
+          id: cardId,
+          job_id: jobId,
+          session_id: sessionId,
+          shot_index: idx,
+          paragraph: Number(shot.paragraph || 0),
+          main_prompt: '',
+          negative_prompt: '',
+          characters_json: JSON.stringify(slimCardCharacters(meta.characters || [])),
+          seed,
+          meta_json: JSON.stringify(cardMeta),
+          created_at: now,
+        });
+        dbg('job.shot.saved', { shot: idx, card_id: cardId });
       })().catch((err) => {
         shotSaveFailed = err;
         throw err;

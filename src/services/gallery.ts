@@ -432,8 +432,10 @@ export async function unlinkCardsForMessage(
     const loc = await locationFieldsForCard(row.id, meta);
     const sidecar = await readImageLocation(row.id);
     if (!cardMatchesMessageUnlink({
-      hashes: [loc.content_hash, meta.content_hash, sidecar.content_hash],
-      messageIndexes: [loc.message_index, meta.message_index, sidecar.message_index],
+      // locationFieldsForCard already applies sidecar-presence precedence.
+      // Re-adding raw/meta values here can revive an explicitly unlinked card.
+      hashes: [loc.content_hash],
+      messageIndexes: [loc.message_index],
       wantHash: hash,
       wantMessageIndex: msgIdx,
     })) continue;

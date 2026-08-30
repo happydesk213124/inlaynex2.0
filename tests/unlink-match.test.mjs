@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 
 import { cardMatchesMessageUnlink, resolveStoredContentHash } from "../.test-build/unlink-match.mjs";
 
-test("unlink matches a late comic hash on meta or location", () => {
+test("unlink matches a late comic through its resolved location identity", () => {
   assert.equal(
     cardMatchesMessageUnlink({
-      hashes: ["", "comic-hash"],
-      messageIndexes: [-1, 4],
+      hashes: ["comic-hash"],
+      messageIndexes: [4],
       wantHash: "comic-hash",
       wantMessageIndex: 4,
     }),
@@ -37,4 +37,47 @@ test("cleared location hash does not revive the meta hash", () => {
   assert.equal(resolveStoredContentHash({ content_hash: "" }, { content_hash: "old" }), "");
   assert.equal(resolveStoredContentHash({}, { content_hash: "old" }), "old");
   assert.equal(resolveStoredContentHash({ content_hash: "live" }, { content_hash: "old" }), "live");
+});
+
+test("stored message index isolates duplicate messages with the same hash", () => {
+  assert.equal(
+    cardMatchesMessageUnlink({
+      hashes: ["same-hash"],
+      messageIndexes: [4],
+      wantHash: "same-hash",
+      wantMessageIndex: 7,
+    }),
+    false,
+  );
+  assert.equal(
+    cardMatchesMessageUnlink({
+      hashes: ["same-hash"],
+      messageIndexes: [-1],
+      wantHash: "same-hash",
+      wantMessageIndex: 7,
+    }),
+    true,
+    "hash remains the compatibility fallback when the card has no usable index",
+  );
+});
+
+test("resolved location identity outranks stale metadata and explicit unlink stays unlinked", () => {
+  assert.equal(
+    cardMatchesMessageUnlink({
+      hashes: ["live-hash", "stale-hash", "live-hash"],
+      messageIndexes: [4, 7, 4],
+      wantHash: "stale-hash",
+      wantMessageIndex: 7,
+    }),
+    false,
+  );
+  assert.equal(
+    cardMatchesMessageUnlink({
+      hashes: ["", "stale-hash", ""],
+      messageIndexes: [-1, 7, -1],
+      wantHash: "stale-hash",
+      wantMessageIndex: 7,
+    }),
+    false,
+  );
 });

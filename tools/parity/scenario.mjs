@@ -538,6 +538,20 @@ export async function runScenario(N, handles) {
 
   // Card delete path: remove the freshly generated sess_folder card by id.
   const galleryForCardDelete = await rec('gallery.before_card_delete', () => get('/v1/gallery?session_id=sess_folder&limit=40'));
+  await rec('gallery.unlink_duplicate_hash_isolated', async () => {
+    const cardIds = new Set((galleryForCardDelete?.items ?? []).map((i) => i.id));
+    const result = await post('/v1/gallery/unlink', {
+      session_id: 'sess_folder',
+      content_hash: 'hash_folder',
+      message_index: 99,
+    });
+    const after = await get('/v1/gallery?session_id=sess_folder&limit=40');
+    const kept = (after?.items ?? []).some((row) =>
+      cardIds.has(row.id)
+      && String(row.content_hash || '') === 'hash_folder'
+      && Number(row.message_index) === 3);
+    return { unlinked: Number(result?.unlinked || 0), kept };
+  });
   await rec('gallery.delete_cards', () => post('/v1/gallery/delete', {
     card_ids: (galleryForCardDelete?.items ?? []).map((i) => i.id),
   }));

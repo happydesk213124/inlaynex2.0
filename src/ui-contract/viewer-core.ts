@@ -89,8 +89,27 @@ export interface SelectedMessage {
   hash?: string;
   sessionId?: string;
   chatIndex?: number;
+  messageIndex?: number;
   text?: string;
   [key: string]: unknown;
+}
+
+/** Hash-independent owner for serialising writes into one physical message bubble. */
+export function inlineInjectOwnerKey(
+  message: SelectedMessage | Record<string, unknown> | null | undefined,
+  domIndex: unknown = -1,
+  fallbackSessionId: unknown = '',
+): string {
+  const sessionId = String(message?.sessionId || message?.session_id || fallbackSessionId || '');
+  const rawMessageIndex = message?.messageIndex ?? message?.message_index ?? message?.chatIndex;
+  const messageIndex = Number(rawMessageIndex);
+  const dom = Number(domIndex);
+  const position = rawMessageIndex != null && Number.isInteger(messageIndex) && messageIndex >= 0
+    ? `m${messageIndex}`
+    : Number.isInteger(dom) && dom >= 0
+      ? `d${dom}`
+      : 'd?';
+  return `${sessionId || 'unknown'}|${position}`;
 }
 
 /** One row of `chat.message[]` as delivered by the host API. */
@@ -303,7 +322,7 @@ export interface RebindIdentity {
 }
 
 /**
- * Hot-path link: exact content_hash only.
+ * Hot-path link: exact content_hash, then authoritative stored message index.
  * Soft/streaming upgrades go through findHashRebindCandidates + API rebind.
  * UI must still scan after a partial link (some shots already on newHash) —
  * maybeRebindAndLink attaches those siblings, then returns linkedCards for paint.
@@ -316,7 +335,21 @@ export function linkCardsForMessage<T extends GalleryCard = GalleryCard>(
   const list = Array.isArray(cards) ? cards : [];
   const hash = String(selectedMessage.hash || '');
   if (!hash) return [];
-  return dedupeShotSlots(list.filter((card) => card?.content_hash && card.content_hash === hash));
+  const rawSelectedIndex = selectedMessage.messageIndex ?? selectedMessage.chatIndex;
+  const selectedIndex = Number(rawSelectedIndex);
+  const hasSelectedIndex = rawSelectedIndex != null
+    && Number.isInteger(selectedIndex)
+    && selectedIndex >= 0;
+  return dedupeShotSlots(list.filter((card) => {
+    if (!card?.content_hash || card.content_hash !== hash) return false;
+    if (!hasSelectedIndex) return true;
+    const rawCardIndex = card.message_index;
+    const cardIndex = Number(rawCardIndex);
+    return rawCardIndex == null
+      || !Number.isInteger(cardIndex)
+      || cardIndex < 0
+      || cardIndex === selectedIndex;
+  }));
 }
 
 /**
@@ -3127,7 +3160,7 @@ export function stickySegmentForInlineChat(opts: {
 // ── beta: chat-bubble inline images at newline lines ──────────────────────
 
 const INLAY_INLINE_ATTR = 'data-inlay-inline-shot';
-export const INLINE_FRAME_LAYOUT_VERSION = '9';
+export const INLINE_FRAME_LAYOUT_VERSION = '12';
 /**
  * Content hash of the bubble this marker was placed into.
  *
@@ -3298,10 +3331,12 @@ export function desiredInlinePlacements(
     const line = Number(card?.line);
     const shotIndex = Number(card?.shot_index);
     const cardId = String(card?.id || '');
+    const hasShot = Number.isFinite(shotIndex) && shotIndex >= 0;
+    const hasLine = Number.isFinite(line) && line >= 1;
     if (cardId && seenCard.has(cardId)) continue;
-    if (Number.isFinite(shotIndex) && shotIndex >= 0) seenShot.add(shotIndex);
-    if (Number.isFinite(line) && line >= 1) seenLine.add(line);
-    if (!Number.isFinite(line) || line < 1) continue;
+    if (!hasLine || (hasShot ? seenShot.has(shotIndex) : seenLine.has(line))) continue;
+    if (hasShot) seenShot.add(shotIndex);
+    seenLine.add(line);
     const src = String(getSrc(card) || '');
     if (!isReadyImageSrc(src)) {
       if (cardId) {
@@ -3336,8 +3371,8 @@ export function desiredInlinePlacements(
   for (const row of pending) {
     const line = Number(row?.line);
     const shotIndex = Number(row?.shot_index);
-    if (!Number.isFinite(line) || line < 1 || seenLine.has(line)) continue;
-    if (Number.isFinite(shotIndex) && seenShot.has(shotIndex)) continue;
+    const hasShot = Number.isFinite(shotIndex) && shotIndex >= 0;
+    if (!Number.isFinite(line) || line < 1 || (hasShot ? seenShot.has(shotIndex) : seenLine.has(line))) continue;
     const cardId = `pending-${Number.isFinite(shotIndex) ? shotIndex : line}`;
     if (seenCard.has(cardId)) continue;
     seenLine.add(line);
@@ -3356,6 +3391,63 @@ export function desiredInlinePlacements(
   }
 
   return { placements, encodeLater };
+}
+
+/** Pick one mounted wrapper per stable slot and identify proven duplicates. */
+export function partitionInlineFrameDuplicates(
+  rows: Array<{
+    id?: unknown;
+    slot?: unknown;
+    ready?: unknown;
+    duplicate?: unknown;
+  }> | null | undefined,
+  desired: InlineImagePlacement[] | null | undefined,
+): { keep: number[]; duplicates: number[] } {
+  const list = Array.isArray(rows) ? rows : [];
+  const wanted = (Array.isArray(desired) ? desired : []).map((placement) => ({
+    slot: inlinePlacementSlotKey(placement),
+    id: String(placement.cardId || ''),
+  }));
+  const chosen = new Set<number>();
+  for (const target of wanted) {
+    let chosenIndex = -1;
+    let chosenScore = Number.NEGATIVE_INFINITY;
+    for (let index = 0; index < list.length; index += 1) {
+      if (chosen.has(index)) continue;
+      const row = list[index]!;
+      const id = String(row?.id || '');
+      const slot = String(row?.slot || '');
+      const idMatch = !!target.id && id === target.id;
+      const slotMatch = !!target.slot && slot === target.slot;
+      if (!idMatch && !slotMatch) continue;
+      const score = (idMatch && slotMatch ? 10_000 : slotMatch ? 1_000 : 100)
+        + (row?.ready === true ? 10 : 0)
+        + (row?.duplicate === true || String(row?.duplicate || '') === '1' ? 0 : 1);
+      if (score > chosenScore) {
+        chosenIndex = index;
+        chosenScore = score;
+      }
+    }
+    if (chosenIndex >= 0) chosen.add(chosenIndex);
+  }
+  const duplicates: number[] = [];
+  for (let index = 0; index < list.length; index += 1) {
+    if (chosen.has(index)) continue;
+    const row = list[index]!;
+    const id = String(row?.id || '');
+    const slot = String(row?.slot || '');
+    if (wanted.some((target) => {
+      return !!slot && slot === target.slot || !!id && id === target.id;
+    })) {
+      duplicates.push(index);
+    }
+  }
+  const duplicateSet = new Set(duplicates);
+  const keep = list.map((_row, index) => index).filter((index) => !duplicateSet.has(index));
+  return {
+    keep,
+    duplicates: duplicates.sort((a, b) => a - b),
+  };
 }
 
 /**
@@ -3452,10 +3544,10 @@ export function reconcileInlineShot(
   const hasLive = live != null;
   const hasDesired = !!(desired && Number(desired.line) >= 1);
 
-  if (!hasDesired) return hasLive ? { op: 'strip' } : { op: 'keep' };
-
-  const hold = !desired.pending && !isReadyImageSrc(desired.src);
-  if (hold) return { op: 'keep' };
+  // A mounted frame owns layout, so ordinary reconciliation may only reuse it.
+  // Risu remounting the bubble removes the frame for us; deleting one here is
+  // what collapsed the message height and made click selection jump the chat.
+  if (!hasDesired) return { op: 'keep' };
   if (!hasLive) return { op: 'prepend', placement: desired };
 
   const liveId = String(live.cardId || '');
@@ -3463,22 +3555,12 @@ export function reconcileInlineShot(
   const livePending = live.pending === true;
   const wantPending = desired.pending === true;
 
-  if (String(live.layoutVersion || '') !== INLINE_FRAME_LAYOUT_VERSION) {
-    return { op: 'swap', placement: desired };
-  }
-  if (wantPending) {
-    if (livePending) return { op: 'keep' };
-    return { op: 'swap', placement: desired };
-  }
-  if (livePending) {
-    // pending-* vs real card id: keep the spinner <img> and only change src.
-    // Swapping tears the box out and the bubble height collapses.
-    return { op: 'fill', placement: desired };
-  }
-  if (liveId === wantId) {
+  if (liveId === wantId && livePending === wantPending) {
     return { op: 'keep' };
   }
-  return { op: 'swap', placement: desired };
+  // Pending→ready, retag, reroll, and old layout versions all retarget the same
+  // node. Styles and mutable card metadata are updated in place by the caller.
+  return { op: 'fill', placement: desired };
 }
 
 /**
@@ -3548,9 +3630,21 @@ export function inlineChatStackStyle(): string {
   return 'position:relative;display:inline-block;line-height:0;max-width:100%;box-sizing:border-box;vertical-align:top';
 }
 
-/** Photo layer. Hidden until src is ready so the spinner keeps the box. */
+/** Outer frame style; hidden is reserved for proven duplicate-wrapper repair. */
+export function inlineChatFrameStyle(visible = true): string {
+  return visible
+    ? 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box'
+    : 'display:none';
+}
+
+/** Permanent photo cell. Its child image may change while the cell stays mounted. */
 export function inlineChatOverlayImgStyle(visible = false): string {
-  return `position:absolute;left:50%;top:45.7%;width:90%;height:90%;transform:translate(-50%,-50%);object-fit:contain;border-radius:8px;display:block;pointer-events:none;opacity:${visible ? 1 : 0}`;
+  return `position:absolute;left:50%;top:45.7%;width:90%;height:90%;transform:translate(-50%,-50%);border-radius:8px;display:block;pointer-events:none;opacity:${visible ? 1 : 0};transition:opacity 80ms linear`;
+}
+
+/** Image inside a permanent photo cell. SafeDOM changes it via cell.setInnerHTML(). */
+export function inlineChatOverlayPhotoStyle(): string {
+  return 'width:100%;height:100%;object-fit:contain;border-radius:8px;display:block;pointer-events:none';
 }
 
 type InlinePlaceholderInput = {
@@ -3577,6 +3671,19 @@ export function inlinePlaceholderSrc(input: InlinePlaceholderInput | null | unde
   const cy = Math.round(height / 2);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#7c6cff" fill-opacity=".08"/><g transform="translate(${cx} ${cy})"><circle r="22" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="6"/><circle r="22" fill="none" stroke="#c4b5fd" stroke-width="6" stroke-linecap="round" stroke-dasharray="36 104"/></g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/** Stable frame identity. Card ids change on reroll; shot slots do not. */
+export function inlinePlacementSlotKey(input: {
+  shotIndex?: unknown;
+  shot_index?: unknown;
+  line?: unknown;
+} | null | undefined): string {
+  const shotIndex = Number(input?.shotIndex ?? input?.shot_index);
+  if (Number.isFinite(shotIndex) && shotIndex >= 0) return `s${Math.floor(shotIndex)}`;
+  const line = Number(input?.line);
+  if (Number.isFinite(line) && line >= 1) return `l${Math.floor(line)}`;
+  return 'l0';
 }
 
 type MappedChar = { ch: string; htmlIndex: number };
@@ -3851,27 +3958,36 @@ export function markerBlockHtml(
   p: InlineImagePlacement,
   scalePct: unknown = 100,
   bubbleKey: unknown = '',
+  ownerKey: unknown = '',
 ): string {
   const shot = Number.isFinite(Number(p.shotIndex)) ? String(Math.floor(Number(p.shotIndex))) : '';
   const id = escapeHtmlAttr(String(p.cardId || (p.pending ? `pending-${shot || p.line}` : '') || shot || p.line || '0'));
-  const keyAttr = bubbleKey ? ` ${INLAY_INLINE_KEY_ATTR}="${escapeHtmlAttr(String(bubbleKey))}"` : '';
+  const key = escapeHtmlAttr(String(bubbleKey || ''));
+  const keyAttr = key ? ` ${INLAY_INLINE_KEY_ATTR}="${key}" x-inlay-inline-key="${key}"` : '';
+  const owner = escapeHtmlAttr(String(ownerKey || ''));
+  const ownerAttr = owner ? ` x-inlay-inline-owner="${owner}"` : '';
   // Centered block; <br> keeps Risu bubble spacing. Width cap is a bit looser than
   // height so landscape shots don't look tiny next to portrait/1:1 (those still
   // hit max-height first). Mobile narrow bubbles still shrink instead of clipping.
   // scalePct (dashboard) multiplies the 78%/70vh defaults.
-  const wrapStyle = 'display:block;margin:10px 0;text-align:center;line-height:0;max-width:100%;box-sizing:border-box';
+  const wrapStyle = inlineChatFrameStyle();
   const imgStyle = inlineChatSpinnerImgStyle(scalePct);
   const size = inlinePlaceholderSize(p);
   const sizeAttr = ` width="${size.width}" height="${size.height}"`;
   const placeholder = inlinePlaceholderSrc(p);
+  const slot = escapeHtmlAttr(inlinePlacementSlotKey(p));
   const showPhoto = !p.pending && isReadyImageSrc(p.src);
   const embed = showPhoto ? htmlSafeImageSrc(p.src) : '';
   const pendingAttr = showPhoto ? '' : ' data-inlay-inline-pending="1"';
+  const photo = embed
+    ? `<img data-inlay-inline-photo="1" src="${escapeHtmlAttr(embed)}" alt="" style="${inlineChatOverlayPhotoStyle()}" loading="eager" decoding="async">`
+    : '';
   return (
-    `<div ${INLAY_INLINE_ATTR}="${id}"${keyAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}"${pendingAttr} x-inlay-inline-shot="${id}" contenteditable="false" style="${wrapStyle}">`
+    `<div ${INLAY_INLINE_ATTR}="${id}" data-inlay-inline-slot="${slot}"${keyAttr}${ownerAttr} data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}"${pendingAttr} x-inlay-inline-shot="${id}" x-inlay-inline-slot="${slot}" x-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}" x-inlay-inline-pending="${showPhoto ? '0' : '1'}" x-inlay-inline-active="${embed ? 'a' : ''}" contenteditable="false" style="${wrapStyle}">`
     + `<br><span data-inlay-inline-stack="1" style="${inlineChatStackStyle()}">`
     + `<img data-inlay-inline-spin="1" src="${escapeHtmlAttr(placeholder)}" alt=""${sizeAttr} style="${imgStyle}" loading="eager" decoding="sync">`
-    + `<img data-inlay-inline-img="1"${embed ? ` src="${escapeHtmlAttr(embed)}"` : ''} alt="" style="${inlineChatOverlayImgStyle(!!embed)}" loading="eager" decoding="sync">`
+    + `<span data-inlay-inline-img="1" x-inlay-inline-cell="1" x-inlay-inline-layer="a" x-inlay-inline-live="${embed ? '1' : '0'}" style="${inlineChatOverlayImgStyle(!!embed)}">${photo}</span>`
+    + `<span data-inlay-inline-img="1" x-inlay-inline-cell="1" x-inlay-inline-layer="b" x-inlay-inline-live="0" style="${inlineChatOverlayImgStyle(false)}"></span>`
     + `</span><br>`
     + `</div>`
   );

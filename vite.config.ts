@@ -3730,25 +3730,10 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
     const cacheOk = cacheAge >= 0 && cacheAge < 280 && rects.some((r) => r && Number.isFinite(Number(r.top)));
     const collectFrom = async (root) => {
       if (!root || typeof root.querySelectorAll != "function") return;
-      const nodes = await nxUnwrapSafeNodes(await root.querySelectorAll("[data-inlay-inline-shot]"));
+      const nodes = await nxUnwrapSafeNodes(await root.querySelectorAll("[x-inlay-inline-shot],[data-inlay-inline-shot]"));
       for (const node of nodes) {
         if (!node) continue;
-        let id = "";
-        try {
-          if (typeof node.getAttribute == "function") {
-            id = String(await node.getAttribute("x-inlay-inline-shot") || "");
-            if (!id) id = String(await node.getAttribute("data-inlay-inline-shot") || "");
-          }
-        } catch {
-        }
-        if (!id) {
-          try {
-            const oh = typeof node.getOuterHTML == "function" ? String(await node.getOuterHTML() || "") : "";
-            const mm = /(?:data|x)-inlay-inline-shot="([^"]+)"/.exec(oh);
-            if (mm) id = mm[1];
-          } catch {
-          }
-        }
+        const id = await nxReadInlineShotId(node);
         if (!id) continue;
         const idx = e.markers.findIndex((m) => String(m?.card?.id || "") === id);
         if (idx < 0 || rects[idx]) continue;
@@ -4720,7 +4705,7 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
       // Inline line-shots in the bubble: long-press → sticky inspect (short tap swallowed).
       if (!inspectOpen) {
         try {
-          const rawInline = typeof e.querySelectorAll == "function" ? await e.querySelectorAll("[data-inlay-inline-shot]") : null;
+          const rawInline = typeof e.querySelectorAll == "function" ? await e.querySelectorAll("[x-inlay-inline-shot],[data-inlay-inline-shot]") : null;
           const unwrapInline = rawInline && typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(rawInline) : rawInline;
           const inlineNodes = Array.isArray(unwrapInline) ? unwrapInline : unwrapInline ? [unwrapInline] : [];
           for (const node of inlineNodes) {
@@ -8409,6 +8394,16 @@ const VENDOR_DA_QA_PATCH =
   `    const nxApi = await nxChatAttrIndex(o);
     const i = qa(a, r.messages, e, Array.isArray(n) ? n.length : 0, { prevText, nextText, chatIndex: nxApi }), l = w(i.role || "");`;
 
+const VENDOR_DA_SAME_CLICK_NEEDLE =
+  `    const s = w(a), c = ye(s);
+    if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c) return !0;`;
+const VENDOR_DA_SAME_CLICK_PATCH =
+  `    const s = w(a), c = ye(s);
+    // A re-click on an intact selected bubble is a true no-op: no gallery read,
+    // no sticky repaint, and most importantly no inline DOM or src write.
+    if (source === "click" && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.hash === c && !t.pendingSessionId && t.selectedMessage.sessionId && t.selectedMessage.sessionId === t.lastScope?.sessionId && await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage))) return !0;
+    if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c) return !0;`;
+
 const VENDOR_BIND_QA_NEEDLE =
   `      const c = qa(s, a?.messages || [], i, o.length);`;
 const VENDOR_BIND_QA_PATCH =
@@ -8426,30 +8421,885 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     if (raw === true || raw === "compat" || raw === "true" || raw === 1) return "compat";
     return "off";
   }
-  /** Batched read of every inline marker in a bubble: node, card id, current src. */
-  async function nxProbeInlineShots(msgEl, unwrapSafe) {
-    let nodes = [];
+  async function nxReadInlineShotId(node) {
+    let id = "";
     try {
-      nodes = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
+      if (node && typeof node.getAttribute == "function") {
+        id = String(await node.getAttribute("x-inlay-inline-shot") || "");
+      }
     } catch {
-      nodes = [];
     }
+    if (id) return id;
+    try {
+      const oh = typeof node?.getOuterHTML == "function" ? String(await node.getOuterHTML() || "") : "";
+      const mm = /(?:data|x)-inlay-inline-shot="([^"]+)"/.exec(oh);
+      if (mm) return mm[1];
+    } catch {
+    }
+    return "";
+  }
+  async function nxQueryInlineFrames(root, unwrapSafe) {
+    const unwrap = unwrapSafe || nxUnwrapSafeNodes;
+    if (!root || typeof root.querySelectorAll != "function") return [];
+    try {
+      return await unwrap(await root.querySelectorAll("[x-inlay-inline-shot],[data-inlay-inline-shot]"));
+    } catch {
+      return [];
+    }
+  }
+  async function nxAbandonInlineFrame(wrap) {
+    if (!wrap) return;
+    try {
+      await nxDropInlineSubsForWrap(wrap);
+    } catch {
+    }
+    try {
+      if (typeof wrap.remove == "function") {
+        await wrap.remove();
+        return;
+      }
+    } catch {
+    }
+    try {
+      if (typeof wrap.setAttribute == "function") await wrap.setAttribute("x-inlay-inline-duplicate", "1");
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      if (typeof wrap.setStyleAttribute == "function" && typeof VC?.inlineChatFrameStyle == "function") {
+        await wrap.setStyleAttribute(VC.inlineChatFrameStyle(!1));
+      }
+    } catch {
+    }
+  }
+  /** Batched read of every inline marker in a bubble using SafeDOM-readable x-* metadata. */
+  async function nxProbeInlineShots(msgEl, unwrapSafe) {
+    const nodes = await nxQueryInlineFrames(msgEl, unwrapSafe);
     return Promise.all(nodes.map(async (node) => {
       let id = "";
-      let src = "";
+      let slot = "";
       let layoutVersion = "";
+      let ready = !1;
+      let duplicate = !1;
+      let owner = "";
       try {
         if (node && typeof node.getAttribute == "function") {
-          id = String(await node.getAttribute("data-inlay-inline-shot") || "");
-          layoutVersion = String(await node.getAttribute("data-inlay-inline-layout") || "");
+          const vals = await Promise.all([
+            node.getAttribute("x-inlay-inline-shot"),
+            node.getAttribute("x-inlay-inline-slot"),
+            node.getAttribute("x-inlay-inline-layout"),
+            node.getAttribute("x-inlay-inline-active"),
+            node.getAttribute("x-inlay-inline-duplicate"),
+            node.getAttribute("x-inlay-inline-owner")
+          ]);
+          id = String(vals[0] || "");
+          slot = String(vals[1] || "");
+          layoutVersion = String(vals[2] || "");
+          const activeKey = String(vals[3] || "");
+          duplicate = String(vals[4] || "") === "1";
+          owner = String(vals[5] || "");
+          const photos = await unwrapSafe(await node.querySelectorAll("[x-inlay-inline-cell],img[x-inlay-inline-layer]"));
+          for (const photo of photos) {
+            if (!photo || typeof photo.getAttribute != "function") continue;
+            const [layer, live] = await Promise.all([
+              photo.getAttribute("x-inlay-inline-layer"),
+              photo.getAttribute("x-inlay-inline-live")
+            ]);
+            if (String(live || "") === "1" && (!activeKey || String(layer || "") === activeKey)) {
+              ready = !0;
+              break;
+            }
+          }
         }
-        const photos = await unwrapSafe(await node.querySelectorAll("[data-inlay-inline-img]"));
-        const img = photos[0];
-        if (img && typeof img.getAttribute == "function") src = String(await img.getAttribute("src") || "");
+        if (!id || !slot || !layoutVersion || !owner) {
+          const oh = typeof node?.getOuterHTML == "function" ? String(await node.getOuterHTML() || "") : "";
+          if (!id) {
+            const mm = /(?:data|x)-inlay-inline-shot="([^"]+)"/.exec(oh);
+            if (mm) id = mm[1];
+          }
+          if (!slot) {
+            const mm = /(?:data|x)-inlay-inline-slot="([^"]+)"/.exec(oh);
+            if (mm) slot = mm[1];
+          }
+          if (!layoutVersion) {
+            const mm = /(?:data|x)-inlay-inline-layout="([^"]+)"/.exec(oh);
+            if (mm) layoutVersion = mm[1];
+          }
+          if (!owner) {
+            const mm = /x-inlay-inline-owner="([^"]+)"/.exec(oh);
+            if (mm) owner = mm[1];
+          }
+          if (!duplicate) duplicate = /x-inlay-inline-duplicate="1"/.test(oh);
+        }
       } catch {
       }
-      return { node, id, src, layoutVersion };
+      return { node, id, slot, ready, layoutVersion, duplicate, owner };
     }));
+  }
+  async function nxRepairDuplicateInlineFrames(rows, placements, VC) {
+    const list = Array.isArray(rows) ? rows : [];
+    if (!Array.isArray(placements) || !placements.length) return list;
+    if (!list.length || typeof VC?.partitionInlineFrameDuplicates != "function") return list;
+    const plan = VC.partitionInlineFrameDuplicates(list, placements);
+    const keep = new Set(Array.isArray(plan?.keep) ? plan.keep : []);
+    for (const index of Array.isArray(plan?.duplicates) ? plan.duplicates : []) {
+      const node = list[index]?.node;
+      if (!node) continue;
+      try {
+        await nxDropInlineSubsForWrap(node);
+        if (typeof node.remove == "function") {
+          await node.remove();
+          continue;
+        }
+      } catch {
+      }
+      try {
+        if (typeof node.setAttribute == "function") await node.setAttribute("x-inlay-inline-duplicate", "1");
+        if (typeof node.setStyleAttribute == "function" && typeof VC.inlineChatFrameStyle == "function") {
+          await node.setStyleAttribute(VC.inlineChatFrameStyle(!1));
+        }
+      } catch {
+      }
+    }
+    for (const index of keep) {
+      const row = list[index];
+      const node = row?.node;
+      if (!node || !row.duplicate) continue;
+      try {
+        if (typeof node.setStyleAttribute == "function" && typeof VC.inlineChatFrameStyle == "function") {
+          await node.setStyleAttribute(VC.inlineChatFrameStyle(!0));
+        }
+        if (typeof node.setAttribute == "function") await node.setAttribute("x-inlay-inline-duplicate", "0");
+      } catch {
+      }
+    }
+    return [...keep].sort((a, b) => a - b).map((index) => list[index]).filter(Boolean);
+  }
+  async function nxBubbleHasInlineFrame(msgEl, cards, pendingRows) {
+    if (!msgEl) return !1;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const wanted = [
+      ...(Array.isArray(cards) ? cards : []),
+      ...(Array.isArray(pendingRows) ? pendingRows : [])
+    ];
+    const wantBySlot = new Map();
+    for (const row of wanted) {
+      const slot = (() => {
+      if (typeof VC?.inlinePlacementSlotKey == "function") return String(VC.inlinePlacementSlotKey(row) || "");
+      const shot = Number(row?.shot_index ?? row?.shotIndex);
+      return Number.isFinite(shot) && shot >= 0 ? \`s\${Math.floor(shot)}\` : \`l\${Math.max(0, Math.floor(Number(row?.line) || 0))}\`;
+      })();
+      if (slot && slot !== "l0" && !wantBySlot.has(slot)) {
+        wantBySlot.set(slot, String(row?.id || ""));
+      }
+    }
+    const wantSlots = [...wantBySlot.keys()];
+    if (!wantSlots.length) return !1;
+    const probe = (await nxProbeInlineShots(msgEl, nxUnwrapSafeNodes)).filter((row) => !row.duplicate);
+    const desiredFrames = [...wantBySlot.entries()].map(([slot, id]) => ({
+      cardId: id,
+      shotIndex: slot.startsWith("s") ? Number(slot.slice(1)) : void 0,
+      line: slot.startsWith("l") ? Number(slot.slice(1)) : 1,
+      src: ""
+    }));
+    const duplicatePlan = typeof VC?.partitionInlineFrameDuplicates == "function"
+      ? VC.partitionInlineFrameDuplicates(probe, desiredFrames)
+      : null;
+    if (duplicatePlan?.duplicates?.length) return !1;
+    const liveSlots = new Set(probe.map((row) => row.slot).filter(Boolean));
+    const liveIds = new Set(probe.map((row) => row.id).filter(Boolean));
+    return wantSlots.every((slot) => liveSlots.has(slot)
+      || !!wantBySlot.get(slot) && liveIds.has(wantBySlot.get(slot)));
+  }
+  async function nxPredecodeInlineSrc(src) {
+    if (!nxReadyImg(src)) return !1;
+    if (typeof Image != "function") return !1;
+    return await new Promise((resolve) => {
+      const probe = new Image();
+      let settled = !1;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = !0;
+        clearTimeout(timer);
+        resolve(!!ok);
+      };
+      const timer = setTimeout(() => finish(!1), 4000);
+      probe.onerror = () => finish(!1);
+      probe.onload = async () => {
+        try {
+          if (typeof probe.decode == "function") await probe.decode();
+          finish(Number(probe.naturalWidth) > 0);
+        } catch {
+          finish(!1);
+        }
+      };
+      try {
+        probe.decoding = "async";
+        probe.src = src;
+      } catch {
+        finish(!1);
+      }
+    });
+  }
+  async function nxWaitInlineCommit() {
+    await new Promise((resolve) => {
+      let settled = !1;
+      const finish = () => {
+        if (settled) return;
+        settled = !0;
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(finish, 80);
+      if (typeof requestAnimationFrame == "function") {
+        requestAnimationFrame(() => requestAnimationFrame(finish));
+      }
+    });
+  }
+  async function nxEnsureInlinePhotoLayers(wrap, unwrapSafe, doc, VC) {
+    let cells = [];
+    try {
+      cells = await unwrapSafe(await wrap.querySelectorAll("[x-inlay-inline-cell]"));
+    } catch {
+      cells = [];
+    }
+    const stacks = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-stack]"));
+    const stack = stacks[0] || wrap;
+    while (cells.length < 2) {
+      const layer = cells.length ? "b" : "a";
+      const style = typeof VC?.inlineChatOverlayImgStyle == "function" ? VC.inlineChatOverlayImgStyle(!1) : "";
+      const cell = await H(doc, "span", { style });
+      if (!cell || typeof cell.setAttribute != "function" || typeof stack.appendChild != "function") break;
+      await cell.setAttribute("x-inlay-inline-cell", "1");
+      await cell.setAttribute("x-inlay-inline-layer", layer);
+      await cell.setAttribute("x-inlay-inline-live", "0");
+      await cell.setAttribute("x-inlay-inline-src-key", "");
+      await stack.appendChild(cell);
+      cells.push(cell);
+    }
+    for (let i = 0; i < cells.length; i += 1) {
+      try {
+        if (typeof cells[i]?.setAttribute == "function") {
+          const wantLayer = i ? "b" : "a";
+          const haveLayer = typeof cells[i].getAttribute == "function"
+            ? String(await cells[i].getAttribute("x-inlay-inline-layer") || "")
+            : "";
+          if (haveLayer !== wantLayer) await cells[i].setAttribute("x-inlay-inline-layer", wantLayer);
+        }
+      } catch {
+      }
+    }
+    return cells.slice(0, 2);
+  }
+  function nxBeginInlineOwnerEpoch(ownerKey) {
+    const key = String(ownerKey || "");
+    if (!(t._inlineOwnerEpoch instanceof Map)) t._inlineOwnerEpoch = new Map();
+    const epoch = (Number(t._inlineOwnerEpochSeq) || 0) + 1;
+    t._inlineOwnerEpochSeq = epoch;
+    if (key) t._inlineOwnerEpoch.set(key, epoch);
+    return { key, epoch };
+  }
+  function nxCurrentInlineOwnerEpoch(ownerKey) {
+    const key = String(ownerKey || "");
+    const epoch = t._inlineOwnerEpoch instanceof Map ? Number(t._inlineOwnerEpoch.get(key)) : 0;
+    return key && epoch > 0 ? { key, epoch } : null;
+  }
+  function nxInlineOwnerEpochCurrent(claim) {
+    if (!claim?.key) return !0;
+    return t._inlineOwnerEpoch instanceof Map
+      && t._inlineOwnerEpoch.get(claim.key) === claim.epoch;
+  }
+  async function nxRunInlineOwnerMutation(ownerClaim, work) {
+    if (typeof work != "function") return !1;
+    if (!(t._inlineOwnerLocks instanceof Map)) t._inlineOwnerLocks = new Map();
+    const key = String(ownerClaim?.key || "");
+    const locks = t._inlineOwnerLocks;
+    const prior = key ? locks.get(key) || Promise.resolve() : Promise.resolve();
+    const queued = Promise.resolve(prior).catch(() => {}).then(async () => {
+      const isCurrent = () => nxInlineOwnerEpochCurrent(ownerClaim);
+      if (!isCurrent()) return !1;
+      return await work(isCurrent);
+    });
+    if (key) locks.set(key, queued);
+    try {
+      return await queued;
+    } finally {
+      if (key && locks.get(key) === queued) locks.delete(key);
+    }
+  }
+  async function nxInlinePhotoSemanticCurrent(wrap, semantic) {
+    const ownerClaim = semantic?.ownerClaim;
+    if (!nxInlineOwnerEpochCurrent(ownerClaim)) return !1;
+    const expectedId = String(semantic?.expectedId || "");
+    if (!expectedId && !ownerClaim?.key) return !0;
+    try {
+      if (!wrap || typeof wrap.getAttribute != "function") return !1;
+      const vals = await Promise.all([
+        wrap.getAttribute("x-inlay-inline-shot"),
+        wrap.getAttribute("x-inlay-inline-owner")
+      ]);
+      if (!nxInlineOwnerEpochCurrent(ownerClaim)) return !1;
+      const liveId = String(vals[0] || "");
+      const liveOwner = String(vals[1] || "");
+      if (expectedId && liveId !== expectedId) return !1;
+      if (ownerClaim?.key && liveOwner && liveOwner !== ownerClaim.key) return !1;
+      return !0;
+    } catch {
+      return !1;
+    }
+  }
+  async function nxInlinePhotoFrameKey(wrap, ownerKeyHint) {
+    if (!wrap || typeof wrap.getAttribute != "function") return wrap;
+    try {
+      const vals = await Promise.all([
+        wrap.getAttribute("x-inlay-inline-key"),
+        wrap.getAttribute("x-inlay-inline-slot"),
+        wrap.getAttribute("x-inlay-inline-shot"),
+        wrap.getAttribute("x-inlay-inline-owner")
+      ]);
+      const key = String(vals[0] || "");
+      const slot = String(vals[1] || "");
+      const id = String(vals[2] || "");
+      const owner = String(ownerKeyHint || vals[3] || "");
+      if (owner && slot) return \`\${owner}|\${slot}\`;
+      if (key && slot) return \`\${key}|\${slot}\`;
+      if (key && id) return \`\${key}|i:\${id}\`;
+    } catch {
+    }
+    return wrap;
+  }
+  async function nxClaimInlinePhotoRequest(wrap, ownerKeyHint) {
+    if (!(t._inlinePhotoReq instanceof Map)) t._inlinePhotoReq = new Map();
+    if (!(t._inlinePhotoPendingClaims instanceof Set)) t._inlinePhotoPendingClaims = new Set();
+    if (!(t._inlinePhotoLatestOrder instanceof Map)) t._inlinePhotoLatestOrder = new Map();
+    const requests = t._inlinePhotoReq;
+    const pendingClaims = t._inlinePhotoPendingClaims;
+    const latestOrders = t._inlinePhotoLatestOrder;
+    const order = (Number(t._inlinePhotoReqOrder) || 0) + 1;
+    t._inlinePhotoReqOrder = order;
+    const token = { order };
+    pendingClaims.add(token);
+    let frameKey = wrap;
+    try {
+      frameKey = await nxInlinePhotoFrameKey(wrap, ownerKeyHint);
+      const newest = Math.max(
+        Number(latestOrders.get(frameKey)) || 0,
+        Number(requests.get(frameKey)?.order) || 0
+      );
+      if (order > newest) latestOrders.set(frameKey, order);
+      if (t._inlinePhotoReq === requests && order > newest) requests.set(frameKey, token);
+    } finally {
+      pendingClaims.delete(token);
+      if (!pendingClaims.size) latestOrders.clear();
+    }
+    return { frameKey, token };
+  }
+  function nxInlinePhotoRequestCurrent(frameKey, token) {
+    return t._inlinePhotoReq instanceof Map && t._inlinePhotoReq.get(frameKey) === token;
+  }
+  function nxReleaseInlinePhotoRequest(frameKey, token) {
+    if (t._inlinePhotoReq instanceof Map && t._inlinePhotoReq.get(frameKey) === token) {
+      t._inlinePhotoReq.delete(frameKey);
+    }
+  }
+  async function nxRunInlinePhotoMutation(frameKey, token, work) {
+    if (!(t._inlinePhotoLocks instanceof Map)) t._inlinePhotoLocks = new Map();
+    const prior = t._inlinePhotoLocks.get(frameKey) || Promise.resolve();
+    const queued = Promise.resolve(prior).catch(() => {}).then(async () => {
+      if (!nxInlinePhotoRequestCurrent(frameKey, token)) return !1;
+      return await work(() => nxInlinePhotoRequestCurrent(frameKey, token));
+    });
+    t._inlinePhotoLocks.set(frameKey, queued);
+    try {
+      return await queued;
+    } finally {
+      if (t._inlinePhotoLocks.get(frameKey) === queued) t._inlinePhotoLocks.delete(frameKey);
+      nxReleaseInlinePhotoRequest(frameKey, token);
+    }
+  }
+  function nxInlinePhotoSrcKey(src) {
+    const text = String(src || "");
+    if (!text) return "";
+    const span = 4096;
+    const mid = Math.max(span, Math.floor(text.length / 2) - Math.floor(span / 2));
+    const sample = text.length <= span * 3
+      ? text
+      : text.slice(0, span) + text.slice(mid, mid + span) + text.slice(-span);
+    return \`\${text.length.toString(36)}-\${ye(sample)}\`;
+  }
+  function nxInlinePhotoHtml(src, VC) {
+    const style = typeof VC?.inlineChatOverlayPhotoStyle == "function"
+      ? VC.inlineChatOverlayPhotoStyle()
+      : "width:100%;height:100%;object-fit:contain;border-radius:8px;display:block;pointer-events:none";
+    return '<img data-inlay-inline-photo="1" src="' + h(String(src || "")) + '" alt="" style="' + style + '" loading="eager" decoding="async">';
+  }
+  async function nxReadInlinePhotoRows(wrap, cells) {
+    let activeKey = "";
+    try {
+      activeKey = typeof wrap.getAttribute == "function"
+        ? String(await wrap.getAttribute("x-inlay-inline-active") || "")
+        : "";
+    } catch {
+      activeKey = "";
+    }
+    const rows = [];
+    for (let i = 0; i < cells.length; i += 1) {
+      const cell = cells[i];
+      let layer = i ? "b" : "a";
+      let live = "";
+      let srcKey = "";
+      try {
+        if (typeof cell?.getAttribute == "function") {
+          const vals = await Promise.all([
+            cell.getAttribute("x-inlay-inline-layer"),
+            cell.getAttribute("x-inlay-inline-live"),
+            cell.getAttribute("x-inlay-inline-src-key")
+          ]);
+          layer = String(vals[0] || layer);
+          live = String(vals[1] || "");
+          srcKey = String(vals[2] || "");
+        }
+      } catch {
+      }
+      rows.push({ cell, layer, live, srcKey });
+    }
+    return { activeKey, rows };
+  }
+  async function nxHideLegacyInlinePhotos(wrap, unwrapSafe, VC) {
+    let legacy = [];
+    try {
+      legacy = await unwrapSafe(await wrap.querySelectorAll("img[x-inlay-inline-layer]"));
+    } catch {
+      legacy = [];
+    }
+    for (const img of legacy) {
+      try {
+        if (typeof img?.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+          await img.setStyleAttribute(VC.inlineChatOverlayImgStyle(!1));
+        }
+        if (typeof img?.setAttribute == "function") await img.setAttribute("x-inlay-inline-live", "0");
+      } catch {
+      }
+    }
+  }
+  async function nxHideInlinePhotoWrap(wrap, unwrapSafe, doc, VC) {
+    if (!wrap) return !1;
+    const claim = await nxClaimInlinePhotoRequest(wrap);
+    return await nxRunInlinePhotoMutation(claim.frameKey, claim.token, async (isCurrent) => {
+      const cells = await nxEnsureInlinePhotoLayers(wrap, unwrapSafe, doc, VC);
+      for (const cell of cells) {
+        if (!isCurrent()) return !1;
+        if (typeof cell?.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+          await cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(!1));
+        }
+      }
+      if (!isCurrent()) return !1;
+      await nxHideLegacyInlinePhotos(wrap, unwrapSafe, VC);
+      return !0;
+    });
+  }
+  async function nxShowInlinePhotoWrap(wrap, unwrapSafe, doc, VC, semantic) {
+    if (!wrap) return !1;
+    if (!(await nxInlinePhotoSemanticCurrent(wrap, semantic))) return !1;
+    const claim = await nxClaimInlinePhotoRequest(wrap, semantic?.ownerClaim?.key);
+    if (!(await nxInlinePhotoSemanticCurrent(wrap, semantic))) {
+      nxReleaseInlinePhotoRequest(claim.frameKey, claim.token);
+      return !1;
+    }
+    return await nxRunInlinePhotoMutation(claim.frameKey, claim.token, async (isCurrent) => {
+      const valid = async () => isCurrent() && await nxInlinePhotoSemanticCurrent(wrap, semantic);
+      const cells = await nxEnsureInlinePhotoLayers(wrap, unwrapSafe, doc, VC);
+      const state = await nxReadInlinePhotoRows(wrap, cells);
+      const active = state.rows.find((row) => row.layer === state.activeKey && row.live === "1");
+      if (!active?.cell || !(await valid())) return !1;
+      const rollback = async () => {
+        if (typeof active.cell?.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+          await active.cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(!1));
+        }
+      };
+      for (const row of state.rows) {
+        if (!(await valid())) {
+          await rollback();
+          return !1;
+        }
+        if (typeof row.cell?.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+          await row.cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(row.cell === active.cell));
+        }
+        if (!(await valid())) {
+          await rollback();
+          return !1;
+        }
+      }
+      await nxHideLegacyInlinePhotos(wrap, unwrapSafe, VC);
+      if (!(await valid())) {
+        await rollback();
+        return !1;
+      }
+      return !0;
+    });
+  }
+  async function nxClearInlinePhotoWrap(wrap, unwrapSafe, doc, VC) {
+    if (!wrap) return;
+    const claim = await nxClaimInlinePhotoRequest(wrap);
+    await nxRunInlinePhotoMutation(claim.frameKey, claim.token, async (isCurrent) => {
+      const cells = await nxEnsureInlinePhotoLayers(wrap, unwrapSafe, doc, VC);
+      for (const cell of cells) {
+        if (!isCurrent()) return !1;
+        try {
+          if (typeof cell.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+            await cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(!1));
+          }
+          if (!isCurrent()) return !1;
+          if (typeof cell.setAttribute == "function") {
+            await cell.setAttribute("x-inlay-inline-live", "0");
+            await cell.setAttribute("x-inlay-inline-src-key", "");
+          }
+          if (typeof cell.setInnerHTML == "function") await cell.setInnerHTML("");
+        } catch {
+        }
+      }
+      if (!isCurrent()) return !1;
+      await nxHideLegacyInlinePhotos(wrap, unwrapSafe, VC);
+      try {
+        if (typeof wrap.setAttribute == "function") await wrap.setAttribute("x-inlay-inline-active", "");
+      } catch {
+      }
+      return !0;
+    });
+  }
+  async function nxSwapInlinePhoto(wrap, src, unwrapSafe, doc, VC, semantic) {
+    if (!wrap || !src || !nxReadyImg(src)) return !1;
+    if (!(await nxInlinePhotoSemanticCurrent(wrap, semantic))) return !1;
+    const claim = await nxClaimInlinePhotoRequest(wrap, semantic?.ownerClaim?.key);
+    if (!(await nxInlinePhotoSemanticCurrent(wrap, semantic))) {
+      nxReleaseInlinePhotoRequest(claim.frameKey, claim.token);
+      return !1;
+    }
+    const srcKey = nxInlinePhotoSrcKey(src);
+    let mounted = [];
+    try {
+      mounted = await unwrapSafe(await wrap.querySelectorAll("[x-inlay-inline-cell]"));
+    } catch {
+      mounted = [];
+    }
+    const mountedState = await nxReadInlinePhotoRows(wrap, mounted);
+    const same = mountedState.rows.find((row) => row.srcKey === srcKey && row.live === "1");
+    if (same) {
+      return await nxRunInlinePhotoMutation(claim.frameKey, claim.token, async (isCurrent) => {
+        const valid = async () => isCurrent() && await nxInlinePhotoSemanticCurrent(wrap, semantic);
+        const rollback = async () => {
+          if (typeof same.cell?.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+            await same.cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(!1));
+          }
+        };
+        for (const row of mountedState.rows) {
+          if (!(await valid())) {
+            await rollback();
+            return !1;
+          }
+          if (typeof row.cell?.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+            await row.cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(row.cell === same.cell));
+          }
+          if (!(await valid())) {
+            await rollback();
+            return !1;
+          }
+        }
+        if (typeof wrap.setAttribute == "function") await wrap.setAttribute("x-inlay-inline-active", same.layer);
+        if (!(await valid())) {
+          await rollback();
+          return !1;
+        }
+        await nxHideLegacyInlinePhotos(wrap, unwrapSafe, VC);
+        if (!(await valid())) {
+          await rollback();
+          return !1;
+        }
+        return !0;
+      });
+    }
+    if (!(await nxPredecodeInlineSrc(src))) {
+      nxReleaseInlinePhotoRequest(claim.frameKey, claim.token);
+      return !1;
+    }
+    if (!nxInlinePhotoRequestCurrent(claim.frameKey, claim.token)
+      || !(await nxInlinePhotoSemanticCurrent(wrap, semantic))) {
+      nxReleaseInlinePhotoRequest(claim.frameKey, claim.token);
+      return !1;
+    }
+    return await nxRunInlinePhotoMutation(claim.frameKey, claim.token, async (isCurrent) => {
+      const valid = async () => isCurrent() && await nxInlinePhotoSemanticCurrent(wrap, semantic);
+      const cells = await nxEnsureInlinePhotoLayers(wrap, unwrapSafe, doc, VC);
+      if (!cells.length || !(await valid())) return !1;
+      const state = await nxReadInlinePhotoRows(wrap, cells);
+      if (!(await valid())) return !1;
+      const already = state.rows.find((row) => row.srcKey === srcKey && row.live === "1");
+      if (already) {
+        const rollback = async () => {
+          if (typeof already.cell?.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+            await already.cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(!1));
+          }
+        };
+        if (typeof wrap.setAttribute == "function") await wrap.setAttribute("x-inlay-inline-active", already.layer);
+        if (!(await valid())) {
+          await rollback();
+          return !1;
+        }
+        for (const row of state.rows) {
+          if (!(await valid())) {
+            await rollback();
+            return !1;
+          }
+          if (typeof row.cell?.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+            await row.cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(row.cell === already.cell));
+          }
+          if (!(await valid())) {
+            await rollback();
+            return !1;
+          }
+        }
+        return !0;
+      }
+      const active = state.rows.find((row) => row.layer === state.activeKey && row.live === "1")
+        || state.rows.find((row) => row.live === "1")
+        || null;
+      const target = state.rows.find((row) => !active || row.layer !== active.layer) || state.rows[0];
+      if (!target?.cell || typeof target.cell.setInnerHTML != "function") return !1;
+      try {
+        if (typeof target.cell.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+          await target.cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(!1));
+        }
+        if (!(await valid())) return !1;
+        await target.cell.setInnerHTML(nxInlinePhotoHtml(src, VC));
+        if (!(await valid())) return !1;
+        await target.cell.setAttribute("x-inlay-inline-src-key", srcKey);
+        if (!(await valid())) return !1;
+        await nxWaitInlineCommit();
+        if (!(await valid())) return !1;
+        await target.cell.setAttribute("x-inlay-inline-live", "1");
+        if (!(await valid())) return !1;
+        if (typeof target.cell.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+          await target.cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(!0));
+        }
+        if (!(await valid())) {
+          if (typeof target.cell.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+            await target.cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(!1));
+          }
+          return !1;
+        }
+        if (typeof wrap.setAttribute == "function") await wrap.setAttribute("x-inlay-inline-active", target.layer);
+        for (const row of state.rows) {
+          if (!(await valid())) return !1;
+          if (row.cell === target.cell) continue;
+          if (typeof row.cell?.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
+            await row.cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(!1));
+          }
+        }
+        await nxHideLegacyInlinePhotos(wrap, unwrapSafe, VC);
+        return await valid();
+      } catch {
+        return !1;
+      }
+    });
+  }
+  /** Selection-window parking: hide photos but retain decoded children for an instant return. */
+  async function nxHideInlinePhotos(msgEl, isCurrent = () => !0) {
+    if (!msgEl || typeof msgEl.querySelectorAll != "function") return;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const wraps = await nxQueryInlineFrames(msgEl, nxUnwrapSafeNodes);
+    for (const wrap of wraps) {
+      if (!isCurrent()) return;
+      await nxHideInlinePhotoWrap(wrap, nxUnwrapSafeNodes, t.hostDoc, VC);
+    }
+  }
+  /** Explicit tag clear: drop photo children; keep both permanent cells and the spinner. */
+  async function nxClearInlinePhotos(msgEl, isCurrent = () => !0) {
+    if (!msgEl || typeof msgEl.querySelectorAll != "function") return;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const wraps = await nxQueryInlineFrames(msgEl, nxUnwrapSafeNodes);
+    for (const wrap of wraps) {
+      if (!isCurrent()) return;
+      await nxDropInlineSubsForWrap(wrap);
+      await nxClearInlinePhotoWrap(wrap, nxUnwrapSafeNodes, t.hostDoc, VC);
+    }
+  }
+  async function nxClearInlinePhotosByKey(root, key, isCurrent = () => !0) {
+    const k0 = String(key || "");
+    if (!root || typeof root.querySelectorAll != "function" || !/^[A-Za-z0-9_-]+$/.test(k0)) return;
+    let wraps = [];
+    try {
+      wraps = await nxUnwrapSafeNodes(await root.querySelectorAll(\`[x-inlay-inline-key="\${k0}"],[data-inlay-inline-key="\${k0}"]\`));
+    } catch {
+      wraps = [];
+    }
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    for (const wrap of wraps) {
+      if (!isCurrent()) return;
+      await nxDropInlineSubsForWrap(wrap);
+      await nxClearInlinePhotoWrap(wrap, nxUnwrapSafeNodes, t.hostDoc, VC);
+    }
+  }
+  async function nxRemoveInlineFrames(msgEl, isCurrent = () => !0) {
+    const wraps = await nxQueryInlineFrames(msgEl, nxUnwrapSafeNodes);
+    for (const wrap of wraps) {
+      if (!isCurrent()) return;
+      await nxAbandonInlineFrame(wrap);
+    }
+  }
+  async function nxRemoveInlineFramesByKey(root, key, isCurrent = () => !0) {
+    const k0 = String(key || "");
+    if (!root || typeof root.querySelectorAll != "function" || !/^[A-Za-z0-9_-]+$/.test(k0)) return;
+    let wraps = [];
+    try {
+      wraps = await nxUnwrapSafeNodes(await root.querySelectorAll(\`[x-inlay-inline-key="\${k0}"],[data-inlay-inline-key="\${k0}"]\`));
+    } catch {
+      wraps = [];
+    }
+    for (const wrap of wraps) {
+      if (!isCurrent()) return;
+      await nxAbandonInlineFrame(wrap);
+    }
+  }
+  async function nxRestoreInlinePhotos(msgEl, isCurrent = () => !0) {
+    if (!msgEl) return;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const rows = await nxProbeInlineShots(msgEl, nxUnwrapSafeNodes);
+    for (const row of rows) {
+      if (!isCurrent()) return;
+      const id = String(row.id || "");
+      if (!id || id.startsWith("pending-")) continue;
+      const ownerClaim = nxCurrentInlineOwnerEpoch(row.owner)
+        || (row.owner ? nxBeginInlineOwnerEpoch(row.owner) : null);
+      const semantic = { ownerClaim, expectedId: id };
+      if (row.ready && await nxShowInlinePhotoWrap(row.node, nxUnwrapSafeNodes, t.hostDoc, VC, semantic)) continue;
+      const card = (t.gallery || []).find((c) => String(c?.id || "") === id) || { id };
+      const src = nxCardDisplaySrc(card);
+      if (nxReadyImg(src)) {
+        await nxSwapInlinePhoto(row.node, src, nxUnwrapSafeNodes, t.hostDoc, VC, semantic);
+      }
+    }
+  }
+  /** Selection hop: photos on/off only. Never tears a spinner. */
+  async function nxSyncInlinePhotosOnly() {
+    if (t.backendSettings?.card?.inline_chat_images !== !0) return;
+    const sel = t.selectedMessage;
+    if (!sel) return;
+    const selSession = String(sel.sessionId || "");
+    const selHash = String(sel.hash || "");
+    const selDom = Number(sel.domIndex);
+    const gen = (Number(t._inlinePhotoSyncGen) || 0) + 1;
+    t._inlinePhotoSyncGen = gen;
+    t._inlinePassGen = (Number(t._inlinePassGen) || 0) + 1;
+    const stale = () => Number(t._inlinePhotoSyncGen) !== gen
+      || t.selectedMessage !== sel
+      || String(t.selectedMessage?.sessionId || "") !== selSession
+      || String(t.selectedMessage?.hash || "") !== selHash
+      || Number(t.selectedMessage?.domIndex) !== selDom;
+    let els = [];
+    try {
+      els = await getCachedMsgEls(t.hostDoc);
+    } catch {
+      els = [];
+    }
+    if (stale()) return;
+    const selIdx = selDom;
+    if (!Number.isFinite(selIdx) || selIdx < 0 || !els[selIdx]) return;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const photoIdxs = typeof VC?.inlineDomWindow == "function"
+      ? VC.inlineDomWindow(selIdx, els.length, 1)
+      : [selIdx];
+    const selectedCards = linkedCards(sel) || [];
+    const selectedConfirmedEmpty = !selectedCards.length
+      && String(t._galleryCache?.sessionId || "") === String(sel.sessionId || "");
+    const nextPhotoEls = [];
+    for (const idx of photoIdxs) {
+      const role = idx === selIdx ? String(sel.role || "") : "";
+      const want = typeof VC?.shouldOverlayInlinePhoto == "function"
+        ? VC.shouldOverlayInlinePhoto({ idx, selIdx, length: els.length, role })
+        : idx === selIdx && role !== "user";
+      if (!want) {
+        await nxHideInlinePhotos(els[idx], () => !stale());
+        if (stale()) return;
+        continue;
+      }
+      if (idx === selIdx && !selectedCards.length && selectedConfirmedEmpty) {
+        await nxHideInlinePhotos(els[idx], () => !stale());
+        if (stale()) return;
+        continue;
+      }
+      nextPhotoEls.push({ idx, el: els[idx] });
+      await nxRestoreInlinePhotos(els[idx], () => !stale());
+      if (stale()) return;
+    }
+    for (const prev of Array.isArray(t._inlinePhotoEls) ? t._inlinePhotoEls : []) {
+      if (nextPhotoEls.some((row) => Number(row.idx) === Number(prev?.idx) && row.el === prev.el)) continue;
+      await nxHideInlinePhotos(prev.el, () => !stale());
+      if (stale()) return;
+    }
+    const selEl = els[selIdx];
+    const selKey = nxInlineStampKey(sel);
+    for (const card of selectedCards) {
+      const src = nxCardDisplaySrc(card);
+      if (nxReadyImg(src)) await nxPatchInlinePhotoByCardId(card?.id || "", src, "", selEl, selKey ? ye(selKey) : "");
+      if (stale()) return;
+    }
+    t._inlinePhotoEls = nextPhotoEls;
+  }
+  async function nxSelectedInlineShotCount() {
+    const sel = t.selectedMessage;
+    if (!sel) return 0;
+    let els = [];
+    try {
+      els = await getCachedMsgEls(t.hostDoc);
+    } catch {
+      els = [];
+    }
+    const idx = Number(sel.domIndex);
+    const el = Number.isFinite(idx) && els[idx] ? els[idx] : null;
+    if (!el) return 0;
+    const probe = await nxProbeInlineShots(el, nxUnwrapSafeNodes);
+    return probe.length;
+  }
+  function nxInlineStampKey(sel) {
+    const sessionId = String(sel?.sessionId || "");
+    const hash = String(sel?.hash || "");
+    const rawIndex = Number(sel?.messageIndex ?? sel?.chatIndex);
+    const messageIndex = Number.isInteger(rawIndex) && rawIndex >= 0 ? rawIndex : null;
+    const rawDom = Number(sel?.domIndex);
+    const domIndex = Number.isInteger(rawDom) && rawDom >= 0 ? rawDom : null;
+    const identity = messageIndex != null ? \`m\${messageIndex}\` : domIndex != null ? \`d\${domIndex}\` : "";
+    return sessionId && hash && identity ? \`\${sessionId}|\${hash}|\${identity}\` : "";
+  }
+  function nxInlineRootKeyForCard(card) {
+    const stamp = nxInlineStampKey({
+      sessionId: card?.session_id ?? card?.sessionId,
+      hash: card?.content_hash ?? card?.hash,
+      messageIndex: card?.message_index ?? card?.messageIndex
+    });
+    return stamp ? ye(stamp) : "";
+  }
+  function nxNeedsInlineStamp(sel) {
+    if (!t._inlineNeedStamp) return !1;
+    const want = String(t._inlineNeedStampKey || "");
+    const live = nxInlineStampKey(sel);
+    return !want || !!live && live === want;
+  }
+  function nxFinishInlineStamp(sel) {
+    if (!nxNeedsInlineStamp(sel)) return;
+    t._inlineNeedStamp = !1;
+    t._inlineNeedStampKey = "";
+  }
+  function nxPendingForInlineSelection(sel) {
+    const pending = Array.isArray(t._inlinePending) ? t._inlinePending : [];
+    if (!pending.length) return [];
+    const pendingIdx = Number(t._inlinePendingMsgIndex);
+    const selectedIdx = Number(sel?.messageIndex ?? sel?.chatIndex);
+    const pendingSession = String(t._inlinePendingSessionId || "");
+    const selectedSession = String(sel?.sessionId || "");
+    return pendingSession && pendingSession === selectedSession
+      && Number.isInteger(pendingIdx) && pendingIdx >= 0 && pendingIdx === selectedIdx
+      ? pending
+      : [];
+  }
+  function nxPendingMatchesInlineSelection(sel) {
+    return nxPendingForInlineSelection(sel).length > 0;
   }
   /** Ids this bubble is still waiting on. Empty when nothing is watching it. */
   function nxInlineSubIds(lockKey) {
@@ -8468,6 +9318,42 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     } catch {
     }
   }
+  function nxDropAllInlineSubs() {
+    if (!(t._inlineSubs instanceof Map)) return;
+    const rows = [...t._inlineSubs.values()];
+    t._inlineSubs.clear();
+    for (const row of rows) {
+      try {
+        if (typeof row?.stop == "function") row.stop();
+      } catch {
+      }
+    }
+  }
+  function nxDropInlineSubsForOwner(ownerClaim) {
+    if (!(t._inlineSubs instanceof Map) || !ownerClaim?.key) return;
+    for (const [key, row] of [...t._inlineSubs.entries()]) {
+      if (row?.ownerKey === ownerClaim.key && row?.ownerEpoch !== ownerClaim.epoch) {
+        nxDropInlineSubs(key);
+      }
+    }
+  }
+  async function nxDropInlineSubsForWrap(wrap) {
+    if (!(t._inlineSubs instanceof Map) || !wrap) return;
+    try {
+      const key = typeof wrap.getAttribute == "function"
+        ? String(await wrap.getAttribute("x-inlay-inline-key") || "")
+        : "";
+      if (key) {
+        nxDropInlineSubs(key);
+        return;
+      }
+    } catch {
+    }
+    for (const [key, row] of [...t._inlineSubs.entries()]) {
+      const owns = row?.nodes instanceof Map && [...row.nodes.values()].some((node) => node === wrap);
+      if (owns) nxDropInlineSubs(key);
+    }
+  }
   /**
    * Waits for the bytes of every card that had none, and fills that one cell.
    *
@@ -8476,23 +9362,49 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
    * debt for a retry pass to pick up. Here the paint is already finished and the
    * cells arrive independently.
    */
-  function nxWatchInlineShots(lockKey, cards, shotNodes, patchShotSrc) {
-    nxDropInlineSubs(lockKey);
+  function nxWatchInlineShots(lockKey, cards, shotNodes, patchShotSrc, ownerClaim) {
     const N = globalThis.__INLAY_NATIVE__;
+    const key = String(lockKey);
+    if (ownerClaim?.key && !nxInlineOwnerEpochCurrent(ownerClaim)) return;
     const ids = [];
     for (const card of Array.isArray(cards) ? cards : []) {
       const id = String(card?.id || "");
       if (id && shotNodes.has(id) && !ids.includes(id)) ids.push(id);
     }
-    if (!ids.length || typeof N?.subscribeImageUrl != "function") return;
+    if (!ids.length || typeof N?.subscribeImageUrl != "function") {
+      nxDropInlineSubs(key);
+      return;
+    }
+    const current = t._inlineSubs instanceof Map ? t._inlineSubs.get(key) : null;
+    if (current?.allIds instanceof Set
+      && current.allIds.size === ids.length
+      && current.ownerKey === String(ownerClaim?.key || "")
+      && current.ownerEpoch === Number(ownerClaim?.epoch || 0)
+      && ids.every((id) => current.allIds.has(id) && current.nodes?.get(id) === shotNodes.get(id))) return;
+    nxDropInlineSubs(lockKey);
     if (!(t._inlineSubs instanceof Map)) t._inlineSubs = new Map();
     const left = new Set(ids);
-    const row = { ids: left, stop: () => {} };
-    t._inlineSubs.set(String(lockKey), row);
+    const row = {
+      ids: left,
+      allIds: new Set(ids),
+      nodes: new Map(shotNodes),
+      ownerKey: String(ownerClaim?.key || ""),
+      ownerEpoch: Number(ownerClaim?.epoch || 0),
+      stop: () => {}
+    };
+    t._inlineSubs.set(key, row);
     row.stop = N.subscribeImageUrl(ids, (id, url) => {
-      const wrap = shotNodes.get(id);
+      if (t._inlineSubs?.get(key) !== row) return;
+      const wrap = row.nodes.get(id);
       if (!wrap) return;
-      Promise.resolve(patchShotSrc(wrap, url)).then((ok) => {
+      Promise.resolve().then(async () => {
+        const liveId = typeof wrap.getAttribute == "function"
+          ? String(await wrap.getAttribute("x-inlay-inline-shot") || "")
+          : "";
+        if (t._inlineSubs?.get(key) !== row) return !1;
+        if (liveId !== String(id)) return !1;
+        return await patchShotSrc(wrap, url, id);
+      }).then((ok) => {
         if (!ok) return;
         left.delete(id);
         if (!left.size) nxDropInlineSubs(lockKey);
@@ -8663,23 +9575,24 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     // caller waits for the in-flight paint instead of dropping its request,
     // otherwise the newer selection would silently lose its turn.
     const lockKey = String(opts?.lockKey || \`dom\${opts?.domIndex ?? "?"}\`);
+    const injectLockKey = String(opts?.injectLockKey || lockKey);
     if (!(t._inlineInjectLocks instanceof Map)) t._inlineInjectLocks = new Map();
     if (!(t._inlineInjectTicket instanceof Map)) t._inlineInjectTicket = new Map();
-    const held = t._inlineInjectLocks.get(lockKey);
-    const ticket = (Number(t._inlineInjectTicket.get(lockKey)) || 0) + 1;
-    t._inlineInjectTicket.set(lockKey, ticket);
+    const held = t._inlineInjectLocks.get(injectLockKey);
+    const ticket = (Number(t._inlineInjectTicket.get(injectLockKey)) || 0) + 1;
+    t._inlineInjectTicket.set(injectLockKey, ticket);
     let release = () => {};
     const mine = new Promise((r) => {
       release = r;
     });
-    t._inlineInjectLocks.set(lockKey, held ? held.then(() => mine, () => mine) : mine);
+    t._inlineInjectLocks.set(injectLockKey, held ? held.then(() => mine, () => mine) : mine);
     if (held) {
       try {
         await held;
       } catch {
       }
     }
-    if (t._inlineInjectTicket.get(lockKey) !== ticket) {
+    if (t._inlineInjectTicket.get(injectLockKey) !== ticket) {
       release();
       return;
     }
@@ -8698,9 +9611,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           : "hold";
     // Hold must not block a first stamp. It only means "don't tear mounted
     // frames as if this were a user turn" when we still have nothing to place.
+    const denyRole = roleDisposition === "deny";
     const haveWork = (Array.isArray(cards) && cards.length) || (Array.isArray(pendingRows) && pendingRows.length);
     if (roleDisposition === "hold" && !haveWork) return;
-    const denyRole = roleDisposition === "deny";
+    if (!haveWork && !opts?.confirmedEmpty && !denyRole && opts?.wantPhotos !== !1) return;
+    const ownerClaim = nxBeginInlineOwnerEpoch(injectLockKey);
+    nxDropInlineSubsForOwner(ownerClaim);
     const list = denyRole ? [] : (Array.isArray(cards) ? cards : []);
     // Caller already scoped pending to this bubble (selected ± window). A
     // chatIndex mismatch used to drop tag-gen spinners while chips still painted.
@@ -8749,28 +9665,15 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // One batched probe answers everything the skip gate needs: how many
       // markers exist, which ids they carry, and which of them actually show a
       // display URL. Sequential per-wrapper reads were two IPC hops per shot.
-      const prevProbe = await nxProbeInlineShots(msgEl, unwrapSafe);
-      if (!wantPhotos) {
-        for (const row of prevProbe) {
-          try {
-            const photos = await unwrapSafe(await row.node.querySelectorAll("[data-inlay-inline-img]"));
-            for (const img of photos) {
-              try {
-                if (img && typeof img.remove == "function") await img.remove();
-              } catch {
-              }
-            }
-          } catch {
-          }
-        }
-      }
-      let prev = prevProbe.map((row) => row.node);
-      let htmlProbe = "n/a";
-      const readyImgs = prevProbe.filter((row) => nxReadyImg(row.src)).length;
+      let prevProbe = await nxProbeInlineShots(msgEl, unwrapSafe);
+      prevProbe = await nxRepairDuplicateInlineFrames(prevProbe, placements, VC);
+      if (!wantPhotos) await nxHideInlinePhotos(msgEl);
+      const prev = prevProbe.map((row) => row.node);
+      const readyImgs = prevProbe.filter((row) => row.ready).length;
       // A marker with no bytes is still finished work when a live watcher owns
       // that id — it fills in place the moment the encode lands.
       const watching = nxInlineSubIds(lockKey);
-      const awaiting = prevProbe.filter((row) => !nxReadyImg(row.src) && row.id && watching.has(row.id)).length;
+      const awaiting = prevProbe.filter((row) => !row.ready && row.id && watching.has(row.id)).length;
       const liveUniqueCount = new Set(prevProbe.map((row) => row.id).filter(Boolean)).size;
       const frameVersion = String(VC.INLINE_FRAME_LAYOUT_VERSION || "");
       const layoutMatches = !!frameVersion && prevProbe.every((row) => row.layoutVersion === frameVersion);
@@ -8786,103 +9689,48 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         : prev.length === wantIds.length && liveUniqueCount === prev.length && t._inlinePaintScale === scaleNow && layoutMatches && (wantPhotos ? readyImgs + awaiting >= wantIds.length : !0);
       const liveIds = new Set(prevProbe.map((row) => row.id).filter(Boolean));
       const markersReady = prev.length === wantIds.length && liveUniqueCount === prev.length && t._inlinePaintScale === scaleNow && layoutMatches && wantIds.every((id) => liveIds.has(id));
-      const patchShotSrc = async (wrap, src) => {
-        if (!wrap || !src || !nxReadyImg(src)) return !1;
-        try {
-          let photos = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-img]"));
-          let img = photos[0];
-          if (!img) {
-            // Evict removes only this layer. Recreate it on the still-mounted spinner.
-            const stacks = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-stack]"));
-            const stack = stacks[0] || wrap;
-            const style = typeof VC.inlineChatOverlayImgStyle == "function" ? VC.inlineChatOverlayImgStyle(!0) : "";
-            const tmp = await H(doc, "div", {
-              html: '<img data-inlay-inline-img="1" alt="" style="' + style + '" loading="eager" decoding="sync">'
-            });
-            const kids = await unwrapSafe(typeof tmp?.getChildren == "function" ? await tmp.getChildren() : null);
-            img = kids[0];
-            if (!img || typeof stack.appendChild != "function") return !1;
-            await stack.appendChild(img);
-          }
-          if (typeof img.setAttribute != "function") return !1;
-          await img.setAttribute("src", src);
-          // Spinner stays in flow (holds height). Photo sits on top.
-          if (typeof img.setStyleAttribute == "function" && typeof VC.inlineChatOverlayImgStyle == "function") {
-            await img.setStyleAttribute(VC.inlineChatOverlayImgStyle(!0));
-          }
-          return !0;
-        } catch {
-          return !1;
-        }
+      const patchShotSrc = async (wrap, src, expectedId) => {
+        return await nxSwapInlinePhoto(wrap, src, unwrapSafe, doc, VC, {
+          ownerClaim,
+          expectedId: String(expectedId || "")
+        });
       };
       if (skipOk || markersReady) {
+        if (!nxInlineOwnerEpochCurrent(ownerClaim)) return;
         if (!wantIds.length) {
           y("info", "inline.inject.skip", "shots=0 already");
           return;
         }
-        if (wantIds.every((id) => liveIds.has(id))) {
-          if (wantPhotos) {
-            const shotNodes = new Map();
-            for (const row of prevProbe) {
-              if (row.id && row.node) shotNodes.set(row.id, row.node);
-            }
-            for (const p of placements) {
-              const id = String(p.cardId || "");
-              const wrap = shotNodes.get(id);
-              if (wrap && p.src && nxReadyImg(p.src)) await patchShotSrc(wrap, p.src);
-            }
-            nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc);
+        const shotNodes = new Map();
+        const shotRows = new Map();
+        for (const row of prevProbe) {
+          if (row.id && row.node) {
+            shotNodes.set(row.id, row.node);
+            shotRows.set(row.id, row);
           }
-          y("info", "inline.inject.skip", \`shots=\${wantIds.length} already ready=\${readyImgs} wait=\${awaiting}\`);
-          return;
         }
-        htmlProbe = "miss";
+        if (wantPhotos) {
+          for (const p of placements) {
+            const id = String(p.cardId || "");
+            const wrap = shotNodes.get(id);
+            if (!wrap) continue;
+            if (shotRows.get(id)?.ready) {
+              await nxShowInlinePhotoWrap(wrap, unwrapSafe, doc, VC, { ownerClaim, expectedId: id });
+            }
+            else if (p.src && nxReadyImg(p.src)) await patchShotSrc(wrap, p.src, id);
+          }
+          if (nxInlineOwnerEpochCurrent(ownerClaim)) {
+            nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc, ownerClaim);
+          }
+        }
+        y("info", "inline.inject.skip", \`shots=\${wantIds.length} already ready=\${readyImgs} wait=\${awaiting}\`);
+        return;
       }
-      // Re-inserting through SafeDOM always flashes empty first, so every repaint
-      // is visible to the user. Name the reason — count, scale or marker id.
-      y("info", "inline.inject.repaint", \`prev=\${prev.length} want=\${wantIds.length} scale=\${t._inlinePaintScale}/\${scaleNow} html=\${htmlProbe}\`);
-      const removeAllMarkers = async () => {
-        for (const sel of ["[data-inlay-inline-shot]", "[data-inlay-inline-pending]"]) {
-          let nodes = [];
-          try {
-            nodes = await unwrapSafe(await msgEl.querySelectorAll(sel));
-          } catch {
-            nodes = [];
-          }
-          for (const node of nodes) {
-            try {
-              if (node && typeof node.remove == "function") await node.remove();
-            } catch {
-            }
-          }
-        }
-      };
-      // Nothing to paint. Live shots usually mean the gallery miss is temporary
-      // (retry with noRebind, hash still loading) — stripping them is the flash.
+      // Empty desired never means "delete layout". A gallery miss is temporary;
+      // confirmed empty and denied/offscreen roles only park retained photo bytes.
       if (!placements.length && !encodeLater.length) {
-        const stripEmpty = typeof VC.shouldStripEmptyInlineDesired == "function"
-          ? VC.shouldStripEmptyInlineDesired({
-            liveShotCount: prev.length,
-            confirmedEmpty: !!t._inlineConfirmedEmpty,
-            forceStrip: roleDisposition === "deny"
-          })
-          : denyRole || !prev.length;
-        if (!stripEmpty) {
-          y("info", "inline.inject.hold", \`shots=0 live=\${prev.length}\`);
-          return;
-        }
-        await removeAllMarkers();
-        if (nxMsgAct() === "legacy") {
-          try {
-            const left = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
-            if (left.length && typeof msgEl.setInnerHTML == "function" && typeof VC.stripInlayInlineHtml == "function") {
-              let html = String(await msgEl.getInnerHTML() || "");
-              await msgEl.setInnerHTML(VC.stripInlayInlineHtml(html));
-            }
-          } catch {
-          }
-        }
-        y("info", "inline.inject", "shots=0 stripped");
+        if (opts?.confirmedEmpty || denyRole || !wantPhotos) await nxHideInlinePhotos(msgEl);
+        y("info", "inline.inject.hold", \`shots=0 live=\${prev.length}\`);
         return;
       }
       // Every stage below is a SafeDOM round-trip, and the host scan asks per
@@ -8929,77 +9777,135 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         msScan = Date.now() - tScan;
         nxPlaceCacheSet(lockKey, msgEl, { hosts, hostTags, hostTexts, messageLines, rawCount });
       }
-      const byLine = new Map();
+      const bySlot = new Map();
       for (const p of placements) {
         const line = typeof VC.clampShotLine == "function"
           ? VC.clampShotLine(p.line, messageLines.length)
           : Math.floor(Number(p.line));
         if (!line) continue;
-        if (byLine.has(line)) continue;
-        byLine.set(line, { ...p, line });
+        const planned = { ...p, line };
+        const slot = typeof VC.inlinePlacementSlotKey == "function"
+          ? VC.inlinePlacementSlotKey(planned)
+          : \`l\${line}\`;
+        if (bySlot.has(slot)) continue;
+        bySlot.set(slot, planned);
       }
       let placed = 0;
       const placedIds = new Set();
-      const placedHosts = new Set();
-      const removeNode = async (node) => {
-        try {
-          if (node && typeof node.remove == "function") await node.remove();
-        } catch {
-        }
-      };
-      // Marker nodes by card id, so a URL arriving later knows which cell to fill
-      // without another query.
+      const usedNodes = new Set();
+      // Mutable card ids point at permanent slot nodes. Reroll changes the id,
+      // not the slot, so the wrapper never needs to be replaced.
       const shotNodes = new Map();
+      const frameBySlot = new Map();
+      const frameById = new Map();
+      for (const row of prevProbe) {
+        const mark = {
+          node: row.node,
+          id: row.id,
+          slot: row.slot,
+          pending: !row.ready,
+          ready: row.ready,
+          layoutVersion: row.layoutVersion
+        };
+        if (mark.slot && !frameBySlot.has(mark.slot)) frameBySlot.set(mark.slot, mark);
+        if (mark.id && !frameById.has(mark.id)) frameById.set(mark.id, mark);
+      }
       // Host marker lists, read once per host instead of once per shot. Kept in
-      // sync as this pass prepends and removes, since it is the only writer.
+      // sync as this pass prepends, since mounted frames are never removed.
       const hostMarks = new Map();
       const marksFor = async (idx, host) => {
         if (hostMarks.has(idx)) return hostMarks.get(idx);
-        let raw = [];
-        try {
-          raw = await unwrapSafe(await host.querySelectorAll("[data-inlay-inline-shot]"));
-        } catch {
-          raw = [];
-        }
-        const info = await Promise.all(raw.map(async (mark) => {
-          let markId = "";
-          let src = "";
-          let layoutVersion = "";
-          try {
-            if (mark && typeof mark.getAttribute == "function") {
-              markId = String(await mark.getAttribute("data-inlay-inline-shot") || "");
-              layoutVersion = String(await mark.getAttribute("data-inlay-inline-layout") || "");
-            }
-            const photos = await unwrapSafe(await mark.querySelectorAll("[data-inlay-inline-img]"));
-            const img = photos[0];
-            if (img && typeof img.getAttribute == "function") src = String(await img.getAttribute("src") || "");
-          } catch {
-            markId = "";
-          }
-          // Pending is whether the cell actually shows bytes, not what the
-          // attribute says: a subscription fills the <img> in place and cannot
-          // rewrite a data- attribute through SafeDOM.
-          return { node: mark, id: markId, pending: !nxReadyImg(src), layoutVersion };
+        const info = (await nxProbeInlineShots(host, unwrapSafe)).map((row) => ({
+          node: row.node,
+          id: row.id,
+          slot: row.slot,
+          pending: !row.ready,
+          ready: row.ready,
+          layoutVersion: row.layoutVersion
         }));
         hostMarks.set(idx, info);
         return info;
       };
+      const syncFrameMeta = async (node, shot) => {
+        if (!node) return !1;
+        const id = String(shot.cardId || "");
+        const slot = typeof VC.inlinePlacementSlotKey == "function"
+          ? VC.inlinePlacementSlotKey(shot)
+          : \`s\${Number(shot.shotIndex) || 0}\`;
+        return await nxRunInlineOwnerMutation(ownerClaim, async (isCurrent) => {
+          try {
+            const setMeta = async (name, value) => {
+              if (!isCurrent() || typeof node.setAttribute != "function") return !1;
+              await node.setAttribute(name, value);
+              return isCurrent();
+            };
+            if (id && !(await setMeta("x-inlay-inline-shot", id))) return !1;
+            if (!(await setMeta("x-inlay-inline-slot", slot))) return !1;
+            if (!(await setMeta("x-inlay-inline-layout", String(VC.INLINE_FRAME_LAYOUT_VERSION || "")))) return !1;
+            if (!(await setMeta("x-inlay-inline-pending", shot.pending ? "1" : "0"))) return !1;
+            if (!(await setMeta("x-inlay-inline-key", String(lockKey)))) return !1;
+            if (!(await setMeta("x-inlay-inline-owner", String(injectLockKey)))) return !1;
+            if (!isCurrent()) return !1;
+            const spins = await unwrapSafe(await node.querySelectorAll("[data-inlay-inline-spin]"));
+            if (!isCurrent()) return !1;
+            const spin = spins[0];
+            if (spin) {
+              const size = typeof VC.inlinePlaceholderSize == "function" ? VC.inlinePlaceholderSize(shot) : null;
+              if (typeof spin.setStyleAttribute == "function" && typeof VC.inlineChatSpinnerImgStyle == "function") {
+                const geometry = size?.width && size?.height
+                  ? \`;width:\${Number(size.width)}px;aspect-ratio:\${Number(size.width)}/\${Number(size.height)}\`
+                  : "";
+                await spin.setStyleAttribute(VC.inlineChatSpinnerImgStyle(scaleNow) + geometry);
+                if (!isCurrent()) return !1;
+              }
+            }
+            await nxEnsureInlinePhotoLayers(node, unwrapSafe, doc, VC);
+            return isCurrent();
+          } catch {
+            return !1;
+          }
+        });
+      };
       const prependShot = async (host, hostIdx, shot) => {
         // The hash goes onto the marker so the next paint can prove this bubble
         // is untouched with one query instead of rescanning every paragraph.
-        const markerHtml = VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100, lockKey);
+        const markerHtml = VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100, lockKey, injectLockKey);
         if (!markerHtml || !host || typeof host.prepend != "function") return !1;
         try {
           const tmp = await H(doc, "div", { html: markerHtml });
           const kids = await unwrapSafe(typeof tmp?.getChildren == "function" ? await tmp.getChildren() : null);
           const wrap = kids[0];
           if (wrap) {
-            await host.prepend(wrap);
+            const mounted = await nxRunInlineOwnerMutation(ownerClaim, async (isCurrent) => {
+              if (!isCurrent()) return !1;
+              await host.prepend(wrap);
+              return isCurrent();
+            });
+            if (!mounted) return !1;
+            if (!await syncFrameMeta(wrap, shot)) {
+              await nxAbandonInlineFrame(wrap);
+              return !1;
+            }
+            let liveId = "";
+            try {
+              if (typeof wrap.getAttribute == "function") liveId = String(await wrap.getAttribute("x-inlay-inline-shot") || "");
+            } catch {
+            }
+            if (!liveId) {
+              await nxAbandonInlineFrame(wrap);
+              return !1;
+            }
             const id = String(shot.cardId || "");
+            const slot = typeof VC.inlinePlacementSlotKey == "function"
+              ? VC.inlinePlacementSlotKey(shot)
+              : \`s\${Number(shot.shotIndex) || 0}\`;
             if (id) shotNodes.set(id, wrap);
             const marks = hostMarks.get(hostIdx);
-            if (Array.isArray(marks)) marks.unshift({ node: wrap, id, pending: !nxReadyImg(shot.src), layoutVersion: String(VC.INLINE_FRAME_LAYOUT_VERSION || "") });
-            if (shot.src && !shot.pending) await patchShotSrc(wrap, shot.src);
+            const mark = { node: wrap, id, slot, pending: !nxReadyImg(shot.src), ready: nxReadyImg(shot.src), layoutVersion: String(VC.INLINE_FRAME_LAYOUT_VERSION || "") };
+            if (Array.isArray(marks)) marks.unshift(mark);
+            if (slot) frameBySlot.set(slot, mark);
+            if (id) frameById.set(id, mark);
+            if (wantPhotos && shot.src && !shot.pending) await patchShotSrc(wrap, shot.src, id);
             return !0;
           }
         } catch {
@@ -9007,9 +9913,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         return !1;
       };
       const applyShot = async (shot) => {
+        if (!nxInlineOwnerEpochCurrent(ownerClaim)) return !1;
         const id = String(shot.cardId || "");
-        // A spinner already claimed this id — ready shots must still swap.
         if (id && placedIds.has(id) && (shot.pending || !nxReadyImg(shot.src))) return !1;
+        const slot = typeof VC.inlinePlacementSlotKey == "function"
+          ? VC.inlinePlacementSlotKey(shot)
+          : \`s\${Number(shot.shotIndex) || 0}\`;
         const line = Number(shot.line);
         if (!line || !Number.isFinite(line)) return !1;
         const hit = VC.findElementIndexForLineWithFallback(hostTexts, hostTags, messageLines, line, ["P"]);
@@ -9017,109 +9926,60 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         const host = hosts[hit.elementIndex];
         if (!host) return !1;
         const marks = await marksFor(hit.elementIndex, host);
-        let mark = id ? marks.find((m) => m.id === id) : null;
-        if (!mark) mark = marks.find((m) => !m.id || !placedIds.has(m.id));
+        if (!nxInlineOwnerEpochCurrent(ownerClaim)) return !1;
+        let mark = slot ? frameBySlot.get(slot) : null;
+        if (mark?.node && usedNodes.has(mark.node)) mark = null;
+        if (!mark && id) mark = frameById.get(id);
+        if (mark?.node && usedNodes.has(mark.node)) mark = null;
+        if (!mark) mark = marks.find((m) => m.node && !m.slot && !usedNodes.has(m.node));
         const node = mark?.node || null;
         const live = mark ? { cardId: mark.id, pending: mark.pending, layoutVersion: mark.layoutVersion } : null;
         const action = typeof VC.reconcileInlineShot == "function"
           ? VC.reconcileInlineShot(shot, live)
-          : live ? { op: "swap", placement: shot } : { op: "prepend", placement: shot };
-        if (action.op === "keep" || action.op === "fill") {
-          if (shot.src && !shot.pending && node && await patchShotSrc(node, shot.src)) {
-            if (mark) mark.pending = !1;
+          : live ? { op: "fill", placement: shot } : { op: "prepend", placement: shot };
+        if (node && action.op !== "prepend") {
+          if (!nxInlineOwnerEpochCurrent(ownerClaim)) return !1;
+          if (mark?.id && mark.id !== id) await nxDropInlineSubsForWrap(node);
+          if (!nxInlineOwnerEpochCurrent(ownerClaim)) return !1;
+          if (!(await syncFrameMeta(node, shot))) return !1;
+          if (!nxInlineOwnerEpochCurrent(ownerClaim)) return !1;
+          if (wantPhotos && shot.src && !shot.pending && node) {
+            const shown = mark?.ready && mark.id === id
+              ? await nxShowInlinePhotoWrap(node, unwrapSafe, doc, VC, { ownerClaim, expectedId: id })
+              : await patchShotSrc(node, shot.src, id);
+            if (shown && mark) mark.pending = !1, mark.ready = !0;
           }
-          if (action.op === "fill" && node && id) {
-            try {
-              if (typeof node.setAttribute == "function") {
-                await node.setAttribute("data-inlay-inline-shot", id);
-                await node.setAttribute("x-inlay-inline-shot", id);
-                await node.setAttribute("data-inlay-inline-pending", "0");
-              }
-            } catch {
-            }
-            if (mark) mark.id = id, mark.pending = !1;
-          }
+          if (mark?.slot && mark.slot !== slot && frameBySlot.get(mark.slot) === mark) frameBySlot.delete(mark.slot);
+          if (mark?.id && mark.id !== id) frameById.delete(mark.id);
+          if (mark) mark.id = id, mark.slot = slot, mark.pending = !!shot.pending && !nxReadyImg(shot.src);
+          if (slot) frameBySlot.set(slot, mark);
+          if (id) frameById.set(id, mark);
           if (id && node) shotNodes.set(id, node);
-          placedHosts.add(hit.elementIndex);
+          usedNodes.add(node);
           if (id) placedIds.add(id);
           return action.op === "fill";
-        }
-        if (action.op === "strip") {
-          await removeNode(node);
-          if (mark) marks.splice(marks.indexOf(mark), 1);
-          placedHosts.add(hit.elementIndex);
-          return !0;
-        }
-        if (action.op === "swap") {
-          await removeNode(node);
-          if (mark) marks.splice(marks.indexOf(mark), 1);
         }
         const did = await prependShot(host, hit.elementIndex, action.placement || shot);
         if (did) {
           placed += 1;
-          placedHosts.add(hit.elementIndex);
           if (id) placedIds.add(id);
         }
         return did;
       };
       const tPlace = Date.now();
-      for (const [, shot] of byLine) {
+      for (const [, shot] of bySlot) {
         await applyShot(shot);
       }
       const msPlace = Date.now() - tPlace;
       const tWatch = Date.now();
       // Every linked card now owns a marker, so the paint is finished. The bytes
-      // are a separate story: watch each missing id and drop its URL into the
-      // <img> that is already mounted. No retry pass, no debt counter, and no
-      // "did the attach succeed" question — the cell fills whenever it fills.
-      if (wantPhotos) nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc);
-      else {
-        try {
-          const leftoverPhotos = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-img]"));
-          for (const img of leftoverPhotos) {
-            try {
-              if (img && typeof img.remove == "function") await img.remove();
-            } catch {
-            }
-          }
-        } catch {
-        }
+      // are separate: each missing id fills the hidden permanent cell and then
+      // opacity-swaps it. No retry pass and no structural message repaint.
+      if (wantPhotos && nxInlineOwnerEpochCurrent(ownerClaim)) {
+        nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc, ownerClaim);
       }
       const msWatch = Date.now() - tWatch;
-      const tLeft = Date.now();
-      const keepIds = new Set(placedIds);
-      for (const card of encodeLater) {
-        const laterId = String(card?.id || "");
-        if (laterId) keepIds.add(laterId);
-      }
-      try {
-        const scanLeftovers = typeof VC.shouldScanInlineLeftovers == "function"
-          ? VC.shouldScanInlineLeftovers(keepIds.size)
-          : !0;
-        if (scanLeftovers) {
-        const leftovers = await unwrapSafe(await msgEl.querySelectorAll("[data-inlay-inline-shot]"));
-        const seenInlineIds = new Set();
-        for (const node of leftovers) {
-          let leftId = "";
-          try {
-            if (node && typeof node.getAttribute == "function") {
-              leftId = String(await node.getAttribute("data-inlay-inline-shot") || "");
-            }
-          } catch {
-            leftId = "";
-          }
-          if (typeof VC.shouldStripLeftoverInlineId == "function"
-            ? !VC.shouldStripLeftoverInlineId(leftId, keepIds, !1, seenInlineIds)
-            : !leftId || keepIds.has(leftId) && !seenInlineIds.has(leftId)) {
-            if (leftId) seenInlineIds.add(leftId);
-            continue;
-          }
-          await removeNode(node);
-        }
-        }
-      } catch {
-      }
-      const msLeft = Date.now() - tLeft;
+      const msLeft = 0;
       y("info", "inline.inject", \`shots=\${placements.length}+enc\${encodeLater.length} placed=\${placed} watch=\${nxInlineSubIds(lockKey).size} pending=\${placements.filter((p) => p.pending).length}\`);
       y("info", "inline.inject.ms", \`total=\${Date.now() - tStart} html=\${msHtml} scan=\${cacheHit ? "cached" : msScan}(hosts=\${hosts.length}/\${rawCount}) place=\${msPlace} watch=\${msWatch} left=\${msLeft}\`);
       t._inlinePaintScale = scaleNow;
@@ -9131,7 +9991,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     } finally {
       release();
-      if (t._inlineInjectTicket.get(lockKey) === ticket) t._inlineInjectLocks.delete(lockKey);
+      if (t._inlineInjectTicket.get(injectLockKey) === ticket) t._inlineInjectLocks.delete(injectLockKey);
     }
   }
   // No attach retry ladder. A pass used to re-run itself up to five times
@@ -9211,20 +10071,34 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       return "";
     }
   }
-  async function nxPatchInlinePhotoByCardId(cardId, src, prevId) {
+  async function nxPatchInlinePhotoByCardId(cardId, src, prevId, rootEl, rootKey) {
     const id = String(cardId || "");
     const prev = String(prevId || "");
     const lookIds = [];
-    if (id) lookIds.push(id);
     if (prev && prev !== id) lookIds.push(prev);
-    if (!lookIds.length || !src || !nxReadyImg(src)) return !1;
-    const VC = globalThis.__INLAY_VIEWER_CORE__;
-    let els = [];
-    try {
-      els = await getCachedMsgEls(t.hostDoc);
-    } catch {
-      els = [];
+    if (id) lookIds.push(id);
+    if (!lookIds.length) return !1;
+    let displaySrc = String(src || "");
+    const N = globalThis.__INLAY_NATIVE__;
+    if (!nxReadyImg(displaySrc) && id && typeof N?.ensureImageUrl == "function") {
+      try {
+        displaySrc = String(await N.ensureImageUrl(id) || "");
+      } catch {
+        displaySrc = "";
+      }
     }
+    if (!nxReadyImg(displaySrc)) return !1;
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const card = (t.gallery || []).find((row) => {
+      const rowId = String(row?.id || "");
+      return rowId === id || !!prev && rowId === prev;
+    }) || null;
+    const slot = typeof VC?.inlinePlacementSlotKey == "function"
+      ? String(VC.inlinePlacementSlotKey(card) || "")
+      : "";
+    const key = String(rootKey || nxInlineRootKeyForCard(card) || "");
+    const safeKey = /^[A-Za-z0-9_-]+$/.test(key) ? key : "";
+    if (!safeKey) return !1;
     const unwrapSafe = async (arr) => {
       if (!arr) return [];
       if (typeof k.unwarpSafeArray == "function") {
@@ -9237,53 +10111,103 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       return Array.isArray(arr) ? arr : [arr];
     };
-    for (const el of els) {
-      if (!el || typeof el.querySelectorAll != "function") continue;
-      for (const look of lookIds) {
-        let wraps = [];
+    const roots = [t.hostDoc, rootEl].filter((root, at, all) => root && all.indexOf(root) === at);
+    let exactHits = [];
+    for (const look of lookIds) {
+      if (!/^[A-Za-z0-9_-]+$/.test(look)) continue;
+      const selector = '[x-inlay-inline-key="' + safeKey + '"][x-inlay-inline-shot="' + look + '"],'
+        + '[data-inlay-inline-key="' + safeKey + '"][data-inlay-inline-shot="' + look + '"]';
+      for (const root of roots) {
+        if (typeof root.querySelectorAll != "function") continue;
         try {
-          wraps = await unwrapSafe(await el.querySelectorAll('[data-inlay-inline-shot="' + look + '"]'));
-        } catch {
-          wraps = [];
-        }
-        for (const wrap of wraps) {
-          try {
-            let photos = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-img]"));
-            let img = photos[0];
-            if (!img) {
-              const stacks = await unwrapSafe(await wrap.querySelectorAll("[data-inlay-inline-stack]"));
-              const stack = stacks[0] || wrap;
-              const style = typeof VC?.inlineChatOverlayImgStyle == "function" ? VC.inlineChatOverlayImgStyle(!0) : "";
-              const tmp = await H(t.hostDoc, "div", {
-                html: '<img data-inlay-inline-img="1" alt="" style="' + style + '" loading="eager" decoding="sync">'
-              });
-              const kids = await unwrapSafe(typeof tmp?.getChildren == "function" ? await tmp.getChildren() : null);
-              img = kids[0];
-              if (img && typeof stack.appendChild == "function") await stack.appendChild(img);
-            }
-            if (!img || typeof img.setAttribute != "function") continue;
-            await img.setAttribute("src", src);
-            if (typeof img.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
-              await img.setStyleAttribute(VC.inlineChatOverlayImgStyle(!0));
-            }
-            if (id && look !== id && typeof wrap.setAttribute == "function") {
-              await wrap.setAttribute("data-inlay-inline-shot", id);
-            }
-            return !0;
-          } catch {
+          const wraps = await unwrapSafe(await root.querySelectorAll(selector));
+          for (const wrap of wraps) {
+            if (wrap && !exactHits.some((hit) => hit.wrap === wrap)) exactHits.push({ wrap, look });
           }
+        } catch {
+        }
+      }
+      if (exactHits.length) break;
+    }
+    // Layout-10 frames predate x-inlay-inline-key. A caller-provided message root
+    // is still safe to use for this one-time exact-id migration.
+    if (!exactHits.length && safeKey && rootEl && typeof rootEl.querySelector == "function") {
+      for (const look of lookIds) {
+        if (!/^[A-Za-z0-9_-]+$/.test(look)) continue;
+        try {
+          const wrap = await rootEl.querySelector('[x-inlay-inline-shot="' + look + '"],[data-inlay-inline-shot="' + look + '"]');
+          if (wrap) {
+            exactHits = [{ wrap, look }];
+            break;
+          }
+        } catch {
         }
       }
     }
-    return !1;
+    let slotHit = null;
+    if (!exactHits.length && safeKey && slot && /^[sl]\\d+$/.test(slot)) {
+      for (const root of roots) {
+        if (typeof root.querySelector != "function") continue;
+        try {
+          slotHit = await root.querySelector(
+            '[x-inlay-inline-key="' + safeKey + '"][x-inlay-inline-slot="' + slot + '"],'
+            + '[data-inlay-inline-key="' + safeKey + '"][data-inlay-inline-slot="' + slot + '"]'
+          );
+          if (slotHit) break;
+        } catch {
+          slotHit = null;
+        }
+      }
+    }
+    const hits = exactHits.length ? exactHits : slotHit ? [{ wrap: slotHit, look: slot }] : [];
+    let patched = !1;
+    for (const hit of hits) {
+      const wrap = hit.wrap;
+      try {
+        let ownerKey = "";
+        if (typeof wrap.getAttribute == "function") {
+          ownerKey = String(await wrap.getAttribute("x-inlay-inline-owner") || "");
+        }
+        if (!ownerKey && typeof VC?.inlineInjectOwnerKey == "function") {
+          ownerKey = ye(VC.inlineInjectOwnerKey(card, -1, card?.session_id ?? card?.sessionId));
+        }
+        const ownerClaim = nxBeginInlineOwnerEpoch(ownerKey);
+        await nxDropInlineSubsForWrap(wrap);
+        const stamped = await nxRunInlineOwnerMutation(ownerClaim, async (isCurrent) => {
+          const setMeta = async (name, value) => {
+            if (!isCurrent() || typeof wrap.setAttribute != "function") return !1;
+            await wrap.setAttribute(name, value);
+            return isCurrent();
+          };
+          if (id && hit.look !== id) {
+            if (!(await setMeta("x-inlay-inline-shot", id))) return !1;
+            if (!(await setMeta("x-inlay-inline-pending", "0"))) return !1;
+            if (slot && !(await setMeta("x-inlay-inline-slot", slot))) return !1;
+            if (!(await setMeta("x-inlay-inline-layout", String(VC?.INLINE_FRAME_LAYOUT_VERSION || "")))) return !1;
+          }
+          if (safeKey && !(await setMeta("x-inlay-inline-key", safeKey))) return !1;
+          if (ownerKey && !(await setMeta("x-inlay-inline-owner", ownerKey))) return !1;
+          return isCurrent();
+        });
+        if (!stamped) continue;
+        if (await nxSwapInlinePhoto(wrap, displaySrc, unwrapSafe, t.hostDoc, VC, {
+          ownerClaim,
+          expectedId: id
+        })) patched = !0;
+      } catch {
+      }
+    }
+    return patched;
   }
-  async function refreshSelectedInlineImages(force) {
+  async function refreshSelectedInlineImages(force, opts) {
     if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") {
       hideAttachToast().catch(() => {});
       return;
     }
+    const onlySel = !!(opts && opts.onlySel);
     const sel = t.selectedMessage;
     if (!sel) return;
+    t._inlinePhotoSyncGen = (Number(t._inlinePhotoSyncGen) || 0) + 1;
     const gen = (Number(t._inlinePassGen) || 0) + 1;
     t._inlinePassGen = gen;
     const stale = () => Number(t._inlinePassGen) !== gen;
@@ -9314,9 +10238,11 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const radius = typeof VC?.clampInlineDomRadius == "function"
         ? VC.clampInlineDomRadius(t.backendSettings?.card?.inline_chat_dom_radius)
         : Math.max(3, Math.min(20, Math.round(Number(t.backendSettings?.card?.inline_chat_dom_radius) || 4)));
-      const spinnerIdxs = typeof VC?.inlineDomWindow == "function"
-        ? VC.inlineDomWindow(selIdx, els.length, radius)
-        : [];
+      const spinnerIdxs = onlySel
+        ? [selIdx]
+        : typeof VC?.inlineDomWindow == "function"
+          ? VC.inlineDomWindow(selIdx, els.length, radius)
+          : [];
       const scope = await Za().catch(() => null);
       const msgs = scope?.messages || [];
       const roleCache = new Map();
@@ -9378,17 +10304,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         return Array.isArray(arr) ? arr : [arr];
       };
       const evictPhotosIn = async (el) => {
-        if (!el || typeof el.querySelectorAll != "function") return;
-        try {
-          const photos = await unwrapSafe(await el.querySelectorAll("[data-inlay-inline-img]"));
-          for (const img of photos) {
-            try {
-              if (img && typeof img.remove == "function") await img.remove();
-            } catch {
-            }
-          }
-        } catch {
-        }
+        await nxHideInlinePhotos(el);
       };
       const nextPhotoEls = [];
       for (const idx of spinnerIdxs) {
@@ -9402,12 +10318,14 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (wantPhoto) nextPhotoEls.push({ idx, el: els[idx] });
       }
       const nextPhotoIdx = new Set(nextPhotoEls.map((row) => row.idx));
-      for (const prev of Array.isArray(t._inlinePhotoEls) ? t._inlinePhotoEls : []) {
-        if (nextPhotoIdx.has(Number(prev?.idx)) && prev.el === els[prev.idx]) continue;
-        await evictPhotosIn(prev.el);
-      }
-      for (const idx of spinnerIdxs) {
-        if (!nextPhotoIdx.has(idx)) await evictPhotosIn(els[idx]);
+      if (!onlySel) {
+        for (const prev of Array.isArray(t._inlinePhotoEls) ? t._inlinePhotoEls : []) {
+          if (nextPhotoIdx.has(Number(prev?.idx)) && prev.el === els[prev.idx]) continue;
+          await evictPhotosIn(prev.el);
+        }
+        for (const idx of spinnerIdxs) {
+          if (!nextPhotoIdx.has(idx)) await evictPhotosIn(els[idx]);
+        }
       }
       for (const idx of spinnerIdxs) {
         if (stale()) return;
@@ -9432,18 +10350,31 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         } catch {
           cards = [];
         }
-        const lockKey = String(row?.msg?.hash || sel.hash || ("dom" + idx));
+        const frameKey = nxInlineStampKey(row?.msg)
+          || (idx === selIdx ? nxInlineStampKey(sel) : "")
+          || \`\${String(row?.msg?.sessionId || sel.sessionId || "")}|\${String(row?.msg?.hash || sel.hash || "unknown")}|d\${idx}\`;
+        const lockKey = ye(frameKey);
+        const injectOwner = typeof VC?.inlineInjectOwnerKey == "function"
+          ? VC.inlineInjectOwnerKey(row?.msg, idx, sel.sessionId)
+          : \`\${String(row?.msg?.sessionId || sel.sessionId || "unknown")}|\${Number.isInteger(Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)) ? \`m\${Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)}\` : \`d\${idx}\`}\`;
         await injectChatMsgActions(els[idx], cards, idx);
         if (t.backendSettings?.card?.inline_chat_images === !0) {
-          await injectChatInlineImages(els[idx], cards, idx === selIdx ? t._inlinePending : [], {
+          await injectChatInlineImages(els[idx], cards, idx === selIdx ? nxPendingForInlineSelection(sel) : [], {
             lockKey,
+            injectLockKey: ye(injectOwner),
             role: roleAt(idx),
             allRoles: !1,
-            wantPhotos: nextPhotoIdx.has(idx)
+            wantPhotos: nextPhotoIdx.has(idx),
+            confirmedEmpty: !cards.length && String(t._galleryCache?.sessionId || "") === String(row?.msg?.sessionId || sel.sessionId || "")
           });
         }
       }
-      t._inlinePhotoEls = nextPhotoEls;
+      if (onlySel) {
+        const rest = (Array.isArray(t._inlinePhotoEls) ? t._inlinePhotoEls : []).filter((row) => Number(row?.idx) !== selIdx);
+        t._inlinePhotoEls = [...rest, ...nextPhotoEls];
+      } else {
+        t._inlinePhotoEls = nextPhotoEls;
+      }
       hideAttachToast({ done: 1 }).catch(() => {});
     } catch (err) {
       y("warn", "inline.refresh.fail", z(err?.message || err, 100));
@@ -9662,7 +10593,15 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     if (kind0 === "tag") {
       if (!A?.text) return;
-      try { await Be(await Z({ useOverride: !1 }), A.text, !0); y("info", "regen.tag", "msg-actions"); } catch (err) { y("error", "regen.tag.fail", err?.message || err); }
+      try {
+        const tagStampKey = nxInlineStampKey(A);
+        t._inlineNeedStamp = !0;
+        t._inlineNeedStampKey = tagStampKey;
+        if (tagStampKey) await nxRemoveInlineFramesByKey(t.hostDoc, ye(tagStampKey));
+        else if (els[idx]) await nxRemoveInlineFrames(els[idx]);
+        await Be(await Z({ useOverride: !1 }), A.text, !0);
+        y("info", "regen.tag", "msg-actions");
+      } catch (err) { y("error", "regen.tag.fail", err?.message || err); }
       return;
     }
     if (kind0 === "regen") {
@@ -9674,7 +10613,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             try {
               const card = result?.card;
               const replaced = result?.replaced;
-              await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "");
+              const rootKey = nxInlineStampKey(A);
+              await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "", els[idx] || null, rootKey ? ye(rootKey) : "");
             } catch {
             }
           };
@@ -9966,9 +10906,15 @@ const VENDOR_INLINE_CALL_NEEDLE =
   `    return await onSelectionChanged("content"), scheduleOverlayPlace(80), t.debugUi?.refreshSoon && t.debugUi.refreshSoon(), (source === "click" || source === "text") && await ensureMessageInView(o), source === "provisional" ? !0 : !isSelectedCharRole(l) ? (y("info", "select.user", "유저 메시지 — 자동 생성 안 함"), !0) : u.length ? (y("info", "select.hasImage", \`cards=\${u.length} · 재생성은 뷰어 버튼\`), !0) : (y("info", "select.noImage", "해시 이미지 없음 → 태그부터 생성"), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
   }`;
 const VENDOR_INLINE_CALL_PATCH =
-  `    if (source === "click" || source === "text" || source === "scroll" || (source === "provisional" && opts.auto)) {
+  `    if (source === "provisional" && opts.auto) {
       try {
         await refreshSelectedInlineImages();
+      } catch {
+      }
+    } else if (source === "click" || source === "text" || source === "scroll") {
+      try {
+        if (await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage))) await nxSyncInlinePhotosOnly();
+        else await refreshSelectedInlineImages();
       } catch {
       }
     }
@@ -9989,18 +10935,42 @@ const VENDOR_INLINE_SAME_NEEDLE =
       return !isSelectedCharRole(l) ? !0 : (y("info", "select.same", \`msg#\${i.chatIndex} noImage → retry\`), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
     }`;
 const VENDOR_INLINE_SAME_PATCH =
-  `      if (source === "click" || source === "text" || source === "scroll" || (source === "provisional" && opts.auto)) {
+  `      if (source === "provisional" && opts.auto) {
+        try {
+          await refreshSelectedInlineImages();
+        } catch {
+        }
+      } else if ((source === "click" || source === "text" || source === "scroll") && !(await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage)))) {
         try {
           await refreshSelectedInlineImages();
         } catch {
         }
       }
-      // Same message re-click: no selection toast (progress toast untouched).
+      // Same message re-click: do not touch inline markers or photos.
       if (linked.length) return !0;
       if (source === "scroll" || source === "provisional") return !0;
       if (source === "text") return !isSelectedCharRole(l) ? !0 : (y("info", "select.same", \`msg#\${i.chatIndex} noImage → retry\`), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
       return !isSelectedCharRole(l) ? !0 : (y("info", "select.same", \`msg#\${i.chatIndex} noImage → retry\`), await Ka(t.selectedMessage.text, t.selectedMessage.hash), !0);
     }`;
+
+/** Pending ownership must update even while the settings/viewer shell is open. */
+const VENDOR_INLINE_PENDING_UI_NEEDLE =
+  `        }, await Se();
+        if (t.uiOpen) {`;
+const VENDOR_INLINE_PENDING_UI_PATCH =
+  `        }, await Se();
+        if (a.state === "done" || a.state === "cancelled" || a.state === "error") {
+          t._inlinePending = null;
+          t._inlinePendingMsgIndex = -1;
+          t._inlinePendingSessionId = "";
+        } else if (Array.isArray(r.pending_inline)) {
+          t._inlinePending = r.pending_inline;
+          const rawPmi = r.pending_message_index ?? r.message_index;
+          const pmi = Number(rawPmi);
+          t._inlinePendingMsgIndex = rawPmi != null && Number.isInteger(pmi) && pmi >= 0 ? pmi : -1;
+          t._inlinePendingSessionId = String(e || "");
+        }
+        if (t.uiOpen) {`;
 
 /** Progressive bubble inline: store pending_inline; force gallery reload on shot_done. */
 const VENDOR_INLINE_POLL_NEEDLE =
@@ -10015,14 +10985,6 @@ const VENDOR_INLINE_POLL_NEEDLE =
 const VENDOR_INLINE_POLL_PATCH =
   `        const i = Number(r.shot_done ?? 0), s = !!(a.state && a.state !== t.lastJobState), c = i !== Number(t._lastShotDone ?? -1);
         const VC = globalThis.__INLAY_VIEWER_CORE__;
-        if (a.state === "done" || a.state === "cancelled" || a.state === "error") {
-          t._inlinePending = null;
-          t._inlinePendingMsgIndex = -1;
-        } else if (Array.isArray(r.pending_inline)) {
-          t._inlinePending = r.pending_inline;
-          const pmi = Number(r.pending_message_index ?? r.message_index);
-          t._inlinePendingMsgIndex = Number.isFinite(pmi) ? pmi : Number(t.selectedMessage?.chatIndex ?? -1);
-        }
         if (s && (t.lastJobState = a.state, y("info", "job.poll", \`\${n.slice(0, 8)}… → \${a.state}\`)), r.message && r.message !== t._lastJobMsg && (t._lastJobMsg = r.message, y("info", "job.progress", r.message)), r.message && r.message !== t._lastJobMsg && (t._lastJobMsg = r.message, y("info", "job.progress", r.message)), (a.state === "generating" || a.state === "done") && (c || s && (a.state === "generating" || a.state === "done"))) {
           t._lastShotDone = i;
           const prevIds = (t.gallery || []).map((card) => String(card?.id || ""));
@@ -10080,7 +11042,19 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
             const pendingChanged = pendingKeyNow !== String(t._inlineKeepPendingKey || "");
             if (idsChanged || linkedChanged || c || pendingChanged || a.state === "done") {
               try {
-                await refreshSelectedInlineImages(!!(c || a.state === "done" || pendingChanged));
+                const linkedNow = t.selectedMessage ? linkedCards(t.selectedMessage) : [];
+                const shotCount = await nxSelectedInlineShotCount();
+                const needsStamp = nxNeedsInlineStamp(t.selectedMessage);
+                const pendingMatches = nxPendingMatchesInlineSelection(t.selectedMessage);
+                if (needsStamp || !shotCount && pendingMatches) {
+                  await refreshSelectedInlineImages(!0, { onlySel: !0 });
+                  nxFinishInlineStamp(t.selectedMessage);
+                } else {
+                  const rootKey = nxInlineStampKey(t.selectedMessage);
+                  for (const card of linkedNow) {
+                    await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), "", null, rootKey ? ye(rootKey) : "");
+                  }
+                }
               } catch {
               }
             }
@@ -10093,7 +11067,12 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
             : "";
           if (pendingKeyNow && pendingKeyNow !== String(t._inlineKeepPendingKey || "") && t.backendSettings?.card?.inline_chat_images === !0) {
             try {
-              await refreshSelectedInlineImages(!0);
+              const needsStamp = nxNeedsInlineStamp(t.selectedMessage);
+              const pendingMatches = nxPendingMatchesInlineSelection(t.selectedMessage);
+              if (needsStamp || !(await nxSelectedInlineShotCount()) && pendingMatches) {
+                await refreshSelectedInlineImages(!0, { onlySel: !0 });
+                nxFinishInlineStamp(t.selectedMessage);
+              }
             } catch {
             }
           }
@@ -11007,7 +11986,8 @@ const VENDOR_SCROLL_GALLERY_NEW_PATCH = `    {
         scheduleOverlayPlace(40), await onSelectionChanged("content");
       } else scheduleStickySync(), await onSelectionChanged("content");
       try {
-        await refreshSelectedInlineImages();
+        if (await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage))) await nxSyncInlinePhotosOnly();
+        else await refreshSelectedInlineImages();
       } catch {
       }
       return !0;
@@ -12170,7 +13150,7 @@ const VENDOR_INSPECT_REROLL_INLINE_PATCH =
           } catch {
           }
           try {
-            await nxPatchInlinePhotoByCardId(rolled?.card?.id || card.id, nxCardDisplaySrc(rolled?.card || card), card.id);
+            await nxPatchInlinePhotoByCardId(rolled?.card?.id || card.id, nxCardDisplaySrc(rolled?.card || card), card.id, null, nxInlineRootKeyForCard(rolled?.card || card));
           } catch {
           }
         } catch (err) {
@@ -12208,7 +13188,7 @@ const VENDOR_INSPECT_REGEN_INLINE_PATCH =
                 try {
                   const card = result?.card;
                   const replaced = result?.replaced;
-                  await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "");
+                  await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "", null, nxInlineRootKeyForCard(card));
                 } catch {
                 }
               }
@@ -12232,7 +13212,7 @@ const VENDOR_REROLL_IMAGE_INLINE_NEEDLE =
 const VENDOR_REROLL_IMAGE_INLINE_PATCH =
   `        d.index = nn >= 0 ? nn : Math.max(0, Math.min(_, Math.max(0, J.length - 1))), await T();
         try {
-          await nxPatchInlinePhotoByCardId(B?.card?.id || A.id, nxCardDisplaySrc(B?.card || A), A.id);
+          await nxPatchInlinePhotoByCardId(B?.card?.id || A.id, nxCardDisplaySrc(B?.card || A), A.id, null, nxInlineRootKeyForCard(B?.card || A));
         } catch {
         }
         await C.setTextContent(\`이미지 리롤 완료 · \${String(B?.card?.id || A.id).slice(0, 8)}\`), y("info", "regen.image", \`P\${O} \${String(A.id).slice(0, 8)}→\${String(B?.card?.id || "").slice(0, 8)}\`);`;
@@ -12258,7 +13238,7 @@ const VENDOR_REROLL_ALL_INLINE_PATCH =
             try {
               const card = result?.card;
               const replaced = result?.replaced;
-              await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "");
+              await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "", null, nxInlineRootKeyForCard(card));
             } catch {
             }
             await C.setTextContent(\`\${i + 1}/\${targets0.length} 교체 완료\`);
@@ -12290,7 +13270,7 @@ const VENDOR_FORCE_REGEN_GALLERY_PATCH =
       } catch {
       }`;
 
-/** Tag regenerate (force): clear bubble illustrations as soon as cards are unlinked. */
+/** Tag regenerate (force): drop spinner frames on the selected bubble; restamp after LLM. */
 const VENDOR_FORCE_REGEN_INLINE_NEEDLE =
   `      if (t.galleryUi?.renderGal) try {
         await t.galleryUi.renderGal();
@@ -12305,15 +13285,20 @@ const VENDOR_FORCE_REGEN_INLINE_PATCH =
       } catch {
       }
       try {
+        const targetStampKey = nxInlineStampKey(l)
+          || nxInlineStampKey({ sessionId: e.sessionId, hash: m, messageIndex: p, chatIndex: p });
         t._galleryCache = null;
         t._inlinePending = null;
         t._inlinePendingMsgIndex = -1;
-        t._inlineConfirmedEmpty = !0;
+        t._inlinePendingSessionId = "";
+        t._inlineNeedStamp = !0;
+        t._inlineNeedStampKey = targetStampKey;
         if (e.sessionId) await ce(e.sessionId, !0);
-        await refreshSelectedInlineImages(!0);
+        const sameTarget = l?.hash === m && String(l?.sessionId || "") === String(e.sessionId || "")
+          && String(t.lastScope?.sessionId || "") === String(e.sessionId || "");
+        if (sameTarget && targetStampKey) await nxRemoveInlineFramesByKey(t.hostDoc, ye(targetStampKey));
       } catch {
       }
-      t._inlineConfirmedEmpty = !1;
     }
     const u = {
       session_id: e.sessionId,`;
@@ -12531,6 +13516,14 @@ const VENDOR_POINTER_SELECT_PATCH =
       t._inlinePaintedCounts = {};
       // Cached paragraph handles point at the outgoing chat's DOM.
       t._inlinePlaceCache = null;
+      nxDropAllInlineSubs();
+      t._inlinePhotoReq = new Map();
+      t._inlinePhotoLocks = new Map();
+      t._inlinePhotoPendingClaims = new Set();
+      t._inlinePhotoLatestOrder = new Map();
+      t._inlineOwnerEpoch = new Map();
+      t._inlineOwnerLocks = new Map();
+      t._inlinePhotoSyncGen = (Number(t._inlinePhotoSyncGen) || 0) + 1;
       await Da(0, newest, { source: "provisional", auto: 1 });
       return !0;
     }
@@ -14845,11 +15838,13 @@ const loadVendorUi = (): string => {
     [VENDOR_IE_FN_NEEDLE, 'Ie/ensureSticky accept blob display urls'],
     [VENDOR_STICKY_POOL_IMG_NEEDLE, 'sticky pool img setAttribute'],
     [VENDOR_DT_FN_NEEDLE, 'risu-chat data-chat-id list'],
+    [VENDOR_DA_SAME_CLICK_NEEDLE, 'same click inline no-op'],
     [VENDOR_DA_QA_NEEDLE, 'Da qa data-chat-index'],
     [VENDOR_BIND_QA_NEEDLE, 'bindCard qa data-chat-index'],
     [VENDOR_INLINE_INJECT_FN_NEEDLE, 'inline inject fn'],
     [VENDOR_INLINE_CALL_NEEDLE, 'inline inject call'],
     [VENDOR_INLINE_SAME_NEEDLE, 'inline inject same-select'],
+    [VENDOR_INLINE_PENDING_UI_NEEDLE, 'inline pending before ui-open return'],
     [VENDOR_INLINE_POLL_NEEDLE, 'inline poll pending'],
     [VENDOR_INLINE_POLL_REFRESH_NEEDLE, 'inline poll refresh'],
     [VENDOR_JOB_DONE_IT_NEEDLE, 'job done skip remount if roots'],
@@ -15233,12 +16228,14 @@ const loadVendorUi = (): string => {
     .replaceAll(VENDOR_IE_READY_FRESH_NEEDLE, VENDOR_IE_READY_FRESH_PATCH)
     .replace(VENDOR_STICKY_POOL_IMG_NEEDLE, VENDOR_STICKY_POOL_IMG_PATCH)
     .replace(VENDOR_DT_FN_NEEDLE, VENDOR_DT_FN_PATCH)
+    .replace(VENDOR_DA_SAME_CLICK_NEEDLE, VENDOR_DA_SAME_CLICK_PATCH)
     .replace(VENDOR_DA_QA_NEEDLE, VENDOR_DA_QA_PATCH)
     .replace(VENDOR_BIND_QA_NEEDLE, VENDOR_BIND_QA_PATCH)
     .replace(VENDOR_INLINE_INJECT_FN_NEEDLE, VENDOR_INLINE_INJECT_FN_PATCH)
     .replace(VENDOR_ENSURE_IN_VIEW_NEEDLE, VENDOR_ENSURE_IN_VIEW_PATCH)
     .replace(VENDOR_INLINE_CALL_NEEDLE, VENDOR_INLINE_CALL_PATCH)
     .replace(VENDOR_INLINE_SAME_NEEDLE, VENDOR_INLINE_SAME_PATCH)
+    .replace(VENDOR_INLINE_PENDING_UI_NEEDLE, VENDOR_INLINE_PENDING_UI_PATCH)
     .replace(VENDOR_INLINE_POLL_NEEDLE, VENDOR_INLINE_POLL_PATCH)
     .replace(VENDOR_INLINE_POLL_REFRESH_NEEDLE, VENDOR_INLINE_POLL_REFRESH_PATCH)
     .replace(VENDOR_JOB_DONE_IT_NEEDLE, VENDOR_JOB_DONE_IT_PATCH)
@@ -15402,7 +16399,7 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'subscribeImageUrl != "function"', 'inline fill must go through the subscription channel');
     {
       // A retry must never fan out POST /v1/jobs/retarget-hash per neighbour.
-      const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
+      const from = out.indexOf('async function refreshSelectedInlineImages(force');
       const to = out.indexOf('async function openSettingsTab(tab) {', from);
       if (from < 0 || to < 0) throw new Error('[build] cannot slice refreshSelectedInlineImages');
       const body = out.slice(from, to);
@@ -15420,6 +16417,15 @@ const loadVendorUi = (): string => {
       }
       if (!body.includes('if (idx === selIdx && sel)') || !body.includes('row = { idx, msg: sel,')) {
         throw new Error('[build] selected bubble must reuse Da cards, not qa-miss empty hash');
+      }
+      if (body.includes('nxInlineAlreadyPainted(els[selIdx]')) {
+        throw new Error('[build] one painted bubble must not abort missing-neighbour repair');
+      }
+      if (!body.includes('confirmedEmpty: !cards.length')) {
+        throw new Error('[build] confirmed empty selections must clear photos without removing frames');
+      }
+      if (!body.includes('const onlySel = !!(opts && opts.onlySel)') || !body.includes('? [selIdx]')) {
+        throw new Error('[build] tag restamp must stay on the selected bubble');
       }
     }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
@@ -15515,15 +16521,15 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'async function nxWaitNewestDom(', 'session attach waits for the newest bubble');
     assertOnce(out, 't._inlineHeadFirst = 1;', 'session attach paints the newest bubble first');
     {
-      const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
+      const from = out.indexOf('async function refreshSelectedInlineImages(force');
       const to = out.indexOf('async function openSettingsTab(tab) {', from);
       const body = from >= 0 && to > from ? out.slice(from, to) : '';
-      if (!body.includes('await injectChatInlineImages(els[idx], cards, idx === selIdx ? t._inlinePending : []')) {
+      if (!body.includes('await injectChatInlineImages(els[idx], cards, idx === selIdx ? nxPendingForInlineSelection(sel) : []')) {
         throw new Error('[build] inline refresh must inject per spinner-window index');
       }
     }
     {
-      const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
+      const from = out.indexOf('async function refreshSelectedInlineImages(force');
       const to = out.indexOf('async function openSettingsTab(tab) {', from);
       const body = from >= 0 && to > from ? out.slice(from, to) : '';
       const failAt = body.lastIndexOf('inline.refresh.fail');
@@ -15582,29 +16588,17 @@ const loadVendorUi = (): string => {
     if (!out.includes('_scriptDomSnapBy') || !out.includes('key=${key}')) {
       throw new Error('[build] 500c and 4s snaps must be stored separately');
     }
-    if (!out.includes('shots=0 stripped')) {
-      throw new Error('[build] scroll select must strip empty inline');
+    if (out.includes('shots=0 stripped')) {
+      throw new Error('[build] empty desired must not strip permanent inline frames');
     }
     if (out.includes('const wipeFirst = placements.length > 0')) {
       throw new Error('[build] live inject must not wipe existing shots');
     }
-    if (!out.includes('action.op === "fill" && node && id') || !out.includes('setAttribute("data-inlay-inline-shot", id)')) {
-      throw new Error('[build] spinner-to-image fill must retarget the mounted marker id');
+    if (!out.includes('await syncFrameMeta(node, shot)') || !out.includes('setMeta("x-inlay-inline-shot", id)')) {
+      throw new Error('[build] spinner-to-image fill must retarget the mounted frame');
     }
     if (!out.includes('reconcileInlineShot') || !out.includes('desiredInlinePlacements')) {
       throw new Error('[build] live inject must reconcile desired vs live markers');
-    }
-    if (!out.includes('shouldStripLeftoverInlineId')) {
-      throw new Error('[build] leftover strip must ignore unread marker ids');
-    }
-    if (!out.includes('shouldScanInlineLeftovers')) {
-      throw new Error('[build] leftover strip must run even when keepIds is empty');
-    }
-    if (out.includes('if (keepIds.size)')) {
-      throw new Error('[build] leftover strip must not skip when keepIds is empty');
-    }
-    if (!out.includes('if (nxMsgAct() === "legacy")') || !out.includes('setInnerHTML(VC.stripInlayInlineHtml(html)')) {
-      throw new Error('[build] leftover smash must stay behind legacy msg-actions');
     }
     if (!out.includes('id="nx-inline-msg-actions"') || !out.includes('편의성 (오류율 있음 · 2.4.7)') || !out.includes('호환성 (2.4.9)')) {
       throw new Error('[build] inline msg-actions must be a 3-way select');
@@ -15640,19 +16634,18 @@ const loadVendorUi = (): string => {
       throw new Error('[build] the keep-window driver must stay gone');
     }
     assertOnce(out, 'VC.inlineDomWindow(selIdx, els.length, radius)', 'spinner stamp is selected ± dashboard radius');
-    assertOnce(out, 'VC.shouldOverlayInlinePhoto({', 'photos overlay selected ±1 char only');
-    assertOnce(out, 'y("info", "inline.inject.repaint",', 'repaint reason log landed');
+    if ((out.match(/VC.shouldOverlayInlinePhoto\(\{/g) || []).length !== 2) {
+      throw new Error('[build] photos overlay selected ±1 char only');
+    }
     assertOnce(out, 'y("info", "inline.inject.hold",', 'empty-desired hold must keep live shots');
-    assertOnce(out, 'confirmedEmpty: !!t._inlineConfirmedEmpty', 'force retag may confirm empty desired');
     assertOnce(out, 'VC.inlineRoleDisposition(opts.role,', 'inline role gate must distinguish unresolved from user');
     assertOnce(out, 'if (roleDisposition === "hold" && !haveWork) return;', 'unresolved role must still stamp when cards or pending exist');
-    assertOnce(out, 'forceStrip: roleDisposition === "deny"', 'verified wrong-role leftover shots must strip');
     assertOnce(out, 'VC.roleForInlineBubble({', 'inline role must not trust drifted sel.role');
     assertOnce(out, 'cards = VC.cardsForInlineBubble({', 'user bubbles must drop char cards');
-    assertOnce(out, 't._inlineConfirmedEmpty = !0', 'force retag sets confirmed-empty before inject');
+    assertOnce(out, 't._inlinePendingMsgIndex = -1;\n        t._inlinePendingSessionId = "";\n        t._inlineNeedStamp = !0;', 'force tag clears photos and flags a one-bubble restamp');
     {
       const from = out.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
-      const to = out.indexOf('async function refreshSelectedInlineImages(force) {', from);
+      const to = out.indexOf('async function refreshSelectedInlineImages(force', from);
       const body = from >= 0 && to > from ? out.slice(from, to) : '';
       if (!body) throw new Error('[build] injectChatInlineImages body not found');
       // Placing a marker must never be conditional on the bytes existing — that
@@ -15660,11 +16653,20 @@ const loadVendorUi = (): string => {
       if (!body.includes('if (skipOk || markersReady)')) {
         throw new Error('[build] matching markers must skip rebuild and fill photos in place');
       }
-      const placeWatch = body.lastIndexOf('if (wantPhotos) nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc)');
+      if (!body.includes('await host.prepend(wrap)') || !body.includes('await syncFrameMeta(wrap, shot)')) {
+        throw new Error('[build] prependShot must restamp identity after mount');
+      }
+      if (body.indexOf('await host.prepend(wrap)') > body.indexOf('await syncFrameMeta(wrap, shot)')) {
+        throw new Error('[build] prependShot must stamp after the wrapper is in the bubble');
+      }
+      for (const forbidden of ['removeAllMarkers', 'removeNode', 'action.op === "strip"', 'action.op === "swap"', '.remove()']) {
+        if (body.includes(forbidden)) throw new Error(`[build] permanent inline frame uses destructive path: ${forbidden}`);
+      }
+      const placeWatch = body.lastIndexOf('if (wantPhotos && nxInlineOwnerEpochCurrent(ownerClaim))');
       if (placeWatch < 0 || placeWatch < body.indexOf('const tPlace')) {
         throw new Error('[build] the place path must register the subscription after markers exist');
       }
-      if (!body.includes('nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc)')) {
+      if (!body.includes('nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc, ownerClaim)')) {
         throw new Error('[build] cards without bytes must be filled by subscription, not a bake loop');
       }
       if (body.includes('ensureStickyCardImage')) {
@@ -15676,11 +16678,29 @@ const loadVendorUi = (): string => {
       if (!body.includes('awaitingCount: wantPhotos ? awaiting')) {
         throw new Error('[build] inject skip must count cells a live subscription owns');
       }
-      if (!body.includes('querySelectorAll("[data-inlay-inline-img]")') || body.includes('spin.setStyleAttribute("display:none")')) {
+      if (!out.includes('querySelectorAll("[x-inlay-inline-cell]")') || body.includes('spin.setStyleAttribute("display:none")')) {
         throw new Error('[build] ready image must overlay the spinner, not hide or replace it');
       }
-      if (!body.includes('querySelectorAll("[data-inlay-inline-stack]")')) {
-        throw new Error('[build] an evicted photo must be recreated on the still-mounted spinner');
+      if (!out.includes('x-inlay-inline-layer') || !out.includes('x-inlay-inline-active')) {
+        throw new Error('[build] inline photo must use permanent double buffers');
+      }
+      {
+        const safeFrom = out.indexOf('async function nxProbeInlineShots(msgEl, unwrapSafe) {');
+        const safeTo = out.indexOf('async function refreshSelectedInlineImages(force', safeFrom);
+        const safeBody = safeFrom >= 0 && safeTo > safeFrom ? out.slice(safeFrom, safeTo) : '';
+        for (const forbidden of [
+          'getAttribute("data-inlay-',
+          'getAttribute("src")',
+          'setAttribute("data-inlay-',
+          'setAttribute("src"',
+          'setAttribute("width"',
+          'setAttribute("height"'
+        ]) {
+          if (safeBody.includes(forbidden)) throw new Error(`[build] inline SafeDOM uses forbidden attribute mutation: ${forbidden}`);
+        }
+        if (!safeBody.includes('setInnerHTML(nxInlinePhotoHtml(src, VC))')) {
+          throw new Error('[build] inline SafeDOM must fill hidden cells through setInnerHTML');
+        }
       }
       // A bubble repainted without dropping its watcher would keep filling nodes
       // that are no longer mounted, and the watcher would never be released.
@@ -15688,14 +16708,16 @@ const loadVendorUi = (): string => {
         throw new Error('[build] a failed inject must release the bubble subscription');
       }
       // Global would put the bubble under the cursor behind its own neighbours.
-      if (!body.includes('t._inlineInjectLocks.get(lockKey)')) {
+      if (!body.includes('const injectLockKey = String(opts?.injectLockKey || lockKey)')
+        || !body.includes('t._inlineInjectLocks.get(injectLockKey)')) {
         throw new Error('[build] the inject lock must be per bubble');
       }
-      if (!body.includes('t._inlineInjectTicket.set(lockKey, ticket)')) {
+      if (!body.includes('t._inlineInjectTicket.set(injectLockKey, ticket)')) {
         throw new Error('[build] a newer inject must supersede waiters on the same bubble');
       }
-      if (!body.includes('shouldStripLeftoverInlineId(leftId, keepIds, !1, seenInlineIds)')) {
-        throw new Error('[build] leftover strip must drop a second copy of the same shot');
+      if (!out.includes('VC.inlineInjectOwnerKey(row?.msg, idx, sel.sessionId)')
+        || !out.includes('injectLockKey: ye(injectOwner)')) {
+        throw new Error('[build] inject lock identity must survive message hash changes');
       }
       if (!body.includes('liveUniqueCount')) {
         throw new Error('[build] inject skip must refuse duplicate wrappers');
@@ -15712,7 +16734,7 @@ const loadVendorUi = (): string => {
       }
       // Without the stamp the validation query can never match, so the cache
       // would be written and never read — a silent no-op.
-      if (!body.includes('VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100, lockKey)')) {
+      if (!body.includes('VC.markerBlockHtml(shot, t.backendSettings?.card?.inline_chat_scale_pct ?? 100, lockKey, injectLockKey)')) {
         throw new Error('[build] markers must carry the bubble hash the cache validates against');
       }
       // Reading the cache without proving the nodes survived would prepend into
@@ -15729,9 +16751,9 @@ const loadVendorUi = (): string => {
       throw new Error('[build] the bubble hash reaches a selector and must be shape-checked');
     }
     assertOnce(out, 't._inlinePlaceCache = null;', 'a chat switch must drop paragraph handles for the old DOM');
-    assertOnce(out, 'nxDropInlineSubs(lockKey);\n    const N = globalThis.__INLAY_NATIVE__;', 'a re-registered watcher must replace the old one');
+    assertOnce(out, 'ids.every((id) => current.allIds.has(id) && current.nodes?.get(id) === shotNodes.get(id))) return;', 'reuse watcher only for the same live frame nodes');
     {
-      const from = out.indexOf('async function refreshSelectedInlineImages(force) {');
+      const from = out.indexOf('async function refreshSelectedInlineImages(force');
       const to = out.indexOf('async function openSettingsTab(tab) {', from);
       const body = from >= 0 && to > from ? out.slice(from, to) : '';
       if ((body.match(/if \(stale\(\)\) return;/g) || []).length < 2) {
@@ -15776,6 +16798,15 @@ const loadVendorUi = (): string => {
     if (!out.includes('evictPhotosIn') || !out.includes('refreshSelectedInlineImages(!0)')) {
       throw new Error('[build] missing photo evict / inline refresh');
     }
+    if (!out.includes('async function nxRemoveInlineFramesByKey(') || !out.includes('t._inlineNeedStamp = !0')) {
+      throw new Error('[build] tag button must remove frames and flag a one-bubble restamp');
+    }
+    if (out.includes('refreshSelectedInlineImages(!!(c || a.state === "done" || pendingChanged))')) {
+      throw new Error('[build] shot_done must not rebuild the message');
+    }
+    if (!out.includes('await refreshSelectedInlineImages(!0, { onlySel: !0 })')) {
+      throw new Error('[build] first pending after tag must restamp the selected bubble only');
+    }
     if (!out.includes('prependBar') || out.includes('insertAdjacentHTML("afterbegin", barHtml)')) {
       throw new Error('[build] msg-action chips must H+prepend onto hosts like inline shots');
     }
@@ -15802,6 +16833,22 @@ const loadVendorUi = (): string => {
     }
     if ((out.match(/source === "provisional" && opts\.auto/g) || []).length !== 2) {
       throw new Error('[build] both inline paint gates must open for auto provisional select');
+    }
+    if (!out.includes('else if (source === "click" || source === "text" || source === "scroll")')) {
+      throw new Error('[build] click must not share the first-stamp refresh gate');
+    }
+    if (!out.includes('await nxSyncInlinePhotosOnly()') || !out.includes('async function nxSyncInlinePhotosOnly()')) {
+      throw new Error('[build] an intact new selection must only toggle photos');
+    }
+    if (!out.includes('source === "click" && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e)')
+      || !out.includes('await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage))) return !0;')) {
+      throw new Error('[build] an intact same-message click must return before selection work');
+    }
+    if (!out.includes('x-inlay-inline-slot') || !out.includes('VC.inlinePlacementSlotKey(shot)')) {
+      throw new Error('[build] reroll must reuse a stable shot-slot frame');
+    }
+    if (!out.includes('await nxPredecodeInlineSrc(src)') || !out.includes('x-inlay-inline-layer') || !out.includes('x-inlay-inline-active')) {
+      throw new Error('[build] photo replacement must decode into a hidden permanent buffer');
     }
     if (!out.includes('await Da(pick, els, { source: "provisional", auto: 1 })')) {
       throw new Error('[build] runPointerSelect must mark its provisional select as auto');

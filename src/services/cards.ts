@@ -310,7 +310,11 @@ export async function studioGenerate(cardId: string, body: Record<string, unknow
   };
 }
 
-/** Replace this card's pixels with the studio canvas and write tags. Same card id. */
+/**
+ * Replace this card's pixels with the studio canvas and write tags. Same card
+ * id and location (content hash, message bind). Tag studio then swaps the
+ * inline slot in place — same photo flip as a reroll, without a new id.
+ */
 export async function studioCommit(cardId: string, body: Record<string, unknown> = {}): Promise<ApiResult> {
   const id = cleanText(cardId, 80);
   const row = await idbGet('cards', id);

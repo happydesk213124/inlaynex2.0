@@ -633,6 +633,15 @@ export async function runScenario(N, handles) {
     },
   }));
   await rec('presets.after_save', () => get('/v1/settings'));
+  await rec('presets.look_clear', () => post('/v1/presets/look/clear', { preset_id: 'p1' }));
+  await rec('presets.look_empty', async () => {
+    try {
+      const r = await post('/v1/presets/look', { preset_id: 'p1' });
+      return { ok: r?.ok ?? false };
+    } catch (err) {
+      return { ok: false, threw: true };
+    }
+  });
 
   // Reroll replays the saved image (mock PNG base is "parity cafe"). The
   // active preset must not replace that base — see INTENTIONAL_DIFF_STEPS.

@@ -30,6 +30,7 @@ import {
 } from '../services/context';
 import { migrateAppearanceToCharacters, migrateCharacterIdentity } from '../services/characters';
 import { hydratePresetVibePreviews } from '../services/nai-assets';
+import { hydratePresetLookPreviews } from '../services/preset-look';
 import { seedPrompts } from '../services/settings';
 import { closeTagStudio, openTagStudio } from '../tag-studio/mount';
 
@@ -60,6 +61,7 @@ async function boot(): Promise<void> {
   const vibe = await idbGet('meta', 'vibe_transfer');
   if (vibe?.png) setVibePreviewUrl(pngToDataUrl(vibe.png));
   await hydratePresetVibePreviews();
+  await hydratePresetLookPreviews();
 
   dbg('boot.ready.done', {
     message: VERSION,

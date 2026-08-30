@@ -48,9 +48,11 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 >
 > Style presets may carry optional `cfg_scale` / `cfg_rescale` (empty → NAI
 > model defaults). Per-preset vibe is a device-local upload like NAI vibe
-> (`POST /v1/nai/vibe` with `preset_id`); when set it replaces the NAI vibe for
-> that generation. `encode-vibe` uses `api_keys_v4` (then legacy `api_key`).
-> JSON export does not embed vibe bytes.
+> (`POST /v1/nai/vibe` with `preset_id`) stores the PNG only — no encode on
+> upload. `encode-vibe` runs at generate time when that preset is used on a
+> V4/V3 model, with `api_keys_v4` (then legacy `api_key`). JSON export does
+> not embed vibe bytes. Per-preset **look** shots (`look_hash`) are picker
+> previews in the char-ref module; they are never sent as vibe/director.
 
 ## 2. Other globals the UI reads
 
@@ -419,7 +421,7 @@ lore_trigger_keys[], character_description, persona_description, force`.
 | `POST /v1/cards/nai-from-image` | `{image_data_url}` → same shape as nai-prompt. No card write. Missing bytes → `{ok:false, error:{code:bad_request}}` |
 | `POST /v1/cards/:id/tags` | `{main_prompt, negative_prompt, characters[]}` — persist slim cast only; main/neg stay on the file |
 | `POST /v1/cards/:id/studio-generate` | assembled prompts → NAI replay bytes only (`{ok, image_data_url, seed}`). Does not replace the card |
-| `POST /v1/cards/:id/studio-commit` | center-canvas bytes + tags → same card id pixels + slim cast |
+| `POST /v1/cards/:id/studio-commit` | center-canvas bytes + tags → same card id pixels (WebP 0.9) + slim cast. Location / content_hash stay. Tag studio then calls `__INLAY_REPLACE_INLINE_PHOTO__` so the inline slot swaps like a reroll |
 | `POST /v1/cards/:id/reroll` | `{mode:"nai", overrides?}` → `{ok, card, replaced?}` — replay file sampler/size/base + new seed; keep file char captions; roster rebuild only when a slot prompt is empty. Comic never resolves names |
 | `POST /v1/messages/reroll` | `{session_id, content_hash, message_index}` |
 | `/v1/images/:id`, `/v1/images/:id.json` | raw bytes / placement sidecar |
@@ -479,6 +481,9 @@ then persisted.
 `POST /v1/nai/vibe/clear` · `/v1/nai/reference` · `/v1/nai/vibe` ·
 `POST /v1/autotag` `{image_b64, threshold}` → `{ok, appearance, attire, accessories, tags, text}`
 `POST /v1/presets/from-image` `{image_b64}` → `{ok, positive, negative, cfg_scale, cfg_rescale, name}`.
+`POST /v1/presets/look` `{preset_id, image_b64}` · `POST /v1/presets/look/clear` `{preset_id}` ·
+`POST /v1/presets/look/generate` `{preset_id, positive?, negative?, model_family?}` →
+`{ok, look_hash, preview_url}` (appends `1girl, smile,`; stores module webp like char-ref).
 Text-chunk Description can fill positive without `uc`; extractor then keeps
 looking in stealth so file-open and paste both get the negative when it is
 still in the pixels.

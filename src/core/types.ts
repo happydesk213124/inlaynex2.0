@@ -53,6 +53,12 @@ export interface StylePreset {
   vibe_configured?: boolean;
   /** Ephemeral preview data URL for the card-settings UI. */
   vibe_preview_url?: string;
+  /** SHA-256 of the module-stored look webp. Empty → no preview shot. */
+  look_hash?: string;
+  /** Ephemeral / UI: true when this preset has a look shot. */
+  look_configured?: boolean;
+  /** Ephemeral preview data URL for the look thumb. */
+  look_preview_url?: string;
 }
 
 /** Everything under `settings.card` — mostly UI behaviour plus prompt assembly. */

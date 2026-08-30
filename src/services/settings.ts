@@ -31,7 +31,7 @@ import { comfyConfigured, imageBackendKind } from '../providers/comfy/client';
 import { llmConfigured } from '../providers/llm/transform';
 import { saveSettingsToStorage } from '../storage/settings-store';
 import { idbGet, idbGetAll, idbPut, imageLocations, storeSize, totalImageBytes } from '../storage/stores';
-import { configLock, getConfig, getPresetVibePreviewUrl, getRefPreviewUrl, getVibePreviewUrl, setConfig } from './context';
+import { configLock, getConfig, getPresetLookPreviewUrl, getPresetVibePreviewUrl, getRefPreviewUrl, getVibePreviewUrl, setConfig } from './context';
 
 /** Values that read as "the feature is switched off" in the settings UI. */
 const OFF_VALUES = ['', 'none', 'off', 'false', '0'];
@@ -396,6 +396,14 @@ export function publicSettings(): Record<string, unknown> {
         delete p.vibe_preview_url;
       }
       delete p.vibe_transfer;
+      const lookPreview = pid ? getPresetLookPreviewUrl(pid) : '';
+      if (lookPreview || cleanText(p.look_hash, 80)) {
+        p.look_configured = true;
+        if (lookPreview) p.look_preview_url = lookPreview;
+      } else {
+        delete p.look_configured;
+        delete p.look_preview_url;
+      }
     }
   }
   cfg.card.character_max = characterMaxLimit(cfg.card);

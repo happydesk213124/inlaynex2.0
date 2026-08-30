@@ -630,7 +630,9 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
 
   // Precise Reference and Vibe Transfer cannot be combined. Decide only after
   // collecting actual refs so an empty image-mode cast keeps shared vibes.
-  if (shouldPrepareSharedVibe(characterRefs.length)) {
+  // Encode only on models that accept vibe (V4 / V3) — V5 must not call encode-vibe.
+  const naiModel = modelToNaia(routeModel);
+  if (shouldPrepareSharedVibe(characterRefs.length) && supportsVibeTransfer(naiModel)) {
     let vibeRow = presetId ? await ensurePresetVibeEncoded(presetId) : null;
     if (!vibeRow) {
       const vibeMode = cleanText(nai.vibe_transfer || 'none').toLowerCase();
@@ -673,7 +675,6 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
     vibes.length = 0;
   }
 
-  const naiModel = modelToNaia(routeModel);
   if (characterRefs.length && !supportsDirectorReference(naiModel)) {
     dbg('nai.ref.drop_director', {
       message: `이 모델은 Precise Reference를 아직 안 받음 · ${characterRefs.length}개 제외`,

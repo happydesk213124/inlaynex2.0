@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.10';
+const PLUGIN_VERSION = '2.5.11';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -766,6 +766,14 @@ const VENDOR_CURATION_PANEL_PATCH =
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
         </div>
         <div class="card" style="margin-top:14px">
+          <strong>2.5.11</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스타일 프리셋에 룩 미리보기 컷을 등록·생성할 수 있습니다. 칩에도 작게 보입니다</li>
+            <li>프리셋 Vibe는 등록만 하고, V4 생성 때 encode합니다</li>
+            <li>샷 태그 저장은 같은 카드에 WebP 0.9로 덮고, 인라인 슬롯 사진만 리롤처럼 갈아끼웁니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
           <strong>2.5.10</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
             <li>전체 초기화: 추천 설정 팩을 임포트하고 프롬프트도 기본값으로 되돌립니다. API 키·창 위치·카드 프리셋은 유지합니다</li>
@@ -1476,13 +1484,36 @@ const VENDOR_PRESET_SECOND_EVT_PATCH =
 const VENDOR_PRESET_CHIP_NEEDLE =
   `I = U.map((g) => \`<button type="button" class="preset-chip \${f && presetIdEq(g.id, f.id) ? "active" : ""}" data-preset-select="\${h(g.id)}" draggable="true">\${h(g.name)}</button>\`).join("")`;
 const VENDOR_PRESET_CHIP_PATCH =
-  `I = U.map((g) => \`<button type="button" class="preset-chip \${f && presetIdEq(g.id, f.id) ? "active" : ""}\${presetIdEq(g.id, d.secondary_preset_id) ? " second" : ""}" data-preset-select="\${h(g.id)}" draggable="true">\${h(g.name)}</button>\`).join("")`;
+  `I = U.map((g) => \`<button type="button" class="preset-chip \${f && presetIdEq(g.id, f.id) ? "active" : ""}\${presetIdEq(g.id, d.secondary_preset_id) ? " second" : ""}" data-preset-select="\${h(g.id)}" draggable="true">\${g.look_preview_url ? \`<img class="preset-look-chip" src="\${h(g.look_preview_url)}" alt="">\` : ""}\${h(g.name)}</button>\`).join("")`;
 
 const VENDOR_PRESET_CHIP_CSS_NEEDLE =
   `.preset-chip.active{background:var(--accent-soft);border-color:rgba(124,108,255,.45);color:#e4e0ff}`;
 const VENDOR_PRESET_CHIP_CSS_PATCH =
   `.preset-chip.active{background:var(--accent-soft);border-color:rgba(124,108,255,.45);color:#e4e0ff}
-.preset-chip.second{background:rgba(46,160,90,.18);border-color:rgba(46,160,90,.55);color:#c8f0d4}`;
+.preset-chip.second{background:rgba(46,160,90,.18);border-color:rgba(46,160,90,.55);color:#c8f0d4}
+.preset-chip img.preset-look-chip{width:18px;height:18px;object-fit:cover;border-radius:4px;margin-right:6px;vertical-align:middle}
+.preset-look{display:inline-flex;align-items:center;gap:6px;margin-left:6px;flex-wrap:wrap}
+.preset-look-thumb{width:36px;height:36px;padding:0;border-radius:8px;border:1px dashed rgba(148,163,184,.45);background:#121826;overflow:hidden;cursor:pointer}
+.preset-look-thumb.filled{border-style:solid;border-color:rgba(124,108,255,.45)}
+.preset-look-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.preset-look-thumb:disabled{opacity:.45;cursor:default}
+.preset-look-box{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:24px}
+.preset-look-box img{max-width:min(92vw,720px);max-height:88vh;object-fit:contain;border-radius:12px}`;
+
+const VENDOR_PRESET_LOOK_BAR_NEEDLE =
+  `            <button type="button" id="nx-preset-del" class="secondary">삭제</button>
+          </div>
+          <div class="model-form">`;
+const VENDOR_PRESET_LOOK_BAR_PATCH =
+  `            <button type="button" id="nx-preset-del" class="secondary">삭제</button>
+            <div class="preset-look" id="nx-preset-look">
+              <button type="button" id="nx-preset-look-thumb" class="preset-look-thumb\${f?.look_preview_url ? " filled" : ""}" \${f ? "" : "disabled"} aria-label="참고컷">\${f?.look_preview_url ? \`<img src="\${h(f.look_preview_url)}" alt="">\` : ""}</button>
+              <button type="button" id="nx-preset-look-act" class="secondary" \${f ? "" : "disabled"}>\${f?.look_configured || f?.look_preview_url ? "제거" : "등록"}</button>
+              <button type="button" id="nx-preset-look-gen" class="secondary" \${f ? "" : "disabled"}>생성</button>
+              <input id="nx-preset-look-file" type="file" accept="image/png,image/webp,.png,.webp" style="display:none">
+            </div>
+          </div>
+          <div class="model-form">`;
 
 const VENDOR_PRESET_HELP_MUTED_NEEDLE =
   `              <div class="muted">card.json / 로어북 [Positive]·[Negative] 항목을 불러와 바로 씁니다.</div>`;
@@ -3163,6 +3194,7 @@ const VENDOR_PRESET_SYNC_PATCH = `    const name = document.getElementById("nx-p
     if (samp) samp.value = active.sampler || "";
     if (sched) sched.value = active.scheduler || "";
     if (fam) fam.value = active.model_family === "v5" ? "v5" : "v4";
+    t._nxPaintPresetLook && t._nxPaintPresetLook();
     const st = document.getElementById("nx-preset-vibe-status"), prev = document.getElementById("nx-preset-vibe-preview");
     st && (st.textContent = active.vibe_configured ? "설정됨 · 이 프리셋 사용" : "없음 · NAI 모델설정 사용");
     prev && (prev.innerHTML = active.vibe_configured && active.vibe_preview_url ? \`<img src="\${h(active.vibe_preview_url)}" alt="vibe">\` : '<span class="muted">없음 · 생성 시 NAI 모델설정 vibe 사용</span>');
@@ -3252,7 +3284,10 @@ const VENDOR_PRESET_DUP_PATCH = `      a.presets.push({
         steps: r.steps ?? null,
         sampler: r.sampler ?? null,
         scheduler: r.scheduler ?? null,
-        model_family: r.model_family === "v5" ? "v5" : "v4"
+        model_family: r.model_family === "v5" ? "v5" : "v4",
+        look_hash: r.look_hash || "",
+        look_preview_url: r.look_preview_url || "",
+        look_configured: !!(r.look_configured || r.look_preview_url)
       }), pinActivePreset(a, i), a.custom_pos = r.positive || "", a.custom_neg = r.negative || "";
       try {
         await K("/v1/nai/vibe", { method: "POST", body: { preset_id: i, copy_from: r.id } }, 6e4);
@@ -3290,7 +3325,105 @@ const VENDOR_PRESET_DEL_PATCH = `    }), document.getElementById("nx-preset-del"
         } catch {
         }
       }).catch(() => {});
-    }), document.getElementById("nx-preset-export")?.addEventListener("click", async () => {`;
+    }), (() => {
+      const lookPid = () => String(t.backendSettings?.card?.active_preset_id || "");
+      const lookActive = () => (t.backendSettings?.card?.presets || []).find((p) => presetIdEq(p.id, lookPid()));
+      const paintLook = () => {
+        const pr = lookActive();
+        const url = pr?.look_preview_url || "";
+        const has = !!(pr && (pr.look_configured || url));
+        const thumb = document.getElementById("nx-preset-look-thumb");
+        const act = document.getElementById("nx-preset-look-act");
+        const gen = document.getElementById("nx-preset-look-gen");
+        if (thumb) {
+          thumb.classList.toggle("filled", has);
+          thumb.innerHTML = url ? \`<img src="\${h(url)}" alt="">\` : "";
+          thumb.disabled = !pr;
+        }
+        if (act) act.textContent = has ? "제거" : "등록", act.disabled = !pr;
+        if (gen && !gen.dataset.busy) gen.disabled = !pr, gen.textContent = "생성";
+      };
+      const openLook = () => {
+        const url = lookActive()?.look_preview_url || "";
+        if (!url) return;
+        let box = document.getElementById("nx-preset-look-box");
+        if (!box) {
+          box = document.createElement("div");
+          box.id = "nx-preset-look-box";
+          box.className = "preset-look-box";
+          box.addEventListener("click", () => box.remove());
+          document.body.appendChild(box);
+        }
+        box.innerHTML = \`<img src="\${h(url)}" alt="">\`;
+      };
+      t._nxPaintPresetLook = paintLook;
+      document.getElementById("nx-preset-look-thumb")?.addEventListener("click", () => {
+        if (lookActive()?.look_preview_url) openLook();
+      });
+      document.getElementById("nx-preset-look-act")?.addEventListener("click", async () => {
+        const pid = lookPid(), pr = lookActive();
+        if (!pr) return;
+        if (pr.look_configured || pr.look_preview_url) {
+          try {
+            await K("/v1/presets/look/clear", { method: "POST", body: { preset_id: pid } });
+            pr.look_configured = !1, pr.look_preview_url = "", pr.look_hash = "";
+            paintLook();
+            $e("참고컷 제거");
+          } catch (i) {
+            t.uiMessage = { type: "error", text: z(i?.message || i) }, await P();
+          }
+          return;
+        }
+        document.getElementById("nx-preset-look-file")?.click();
+      });
+      document.getElementById("nx-preset-look-file")?.addEventListener("change", async (a) => {
+        const r = a.target?.files?.[0], pid = lookPid();
+        if (r && pid) {
+          try {
+            const res = await K("/v1/presets/look", { method: "POST", body: { preset_id: pid, image_b64: await It(r) } }, 6e4);
+            const pr = lookActive();
+            pr && (pr.look_configured = !0, pr.look_preview_url = res?.preview_url || "", pr.look_hash = res?.look_hash || "");
+            paintLook();
+            $e("참고컷 저장");
+          } catch (i) {
+            t.uiMessage = { type: "error", text: z(i?.message || i) }, await P();
+          }
+          a.target.value = "";
+        }
+      });
+      document.getElementById("nx-preset-look-gen")?.addEventListener("click", async () => {
+        const pid = lookPid(), btn = document.getElementById("nx-preset-look-gen");
+        if (!pid || !btn || btn.dataset.busy) return;
+        btn.dataset.busy = "1";
+        btn.textContent = "생성중";
+        btn.disabled = !0;
+        try {
+          const res = await K("/v1/presets/look/generate", {
+            method: "POST",
+            body: {
+              preset_id: pid,
+              positive: document.getElementById("nx-custom-pos")?.value || "",
+              negative: document.getElementById("nx-custom-neg")?.value || "",
+              model_family: document.getElementById("nx-preset-family")?.value || "v4",
+              cfg_scale: document.getElementById("nx-preset-cfg")?.value,
+              cfg_rescale: document.getElementById("nx-preset-rescale")?.value,
+              steps: document.getElementById("nx-preset-steps")?.value,
+              sampler: document.getElementById("nx-preset-sampler")?.value,
+              scheduler: document.getElementById("nx-preset-sched")?.value
+            }
+          }, 18e4);
+          const pr = lookActive();
+          pr && (pr.look_configured = !0, pr.look_preview_url = res?.preview_url || "", pr.look_hash = res?.look_hash || "");
+          $e("참고컷 생성");
+        } catch (i) {
+          t.uiMessage = { type: "error", text: z(i?.message || i) }, await P();
+        }
+        delete btn.dataset.busy;
+        btn.textContent = "생성";
+        btn.disabled = !1;
+        paintLook();
+      });
+    })(), document.getElementById("nx-preset-export")?.addEventListener("click", async () => {`;
 
 const VENDOR_PRESET_VIBE_EVT_NEEDLE = `    }), document.getElementById("nx-preset-file")?.addEventListener("click", () => {
       document.getElementById("nx-preset-file-input")?.click();
@@ -10418,6 +10551,18 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     return patched;
   }
+  try {
+    Reflect.set(globalThis, "__INLAY_REPLACE_INLINE_PHOTO__", async (cardId, src, prevId, rootEl, rootKey) => {
+      const id = String(cardId || "");
+      const url = String(src || "");
+      if (id && url) {
+        const row = (t.gallery || []).find((c) => String(c?.id || "") === id);
+        if (row) row.image_url = url;
+      }
+      return await nxPatchInlinePhotoByCardId(cardId, src, prevId, rootEl, rootKey);
+    });
+  } catch {
+  }
   async function refreshSelectedInlineImages(force, opts) {
     if (typeof nxScrollDbg == "function") nxScrollDbg("inline.refresh.start", \`force=\${force ? 1 : 0} onlySel=\${opts && opts.onlySel ? 1 : 0} src=\${t.selectedMessage?.selectSource || ""} DOM#\${t.selectedMessage?.domIndex ?? "?"}\`);
     if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") {
@@ -12568,8 +12713,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.10",
-    body: "전체 초기화는 추천 팩 + 프롬프트 기본값. 프리셋 vibe는 V4 키. 업데이트 내역 탭 참고."
+    title: "2.5.11",
+    body: "프리셋 룩 미리보기. 프리셋 vibe는 쓸 때 encode. 태그 저장 후 인라인 컷 교체. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -15913,6 +16058,7 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_PRESET_SECOND_EVT_NEEDLE, 'preset 2nd click');
   assertOnce(raw, VENDOR_PRESET_CHIP_NEEDLE, 'preset chip second class');
   assertOnce(raw, VENDOR_PRESET_CHIP_CSS_NEEDLE, 'preset chip second css');
+  assertOnce(raw, VENDOR_PRESET_LOOK_BAR_NEEDLE, 'preset look toolbar');
   assertOnce(raw, VENDOR_PRESET_HELP_MUTED_NEEDLE, 'preset 1st/2nd help');
   assertOnce(raw, VENDOR_DEBUG_QUOTA_NEEDLE, 'debug quota html');
   assertOnce(raw, VENDOR_DEBUG_QUOTA_EVT_NEEDLE, 'debug quota events');
@@ -17210,6 +17356,9 @@ const loadVendorUi = (): string => {
     if (!out.includes('await refreshGalleryAfterTagSave(cardId, keepPara, keepShot, Gt), await nxPatchInlinePhotoByCardId(')) {
       throw new Error('[build] tag save-reroll must patch the overlay photo after gallery');
     }
+    if (!out.includes('__INLAY_REPLACE_INLINE_PHOTO__') || !out.includes('return await nxPatchInlinePhotoByCardId(cardId, src, prevId, rootEl, rootKey)')) {
+      throw new Error('[build] studio save must expose the same-card inline slot swap');
+    }
     if (out.includes('rerollMessageImagesLive(A, { report })')) {
       throw new Error('[build] chip regen must refresh inline images per shot');
     }
@@ -17305,6 +17454,7 @@ const loadVendorUi = (): string => {
       .replace(VENDOR_PRESET_SECOND_EVT_NEEDLE, VENDOR_PRESET_SECOND_EVT_PATCH)
       .replace(VENDOR_PRESET_CHIP_NEEDLE, VENDOR_PRESET_CHIP_PATCH)
       .replace(VENDOR_PRESET_CHIP_CSS_NEEDLE, VENDOR_PRESET_CHIP_CSS_PATCH)
+      .replace(VENDOR_PRESET_LOOK_BAR_NEEDLE, VENDOR_PRESET_LOOK_BAR_PATCH)
       .replace(VENDOR_PRESET_HELP_MUTED_NEEDLE, VENDOR_PRESET_HELP_MUTED_PATCH)
       ;
     if (!out.includes('N("nx-nai-steps-v5")') || !out.includes('N("nx-nai-steps-v4")')) {

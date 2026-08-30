@@ -108,6 +108,8 @@ let refPreviewUrl = '';
 let vibePreviewUrl = '';
 /** Per-style-preset vibe preview data URLs (device-local uploads). */
 const presetVibePreviewUrls = new Map<string, string>();
+/** Per-style-preset look-shot preview data URLs (module webp). */
+const presetLookPreviewUrls = new Map<string, string>();
 /** Per-character reference image preview data URLs. */
 const charRefPreviewUrls = new Map<string, string>();
 
@@ -142,6 +144,21 @@ export function clearAllPresetVibePreviewUrls(): void {
   presetVibePreviewUrls.clear();
 }
 
+export function getPresetLookPreviewUrl(presetId: string): string {
+  return presetLookPreviewUrls.get(String(presetId || '')) || '';
+}
+
+export function setPresetLookPreviewUrl(presetId: string, url: string): void {
+  const id = String(presetId || '');
+  if (!id) return;
+  if (url) presetLookPreviewUrls.set(id, url);
+  else presetLookPreviewUrls.delete(id);
+}
+
+export function clearAllPresetLookPreviewUrls(): void {
+  presetLookPreviewUrls.clear();
+}
+
 function charRefPreviewMapKey(scope: unknown, characterId: string): string {
   return `${normalizeCharRefScope(scope)}\0${String(characterId || '')}`;
 }
@@ -174,5 +191,6 @@ export function resetContext(): void {
   refPreviewUrl = '';
   vibePreviewUrl = '';
   presetVibePreviewUrls.clear();
+  presetLookPreviewUrls.clear();
   charRefPreviewUrls.clear();
 }

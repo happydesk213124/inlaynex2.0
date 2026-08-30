@@ -569,6 +569,18 @@ const NEW_ONLY_STEPS = new Map([
       : `2.0 lorefilter GET after set must keep selected, got ${JSON.stringify(v)}`),
   ],
   [
+    'presets.look_clear',
+    (v) => (v?.ok === true && v?.configured === false
+      ? null
+      : `preset look clear must succeed without a stored shot, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'presets.look_empty',
+    (v) => (v?.ok === false
+      ? null
+      : `preset look without image_b64 must fail, got ${JSON.stringify(v)}`),
+  ],
+  [
     'settings.reset_factory_floor',
     (v) => (v?.image_min === 6 && v?.image_max === 8 && v?.execute === 'manual'
       && v?.lore_extra === 'full' && v?.asset_nai_tags === 'prepass' && v?.tagger_wiped === true

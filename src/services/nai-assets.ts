@@ -7,9 +7,9 @@
  * can report them without touching storage.
  *
  * Vibe transfer additionally needs a server-side encode, which is a NovelAI
- * round trip. `ensureVibeEncoded` is therefore the read path used before
- * generation: it re-encodes only when the stored blob no longer matches the
- * configured model or extraction level, so an unchanged image costs nothing.
+ * round trip. Preset vibe upload stores the PNG only. `ensure*VibeEncoded`
+ * is the generate-time path: it encodes when the blob is missing or the
+ * model / extraction level moved.
  */
 
 import { dbg } from '../core/debug';
@@ -245,16 +245,14 @@ export async function setPresetVibeTransfer(
   if (!png || png.byteLength < MIN_IMAGE_BYTES) throw new Error('Vibe 이미지가 비어 있습니다');
   if (png.byteLength > MAX_IMAGE_BYTES) throw new Error('Vibe 이미지가 너무 큽니다 (최대 12MB)');
   const cfg = getConfig();
-  const token = requireVibeEncodeToken(true);
-  const model = modelToNaia(opts.model || cfg.nai.model || 'nai-diffusion-4-5-full');
   const ie = normalizeInformationExtracted(opts.information_extracted ?? cfg.nai.vibe_transfer_information_extracted);
-  const encoded = await encodeVibe(token, png, model, ie);
   const metaKey = vibePresetMetaKey(id);
+  // Store only — encode-vibe waits until a V4 shot actually uses this preset.
   await idbPut('meta', {
     key: metaKey,
     png,
-    encoded,
-    model: resolveModel(model),
+    encoded: '',
+    model: '',
     information_extracted: ie,
   });
   const preview = pngToDataUrl(png);
@@ -265,8 +263,7 @@ export async function setPresetVibeTransfer(
     vibe_transfer: 'file',
     configured: true,
     bytes: png.byteLength,
-    encoded_bytes: encoded.length,
-    model: resolveModel(model),
+    encoded_bytes: 0,
     information_extracted: ie,
     preview_url: preview,
   };

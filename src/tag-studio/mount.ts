@@ -31,6 +31,7 @@ import {
   updateCardTags,
 } from './api.ts';
 import { formatStudioQuota, studioQuotaFillPct } from './quota.ts';
+import { replaceInlinePhotoAfterSave } from './replace-inline.ts';
 import { tagStudioCss } from './styles.ts';
 
 const MODELS: Array<[string, string]> = [
@@ -1520,6 +1521,12 @@ export async function openTagStudio(card: unknown): Promise<void> {
         toast(errMsg(res, '저장에 실패했습니다.'));
         return;
       }
+      const card = res.card && typeof res.card === 'object' ? res.card as Record<string, unknown> : {};
+      await replaceInlinePhotoAfterSave(
+        state.cardId,
+        cleanText(card.image_url, 20_000_000),
+        state.cardId,
+      );
       closeStudio();
     } catch (err) {
       toast(String((err as Error).message || err));

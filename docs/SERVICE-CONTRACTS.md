@@ -187,6 +187,19 @@ export function cardMetaFromLocation(location: unknown): Record<string, unknown>
 
 Depends on: `nai-assets` (reference/vibe bytes), `settings`.
 
+## `preset-look.ts`
+
+Picker preview shots for style presets. Module webp + `look_hash` only.
+
+```ts
+export async function setPresetLook(presetId: string, png: ArrayBuffer): Promise<ApiResult>;
+export async function clearPresetLook(presetId: string): Promise<ApiResult>;
+export async function generatePresetLook(body: Record<string, unknown>): Promise<ApiResult>;
+export async function hydratePresetLookPreviews(): Promise<void>;
+```
+
+Depends on: `char-ref-module`, `settings`.
+
 ## `jobs.ts` — legacy 5217–5659
 
 Job lifecycle: dedupe, epochs, cancellation, the run loop, progress reporting.
@@ -232,6 +245,7 @@ Depends on: `generation` (location helpers).
 ```ts
 export async function readCardNaiPrompts(cardId: string): Promise<ApiResult>;
 export async function updateCardTags(cardId: string, body: Record<string, unknown>): Promise<ApiResult>;
+export async function studioCommit(cardId: string, body: Record<string, unknown>): Promise<ApiResult>;
 export async function rerollCard(cardId: string, mode: string, overrides: unknown): Promise<ApiResult>;
 export async function rerollMessageCards(args: RerollMessageArgs): Promise<ApiResult>;
 ```

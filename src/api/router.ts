@@ -31,6 +31,7 @@ import * as gallery from '../services/gallery';
 import * as generation from '../services/generation';
 import * as jobs from '../services/jobs';
 import * as naiAssets from '../services/nai-assets';
+import * as presetLook from '../services/preset-look';
 import * as chatChrome from '../services/chat-chrome';
 import * as lorefilter from '../services/lorefilter';
 import * as charImport from '../services/char-import';
@@ -642,6 +643,24 @@ const WRITE_ROUTES: readonly Route[] = [
       if (!rawB64) throw new Error('image_b64 required');
       const bytes = base64ToBytes(rawB64);
       return ok(await diagnostics.evaluateAutotag(u8ToArrayBuffer(bytes), Number(body.threshold ?? 0.2)));
+    },
+  },
+  {
+    match: exact('/v1/presets/look/clear'),
+    handler: async ({ body }) => ok(await presetLook.clearPresetLook(String(body.preset_id || body.presetId || ''))),
+  },
+  {
+    match: exact('/v1/presets/look/generate'),
+    handler: async ({ body }) => ok(await presetLook.generatePresetLook(body)),
+  },
+  {
+    match: exact('/v1/presets/look'),
+    handler: async ({ body }) => {
+      const presetId = cleanText(body.preset_id || body.presetId || '', 120);
+      if (body.clear) return ok(await presetLook.clearPresetLook(presetId));
+      const rawB64 = uploadBase64(body);
+      if (!cleanText(rawB64)) throw new Error('image_b64 required');
+      return ok(await presetLook.setPresetLook(presetId, u8ToArrayBuffer(base64ToBytes(rawB64))));
     },
   },
   {

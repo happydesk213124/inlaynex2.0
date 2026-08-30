@@ -255,7 +255,7 @@ test('inline paint puts chips before shots so the bar is not blocked by encode',
   assert.ok(start >= 0 && end > start, 'inline refresh block not found');
   const body = source.slice(start, end);
   assert.ok(
-    body.indexOf('await injectChatMsgActions(els[idx], cards, idx)') < body.indexOf('await injectChatInlineImages(els[idx], cards,'),
+    body.indexOf('await injectChatMsgActions(els[idx], [], idx, { role: roleAt(idx), text: row?.text })') < body.indexOf('await injectChatInlineImages(els[idx], cards,'),
     'chips must paint before inline shots on each spinner-window bubble',
   );
 });
@@ -1540,7 +1540,9 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(body, /getAttribute\("x-inlay-msg-index"\)/);
   // Each spinner-window bubble carries its own cards. sel.cards is [] on a
   // user turn and must not strip a neighbour char's shots.
-  assert.match(source, /injectChatMsgActions\(els\[idx\], cards, idx\)/);
+  assert.match(source, /injectChatMsgActions\(els\[idx\], \[\], idx, \{ role: roleAt\(idx\), text: row\?\.text \}\)/);
+  assert.match(source, /VCAct\.shouldMountMsgActions\(\{ role: opts\?\.role, text: opts\?\.text \}\)/);
+  assert.match(source, /if \(!on \|\| !allowChips\)/);
   assert.match(source, /injectChatInlineImages\(els\[idx\], cards, idx === selIdx \? nxPendingForInlineSelection\(sel\) : \[\], \{/);
   assert.match(source, /role: roleAt\(idx\)/);
   assert.match(source, /VC\.roleForInlineBubble\(\{/);
@@ -1590,7 +1592,7 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /await nxSyncInlinePhotosOnly\(\)/);
   assert.match(source, /else if \(source === "click" \|\| source === "text" \|\| source === "scroll"\)/);
   assert.match(source, /nxPatchInlinePhotoByCardId/);
-  assert.match(source, /injectChatMsgActions\(els\[idx\], cards, idx\)/);
+  assert.match(source, /injectChatMsgActions\(els\[idx\], \[\], idx, \{ role: roleAt\(idx\), text: row\?\.text \}\)/);
   // Automatic selection must take the same char±4 path a click takes. Nothing
   // reschedules it any more — the images come to the markers, not the other way.
   const bundle = read('dist', 'inlaynexus2.0.js');

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.5';
+const PLUGIN_VERSION = '2.5.6';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -762,6 +762,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.6</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 칩(태그·재생성·중단·캐릭터·프리셋)은 캐릭터 턴이고 실질 본문이 20자 이상일 때만 붙습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.5</strong>
@@ -10494,6 +10500,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       for (const idx of spinnerIdxs) {
         if (stale()) return;
         const row = msgCache.get(idx) || await resolveAt(idx);
+        await injectChatMsgActions(els[idx], [], idx, { role: roleAt(idx), text: row?.text });
         if (isSkipBodyAt(idx)) continue;
         let cards = [];
         try {
@@ -10521,7 +10528,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         const injectOwner = typeof VC?.inlineInjectOwnerKey == "function"
           ? VC.inlineInjectOwnerKey(row?.msg, idx, sel.sessionId)
           : \`\${String(row?.msg?.sessionId || sel.sessionId || "unknown")}|\${Number.isInteger(Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)) ? \`m\${Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)}\` : \`d\${idx}\`}\`;
-        await injectChatMsgActions(els[idx], cards, idx);
         if (t.backendSettings?.card?.inline_chat_images === !0) {
           await injectChatInlineImages(els[idx], cards, idx === selIdx ? nxPendingForInlineSelection(sel) : [], {
             lockKey,
@@ -10843,9 +10849,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     return null;
   }
-  async function injectChatMsgActions(msgEl, cards, msgIndex) {
+  async function injectChatMsgActions(msgEl, cards, msgIndex, opts) {
     if (!msgEl || typeof msgEl.querySelectorAll != "function") return;
     const on = nxMsgAct() !== "off";
+    const VCAct = globalThis.__INLAY_VIEWER_CORE__;
+    const allowChips = typeof VCAct?.shouldMountMsgActions == "function"
+      ? VCAct.shouldMountMsgActions({ role: opts?.role, text: opts?.text })
+      : !1;
     const unwrapSafe = async (arr) => {
       if (!arr) return [];
       if (typeof k.unwarpSafeArray == "function") {
@@ -10874,7 +10884,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const removeBars = async (bars) => {
       for (const bar of bars || []) await removeNode(bar);
     };
-    if (!on) {
+    if (!on || !allowChips) {
       await removeBars(await readBars());
       return;
     }
@@ -12473,8 +12483,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.5",
-    body: "스크롤 끝 스티키는 한 통로입니다. 스티키는 data URL만 그리고, 말풍선 칩은 어두운 보라입니다. 업데이트 내역 탭 참고."
+    title: "2.5.6",
+    body: "말풍선 칩은 캐릭터 턴·본문 20자 이상일 때만 붙습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -16978,7 +16988,11 @@ const loadVendorUi = (): string => {
       if (!out.includes('if (legacy && name === "DIV") {')) {
         throw new Error('[build] the nested-host probe must be legacy-only');
       }
-      const from = out.indexOf('async function injectChatMsgActions(msgEl, cards, msgIndex) {');
+      const from = out.indexOf('async function injectChatMsgActions(msgEl, cards, msgIndex, opts) {');
+      if (!out.includes('VCAct.shouldMountMsgActions({ role: opts?.role, text: opts?.text })')
+        || !out.includes('if (!on || !allowChips)')) {
+        throw new Error('[build] msg-action chips must gate on shouldMountMsgActions before paint');
+      }
       const early = out.indexOf('const earlyBars = await readBars();', from);
       const scan = out.indexOf('const scan = await nxScanBubbleHosts(msgEl);', from);
       if (from < 0 || early < 0 || scan < 0 || early > scan) {

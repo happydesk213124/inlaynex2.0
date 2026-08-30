@@ -177,7 +177,10 @@ parent),
 mount). Neither mode removes mounted inline frames. Saved checkbox `true`
 migrates to `compat`. Same neighbor rule as `inline_chat_images`.
 Chips still use SafeDOM `H()` (not `insertAdjacentHTML`, not
-bubble-root `prepend`). Chip rows and shot wraps are skipped when
+bubble-root `prepend`). They mount only when the bubble role normalizes
+to `char` and the LBDATA-stripped body is at least 20 non-whitespace
+characters (`shouldMountMsgActions`). User / unresolved / short bodies
+drop existing bars. Chip rows and shot wraps are skipped when
 collecting hosts (`isInlayPaintHost`). Each bubble keeps at most one
 top bar and one bottom bar (`x-inlay-msg-end`); overlapping paints
 drop extras. If a header vanishes after `legacy`, use

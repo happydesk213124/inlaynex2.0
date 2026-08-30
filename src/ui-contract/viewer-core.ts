@@ -972,6 +972,21 @@ export function isInlineSkipBody(value: unknown): boolean {
   return messageBodyCharCount(value) <= 30;
 }
 
+/** Tag/regen/stop/char/preset chips — real body only; LBDATA does not count. */
+export const MSG_ACTION_MIN_BODY_CHARS = 20;
+
+/**
+ * Message-action chips sit on character turns with a real body.
+ * Assistant/bot normalize to char. Unresolved or user roles stay chip-less.
+ */
+export function shouldMountMsgActions(opts: {
+  role?: unknown;
+  text?: unknown;
+} = {}): boolean {
+  if (messageBodyCharCount(opts.text) < MSG_ACTION_MIN_BODY_CHARS) return false;
+  return normalizeMessageRole(opts.role) === 'char';
+}
+
 /**
  * DOM indices that keep inline shots. Chat DOM is newest-first:
  * higher index = older (above), lower = newer (below).

@@ -112,6 +112,8 @@ import {
   inlineDomWindow,
   inlineDomWindowFromSel,
   shouldOverlayInlinePhoto,
+  shouldMountMsgActions,
+  MSG_ACTION_MIN_BODY_CHARS,
   desiredInlinePlacements,
   runBoundedPool,
   canSkipInlineInject,
@@ -1070,6 +1072,21 @@ test("allowInlineImagesOnRole blocks user unless allRoles", () => {
   assert.equal(allowInlineImagesOnRole("user", false), false);
   assert.equal(allowInlineImagesOnRole("char", false), true);
   assert.equal(allowInlineImagesOnRole("user", true), true);
+});
+
+test("shouldMountMsgActions is char-only and needs 20 real body chars", () => {
+  const body20 = "가나다라마바사아자차카타파하아야어여로와";
+  assert.equal(body20.replace(/\s+/g, "").length, MSG_ACTION_MIN_BODY_CHARS);
+  assert.equal(shouldMountMsgActions({ role: "char", text: body20 }), true);
+  assert.equal(shouldMountMsgActions({ role: "assistant", text: body20 }), true);
+  assert.equal(shouldMountMsgActions({ role: "user", text: body20 }), false);
+  assert.equal(shouldMountMsgActions({ role: "char", text: "짧음" }), false);
+  assert.equal(shouldMountMsgActions({ role: "char", text: "" }), false);
+  assert.equal(shouldMountMsgActions({ role: "", text: body20 }), false);
+  assert.equal(shouldMountMsgActions({
+    role: "char",
+    text: `[LBDATA START]\n${"위키".repeat(40)}\n[LBDATA END]\n짧음`,
+  }), false);
 });
 
 test("inlineRoleDisposition holds an unresolved role instead of treating it as user", () => {

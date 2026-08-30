@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.14';
+const PLUGIN_VERSION = '2.5.13';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -764,12 +764,6 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
-        </div>
-        <div class="card" style="margin-top:14px">
-          <strong>2.5.14</strong>
-          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
-            <li>마지막 컷이 끝나면 1·2·3이 쓰던 그 한 방을 한 번 더 칩니다</li>
-          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.13</strong>
@@ -11385,13 +11379,13 @@ const VENDOR_INLINE_POLL_NEEDLE =
             if (await ce(e), t.selectedMessage) {
               const l = linkedCards(t.selectedMessage);`;
 const VENDOR_INLINE_POLL_PATCH =
-  `        const i = Number(r.shot_done ?? 0), s = !!(a.state && a.state !== t.lastJobState), c = i !== Number(t._lastShotDone ?? -1) || a.state === "done";
+  `        const i = Number(r.shot_done ?? 0), s = !!(a.state && a.state !== t.lastJobState), c = i !== Number(t._lastShotDone ?? -1);
         const VC = globalThis.__INLAY_VIEWER_CORE__;
         if (s && (t.lastJobState = a.state, y("info", "job.poll", \`\${n.slice(0, 8)}… → \${a.state}\`)), r.message && r.message !== t._lastJobMsg && (t._lastJobMsg = r.message, y("info", "job.progress", r.message)), r.message && r.message !== t._lastJobMsg && (t._lastJobMsg = r.message, y("info", "job.progress", r.message)), (a.state === "generating" || a.state === "done") && (c || s && (a.state === "generating" || a.state === "done"))) {
           t._lastShotDone = i;
           const prevIds = (t.gallery || []).map((card) => String(card?.id || ""));
           try {
-            // Last shot has no later bump, so "done" reuses the same force-reload as 1/2/3.
+            // shot_done: force gallery so new cards appear; skip full Da-relink when already linked.
             if (await ce(e, !!c), t.selectedMessage) {
               let l = linkedCards(t.selectedMessage);
               const pendingBusy = Array.isArray(t._inlinePending) && t._inlinePending.length;
@@ -12727,8 +12721,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.14",
-    body: "마지막 컷이 끝나면 1·2·3이 쓰던 그 한 방을 한 번 더 칩니다. 업데이트 내역 탭 참고."
+    title: "2.5.13",
+    body: "마지막 컷도 앞 컷들과 같은 경로로 말풍선에 들어옵니다. 진행률이 마지막 장에서 멈추지 않습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -13512,7 +13506,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     try {
       const B = t.jobProgress;
       const O = t.selectedMessage;
-      const fp = [B?.state, B?.progress, B?.shot_done, B?.message, B?.jobId, O?.hash, O?.domIndex, (t.gallery || []).length, t.jobsInFlight?.size || 0, t._progressToastShown ? 1 : 0].join("|");
+      const fp = [B?.state, B?.progress, B?.message, B?.jobId, O?.hash, O?.domIndex, (t.gallery || []).length, t.jobsInFlight?.size || 0, t._progressToastShown ? 1 : 0].join("|");
       if (fp === t._seFp && t.galleryUi?.root) return;
       t._seFp = fp;
       if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
@@ -17273,8 +17267,8 @@ const loadVendorUi = (): string => {
     if (out.includes('if (a.state === "done" || (!l.length && !pendingBusy))')) {
       throw new Error('[build] job.done must not relink when shots are already linked');
     }
-    if (!out.includes('c = i !== Number(t._lastShotDone ?? -1) || a.state === "done"')) {
-      throw new Error('[build] job.done must reuse the same shot_done savior as earlier shots');
+    if (out.includes('ce(e, !!(c || a.state === "done"))')) {
+      throw new Error('[build] job.done must not force-reload the gallery');
     }
     // The final shot's card is only ever visible to the poll that reads "done", so a
     // state gate on the paint path leaves that one shot with no painter at all.

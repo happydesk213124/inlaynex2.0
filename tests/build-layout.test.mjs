@@ -1080,7 +1080,8 @@ test('reroll photo patches require a message-scoped frame key', () => {
   const to = source.indexOf('async function refreshSelectedInlineImages(force', from);
   const patch = source.slice(from, to);
   assert.match(patch, /nxInlineRootKeyForCard\(card\)/);
-  assert.match(patch, /if \(!safeKey\) return !1/);
+  assert.doesNotMatch(patch, /if \(!safeKey\) return !1/);
+  assert.match(patch, /idSel = '\[x-inlay-inline-shot="' \+ look \+ '"\],\[data-inlay-inline-shot="' \+ look \+ '"\]'/);
   assert.doesNotMatch(patch, /safeKey\s*\?\s*['"`]\[x-inlay-inline-key=/);
 
   for (const marker of [

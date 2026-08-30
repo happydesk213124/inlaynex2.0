@@ -407,6 +407,7 @@ test("markerBlockHtml parks a sized SVG and overlays the real image on top", () 
   assert.match(decodeURIComponent(placeholder), /width="1216"/);
   assert.match(decodeURIComponent(placeholder), /height="832"/);
   assert.match(pending, /width:auto;height:auto;max-width:min\(86%,100%\)/);
+  assert.match(pending, /data-inlay-inline-spin="1"[^>]*pointer-events:none/);
   assert.match(pending, /position:absolute/);
   assert.match(pending, /opacity:0/);
   assert.match(pending, new RegExp(`data-inlay-inline-layout="${INLINE_FRAME_LAYOUT_VERSION}"`));
@@ -428,6 +429,7 @@ test("markerBlockHtml parks a sized SVG and overlays the real image on top", () 
   assert.match(ready, /x-inlay-inline-active="a"/);
   assert.ok(ready.includes(placeholder), "spinner stays under the photo so the box cannot collapse");
   assert.match(ready, /data:image\/png;base64,abc/);
+  assert.match(ready, /data-inlay-inline-photo="1"[^>]*pointer-events:auto/);
   assert.match(ready, /opacity:1/);
   assert.match(ready, /transition:opacity 80ms linear/);
   assert.match(ready, /left:50%;top:45\.7%;width:90%;height:90%;transform:translate\(-50%,-50%\)/);

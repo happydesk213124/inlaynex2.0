@@ -3622,7 +3622,7 @@ export function inlineChatImgStyle(scalePct: unknown = 100): string {
 
 /** In-flow spinner — same caps as the photo, then +10%. */
 export function inlineChatSpinnerImgStyle(scalePct: unknown = 100): string {
-  return inlineChatBoxStyle(scalePct, INLINE_SPINNER_SCALE_BOOST);
+  return `${inlineChatBoxStyle(scalePct, INLINE_SPINNER_SCALE_BOOST)};pointer-events:none`;
 }
 
 /** Stack that keeps the spinner in flow and parks the photo on top. */
@@ -3644,7 +3644,7 @@ export function inlineChatOverlayImgStyle(visible = false): string {
 
 /** Image inside a permanent photo cell. SafeDOM changes it via cell.setInnerHTML(). */
 export function inlineChatOverlayPhotoStyle(): string {
-  return 'width:100%;height:100%;object-fit:contain;border-radius:8px;display:block;pointer-events:none';
+  return 'width:100%;height:100%;object-fit:contain;border-radius:8px;display:block;pointer-events:auto';
 }
 
 type InlinePlaceholderInput = {

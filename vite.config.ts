@@ -8827,7 +8827,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
   function nxInlinePhotoHtml(src, VC) {
     const style = typeof VC?.inlineChatOverlayPhotoStyle == "function"
       ? VC.inlineChatOverlayPhotoStyle()
-      : "width:100%;height:100%;object-fit:contain;border-radius:8px;display:block;pointer-events:none";
+      : "width:100%;height:100%;object-fit:contain;border-radius:8px;display:block;pointer-events:auto";
     return '<img data-inlay-inline-photo="1" src="' + h(String(src || "")) + '" alt="" style="' + style + '" loading="eager" decoding="async">';
   }
   async function nxReadInlinePhotoRows(wrap, cells) {
@@ -10096,9 +10096,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const slot = typeof VC?.inlinePlacementSlotKey == "function"
       ? String(VC.inlinePlacementSlotKey(card) || "")
       : "";
-    const key = String(rootKey || nxInlineRootKeyForCard(card) || "");
+    let key = String(rootKey || nxInlineRootKeyForCard(card) || "");
+    if (!/^[A-Za-z0-9_-]+$/.test(key) && t.selectedMessage) {
+      const stamp = nxInlineStampKey(t.selectedMessage);
+      if (stamp) key = ye(stamp);
+    }
     const safeKey = /^[A-Za-z0-9_-]+$/.test(key) ? key : "";
-    if (!safeKey) return !1;
     const unwrapSafe = async (arr) => {
       if (!arr) return [];
       if (typeof k.unwarpSafeArray == "function") {
@@ -10129,19 +10132,21 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       if (exactHits.length) break;
     }
-    // Layout-10 frames predate x-inlay-inline-key. A caller-provided message root
-    // is still safe to use for this one-time exact-id migration.
-    if (!exactHits.length && safeKey && rootEl && typeof rootEl.querySelector == "function") {
+    if (!exactHits.length) {
       for (const look of lookIds) {
         if (!/^[A-Za-z0-9_-]+$/.test(look)) continue;
-        try {
-          const wrap = await rootEl.querySelector('[x-inlay-inline-shot="' + look + '"],[data-inlay-inline-shot="' + look + '"]');
-          if (wrap) {
-            exactHits = [{ wrap, look }];
-            break;
+        const idSel = '[x-inlay-inline-shot="' + look + '"],[data-inlay-inline-shot="' + look + '"]';
+        for (const root of roots) {
+          if (typeof root.querySelectorAll != "function") continue;
+          try {
+            const wraps = await unwrapSafe(await root.querySelectorAll(idSel));
+            for (const wrap of wraps) {
+              if (wrap && !exactHits.some((hit) => hit.wrap === wrap)) exactHits.push({ wrap, look });
+            }
+          } catch {
           }
-        } catch {
         }
+        if (exactHits.length) break;
       }
     }
     let slotHit = null;
@@ -13150,7 +13155,7 @@ const VENDOR_INSPECT_REROLL_INLINE_PATCH =
           } catch {
           }
           try {
-            await nxPatchInlinePhotoByCardId(rolled?.card?.id || card.id, nxCardDisplaySrc(rolled?.card || card), card.id, null, nxInlineRootKeyForCard(rolled?.card || card));
+            await nxPatchInlinePhotoByCardId(rolled?.card?.id || card.id, nxCardDisplaySrc(rolled?.card || card), card.id, t.hostDoc, nxInlineRootKeyForCard(rolled?.card || card));
           } catch {
           }
         } catch (err) {
@@ -13188,7 +13193,7 @@ const VENDOR_INSPECT_REGEN_INLINE_PATCH =
                 try {
                   const card = result?.card;
                   const replaced = result?.replaced;
-                  await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "", null, nxInlineRootKeyForCard(card));
+                  await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "", t.hostDoc, nxInlineRootKeyForCard(card));
                 } catch {
                 }
               }
@@ -13212,7 +13217,7 @@ const VENDOR_REROLL_IMAGE_INLINE_NEEDLE =
 const VENDOR_REROLL_IMAGE_INLINE_PATCH =
   `        d.index = nn >= 0 ? nn : Math.max(0, Math.min(_, Math.max(0, J.length - 1))), await T();
         try {
-          await nxPatchInlinePhotoByCardId(B?.card?.id || A.id, nxCardDisplaySrc(B?.card || A), A.id, null, nxInlineRootKeyForCard(B?.card || A));
+          await nxPatchInlinePhotoByCardId(B?.card?.id || A.id, nxCardDisplaySrc(B?.card || A), A.id, t.hostDoc, nxInlineRootKeyForCard(B?.card || A));
         } catch {
         }
         await C.setTextContent(\`이미지 리롤 완료 · \${String(B?.card?.id || A.id).slice(0, 8)}\`), y("info", "regen.image", \`P\${O} \${String(A.id).slice(0, 8)}→\${String(B?.card?.id || "").slice(0, 8)}\`);`;
@@ -13238,7 +13243,7 @@ const VENDOR_REROLL_ALL_INLINE_PATCH =
             try {
               const card = result?.card;
               const replaced = result?.replaced;
-              await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "", null, nxInlineRootKeyForCard(card));
+              await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), replaced?.id || replaced || "", t.hostDoc, nxInlineRootKeyForCard(card));
             } catch {
             }
             await C.setTextContent(\`\${i + 1}/\${targets0.length} 교체 완료\`);

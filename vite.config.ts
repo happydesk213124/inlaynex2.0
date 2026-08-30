@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.11';
+const PLUGIN_VERSION = '2.5.12';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -764,6 +764,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.12</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 마지막 컷도 앞 장과 같이 인라인 칸에 끼웁니다. 진행 토스트는 마지막 장 생성 중에도 N/N으로 올라갑니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.11</strong>
@@ -11348,16 +11354,65 @@ const VENDOR_INLINE_PENDING_UI_NEEDLE =
         if (t.uiOpen) {`;
 const VENDOR_INLINE_PENDING_UI_PATCH =
   `        }, await Se();
-        if (a.state === "done" || a.state === "cancelled" || a.state === "error") {
-          t._inlinePending = null;
-          t._inlinePendingMsgIndex = -1;
-          t._inlinePendingSessionId = "";
-        } else if (Array.isArray(r.pending_inline)) {
+        if (Array.isArray(r.pending_inline)) {
           t._inlinePending = r.pending_inline;
           const rawPmi = r.pending_message_index ?? r.message_index;
           const pmi = Number(rawPmi);
           t._inlinePendingMsgIndex = rawPmi != null && Number.isInteger(pmi) && pmi >= 0 ? pmi : -1;
           t._inlinePendingSessionId = String(e || "");
+        }
+        if ((a.state === "generating" || a.state === "done") && t.backendSettings?.card?.inline_chat_images === !0 && t.selectedMessage) {
+          const shotUp = Number(r.shot_done ?? 0) !== Number(t._lastShotDone ?? -1);
+          try {
+            await ce(e, !!shotUp);
+            const jobCards = Array.isArray(a.result?.cards) ? a.result.cards : [];
+            if (jobCards.length) {
+              const have = new Set((t.gallery || []).map((row) => String(row?.id || "")));
+              const next = Array.isArray(t.gallery) ? t.gallery.slice() : [];
+              for (const row of jobCards) {
+                const id = String(row?.id || "");
+                if (!id || have.has(id)) continue;
+                next.unshift(row);
+                have.add(id);
+              }
+              t.gallery = next;
+            }
+            if (shotUp) {
+              try {
+                await maybeRebindAndLink(t.selectedMessage, t.lastScope);
+              } catch {
+              }
+            }
+            const prevLinkedSet = new Set(String(t._inlineLinkedIds || "").split("|").filter(Boolean));
+            const linkedNow = linkedCards(t.selectedMessage) || [];
+            const seen = new Set();
+            const newCards = [];
+            for (const card of [...linkedNow, ...jobCards]) {
+              const id = String(card?.id || "");
+              if (!id || prevLinkedSet.has(id) || seen.has(id)) continue;
+              seen.add(id);
+              newCards.push(card);
+            }
+            const shotCount = await nxSelectedInlineShotCount();
+            const needsStamp = nxNeedsInlineStamp(t.selectedMessage);
+            const pendingMatches = nxPendingMatchesInlineSelection(t.selectedMessage);
+            if (!jobCards.length && (needsStamp || !shotCount && pendingMatches)) {
+              await refreshSelectedInlineImages(!0, { onlySel: !0 });
+              nxFinishInlineStamp(t.selectedMessage);
+              t._inlineLinkedIds = linkedNow.map((card) => String(card?.id || "")).filter(Boolean).sort().join("|");
+            } else if (newCards.length) {
+              const rootKey = nxInlineStampKey(t.selectedMessage);
+              for (const card of newCards) {
+                const id = String(card?.id || "");
+                const shot = Math.floor(Number(card.shot_index ?? card.shotIndex));
+                const prev = Number.isFinite(shot) && shot >= 0 ? \`pending-\${shot}\` : "";
+                await nxPatchInlinePhotoByCardId(id, nxCardDisplaySrc(card), prev, null, rootKey ? ye(rootKey) : "");
+                if (id) prevLinkedSet.add(id);
+              }
+              t._inlineLinkedIds = [...prevLinkedSet].filter(Boolean).sort().join("|");
+            }
+          } catch {
+          }
         }
         if (t.uiOpen) {`;
 
@@ -11407,59 +11462,11 @@ const VENDOR_INLINE_POLL_REFRESH_NEEDLE =
           else await onSelectionChanged("chrome");
         }`;
 const VENDOR_INLINE_POLL_REFRESH_PATCH =
-  `          const jobDone = a.state === "done" || a.state === "cancelled";
-          if (idsChanged && !jobDone) {
+  `          if (idsChanged) {
             if (c) scheduleOverlayPlace(120);
             await onSelectionChanged("content");
-          } else if (!jobDone && t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
-          else if (!jobDone) await onSelectionChanged("chrome");
-          // New shot only. Re-patching every linked card reloads 1/2 while 3 generates.
-          if (t.backendSettings?.card?.inline_chat_images === !0) {
-            let linkedChanged = !1;
-            let prevLinkedSet = new Set();
-            try {
-              const linkedNow = t.selectedMessage ? linkedCards(t.selectedMessage) : [];
-              const prevLinkedIds = String(t._inlineLinkedIds || "");
-              prevLinkedSet = new Set(prevLinkedIds.split("|").filter(Boolean));
-              const linkedIds = linkedNow.map((card) => String(card?.id || "")).filter(Boolean).sort().join("|");
-              linkedChanged = linkedIds !== prevLinkedIds;
-              if (linkedChanged) t._inlineLinkedIds = linkedIds;
-            } catch {
-            }
-            const pendingKeyNow = typeof VC.pendingInlineKey == "function"
-              ? VC.pendingInlineKey(t._inlinePending)
-              : Array.isArray(t._inlinePending)
-                ? t._inlinePending.map((p) => \`\${Number(p?.shot_index)}:\${Number(p?.line)}\`).sort().join("|")
-                : "";
-            const pendingChanged = pendingKeyNow !== String(t._inlineKeepPendingKey || "");
-            if (pendingChanged) t._inlineKeepPendingKey = pendingKeyNow;
-            // pending clear on done is not a new shot — do not restamp the bubble.
-            if (idsChanged || linkedChanged || c || pendingChanged && pendingKeyNow) {
-              try {
-                const linkedNow = t.selectedMessage ? linkedCards(t.selectedMessage) : [];
-                const shotCount = await nxSelectedInlineShotCount();
-                const needsStamp = nxNeedsInlineStamp(t.selectedMessage);
-                const pendingMatches = nxPendingMatchesInlineSelection(t.selectedMessage);
-                const newCards = linkedNow.filter((card) => {
-                  const id = String(card?.id || "");
-                  return id && !prevLinkedSet.has(id);
-                });
-                if (!jobDone && (needsStamp || !shotCount && pendingMatches)) {
-                  await refreshSelectedInlineImages(!0, { onlySel: !0 });
-                  nxFinishInlineStamp(t.selectedMessage);
-                } else {
-                  if (needsStamp && shotCount) nxFinishInlineStamp(t.selectedMessage);
-                  if (newCards.length) {
-                    const rootKey = nxInlineStampKey(t.selectedMessage);
-                    for (const card of newCards) {
-                      await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), "", null, rootKey ? ye(rootKey) : "");
-                    }
-                  }
-                }
-              } catch {
-              }
-            }
-          }
+          } else if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+          else await onSelectionChanged("chrome");
         } else if (s || a.state === "generating" || a.state === "tagging" || a.state === "queued") {
           if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
           else await onSelectionChanged("chrome");
@@ -11477,6 +11484,11 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
             } catch {
             }
           }
+        }
+        if (a.state === "done" || a.state === "cancelled" || a.state === "error") {
+          t._inlinePending = null;
+          t._inlinePendingMsgIndex = -1;
+          t._inlinePendingSessionId = "";
         }`;
 
 /** Job complete: remount viewer only if gallery/overlay roots were torn down. */
@@ -12713,8 +12725,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.11",
-    body: "프리셋 룩 미리보기. 프리셋 vibe는 쓸 때 encode. 태그 저장 후 인라인 컷 교체. 업데이트 내역 탭 참고."
+    title: "2.5.12",
+    body: "마지막 컷도 인라인에 끼움. 토스트 N/N. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -13317,7 +13329,10 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     }, SELECTION_TOAST_HIDE_MS);
   }
   async function syncProgressToast() {
-    if (t._progressToastSyncing) return;
+    if (t._progressToastSyncing) {
+      t._progressToastSyncAgain = !0;
+      return;
+    }
     t._progressToastSyncing = !0;
     t._progressToastSyncingAt = Date.now();
     try {
@@ -13443,6 +13458,11 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     } finally {
       t._progressToastSyncing = !1;
       t._progressToastSyncingAt = 0;
+      if (t._progressToastSyncAgain) {
+        t._progressToastSyncAgain = !1;
+        syncProgressToast().catch(() => {
+        });
+      }
     }
   }
   if (!t._progressToastWatchdog) {
@@ -13498,7 +13518,7 @@ const VENDOR_PROGRESS_TOAST_FN_PATCH = `  async function dismissProgressToast() 
     try {
       const B = t.jobProgress;
       const O = t.selectedMessage;
-      const fp = [B?.state, B?.progress, B?.message, B?.jobId, O?.hash, O?.domIndex, (t.gallery || []).length, t.jobsInFlight?.size || 0, t._progressToastShown ? 1 : 0].join("|");
+      const fp = [B?.state, B?.progress, B?.message, B?.shot_done, B?.shot_index, B?.jobId, O?.hash, O?.domIndex, (t.gallery || []).length, t.jobsInFlight?.size || 0, t._progressToastShown ? 1 : 0].join("|");
       if (fp === t._seFp && t.galleryUi?.root) return;
       t._seFp = fp;
       if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
@@ -13790,6 +13810,12 @@ const VENDOR_REROLL_TOAST_HEARTBEAT_PATCH = `    const a = setInterval(() => {
       Se().catch(() => {
       });
     }, 700);`;
+
+const VENDOR_FORMAT_VIEWER_JOB_NEEDLE =
+  `    const state = String(B.state || ""), pct = Math.max(0, Math.min(100, Math.round(Number(B.progress) || 0))), shotCount = Number(B.shot_count || 0), shotDone = Number(B.shot_done ?? B.shot_index ?? 0), shot = shotCount > 0 ? \`\${Math.min(Math.max(0, shotDone), shotCount)}/\${shotCount}\` : "", isReroll = B.kind === "reroll" || B.jobId === "reroll";`;
+const VENDOR_FORMAT_VIEWER_JOB_PATCH =
+  `    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const state = String(B.state || ""), pct = Math.max(0, Math.min(100, Math.round(Number(B.progress) || 0))), shotCount = Number(B.shot_count || 0), shotDone = Number(B.shot_done ?? B.shot_index ?? 0), shot = typeof VC?.jobShotLabel == "function" ? VC.jobShotLabel(B) : shotCount > 0 ? \`\${Math.min(Math.max(0, shotDone), shotCount)}/\${shotCount}\` : "", isReroll = B.kind === "reroll" || B.jobId === "reroll";`;
 
 const VENDOR_PROGRESS_TOAST_PAINT_NEEDLE = `    }, paintStatus = async () => {
       const _ = Array.isArray(d.items) ? d.items : U(), O = t.selectedMessage, B = t.jobProgress, idx = readIndexProgress(B), busy = !!(B || O?.hash && t.jobsInFlight.has(O.hash) || idx.busy), extra = O ? \`\${_.length}장 · DOM#\${O.domIndex}\` : "";
@@ -16245,6 +16271,7 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_TOGGLE_NEEDLE, 'inline chat toggle'],
     [VENDOR_INLINE_SAVE_NEEDLE, 'inline chat save'],
     [VENDOR_PROGRESS_TOAST_FN_NEEDLE, 'progress toast sync fn'],
+    [VENDOR_FORMAT_VIEWER_JOB_NEEDLE, 'progress toast shot label'],
     [VENDOR_PROGRESS_TOAST_PAINT_NEEDLE, 'progress toast paintStatus'],
     [VENDOR_INSPECT_CHAR_OPEN_NEEDLE, 'inspect sheet char open like viewer'],
     [VENDOR_INSPECT_REROLL_INLINE_NEEDLE, 'inspect sheet reroll inline'],
@@ -16641,6 +16668,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_TOGGLE_NEEDLE, VENDOR_INLINE_TOGGLE_PATCH)
     .replace(VENDOR_INLINE_SAVE_NEEDLE, VENDOR_INLINE_SAVE_PATCH)
     .replace(VENDOR_PROGRESS_TOAST_FN_NEEDLE, VENDOR_PROGRESS_TOAST_FN_PATCH)
+    .replace(VENDOR_FORMAT_VIEWER_JOB_NEEDLE, VENDOR_FORMAT_VIEWER_JOB_PATCH)
     .replace(VENDOR_PROGRESS_TOAST_PAINT_NEEDLE, VENDOR_PROGRESS_TOAST_PAINT_PATCH)
     .replace(VENDOR_INSPECT_CHAR_OPEN_NEEDLE, VENDOR_INSPECT_CHAR_OPEN_PATCH)
     .replace(VENDOR_INSPECT_REROLL_INLINE_NEEDLE, VENDOR_INSPECT_REROLL_INLINE_PATCH)
@@ -17260,19 +17288,40 @@ const loadVendorUi = (): string => {
       throw new Error('[build] job.done must not relink when shots are already linked');
     }
     if (out.includes('ce(e, !!(c || a.state === "done"))')) {
-      throw new Error('[build] job.done must not force-reload the gallery');
+      throw new Error('[build] job.done must not force-reload the gallery on every done poll');
     }
-    if (!out.includes('if (!jobDone && (needsStamp || !shotCount && pendingMatches))')) {
-      throw new Error('[build] job.done must not restamp inline frames');
+    if (!out.includes('ce(e, !!c)')) {
+      throw new Error('[build] gallery force-reload follows shot_done for every shot');
     }
-    if (!out.includes('if (idsChanged && !jobDone)')) {
-      throw new Error('[build] job.done must not rebuild the viewer strip');
+    if (out.includes('const jobDone = a.state === "done"') || out.includes('if (!jobDone &&')) {
+      throw new Error('[build] last shot must not use a jobDone skip');
+    }
+    if (!out.includes('if (idsChanged) {\n            if (c) scheduleOverlayPlace(120);\n            await onSelectionChanged("content");')) {
+      throw new Error('[build] last shot must still update the viewer strip when ids change');
     }
     if (out.includes('for (const card of linkedNow)') && out.includes('nxPatchInlinePhotoByCardId(card?.id')) {
       throw new Error('[build] shot_done must not re-patch already painted inline shots');
     }
     if (!out.includes('for (const card of newCards)')) {
       throw new Error('[build] shot_done must patch only newly linked cards');
+    }
+    if (!out.includes('a.result?.cards') || !out.includes('[...linkedNow, ...jobCards]')) {
+      throw new Error('[build] last shot must take newCards from job result as well as linkedCards');
+    }
+    if (!out.includes('VC.jobShotLabel(B)')) {
+      throw new Error('[build] toast n/m must use jobShotLabel');
+    }
+    if (!out.includes('t._progressToastSyncAgain')) {
+      throw new Error('[build] toast must not drop the done frame while syncing');
+    }
+    if (out.includes('async function nxMergeAndFillJobInline(')) {
+      throw new Error('[build] last shot must not use a done-only remount');
+    }
+    if (out.includes('t._inlinePending = null;\n          t._inlinePendingMsgIndex = -1;\n          t._inlinePendingSessionId = "";\n        } else if (Array.isArray(r.pending_inline))')) {
+      throw new Error('[build] pending must stay until after the last-shot patch');
+    }
+    if (!out.includes('pending-${shot}')) {
+      throw new Error('[build] last shot must patch the pending-N slot like 1/2/3');
     }
     if (out.includes('await onSelectionChanged("full")')) {
       throw new Error('[build] job.done must not full-repaint the viewer');

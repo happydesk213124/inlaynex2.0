@@ -135,6 +135,7 @@ import {
   resolveIndexProgress,
   composeDualProgressBarsHtml,
   composeProgressToastHtml,
+  jobShotLabel,
   ATTACH_TOAST_MAX_MS,
   shouldShowSessionAttachToast,
   composeAttachToastHtml,
@@ -1920,6 +1921,12 @@ test("composeProgressToastHtml can omit the bar for idle selection peeks", () =>
   assert.match(html, /width:min\(280px/);
   assert.doesNotMatch(html, /height:3px/);
   assert.doesNotMatch(html, /#7c6cff/);
+});
+
+test("jobShotLabel counts the in-flight last shot", () => {
+  assert.equal(jobShotLabel({ state: "generating", shot_done: 3, shot_index: 3, shot_count: 4 }), "4/4");
+  assert.equal(jobShotLabel({ state: "done", shot_done: 4, shot_index: 3, shot_count: 4 }), "4/4");
+  assert.equal(jobShotLabel({ state: "generating", shot_done: 0, shot_index: 0, shot_count: 4 }), "1/4");
 });
 
 test("formatProgressElapsedSec formats seconds and minutes", () => {

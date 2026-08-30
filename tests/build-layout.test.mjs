@@ -1229,8 +1229,9 @@ test('pending inline rows never cross message or session scope', () => {
   const poll = bundle.slice(pollFrom, pollTo);
   assert.ok(pollFrom >= 0 && pollTo > pollFrom, 'job poll body not found');
   assert.ok(
-    poll.indexOf('t._inlinePendingSessionId = ""') < poll.indexOf('if (t.uiOpen) {'),
-    'terminal pending cleanup must run before the viewer-open early return',
+    poll.indexOf('if (t.uiOpen) {') >= 0
+      && poll.indexOf('t._inlinePending = null') > poll.indexOf('if (t.uiOpen) {'),
+    'pending must stay through the last-shot patch, then clear',
   );
   const from = bundle.indexOf('function nxInlineStampKey(sel) {');
   const to = bundle.indexOf('function nxInlineSubIds(lockKey) {', from);

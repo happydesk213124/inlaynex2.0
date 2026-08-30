@@ -7,6 +7,7 @@
  */
 
 export { matchCharactersInText } from '../domain/character/roster';
+import { normalizeShotKind } from '../domain/comic/kind';
 import { resolveShotAspect } from '../domain/nai-meta/aspect';
 import {
   inlineMsgActionsLegacy,
@@ -3373,6 +3374,8 @@ export interface InlineImagePlacement {
   height?: unknown;
   /** No image yet — show spinner + br spacing at the line. */
   pending?: boolean;
+  /** Comic shots use the green spinner; omitted/other stay purple. */
+  kind?: unknown;
 }
 
 export type InlineCardInput = {
@@ -3382,6 +3385,7 @@ export type InlineCardInput = {
   aspect?: unknown;
   width?: unknown;
   height?: unknown;
+  kind?: unknown;
 };
 
 export type InlinePendingInput = {
@@ -3390,6 +3394,7 @@ export type InlinePendingInput = {
   aspect?: unknown;
   width?: unknown;
   height?: unknown;
+  kind?: unknown;
 };
 
 export type InlineLiveMarker = {
@@ -3448,6 +3453,7 @@ export function desiredInlinePlacements(
           width: card.width,
           height: card.height,
           pending: true,
+          kind: card.kind,
         });
       }
       continue;
@@ -3462,6 +3468,7 @@ export function desiredInlinePlacements(
       width: card.width,
       height: card.height,
       pending: false,
+      kind: card.kind,
     });
   }
 
@@ -3484,6 +3491,7 @@ export function desiredInlinePlacements(
       width: row.width,
       height: row.height,
       pending: true,
+      kind: row.kind,
     });
   }
 
@@ -3748,7 +3756,14 @@ type InlinePlaceholderInput = {
   aspect?: unknown;
   width?: unknown;
   height?: unknown;
+  kind?: unknown;
 };
+
+/** Purple illustration ring; green only when the shot is comic. */
+function inlinePlaceholderColors(input: InlinePlaceholderInput | null | undefined): { fill: string; stroke: string } {
+  if (normalizeShotKind(input?.kind) === 'comic') return { fill: '#22c55e', stroke: '#4ade80' };
+  return { fill: '#7c6cff', stroke: '#c4b5fd' };
+}
 
 /** Intrinsic SVG size so the pending img already matches the coming shot. */
 export function inlinePlaceholderSize(input: InlinePlaceholderInput | null | undefined): { width: number; height: number } {
@@ -3764,9 +3779,10 @@ export function inlinePlaceholderSize(input: InlinePlaceholderInput | null | und
 /** Cheap SVG data URL used as the pending img src until real bytes arrive. */
 export function inlinePlaceholderSrc(input: InlinePlaceholderInput | null | undefined = null): string {
   const { width, height } = inlinePlaceholderSize(input);
+  const { fill, stroke } = inlinePlaceholderColors(input);
   const cx = Math.round(width / 2);
   const cy = Math.round(height / 2);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#7c6cff" fill-opacity=".08"/><g transform="translate(${cx} ${cy})"><circle r="22" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="6"/><circle r="22" fill="none" stroke="#c4b5fd" stroke-width="6" stroke-linecap="round" stroke-dasharray="36 104"/></g></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="${fill}" fill-opacity=".08"/><g transform="translate(${cx} ${cy})"><circle r="22" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="6"/><circle r="22" fill="none" stroke="${stroke}" stroke-width="6" stroke-linecap="round" stroke-dasharray="36 104"/></g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 

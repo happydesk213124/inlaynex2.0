@@ -99,6 +99,8 @@
     "nai5_only": false,
     "nai4_fallback": false,
     "nai5_speech": false,
+    "studio_seed_lock": false,
+    "studio_folds": {},
     "v5_natural_lang": "en",
     "nai_use_coords": true,
     "comic_gen": "off",

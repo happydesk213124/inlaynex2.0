@@ -289,6 +289,9 @@ const normalize = (root) => {
           || k === 'nai5_only'
           || k === 'nai4_fallback'
           || k === 'nai5_speech'
+          || k === 'studio_seed_lock'
+          // Tag-studio section folds. 1.x had no overlay; schema + studio persist this.
+          || k === 'studio_folds'
           || k === 'nai_use_coords'
           || k === 'v5_natural_lang'
           || k === 'secondary_preset_id'
@@ -530,6 +533,12 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (v?.ok === true && String(v?.main_prompt || '').includes('parity cafe')
       ? null
       : `2.0 nai-prompt must return image base tags, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'cards.nai_from_image_empty',
+    (v) => (v?.ok === false && v?.error?.code === 'bad_request'
+      ? null
+      : `2.0 nai-from-image without bytes must reject, got ${JSON.stringify(v)}`),
   ],
   [
     'job.stop_idle',

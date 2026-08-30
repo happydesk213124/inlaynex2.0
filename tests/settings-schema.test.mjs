@@ -119,6 +119,12 @@ test("nai5 / coords / key lists migrate with safe defaults", () => {
   assert.equal(empty.card.nai5_only, false);
   assert.equal(empty.card.nai4_fallback, false);
   assert.equal(empty.card.nai5_speech, false);
+  assert.equal(empty.card.studio_seed_lock, false);
+  assert.deepEqual(empty.card.studio_folds, {});
+  assert.deepEqual(
+    migrateSettings({ card: { studio_folds: { preset: true, post: "true", junk: 0 } } }).card.studio_folds,
+    { preset: true, post: true, junk: false },
+  );
   assert.equal(empty.card.v5_natural_lang, "en");
   assert.equal(empty.card.nai_use_coords, true);
   assert.equal(empty.card.secondary_preset_id, "");

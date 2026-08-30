@@ -40,6 +40,7 @@ import { slimCardCharacters } from '../domain/gallery/slim-cast';
 import { resolveRerollCharacters } from '../domain/gallery/reroll-captions';
 import { extractNaiMetadata } from '../domain/nai-meta';
 import {
+  applyNaiSceneOverrides,
   isComicNaiScene,
   randomNaiSeed,
   sceneFromNaiMetadata,
@@ -107,15 +108,8 @@ export async function readCardNaiPrompts(cardId: string): Promise<ApiResult> {
       center_x: c.center_x,
       center_y: c.center_y,
     }));
-    if (!characters.length) {
-      for (const slot of slim) {
-        characters.push({ ...slot, prompt: '', uc: '', center_x: 0.5, center_y: 0.5 });
-      }
-    }
     return {
-      ok: true,
-      main_prompt: scene.main,
-      negative_prompt: scene.negative,
+      ...naiPromptFromScene(scene),
       characters,
     };
   } catch (err) {
@@ -223,13 +217,51 @@ export async function updateCardTags(cardId: string, body: Record<string, unknow
 }
 
 function applyScenePromptOverrides(scene: NaiScene, ov: Record<string, unknown> | null): void {
-  if (!ov) return;
-  if ('main_prompt' in ov) {
-    const ovMain = cleanText(ov.main_prompt || '', 8000);
-    if (ovMain) scene.main = ovMain;
+  applyNaiSceneOverrides(scene, ov);
+}
+
+function naiPromptFromScene(scene: NaiScene): Record<string, unknown> {
+  return {
+    ok: true,
+    main_prompt: scene.main,
+    negative_prompt: scene.negative,
+    characters: scene.characters.map((c) => ({
+      prompt: c.prompt,
+      uc: c.uc,
+      center_x: c.center_x,
+      center_y: c.center_y,
+    })),
+    model: scene.model,
+    width: scene.width,
+    height: scene.height,
+    steps: scene.steps,
+    cfg_scale: scene.cfg_scale,
+    cfg_rescale: scene.cfg_rescale,
+    sampler: scene.sampler,
+    scheduler: scene.scheduler,
+    ...(scene.seed ? { seed: scene.seed } : {}),
+  };
+}
+
+/** Dropped-file NAI tags for the shot studio. Does not touch the stored card. */
+export async function readImageNaiPrompts(body: Record<string, unknown> = {}): Promise<ApiResult> {
+  const bytes = decodeStudioImage(body);
+  if (!bytes?.byteLength) {
+    return { ok: false, error: { code: 'bad_request', message: 'image required' } };
   }
-  if ('negative_prompt' in ov && cleanText(ov.negative_prompt || '', 8000)) {
-    scene.negative = cleanText(ov.negative_prompt || '', 8000);
+  try {
+    const naiMeta = await extractNaiMetadata(bytes);
+    if (!naiMeta) throw new Error('이미지에서 NovelAI 메타데이터를 읽지 못했습니다.');
+    const scene = sceneFromNaiMetadata(naiMeta);
+    if (!cleanText(scene.main) && !scene.characters.length) {
+      throw new Error('메타데이터에 프롬프트가 없습니다.');
+    }
+    return naiPromptFromScene(scene);
+  } catch (err) {
+    return {
+      ok: false,
+      error: { code: 'no_meta', message: String((err as Error)?.message || err) },
+    };
   }
 }
 
@@ -253,20 +285,16 @@ export async function studioGenerate(cardId: string, body: Record<string, unknow
     return { ok: false, error: { code: 'no_meta', message: String((err as Error)?.message || err) } };
   }
   applyScenePromptOverrides(scene, body);
-  const ovChars = Array.isArray(body.characters) ? body.characters : null;
-  const ovHasCharPrompts = Boolean(
-    ovChars?.some((ch) => ch && typeof ch === 'object' && cleanText((ch as Record<string, unknown>).prompt)),
-  );
-  scene.characters = resolveRerollCharacters({
-    comic: true,
-    sceneChars: scene.characters,
-    stored: [],
-    fromMeta: [],
-    roster: [],
-    overrideChars: ovChars,
-    overrideHasPrompts: ovHasCharPrompts,
-    limit: characterMaxLimit(getConfig().card || {}),
-  });
+  if (!Array.isArray(body.characters)) {
+    scene.characters = resolveRerollCharacters({
+      comic: true,
+      sceneChars: scene.characters,
+      stored: [],
+      fromMeta: [],
+      roster: [],
+      limit: characterMaxLimit(getConfig().card || {}),
+    });
+  }
   if (!cleanText(scene.model)) {
     return { ok: false, error: { code: 'no_model', message: '이미지 메타에 모델이 없습니다.' } };
   }

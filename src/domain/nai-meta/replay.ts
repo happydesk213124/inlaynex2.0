@@ -54,6 +54,9 @@ export interface NaiScene {
   sampler: string;
   scheduler: string;
   model: string;
+  seed?: number;
+  /** Set by studio overrides. Absent → infer from non-0.5 centers. */
+  use_coords?: boolean;
 }
 
 function captionChars(caption: unknown, negCaption: unknown): NaiSceneChar[] {
@@ -72,6 +75,7 @@ function captionChars(caption: unknown, negCaption: unknown): NaiSceneChar[] {
     const text = cleanText(row.char_caption ?? row.charCaption ?? row.caption ?? '', 8000);
     const n = asRecord(negList[i]);
     const uc = cleanText(n?.char_caption ?? n?.charCaption ?? n?.caption ?? '', 4000);
+    if (!text && !uc) continue;
     const centers = Array.isArray(row.centers) ? asRecord(row.centers[0]) : null;
     out.push({
       prompt: text || 'girl',
@@ -117,6 +121,8 @@ export function sceneFromNaiMetadata(meta: unknown): NaiScene {
   const source = root.Source ?? root.source ?? comment.Source ?? comment.source;
   const model = cleanText(comment.model ?? root.model ?? '', 200)
     || modelFromNaiSource(source);
+  const seedRaw = Number(comment.seed ?? root.seed);
+  const seed = Number.isFinite(seedRaw) && seedRaw > 0 ? Math.floor(seedRaw) : 0;
   return {
     main: base,
     negative: negativeFromNaiMetadata(meta),
@@ -129,6 +135,7 @@ export function sceneFromNaiMetadata(meta: unknown): NaiScene {
     sampler: cleanText(comment.sampler, 80) || 'k_euler_ancestral',
     scheduler: cleanText(comment.noise_schedule ?? comment.noiseSchedule ?? comment.scheduler, 80) || 'karras',
     model,
+    ...(seed ? { seed } : {}),
   };
 }
 
@@ -150,7 +157,9 @@ export function t2iRequestFromScene(scene: NaiScene, seed: number): T2iRequest {
     sampler: scene.sampler,
     scheduler: scene.scheduler,
     model: scene.model,
-    use_coords: scene.characters.some((c) => c.center_x !== 0.5 || c.center_y !== 0.5),
+    use_coords: typeof scene.use_coords === 'boolean'
+      ? scene.use_coords
+      : scene.characters.some((c) => c.center_x !== 0.5 || c.center_y !== 0.5),
     characters: scene.characters.map((c) => ({
       name: '',
       prompt: c.prompt,
@@ -159,6 +168,52 @@ export function t2iRequestFromScene(scene: NaiScene, seed: number): T2iRequest {
       center_y: c.center_y,
     })),
   };
+}
+
+/** Prompt / size / model / coord flags from the tag studio generate body. */
+export function applyNaiSceneOverrides(scene: NaiScene, ov: Record<string, unknown> | null | undefined): void {
+  if (!ov) return;
+  if ('main_prompt' in ov) {
+    const main = cleanText(ov.main_prompt || '', 8000);
+    if (main) scene.main = main;
+  }
+  if ('negative_prompt' in ov && cleanText(ov.negative_prompt || '', 8000)) {
+    scene.negative = cleanText(ov.negative_prompt || '', 8000);
+  }
+  const model = cleanText(ov.model, 200);
+  if (model) scene.model = model;
+  const width = Math.floor(Number(ov.width));
+  const height = Math.floor(Number(ov.height));
+  if (Number.isFinite(width) && width >= 64) scene.width = width;
+  if (Number.isFinite(height) && height >= 64) scene.height = height;
+  if (ov.steps !== '' && ov.steps != null) {
+    const steps = Math.floor(Number(ov.steps));
+    if (Number.isFinite(steps) && steps >= 1) scene.steps = steps;
+  }
+  if (ov.cfg_scale != null && ov.cfg_scale !== '') {
+    const cfg = Number(ov.cfg_scale);
+    if (Number.isFinite(cfg)) scene.cfg_scale = cfg;
+  }
+  if (ov.cfg_rescale != null && ov.cfg_rescale !== '') {
+    const rescale = Number(ov.cfg_rescale);
+    if (Number.isFinite(rescale)) scene.cfg_rescale = rescale;
+  }
+  const sampler = cleanText(ov.sampler, 80);
+  if (sampler) scene.sampler = sampler;
+  const scheduler = cleanText(ov.scheduler, 80);
+  if (scheduler) scene.scheduler = scheduler;
+  if ('use_coords' in ov) scene.use_coords = ov.use_coords === true;
+  if (Array.isArray(ov.characters)) {
+    scene.characters = ov.characters.slice(0, 6).map((raw) => {
+      const c = asRecord(raw) || {};
+      return {
+        prompt: cleanText(c.prompt, 8000),
+        uc: cleanText(c.uc, 4000),
+        center_x: num(c.center_x, 0.5),
+        center_y: num(c.center_y, 0.5),
+      };
+    }).filter((c) => c.prompt || c.uc);
+  }
 }
 
 export function randomNaiSeed(): number {

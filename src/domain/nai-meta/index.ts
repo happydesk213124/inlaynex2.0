@@ -26,6 +26,7 @@ export {
 } from './prompt-tags.ts';
 export { naiMetaHasNegative, pickNaiMeta, promptFromNaiMetadata } from './from-metadata.ts';
 export {
+  applyNaiSceneOverrides,
   isComicNaiScene,
   modelFromNaiSource,
   randomNaiSeed,

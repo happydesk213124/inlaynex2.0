@@ -166,6 +166,10 @@ export interface CardSettings {
   nai4_fallback: boolean;
   /** V5 shots: speech → main tags. */
   nai5_speech: boolean;
+  /** Tag studio seed-lock toggle. Persists across opens; seed number does not. */
+  studio_seed_lock: boolean;
+  /** Tag studio section folds. `true` = collapsed. Stable ids: preset, post, gset, … */
+  studio_folds: Record<string, boolean>;
   /** Language for V5 natural (always on for V5 shots). */
   v5_natural_lang: 'en' | 'ja';
   /** Send v4_prompt centers when 2+ chars all have valid 0–1 coords. */

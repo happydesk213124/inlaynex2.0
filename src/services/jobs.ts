@@ -392,7 +392,7 @@ export async function requestJobStop(args: { session_id?: string } = {}): Promis
 
 // ── progress and state ─────────────────────────────────────────────────────
 
-type PendingInlineRow = { shot_index: number; line: number; aspect?: string };
+type PendingInlineRow = { shot_index: number; line: number; aspect?: string; kind?: 'comic' };
 
 interface ProgressExtra {
   shot_count?: number;
@@ -956,7 +956,12 @@ async function runJob(jobId: string): Promise<void> {
     shots.forEach((shot, i) => {
       const line = Math.floor(Number((shot as { line?: unknown }).line));
       if (!Number.isFinite(line) || line < 1) return;
-      pendingInline.push({ shot_index: i, line, aspect: resolveShotAspect(shot.aspect) });
+      pendingInline.push({
+        shot_index: i,
+        line,
+        aspect: resolveShotAspect(shot.aspect),
+        ...(isComicShot(shot) ? { kind: 'comic' as const } : {}),
+      });
     });
     await setJob(
       jobId,

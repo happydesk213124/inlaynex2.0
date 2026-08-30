@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   peelMain,
   peelPreset,
+  peelStudioCharFields,
   resolveCharPost,
 } from '../.test-build/tag-studio-peel.mjs';
 
@@ -44,6 +45,17 @@ describe('tag-studio peel', () => {
     assert.equal(peeled.post, 'classroom');
   });
 
+  it('keeps the speechbubble tail on C 후행 so studio can edit it', () => {
+    assert.equal(
+      resolveCharPost({
+        slim: { action: 'waving', expression: 'smile' },
+        caption: 'long silver hair, waving, smile, speechbubble, korean text:안돼, 가지마',
+        lookTags: 'long silver hair',
+      }),
+      'waving, smile, speechbubble, korean text:안돼, 가지마',
+    );
+  });
+
   it('uses slim shot fields for C 후행 when present', () => {
     assert.equal(
       resolveCharPost({
@@ -75,5 +87,29 @@ describe('tag-studio peel', () => {
       }),
       'girl, looking at viewer',
     );
+  });
+
+  it('splits a baked caption into 외형 / 코스튬 / 후행 without dumping the roster', () => {
+    const peeled = peelStudioCharFields({
+      slim: { action: 'waving', expression: 'smile' },
+      caption: 'long silver hair, blue eyes, school uniform, blue tie, waving, smile',
+      lookTags: 'long silver hair, blue eyes, extra roster only, school uniform, blue tie',
+      costumeAttire: 'school uniform, blue tie',
+    });
+    assert.equal(peeled.tags, 'long silver hair, blue eyes');
+    assert.equal(peeled.costumeTags, 'school uniform, blue tie');
+    assert.equal(peeled.post, 'waving, smile');
+  });
+
+  it('moves clothes into 코스튬 even when roster attire is empty', () => {
+    const peeled = peelStudioCharFields({
+      slim: { action: 'sitting' },
+      caption: 'black hair, brown eyes, hoodie, jeans, sitting',
+      lookTags: 'black hair, brown eyes, hoodie, jeans',
+      costumeAttire: '',
+    });
+    assert.equal(peeled.tags, 'black hair, brown eyes');
+    assert.equal(peeled.costumeTags, 'hoodie, jeans');
+    assert.equal(peeled.post, 'sitting');
   });
 });

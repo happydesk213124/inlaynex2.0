@@ -349,6 +349,19 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   card.nai5_only = flagOn(card.nai5_only, false);
   card.nai4_fallback = flagOn(card.nai4_fallback, false);
   card.nai5_speech = flagOn(card.nai5_speech, false);
+  card.studio_seed_lock = flagOn(card.studio_seed_lock, false);
+  {
+    const raw = card.studio_folds && typeof card.studio_folds === 'object' && !Array.isArray(card.studio_folds)
+      ? card.studio_folds as Record<string, unknown>
+      : {};
+    const folds: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      const id = String(key || '').trim().slice(0, 80);
+      if (!id) continue;
+      folds[id] = value === true || value === 'true' || value === 1 || value === '1' || value === 'on';
+    }
+    card.studio_folds = folds;
+  }
   {
     const lang = String(card.v5_natural_lang || 'en').toLowerCase().trim();
     card.v5_natural_lang = lang === 'ja' || lang === 'jp' || lang === 'japanese' ? 'ja' : 'en';

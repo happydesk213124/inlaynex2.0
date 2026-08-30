@@ -16,6 +16,7 @@
  * and the reattach decision must see rows exactly as the explorer showed them.
  */
 
+import { normalizeShotKind } from '../domain/comic/kind';
 import { cardMatchesMessageUnlink } from '../domain/gallery/unlink-match';
 import { IMAGE_KEY } from '../core/constants';
 import { dbg } from '../core/debug';
@@ -98,6 +99,7 @@ type GalleryRow = {
   y_percent: number | null;
   line?: number | null;
   aspect?: string;
+  kind?: 'comic';
   message_index: number;
   message_role: string;
   content_hash: string;
@@ -305,6 +307,7 @@ export async function gallery(
       y_percent: loc.y_percent,
       line: loc.line,
       aspect: cleanText(meta.aspect || '', 20) || undefined,
+      ...(normalizeShotKind(meta.kind) === 'comic' ? { kind: 'comic' as const } : {}),
       message_index: loc.message_index ?? -1,
       message_role: loc.message_role || '',
       content_hash: loc.content_hash || '',

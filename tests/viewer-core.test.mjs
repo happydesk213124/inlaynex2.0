@@ -361,6 +361,18 @@ test("inlinePlaceholderSrc is a still ring, not a spinning SVG", () => {
   const src = inlinePlaceholderSrc({ aspect: "portrait" });
   assert.doesNotMatch(decodeURIComponent(src), /animateTransform/);
   assert.match(decodeURIComponent(src), /circle/);
+  assert.match(decodeURIComponent(src), /#c4b5fd/);
+  assert.doesNotMatch(decodeURIComponent(src), /#4ade80/);
+});
+
+test("inlinePlaceholderSrc uses a green ring for comic shots", () => {
+  const src = inlinePlaceholderSrc({ aspect: "portrait", kind: "comic" });
+  const svg = decodeURIComponent(src);
+  assert.match(svg, /#4ade80/);
+  assert.match(svg, /#22c55e/);
+  assert.doesNotMatch(svg, /#c4b5fd/);
+  assert.doesNotMatch(svg, /#7c6cff/);
+  assert.notEqual(src, inlinePlaceholderSrc({ aspect: "portrait" }));
 });
 
 test("inlineDomWindow stays around the selection and never walks the chat", () => {
@@ -1337,6 +1349,17 @@ test("desiredInlinePlacements holds a linked card without bytes so pending canno
     ],
   );
   assert.deepEqual(got.placements.map((p) => p.aspect), ["square", "landscape"]);
+});
+
+test("desiredInlinePlacements copies comic kind onto pending placements", () => {
+  const got = desiredInlinePlacements(
+    [],
+    [{ line: 2, shot_index: 0, kind: "comic" }],
+    () => "",
+  );
+  assert.equal(got.placements[0].kind, "comic");
+  const html = markerBlockHtml(got.placements[0]);
+  assert.ok(html.includes(inlinePlaceholderSrc({ aspect: got.placements[0].aspect, kind: "comic" })));
 });
 
 test("desiredInlinePlacements keeps distinct pending shot slots on one line", () => {

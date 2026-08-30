@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.4';
+const PLUGIN_VERSION = '2.5.5';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -764,6 +764,17 @@ const VENDOR_CURATION_PANEL_PATCH =
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
         </div>
         <div class="card" style="margin-top:14px">
+          <strong>2.5.5</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스크롤이 끝나면 스티키를 한 통로로만 맞춥니다. 다다닥해도 위치 재기가 겹치지 않습니다</li>
+            <li>스티키 X박스: 빈 src 이미지를 만들지 않고 data URL만 그립니다</li>
+            <li>말풍선 안 태그·재생성·중단 칩을 캐릭터/프리셋과 같은 어두운 보라로 맞추고, 테두리만 낮은 채도로 구분합니다</li>
+            <li>채팅 안 프레임은 선택 말풍선에서 바깥으로 찍고 데웁니다</li>
+            <li>같은 말풍선을 다시 눌러도 래퍼가 늘어나지 않습니다</li>
+            <li>게시 샷은 WebP로 저장합니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
           <strong>2.5.4</strong>
           <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
             <li>기본 태거가 샷마다 세로·정사각·가로를 정합니다. 값이 없으면 세로입니다</li>
@@ -1064,6 +1075,7 @@ const VENDOR_DEBUG_PANEL_NEEDLE = `        <div class="card">
 
 const VENDOR_DEBUG_PANEL_PATCH = `        <div class="nx-seg" style="margin-bottom:12px">
           <button type="button" data-nx-debug-panel="log" class="\${(t.debugPanelTab || "log") === "log" ? "active" : ""}">로그</button>
+          <button type="button" data-nx-debug-panel="scroll" class="\${(t.debugPanelTab || "log") === "scroll" ? "active" : ""}">스크롤</button>
           <button type="button" data-nx-debug-panel="tagging" class="\${(t.debugPanelTab || "log") === "tagging" ? "active" : ""}">태깅</button>
           <button type="button" data-nx-debug-panel="quota" class="\${(t.debugPanelTab || "log") === "quota" ? "active" : ""}">할당량</button>
         </div>
@@ -1076,6 +1088,17 @@ const VENDOR_DEBUG_PANEL_PATCH = `        <div class="nx-seg" style="margin-bott
             <button type="button" id="nx-debug-asset-tags-copy" class="secondary">리포트 복사</button>
           </div>
           <pre id="nx-debug-asset-tags-out" style="margin-top:12px;white-space:pre-wrap;font:11.5px/1.45 Consolas,monospace;color:#b8c4d8;max-height:560px;overflow:auto;background:rgba(0,0,0,.28);padding:12px;border-radius:12px">\${h(t.debugAssetTagReport || "(아직 실행 안 함 — 채팅에서 메시지를 선택한 뒤 버튼을 누르세요)")}</pre>
+        </div>
+        \` : (t.debugPanelTab || "log") === "scroll" ? \`
+        <div class="card">
+          <strong>스크롤 파이프라인</strong>
+          <div class="muted" style="margin-top:8px">채팅을 스크롤하면 <code>scroll.*</code>만 모읍니다. 이벤트마다 찍으면 그 로그가 렉이 되므로 중간 샘플은 200ms로 합치고, settle / Da / 인라인 / 스티키만 매번 남깁니다. 패널 새로고침도 settle 때만 합니다.</div>
+          <div class="row" style="margin-top:12px">
+            <button id="nx-debug-refresh" class="secondary">새로고침</button>
+            <button id="nx-debug-clear" class="secondary">로그 비우기</button>
+            <button id="nx-debug-copy" class="secondary">로그 복사</button>
+          </div>
+          <pre id="nx-debug-log" style="margin-top:12px;white-space:pre-wrap;font:11.5px/1.45 Consolas,monospace;color:#b8c4d8;max-height:560px;overflow:auto;background:rgba(0,0,0,.28);padding:12px;border-radius:12px">\${h(typeof nxYeScroll == "function" ? nxYeScroll(220) : "") || "(스크롤 로그 없음 — 채팅을 스크롤하세요)"}</pre>
         </div>
         \` : (t.debugPanelTab || "log") === "quota" ? \`
         <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
@@ -3521,7 +3544,21 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
     const buried = !!(t.uiOpen || e._stickyEditorOpen || t.cardTagUi || t.charEditUi);
     const zImg = buried ? 1 : 99970, zPin = buried ? 1 : 99972, zBadge = buried ? 1 : 99971;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
-    const probed = typeof VC?.probeDataUrlPixelSize == "function" ? VC.probeDataUrlPixelSize(next._thumbSrc) : null;
+    let paintSrc = typeof VC?.htmlSafeImageSrc == "function" ? VC.htmlSafeImageSrc(next._thumbSrc) : (/^data:image\\//i.test(String(next._thumbSrc || "")) ? String(next._thumbSrc) : "");
+    if (!paintSrc && next.card && typeof ensureStickyCardImage == "function") {
+      try {
+        const warmed = await ensureStickyCardImage(next.card);
+        paintSrc = typeof VC?.htmlSafeImageSrc == "function" ? VC.htmlSafeImageSrc(warmed) : (/^data:image\\//i.test(String(warmed || "")) ? String(warmed) : "");
+        if (paintSrc) next._thumbSrc = paintSrc;
+      } catch {
+      }
+    }
+    if (typeof nxScrollDbg == "function") {
+      const raw = String(next._thumbSrc || "");
+      const kind = paintSrc ? "data" : (/^blob:/i.test(raw) ? "blob" : (raw ? "other" : "empty"));
+      nxScrollDbg("sticky.paint", "srcKind=" + kind + " data=" + (paintSrc ? 1 : 0), { quiet: !0 });
+    }
+    const probed = typeof VC?.probeDataUrlPixelSize == "function" ? VC.probeDataUrlPixelSize(paintSrc || next._thumbSrc) : null;
     const sized = typeof VC?.stickyThumbSizeForImage == "function"
       ? VC.stickyThumbSizeForImage(env.w, env.h, probed?.w, probed?.h, 0, 0, { width: vw, height: vh, pad: 16 })
       : { w: env.w, h: env.h };
@@ -3531,7 +3568,7 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
     if (!layout) return;
     const counts = typeof VC?.stickyV2ShotCounts == "function" ? VC.stickyV2ShotCounts(l, e.markers.length) : { above: l, below: Math.max(0, e.markers.length - l - 1) };
     const layoutKey = [l, mobileOn ? 1 : 0, corner, showSticky ? 1 : 0, buried ? 1 : 0, counts.above, counts.below, sized.w, sized.h, layout.image.left, layout.image.top, layout.pin.left, layout.pin.top].join("|");
-    if (e._v2LayoutKey === layoutKey && e._flashSeg === l && next._paintedSrc === next._thumbSrc) {
+    if (e._v2LayoutKey === layoutKey && e._flashSeg === l && paintSrc && next._paintedSrc === paintSrc) {
       if (Number.isFinite(Number(reading))) e._lastReading = Number(reading), e._flashReading = Number(reading);
       return;
     }
@@ -3551,15 +3588,10 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
     const PIN = " ";
     try {
       // Fast swap: paint+show new, then hide old immediately (no blank gap, no delay).
-      if (showSticky && next._thumbSrc && typeof next.thumb.setInnerHTML == "function" && next._paintedSrc !== next._thumbSrc) {
-        await next.thumb.setInnerHTML(compose(next._thumbSrc));
-        try {
-          const img = typeof next.thumb.querySelector == "function" ? await next.thumb.querySelector("img") : null;
-          if (img && typeof img.setAttribute == "function") await img.setAttribute("src", next._thumbSrc);
-        } catch {
-        }
+      if (showSticky && typeof next.thumb.setInnerHTML == "function" && next._paintedSrc !== paintSrc) {
+        await next.thumb.setInnerHTML(compose(paintSrc));
         if (flashGen !== e._flashGen) return;
-        next._thumbHtmlId = activeId, next._paintedSrc = next._thumbSrc, e._lastStickyThumbHtmlId = activeId;
+        if (paintSrc) next._thumbHtmlId = activeId, next._paintedSrc = paintSrc, e._lastStickyThumbHtmlId = activeId;
       }
       if (showSticky && typeof next.thumb.setStyleAttribute == "function") {
         await next.thumb.setStyleAttribute(e._stickyThumbShowStyle);
@@ -3676,6 +3708,32 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
     if (idx < 0) return;
     await nxActivateStickyByIndex(idx);
   }
+  function nxScrollDbg(step, extra, opts) {
+    try {
+      const quiet = !!(opts && opts.quiet);
+      const a = {
+        t: Date.now(),
+        level: "info",
+        event: "scroll." + String(step || "tick"),
+        detail: typeof z == "function" ? z(typeof Ae == "function" ? Ae(extra || "") : extra || "", 700) : String(extra || "")
+      };
+      t.debugLog.push(a);
+      if (typeof Te == "number" && t.debugLog.length > Te) t.debugLog.splice(0, t.debugLog.length - Te);
+      if (!quiet && t.debugUi?.refreshSoon) t.debugUi.refreshSoon();
+    } catch {
+    }
+  }
+  function nxYeScroll(n) {
+    try {
+      const cap = Math.max(20, Math.min(400, Number(n) || 220));
+      return (t.debugLog || []).filter((row) => String(row.event || "").startsWith("scroll.")).slice(-cap).map((row) => {
+        const ts = new Date(row.t).toLocaleTimeString("ko-KR", { hour12: !1 });
+        return ts + " " + row.event + (row.detail ? " | " + row.detail : "");
+      }).join("\\n");
+    } catch {
+      return "";
+    }
+  }
   /** Unwrap SafeDOM NodeList → plain array (same helper pattern as inline inject). */
   async function nxUnwrapSafeNodes(raw) {
     if (!raw) return [];
@@ -3688,14 +3746,43 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
     }
     return Array.isArray(raw) ? raw : raw && typeof raw.length == "number" ? Array.from(raw) : raw ? [raw] : [];
   }
+  function nxScheduleStickyScrollSnap(why) {
+    t._stickyActivateGen = (Number(t._stickyActivateGen) || 0) + 1;
+    const gen = t._stickyActivateGen;
+    if (t._stickySnapTimer) clearTimeout(t._stickySnapTimer);
+    t._stickySnapTimer = setTimeout(() => {
+      t._stickySnapTimer = null;
+      if (gen !== t._stickyActivateGen) return;
+      if (t._stickyActivateBusy) {
+        t._stickyActivateAgain = !0;
+        return;
+      }
+      t._stickyActivateBusy = !0;
+      nxScrollDbg("sticky.snap", "why=" + String(why || "") + " gen=" + gen);
+      nxUpdateStickyActiveOnScrollEnd(gen).catch(() => {
+      }).finally(() => {
+        t._stickyActivateBusy = !1;
+        if (t._stickyActivateAgain) {
+          t._stickyActivateAgain = !1;
+          nxScheduleStickyScrollSnap("again");
+        }
+      });
+    }, 140);
+  }
   /**
    * 말풍선 삽화: cursor → hit-test bubble shot (same scope as long-press), else nearest.
    * Idle / settle only — do not call mid-scroll (that was the lag we cut).
    */
-  async function nxActivateStickyNearestToCursor() {
+  async function nxActivateStickyNearestToCursor(opts) {
+    const _t0 = Date.now();
+    const fromScroll = !!(opts && opts.fromScroll);
+    const snapGen = opts && Number.isFinite(Number(opts.gen)) ? Number(opts.gen) : null;
+    const stale = () => snapGen != null && snapGen !== t._stickyActivateGen;
     const e = t.overlayUi;
+    if (!fromScroll && t._stickyActivateBusy) return;
     if (!e?.markers?.length || t.uiOpen) return;
     if (t.backendSettings?.card?.inline_chat_images !== !0) return;
+    if (stale()) return;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     const vp = viewerViewport();
     let px = Number(t._pointerClientX), py = Number(t._pointerClientY);
@@ -3729,9 +3816,10 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
       : e.markers.map(() => null);
     const cacheOk = cacheAge >= 0 && cacheAge < 280 && rects.some((r) => r && Number.isFinite(Number(r.top)));
     const collectFrom = async (root) => {
-      if (!root || typeof root.querySelectorAll != "function") return;
+      if (!root || typeof root.querySelectorAll != "function" || stale()) return;
       const nodes = await nxUnwrapSafeNodes(await root.querySelectorAll("[x-inlay-inline-shot],[data-inlay-inline-shot]"));
       for (const node of nodes) {
+        if (stale()) return;
         if (!node) continue;
         const id = await nxReadInlineShotId(node);
         if (!id) continue;
@@ -3761,10 +3849,12 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
       rects = e.markers.map(() => null);
       try {
         await collectFrom(e.pinTarget);
+        if (stale()) return;
         // Same root long-press uses — pinTarget alone often misses SafeDOM nesting.
         await collectFrom(e.doc || t.hostDoc);
       } catch {
       }
+      if (stale()) return;
       e._inlineRectsAt = Date.now();
     }
     e._inlineCentersCache = centers;
@@ -3782,19 +3872,32 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
         fallbackSegment: fallback
       });
     }
-    if (want == null || want < 0) return;
+    if (stale()) return;
+    if (want == null || want < 0) {
+      if (fromScroll) nxScrollDbg("sticky.nearest.none", "ms=" + (Date.now() - _t0) + " cache=" + (cacheOk ? 1 : 0) + " markers=" + e.markers.length);
+      return;
+    }
     e._stickyNearestIdx = want;
     e._stickyPointerSeg = want;
     await nxActivateStickyByIndex(want, reading);
+    if (stale()) return;
+    if (fromScroll) nxScrollDbg("sticky.nearest", "ms=" + (Date.now() - _t0) + " seg=" + want + " cache=" + (cacheOk ? 1 : 0) + " markers=" + e.markers.length);
   }
   /** Scroll-end sticky activate: 말풍선 ON → cursor-nearest; else reading%. Settle only. */
-  async function nxUpdateStickyActiveOnScrollEnd() {
+  async function nxUpdateStickyActiveOnScrollEnd(gen) {
+    const _t0 = Date.now();
     const e = t.overlayUi;
-    if (!e?.markers?.length || t.uiOpen) return;
+    if (!e?.markers?.length || t.uiOpen) {
+      nxScrollDbg("sticky.end.skip", "markers=" + (e?.markers?.length || 0) + " ui=" + (t.uiOpen ? 1 : 0));
+      return;
+    }
+    if (gen != null && Number(gen) !== t._stickyActivateGen) return;
     // Scroll moved the bubbles — force a fresh rect pass.
     e._inlineRectsAt = 0;
     if (t.backendSettings?.card?.inline_chat_images === !0) {
-      await nxActivateStickyNearestToCursor();
+      await nxActivateStickyNearestToCursor({ fromScroll: !0, gen });
+      if (gen != null && Number(gen) !== t._stickyActivateGen) return;
+      nxScrollDbg("sticky.end.inline", "ms=" + (Date.now() - _t0));
       return;
     }
     let rect = null;
@@ -3815,6 +3918,7 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
     }
     if (!rect) rect = e._pinRectCache || null;
     if (!rect) {
+      nxScrollDbg("sticky.end.norect", "ms=" + (Date.now() - _t0) + " → scheduleStickySync(full)");
       scheduleStickySync(!0);
       return;
     }
@@ -3824,8 +3928,12 @@ const VENDOR_STICKY_NX_ACTIVATE_PATCH = `  function scheduleStickySync(forceFull
     if (reading == null) reading = typeof VC?.clampReadingPercent == "function" ? VC.clampReadingPercent(rect, vh, band) : cn(rect, vh, band);
     const markerPcts = e.markers.map((T) => Number(T.yPercent) || 0);
     const want = typeof VC?.activeSegmentIndex == "function" ? VC.activeSegmentIndex(markerPcts, reading) : dn(markerPcts, reading);
-    if (want == null || want < 0) return;
+    if (want == null || want < 0) {
+      nxScrollDbg("sticky.end.noseg", "ms=" + (Date.now() - _t0) + " reading=" + reading);
+      return;
+    }
     await nxActivateStickyByIndex(want, reading);
+    nxScrollDbg("sticky.end.reading", "ms=" + (Date.now() - _t0) + " seg=" + want + " reading=" + reading);
   }
   /** Legacy mid-scroll flash retired — sticky v2 paints via nxStickyV2ApplyFromHt. */
   function stickyFlashOnScroll() {
@@ -4013,8 +4121,7 @@ const VENDOR_SCROLL_PHASE_PATCH = `    }, captureLiveScrollY = () => {
       } catch {
       }
     }, snapStickyAfterScroll = () => {
-      // Delegate to NEW scroll-end activator (live pin rect + pointer/reading%).
-      if (typeof nxUpdateStickyActiveOnScrollEnd == "function") nxUpdateStickyActiveOnScrollEnd().catch(() => {});
+      if (typeof nxScheduleStickyScrollSnap == "function") nxScheduleStickyScrollSnap("afterScroll");
     }, ensureScrollPhaseBus = () => {
       if (t._scrollPhaseBus) return t._scrollPhaseBus;
       const VC = globalThis.__INLAY_VIEWER_CORE__;
@@ -4023,23 +4130,30 @@ const VENDOR_SCROLL_PHASE_PATCH = `    }, captureLiveScrollY = () => {
       const onActive = () => {
         if (t.uiOpen) return;
         captureLiveScrollY();
+        t._scrollSampleN = (Number(t._scrollSampleN) || 0) + 1;
+        const now = Date.now();
+        const inlineOn = t.backendSettings?.card?.inline_chat_images === !0;
+        if (!t._scrollSampleAt || now - t._scrollSampleAt >= 200) {
+          t._scrollSampleAt = now;
+          nxScrollDbg("sample", "n=" + t._scrollSampleN + " y=" + (t.overlayUi?._liveScrollY ?? "?") + " inline=" + (inlineOn ? 1 : 0) + " mid=" + (inlineOn ? "invalidateRects" : "scheduleStickySync"), { quiet: !0 });
+          t._scrollSampleN = 0;
+        }
         // 말풍선 ON: mid-scroll sticky shot stays put (settle picks nearest — lag cut).
-        if (t.backendSettings?.card?.inline_chat_images === !0) {
+        if (inlineOn) {
           if (t.overlayUi) t.overlayUi._inlineRectsAt = 0;
           return;
         }
         scheduleStickySync();
       };
       const onSettle = () => {
-        if (t.uiOpen) return;
+        if (t.uiOpen) {
+          nxScrollDbg("settle.skip", "uiOpen");
+          return;
+        }
         captureLiveScrollY();
+        nxScrollDbg("settle", "y=" + (t.overlayUi?._liveScrollY ?? "?") + " inline=" + (t.backendSettings?.card?.inline_chat_images === !0 ? 1 : 0) + " → settleScrollTrackNow + stickySnap");
         settleScrollTrackNow();
-        // Always snap sticky after settle (track Da may also snap; duplicate is ok).
-        if (t._stickySnapTimer) clearTimeout(t._stickySnapTimer);
-        t._stickySnapTimer = setTimeout(() => {
-          t._stickySnapTimer = null;
-          if (typeof nxUpdateStickyActiveOnScrollEnd == "function") nxUpdateStickyActiveOnScrollEnd().catch(() => {});
-        }, 180);
+        nxScheduleStickyScrollSnap("settle");
       };
       t._scrollPhaseBus = typeof make == "function"
         ? make({ settleDelayMs: settleMs, onActive, onSettle })
@@ -4062,12 +4176,22 @@ const VENDOR_SCROLL_PHASE_PATCH = `    }, captureLiveScrollY = () => {
           }
         };
       return t._scrollPhaseBus;
-    }, u = () => {
+    }, u = (ev) => {
       if (t.uiOpen) return;
+      t._scrollEvN = (Number(t._scrollEvN) || 0) + 1;
+      const now = Date.now();
+      if (!t._scrollEvAt || now - t._scrollEvAt >= 200) {
+        t._scrollEvAt = now;
+        nxScrollDbg("listener", "n=" + t._scrollEvN + " type=" + (ev && ev.type || "scroll") + " → nxScopeCheckSoon + onScrollSample", { quiet: !0 });
+        t._scrollEvN = 0;
+      }
+      t._nxScopeFromScroll = !0;
       nxScopeCheckSoon();
+      t._nxScopeFromScroll = !1;
       ensureScrollPhaseBus().onScrollSample();
-    }, onScrollEnd = () => {
+    }, onScrollEnd = (ev) => {
       if (t.uiOpen) return;
+      nxScrollDbg("scrollend", "type=" + (ev && ev.type || "scrollend") + " → onScrollEnd");
       ensureScrollPhaseBus().onScrollEnd();
     }, onUserScrollStart = u, b = await fe(n, "scroll", u, !0), C = await fe(e, "scroll", u, !0), S = await fe(e, "scrollend", onScrollEnd, !0);
     let E = !1;
@@ -4109,33 +4233,43 @@ const VENDOR_SCROLL_TRACK_SNAP_NEEDLE = `      // Always re-enter Da — same DO
 const VENDOR_SCROLL_TRACK_SNAP_PATCH = `      // Same bubble (not streaming): sticky only — skip Da + inline reinject thrash.
       const samePick = t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(pick);
       if (samePick && !t._scriptStreaming) {
+        nxScrollDbg("track.same", "DOM#" + pick + " skipDa streaming=0 → stickySnap");
         try {
-          if (typeof nxUpdateStickyActiveOnScrollEnd == "function") {
-            if (t._stickySnapTimer) clearTimeout(t._stickySnapTimer);
-            t._stickySnapTimer = setTimeout(() => {
-              t._stickySnapTimer = null, nxUpdateStickyActiveOnScrollEnd().catch(() => {});
-            }, 120);
-          }
+          nxScheduleStickyScrollSnap("samePick");
         } catch {
         }
         return;
       }
       // New bubble (or streaming text): full scroll select. Same index can hold new text after reply.
+      nxScrollDbg("track.da", "DOM#" + pick + " streaming=" + (t._scriptStreaming ? 1 : 0) + " same=" + (samePick ? 1 : 0) + " → Da(scroll)");
       await Da(pick, n, { source: "scroll" });
-      // Scroll select done → NEW sticky activate (live pin % / pointer nearest).
+      nxScrollDbg("track.da.done", "DOM#" + pick + " → stickySnap");
       try {
-        if (typeof nxUpdateStickyActiveOnScrollEnd == "function") {
-          if (t._stickySnapTimer) clearTimeout(t._stickySnapTimer);
-          t._stickySnapTimer = setTimeout(() => {
-            t._stickySnapTimer = null, nxUpdateStickyActiveOnScrollEnd().catch(() => {});
-          }, 120);
-        }
+        nxScheduleStickyScrollSnap("afterDa");
       } catch {
       }
     } finally {
       t._scrollTrackBusy = !1;
     }
   }`;
+
+const VENDOR_TRACK_SCROLL_NEEDLE = `  async function trackMessageByScroll() {
+    if (!scrollTrackEnabled() || t.uiOpen || t._scrollTrackBusy) return;`;
+const VENDOR_TRACK_SCROLL_PATCH = `  async function trackMessageByScroll() {
+    if (!scrollTrackEnabled() || t.uiOpen || t._scrollTrackBusy) {
+      if (typeof nxScrollDbg == "function") nxScrollDbg("track.skip", \`en=\${scrollTrackEnabled() ? 1 : 0} ui=\${t.uiOpen ? 1 : 0} busy=\${t._scrollTrackBusy ? 1 : 0}\`);
+      return;
+    }
+    if (typeof nxScrollDbg == "function") nxScrollDbg("track.start", \`cacheAge=\${t._msgElsCache ? Date.now() - t._msgElsCache.at : "-"}\`);`;
+
+const VENDOR_SETTLE_TRACK_NEEDLE = `  function settleScrollTrackNow() {
+    if (!scrollTrackEnabled() || t.uiOpen) return;`;
+const VENDOR_SETTLE_TRACK_PATCH = `  function settleScrollTrackNow() {
+    if (!scrollTrackEnabled() || t.uiOpen) {
+      if (typeof nxScrollDbg == "function") nxScrollDbg("track.settle.skip", \`en=\${scrollTrackEnabled() ? 1 : 0} ui=\${t.uiOpen ? 1 : 0}\`);
+      return;
+    }
+    if (typeof nxScrollDbg == "function") nxScrollDbg("track.settleNow", "→ bump/settleNow → trackMessageByScroll");`;
 
 const VENDOR_SCROLL_TRACK_VH_NEEDLE = `      const o = typeof window < "u" && window.innerHeight || 800;
       const py = Number(t._pointerClientY), px = Number(t._pointerClientX);
@@ -8273,11 +8407,15 @@ const VENDOR_STICKY_POOL_IMG_NEEDLE =
 const VENDOR_STICKY_POOL_IMG_PATCH =
   `        const X = await H(n, "div", {
           style: "position:fixed;display:none;z-index:99970;",
-          html: \`<img src="" style="width:100%;height:100%;object-fit:cover;display:block" />\`
+          html: \`<div style="width:100%;height:100%;background:transparent"></div>\`
         });
         try {
-          const img = typeof X.querySelector == "function" ? await X.querySelector("img") : null;
-          if (img && typeof img.setAttribute == "function") await img.setAttribute("src", src);
+          const VC = globalThis.__INLAY_VIEWER_CORE__;
+          const dataSrc = typeof VC?.htmlSafeImageSrc == "function" ? VC.htmlSafeImageSrc(src) : (/^data:image\\//i.test(String(src || "")) ? String(src) : "");
+          if (dataSrc && typeof X.setInnerHTML == "function") {
+            const html = typeof VC?.composeStickyThumbHtml == "function" ? VC.composeStickyThumbHtml(dataSrc) : \`<img src="\${dataSrc}" style="width:100%;height:100%;object-fit:contain;display:block;background:transparent" />\`;
+            await X.setInnerHTML(html);
+          }
         } catch {
         }
         await e.layer.appendChild(X);`;
@@ -9178,6 +9316,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
   }
   /** Selection hop: photos on/off only. Never tears a spinner. */
   async function nxSyncInlinePhotosOnly() {
+    if (typeof nxScrollDbg == "function") nxScrollDbg("inline.sync.start", \`src=\${t.selectedMessage?.selectSource || ""} DOM#\${t.selectedMessage?.domIndex ?? "?"}\`);
     if (t.backendSettings?.card?.inline_chat_images !== !0) return;
     const sel = t.selectedMessage;
     if (!sel) return;
@@ -9984,6 +10123,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const msLeft = 0;
       y("info", "inline.inject", \`shots=\${placements.length}+enc\${encodeLater.length} placed=\${placed} watch=\${nxInlineSubIds(lockKey).size} pending=\${placements.filter((p) => p.pending).length}\`);
       y("info", "inline.inject.ms", \`total=\${Date.now() - tStart} html=\${msHtml} scan=\${cacheHit ? "cached" : msScan}(hosts=\${hosts.length}/\${rawCount}) place=\${msPlace} watch=\${msWatch} left=\${msLeft}\`);
+      if (t.selectedMessage?.selectSource === "scroll" && typeof nxScrollDbg == "function") nxScrollDbg("inline.inject", \`total=\${Date.now() - tStart} scan=\${cacheHit ? "cached" : msScan} place=\${msPlace}\`);
       t._inlinePaintScale = scaleNow;
     } catch (err) {
       // A throw leaves the bubble half-painted; drop any watcher it registered so
@@ -10207,6 +10347,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     return patched;
   }
   async function refreshSelectedInlineImages(force, opts) {
+    if (typeof nxScrollDbg == "function") nxScrollDbg("inline.refresh.start", \`force=\${force ? 1 : 0} onlySel=\${opts && opts.onlySel ? 1 : 0} src=\${t.selectedMessage?.selectSource || ""} DOM#\${t.selectedMessage?.domIndex ?? "?"}\`);
     if (t.backendSettings?.card?.inline_chat_images !== !0 && nxMsgAct() === "off") {
       hideAttachToast().catch(() => {});
       return;
@@ -10848,13 +10989,14 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const haveAll = wantBottom ? haveEnds.has("top") && haveEnds.has("bot") : (haveEnds.has("top") || existing.length === 1);
     if (existing.length === wantCount && !knownDifferent && haveAll) return;
     await removeBars(existing);
+    const chipBase = "cursor:pointer;background:rgba(124,108,255,.16);color:#e8eef8;padding:7px 14px;border-radius:10px;font:700 14px Segoe UI,sans-serif;pointer-events:auto;user-select:none;line-height:1.2";
     const chipCss = (kind) => kind === "char" || kind === "preset"
-      ? "cursor:pointer;border:1px solid rgba(196,181,253,.45);background:rgba(124,108,255,.16);color:#e8eef8;padding:7px 14px;border-radius:10px;font:700 14px Segoe UI,sans-serif;pointer-events:auto;user-select:none;line-height:1.2"
+      ? chipBase + ";border:1px solid rgba(196,181,253,.45)"
       : kind === "tag"
-      ? "cursor:pointer;border:0;background:#0f766e;color:#fff;padding:7px 14px;border-radius:10px;font:700 14px Segoe UI,sans-serif;pointer-events:auto;user-select:none;line-height:1.2"
+      ? chipBase + ";border:1px solid rgba(63,140,120,.42)"
       : kind === "stop"
-      ? "cursor:pointer;border:0;background:#b91c1c;color:#fff;padding:7px 14px;border-radius:10px;font:700 14px Segoe UI,sans-serif;pointer-events:auto;user-select:none;line-height:1.2"
-      : "cursor:pointer;border:0;background:#7c6cff;color:#fff;padding:7px 14px;border-radius:10px;font:700 14px Segoe UI,sans-serif;pointer-events:auto;user-select:none;line-height:1.2";
+      ? chipBase + ";border:1px solid rgba(176,92,92,.40)"
+      : chipBase + ";border:1px solid rgba(167,139,250,.48)";
     const chipKinds = ["tag", "regen", "stop", "char", "preset"];
     const chipLabels = { tag: "태그", regen: "재생성", stop: "중단", char: "캐릭터", preset: "프리셋" };
     const chipsHtml = chipKinds.map((kind) =>
@@ -10936,7 +11078,9 @@ const VENDOR_INLINE_CALL_PATCH =
       }
     } else if (source === "click" || source === "text" || source === "scroll") {
       try {
-        if (await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage))) await nxSyncInlinePhotosOnly();
+        const hasFr = await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage));
+        if (source === "scroll" && typeof nxScrollDbg == "function") nxScrollDbg("da.inline", hasFr ? "nxSyncInlinePhotosOnly" : "refreshSelectedInlineImages");
+        if (hasFr) await nxSyncInlinePhotosOnly();
         else await refreshSelectedInlineImages();
       } catch {
       }
@@ -10965,6 +11109,7 @@ const VENDOR_INLINE_SAME_PATCH =
         }
       } else if ((source === "click" || source === "text" || source === "scroll") && !(await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage)))) {
         try {
+          if (source === "scroll" && typeof nxScrollDbg == "function") nxScrollDbg("da.same.inline", "refreshSelectedInlineImages (no frame)");
           await refreshSelectedInlineImages();
         } catch {
         }
@@ -11914,7 +12059,10 @@ const VENDOR_REBIND_RETARGET_PATCH =
 const VENDOR_SELECT_SAME_NEEDLE =
   `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c) return !0;`;
 const VENDOR_SELECT_SAME_PATCH =
-  `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c && !t.pendingSessionId && t.selectedMessage.sessionId && t.lastScope?.sessionId && t.selectedMessage.sessionId === t.lastScope.sessionId) return !0;`;
+  `if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c && !t.pendingSessionId && t.selectedMessage.sessionId && t.lastScope?.sessionId && t.selectedMessage.sessionId === t.lastScope.sessionId) {
+      if (source === "scroll" && typeof nxScrollDbg == "function") nxScrollDbg("da.skip.same", \`DOM#\${e} hash=\${String(c).slice(0, 8)}\`);
+      return !0;
+    }`;
 
 /**
  * Scroll DOM select skipped gallery fetch (`ce`). Empty `t.gallery` → linkedCards=[] →
@@ -11969,11 +12117,12 @@ const VENDOR_SCROLL_GALLERY_NEW_PATCH = `    {
       // trip awaited before the first paint — for cards we already had.
       const galleryStale = !Array.isArray(t.gallery) || !t.gallery.length || t._galleryCache?.sessionId !== r.sessionId;
       if (source !== "scroll" || galleryStale) {
+        if (source === "scroll" && typeof nxScrollDbg == "function") nxScrollDbg("da.gallery.ce", \`stale=\${galleryStale ? 1 : 0}\`);
         try {
           await ce(r.sessionId, galleryStale);
         } catch {
         }
-      }
+      } else if (source === "scroll" && typeof nxScrollDbg == "function") nxScrollDbg("da.gallery.skipCe", "cache hit");
     }
     u = linkedCards(t.selectedMessage);
     if (!u.length) {
@@ -12006,10 +12155,16 @@ const VENDOR_SCROLL_GALLERY_NEW_PATCH = `    {
         } catch {
         }
       }
+        if (typeof nxScrollDbg == "function") nxScrollDbg("da.new", \`cards=\${u.length} → scheduleOverlayPlace(40)+onSelectionChanged\`);
         scheduleOverlayPlace(40), await onSelectionChanged("content");
-      } else scheduleStickySync(), await onSelectionChanged("content");
+      } else {
+        if (typeof nxScrollDbg == "function") nxScrollDbg("da.new", "cards=0 → scheduleStickySync+onSelectionChanged");
+        scheduleStickySync(), await onSelectionChanged("content");
+      }
       try {
-        if (await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage))) await nxSyncInlinePhotosOnly();
+        const hasFr = await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage));
+        if (typeof nxScrollDbg == "function") nxScrollDbg("da.new.inline", hasFr ? "nxSyncInlinePhotosOnly" : "refreshSelectedInlineImages");
+        if (hasFr) await nxSyncInlinePhotosOnly();
         else await refreshSelectedInlineImages();
       } catch {
       }
@@ -12318,8 +12473,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.4",
-    body: "기본 태거가 샷 비율을 정하고, 없으면 세로입니다. 코믹도 그 값을 그대로 씁니다. 업데이트 내역 탭 참고."
+    title: "2.5.5",
+    body: "스크롤 끝 스티키는 한 통로입니다. 스티키는 data URL만 그리고, 말풍선 칩은 어두운 보라입니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -13477,6 +13632,7 @@ const VENDOR_POINTER_SELECT_PATCH =
     const now = Date.now();
     if (t._scopeCheckAt && now - t._scopeCheckAt < 700) return;
     t._scopeCheckAt = now;
+    if (t._nxScopeFromScroll && typeof nxScrollDbg == "function") nxScrollDbg("scopeCheck", "Z() host index (from scroll)");
     Z().catch(() => {});
   }
   function schedulePointerSelect(reason, delayMs = 1e3) {
@@ -15692,6 +15848,8 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_PTR_STICKY_NEEDLE, 'inline pointer sticky sync'],
     [VENDOR_SCROLL_PHASE_NEEDLE, 'scroll phase bus'],
     [VENDOR_SCROLL_TRACK_SNAP_NEEDLE, 'scroll track sticky snap'],
+    [VENDOR_TRACK_SCROLL_NEEDLE, 'scroll track start log'],
+    [VENDOR_SETTLE_TRACK_NEEDLE, 'scroll settle now log'],
     [VENDOR_SCROLL_TRACK_VH_NEEDLE, 'scroll track viewport mid'],
     [VENDOR_HOVER_PREVIEW_OFF_NEEDLE, 'hover preview force off'],
     [VENDOR_HOVER_PREVIEW_TOGGLE_NEEDLE, 'hover preview toggle remove'],
@@ -15859,7 +16017,7 @@ const loadVendorUi = (): string => {
     [VENDOR_FORCE_REGEN_INLINE_NEEDLE, 'force regen inline clear'],
     [VENDOR_DE_STRIP_NEEDLE, 'De strip inline markers'],
     [VENDOR_IE_FN_NEEDLE, 'Ie/ensureSticky accept blob display urls'],
-    [VENDOR_STICKY_POOL_IMG_NEEDLE, 'sticky pool img setAttribute'],
+    [VENDOR_STICKY_POOL_IMG_NEEDLE, 'sticky pool data-only thumb'],
     [VENDOR_DT_FN_NEEDLE, 'risu-chat data-chat-id list'],
     [VENDOR_DA_SAME_CLICK_NEEDLE, 'same click inline no-op'],
     [VENDOR_DA_QA_NEEDLE, 'Da qa data-chat-index'],
@@ -16095,6 +16253,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_PTR_STICKY_NEEDLE, VENDOR_INLINE_PTR_STICKY_PATCH)
     .replace(VENDOR_SCROLL_PHASE_NEEDLE, VENDOR_SCROLL_PHASE_PATCH)
     .replace(VENDOR_SCROLL_TRACK_SNAP_NEEDLE, VENDOR_SCROLL_TRACK_SNAP_PATCH)
+    .replace(VENDOR_TRACK_SCROLL_NEEDLE, VENDOR_TRACK_SCROLL_PATCH)
+    .replace(VENDOR_SETTLE_TRACK_NEEDLE, VENDOR_SETTLE_TRACK_PATCH)
     .replace(VENDOR_SCROLL_TRACK_VH_NEEDLE, VENDOR_SCROLL_TRACK_VH_PATCH)
     .replace(VENDOR_HOVER_PREVIEW_OFF_NEEDLE, VENDOR_HOVER_PREVIEW_OFF_PATCH)
     .replace(VENDOR_HOVER_PREVIEW_TOGGLE_NEEDLE, VENDOR_HOVER_PREVIEW_TOGGLE_PATCH)
@@ -16572,6 +16732,9 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'await addChip("수정", "base"', 'viewer base chip 수정 landed');
     assertOnce(out, 'await addInspectBtn(chipRow, "수정", "base"', 'inspect base chip 수정 landed');
     assertOnce(out, 'async function nxStickyV2ApplyFromHt', 'sticky v2 apply landed');
+    if (out.includes('html: `<img src="" style="width:100%;height:100%;object-fit:cover;display:block" />`')) {
+      throw new Error('[build] sticky pool must not mount an empty-src img');
+    }
     assertOnce(out, 'function nxReadyImg(src)', 'nxReadyImg display-url helper landed');
     if (out.includes('typeof fb == "string" && /^data:image')) {
       throw new Error('[build] leftover data:image gate on fb — blob thumbs would stay empty');
@@ -16584,8 +16747,14 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'const anchorY = o * 0.5;', 'scroll track viewport mid landed');
     assertOnce(out, 'Sticky pin hover preview removed', 'inline ptr hover preview removed');
     assertOnce(out, 'function hoverPreviewOn() {\n    return !1;\n  }', 'hover preview force off landed');
-    if (!out.includes('nxUpdateStickyActiveOnScrollEnd().catch')) {
-      throw new Error('[build] scroll-end missing nxUpdateStickyActiveOnScrollEnd call');
+    if (!out.includes('const chipBase = "cursor:pointer;background:rgba(124,108,255,.16)') || out.includes('kind === "tag"\n      ? "cursor:pointer;border:0;background:#0f766e')) {
+      throw new Error('[build] in-bubble tag/regen/stop chips must share the dark purple preset base');
+    }
+    if (!out.includes('function nxScheduleStickyScrollSnap(') || !out.includes('nxScheduleStickyScrollSnap("settle")')) {
+      throw new Error('[build] scroll sticky snap must go through one scheduler');
+    }
+    if (out.includes('sticky.timer180') || out.includes('sticky.timer120')) {
+      throw new Error('[build] dual 120/180 sticky timers must be removed');
     }
     if (!out.includes('nxActivateStickyByCardId(card.id)')) {
       throw new Error('[build] inline longpress missing nxActivateStickyByCardId');
@@ -16604,6 +16773,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('nxActivateStickyNearestToCursor')) {
       throw new Error('[build] missing nxActivateStickyNearestToCursor (live bubble nearest)');
+    }
+    if (!out.includes('function nxScrollDbg(') || !out.includes('data-nx-debug-panel="scroll"') || !out.includes('function nxYeScroll(')) {
+      throw new Error('[build] scroll debug tab and nxScrollDbg must be patched in');
     }
     if (!out.includes('ensureScriptDomQuietWatcher') || !out.includes('scriptOutput.domQuiet5') || !out.includes('scriptOutput.snap')) {
       throw new Error('[build] missing streaming 500c/4s DOM snap track');

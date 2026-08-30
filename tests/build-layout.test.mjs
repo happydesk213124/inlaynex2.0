@@ -1103,7 +1103,8 @@ test('message click cannot enter the structural inline refresh', () => {
   const callTo = source.indexOf('const VENDOR_INLINE_SAME_NEEDLE', callFrom);
   const callPatch = source.slice(callFrom, callTo);
   assert.match(callPatch, /source === "provisional" && opts\.auto/);
-  assert.match(callPatch, /if \(await nxBubbleHasInlineFrame\(o, linkedCards\(t\.selectedMessage\), nxPendingForInlineSelection\(t\.selectedMessage\)\)\) await nxSyncInlinePhotosOnly\(\);[\s\S]*else await refreshSelectedInlineImages\(\)/);
+  assert.match(callPatch, /nxBubbleHasInlineFrame\(o, linkedCards\(t\.selectedMessage\), nxPendingForInlineSelection\(t\.selectedMessage\)\)/);
+  assert.match(callPatch, /if \(hasFr\) await nxSyncInlinePhotosOnly\(\);[\s\S]*else await refreshSelectedInlineImages\(\)/);
 
   const sameFrom = source.indexOf('const VENDOR_INLINE_SAME_PATCH =');
   const sameTo = source.indexOf('/** Progressive bubble inline', sameFrom);

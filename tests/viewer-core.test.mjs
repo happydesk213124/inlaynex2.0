@@ -699,12 +699,15 @@ test("fitBoxInside preserves landscape/square/portrait inside envelope", () => {
 });
 
 test("composeStickyThumbHtml uses contain (full image, no crop)", () => {
-  const html = composeStickyThumbHtml("new", "old");
-  assert.match(html, /new/);
+  const html = composeStickyThumbHtml("data:image/png;base64,xx", "old");
+  assert.match(html, /data:image\/png;base64,xx/);
   assert.match(html, /object-fit:contain/);
   assert.match(html, /background:transparent/);
   assert.doesNotMatch(html, /background:#0b0f18/);
   assert.equal((html.match(/<img/g) || []).length, 1);
+  const blobHtml = composeStickyThumbHtml("blob:https://host/abc", "");
+  assert.doesNotMatch(blobHtml, /<img /);
+  assert.doesNotMatch(blobHtml, /blob:/);
 });
 
 test("composeStickyThumbHtml empty placeholder is transparent", () => {
@@ -772,8 +775,9 @@ test("sticky v2 shot counts and pure-image html", () => {
   assert.doesNotMatch(html, /object-fit:contain/);
   assert.match(html, /src="data:image\/png;base64,xx"/);
   const blobHtml = composeStickyV2ThumbHtml("blob:https://host/abc");
-  assert.match(blobHtml, /<img /);
+  assert.doesNotMatch(blobHtml, /<img /);
   assert.doesNotMatch(blobHtml, /blob:/);
+  assert.match(blobHtml, /background:transparent/);
 });
 
 test("isReadyImageSrc accepts data and blob; htmlSafeImageSrc drops blob", () => {
@@ -787,9 +791,12 @@ test("isReadyImageSrc accepts data and blob; htmlSafeImageSrc drops blob", () =>
 });
 
 test("stickyThumbNeedsHtmlPaint skips when already painted", () => {
-  assert.equal(stickyThumbNeedsHtmlPaint("x", "x", "a", "a"), false);
-  assert.equal(stickyThumbNeedsHtmlPaint("x", "y", "a", "a"), true);
-  assert.equal(stickyThumbNeedsHtmlPaint("x", "x", "a", "b"), true);
+  const a = "data:image/png;base64,aa";
+  const b = "data:image/png;base64,bb";
+  assert.equal(stickyThumbNeedsHtmlPaint(a, a, "a", "a"), false);
+  assert.equal(stickyThumbNeedsHtmlPaint(a, b, "a", "a"), true);
+  assert.equal(stickyThumbNeedsHtmlPaint(a, a, "a", "b"), true);
+  assert.equal(stickyThumbNeedsHtmlPaint("", "blob:https://host/abc", "a", "a"), false);
 });
 
 test("stickyThumbSizeForImage uses max-edge budget so landscape is not crushed", () => {

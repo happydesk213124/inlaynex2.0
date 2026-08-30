@@ -1975,11 +1975,11 @@ export function composeStickyThumbHtml(
   src: string | null | undefined,
   underSrc: string | null | undefined = '',
 ): string {
-  const next = typeof src === 'string' ? src : '';
   void underSrc; // kept for call-site compat; stacking is intentionally unused
-  if (!next) return '<div style="width:100%;height:100%;background:transparent"></div>';
+  const embed = htmlSafeImageSrc(src);
+  if (!embed) return '<div style="width:100%;height:100%;background:transparent"></div>';
   const fit = 'width:100%;height:100%;object-fit:contain;display:block;background:transparent';
-  return `<img src="${next}" style="${fit}" />`;
+  return `<img src="${embed}" style="${fit}" />`;
 }
 
 /**
@@ -1992,7 +1992,7 @@ export function stickyThumbNeedsHtmlPaint(
   paintedId: unknown,
   activeId: unknown,
 ): boolean {
-  const src = typeof thumbSrc === 'string' ? thumbSrc : '';
+  const src = htmlSafeImageSrc(thumbSrc);
   if (!src) return false;
   return String(paintedSrc || '') !== src || String(paintedId || '') !== String(activeId || '');
 }
@@ -2338,9 +2338,8 @@ export function htmlSafeImageSrc(src: unknown): string {
 
 /** Pure-image sticky HTML — box already matches aspect; no letterbox frame. */
 export function composeStickyV2ThumbHtml(src: string | null | undefined): string {
-  const next = typeof src === 'string' ? src : '';
-  if (!next) return '<div style="width:100%;height:100%;background:transparent"></div>';
-  const embed = htmlSafeImageSrc(next);
+  const embed = htmlSafeImageSrc(src);
+  if (!embed) return '<div style="width:100%;height:100%;background:transparent"></div>';
   return `<img src="${embed}" style="width:100%;height:100%;object-fit:fill;display:block;background:transparent;border:none;outline:none" />`;
 }
 

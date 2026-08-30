@@ -140,6 +140,12 @@ Dashboard also has `card.toast_anchor` (`tl` | `bl` | `tr` | `br` | `tc`,
 default `tc`) for progress / selection / host / attach toasts, and
 `card.inline_chat_dom_radius` (integer 3–20, default `4`) controls how many
 eligible bubbles on each side are prefetched and retained for inline frames.
+Settings → 디버그 → **스크롤** lists `scroll.*` events for the chat scroll
+pipeline (listener → phase bus → track/Da → inline/sticky). Mid-scroll samples
+are coalesced (~200ms) and do not refresh the debug panel; settle and Da do.
+Scroll-end sticky activate is one scheduler (`nxScheduleStickyScrollSnap`);
+sticky thumb innerHTML is `data:image` only (`composeStickyV2ThumbHtml` — blob
+becomes a transparent placeholder, not `src=""`).
 Canonical inline frames are append-only for the lifetime of a Risu message DOM:
 the spinner keeps the layout height, while two permanent photo cells swap only
 after the incoming URL has decoded. SafeDOM cannot mutate an image `src`, so a

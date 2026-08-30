@@ -1244,9 +1244,10 @@ async function runJob(jobId: string): Promise<void> {
         };
         const done = cardsDone();
         dbg('job.shot.revealed', { shot: idx, card_id: cardId, has_url: Boolean(resolveImageUrl(cardId)) });
-        // The shot_done bump is what makes the UI reload the gallery, so this row has
-        // to be readable before it is announced. Announcing first let that reload miss
-        // the row, and the last shot has no later bump to recover on.
+        // Announce shot_done only after the card row exists. The last shot's
+        // next poll is often `done`, which does not force-reload the gallery —
+        // if this write trails the announcement, 1/2/3 appear and N/N never does
+        // until a full refresh.
         await idbPut('cards', {
           id: cardId,
           job_id: jobId,

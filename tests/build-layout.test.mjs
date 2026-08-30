@@ -1218,8 +1218,46 @@ test('force tag clear and pending restamp stay scoped to their original message'
   const pollTo = source.indexOf('/** Job complete', pollFrom);
   const poll = source.slice(pollFrom, pollTo);
   assert.match(poll, /nxNeedsInlineStamp\(t\.selectedMessage\)/);
+  assert.match(
+    poll,
+    /i >= Number\(r\.shot_count\) && a\.state === "generating"/,
+    'toast must flip to 생성 완료 in the same tick as the last inline insert',
+  );
+  assert.match(poll, /o && t\.jobsInFlight\.delete\(o\)/);
   assert.match(source, /function nxPendingForInlineSelection\(sel\)/);
   assert.match(source, /injectChatInlineImages\(els\[idx\], cards, idx === selIdx \? nxPendingForInlineSelection\(sel\) : \[\], \{/);
+});
+
+test('a shot card row is written before shot_done is announced', () => {
+  const source = read('src', 'services', 'jobs.ts');
+  const saveFrom = source.indexOf('// Reveal as soon as PNG bytes exist');
+  const saveTo = source.indexOf('shotSaveTasks.push(saveP)');
+  const save = source.slice(saveFrom, saveTo);
+  assert.ok(saveFrom >= 0 && saveTo > saveFrom, 'saveP body not found');
+  assert.ok(
+    save.indexOf("await idbPut('cards'") >= 0 &&
+      save.indexOf("await idbPut('cards'") < save.indexOf('shot_done: done'),
+    'the generating poll must be able to read the new row',
+  );
+});
+
+test('setJob done waits until getJob has seen generating shot_done=N', () => {
+  const source = read('src', 'services', 'jobs.ts');
+  const getFrom = source.indexOf('export async function getJob');
+  const getTo = source.indexOf('// ── the run loop');
+  const getJob = source.slice(getFrom, getTo);
+  assert.match(getJob, /noteLastGeneratingPoll\(/);
+  assert.match(getJob, /attachImageUrls\(result,\s*\{\s*cachedOnly:\s*true/);
+  assert.ok(
+    getJob.indexOf('noteLastGeneratingPoll') < getJob.indexOf('attachImageUrls'),
+    'latch must fire before encode so the poll is not starved',
+  );
+  const from = source.indexOf('if (shotSaveFailed) throw shotSaveFailed');
+  const to = source.indexOf("jobSpan.end({ message: 'done'");
+  const tail = source.slice(from, to);
+  const waitAt = tail.indexOf('waitForLastGeneratingPoll');
+  const doneAt = tail.indexOf("await setJob(jobId, 'done', result)");
+  assert.ok(waitAt >= 0 && doneAt > waitAt, 'done must wait for one generating+N poll');
 });
 
 test('pending inline rows never cross message or session scope', () => {

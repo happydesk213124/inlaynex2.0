@@ -2,6 +2,7 @@
  * Split a baked NAI prompt into studio fields (preset / person / quality / remainder).
  */
 import { QUALITY_TAGS } from '../config/defaults.ts';
+import { splitLookTags } from '../domain/character/tags.ts';
 import { cleanText, joinTags, splitTagTokens } from '../core/util/text.ts';
 
 export interface StylePresetLike {
@@ -142,13 +143,69 @@ export function peelLookFromCaption(caption: unknown, look: unknown): string {
   return splitTagTokens(caption).filter((t) => !lookKeys.has(t.toLowerCase())).join(', ');
 }
 
-/** Slim shot fields win; otherwise caption minus the live roster look. */
+/** V5 bubble sits at the end of the char caption. Keep the line intact (commas in dialogue). */
+const SPEECH_TAIL_RE =
+  /(?:,\s*)?((?:speechbubble|thought bubble|narration box)\s*,\s*(?:korean|english|japanese)\s+text\s*:\s*[\s\S]+)$/i;
+
+export function peelSpeechTail(caption: unknown): { body: string; speech: string } {
+  const raw = String(caption || '').trim();
+  const m = raw.match(SPEECH_TAIL_RE);
+  if (!m || m.index == null) return { body: raw, speech: '' };
+  return {
+    body: raw.slice(0, m.index).replace(/[,\s]+$/, '').trim(),
+    speech: String(m[1] || '').trim(),
+  };
+}
+
+/** Slim shot fields + editable speech tail. Otherwise caption minus look. */
 export function resolveCharPost(opts: {
   slim?: Record<string, unknown> | null;
   caption?: unknown;
   lookTags?: unknown;
 }): string {
+  const { body, speech } = peelSpeechTail(opts.caption);
   const fromSlim = joinSlimShotPost(opts.slim);
-  if (fromSlim) return fromSlim;
-  return peelLookFromCaption(opts.caption, opts.lookTags);
+  const base = fromSlim || peelLookFromCaption(body, opts.lookTags);
+  if (!speech) return base;
+  if (/(?:speechbubble|thought bubble|narration box)/i.test(base)) return base;
+  return base ? `${base}, ${speech}` : speech;
+}
+
+/** 외형 = identity. 코스튬 = clothes/jewelry/props, plus any roster attire tokens. */
+export function splitLookAndCostume(lookBlob: unknown, costumeAttire: unknown): {
+  tags: string;
+  costumeTags: string;
+} {
+  const [identity, attire, accessories] = splitLookTags(lookBlob);
+  const costumeKeys = new Set(splitTagTokens(costumeAttire).map((t) => t.toLowerCase()));
+  const tags: string[] = [];
+  const fromIdentity: string[] = [];
+  for (const tok of splitTagTokens(identity)) {
+    if (costumeKeys.has(tok.toLowerCase())) fromIdentity.push(tok);
+    else tags.push(tok);
+  }
+  return {
+    tags: tags.join(', '),
+    costumeTags: joinTags(attire, accessories, fromIdentity.join(', ')),
+  };
+}
+
+/**
+ * First fill only: split a baked NAI char caption into 외형 / 코스튬 / 후행.
+ * Roster look+attire are peel keys, not field values.
+ */
+export function peelStudioCharFields(opts: {
+  slim?: Record<string, unknown> | null;
+  caption?: unknown;
+  lookTags?: unknown;
+  costumeAttire?: unknown;
+}): { tags: string; costumeTags: string; post: string } {
+  const post = resolveCharPost({
+    slim: opts.slim,
+    caption: opts.caption,
+    lookTags: opts.lookTags,
+  });
+  const lookPart = peelLookFromCaption(peelSpeechTail(opts.caption).body, post);
+  const split = splitLookAndCostume(lookPart, opts.costumeAttire);
+  return { tags: split.tags, costumeTags: split.costumeTags, post };
 }

@@ -110,12 +110,23 @@ patched in at build time (was a checkbox). Beside it: `card.v5_natural_lang`
 (`en` | `ja`) for V5 shots only, and `card.nai_use_coords` (default on).
 Coords apply only with 2+ complete 0–1 pairs; if any two characters share a
 spot, `use_coords` stays off for that shot.
-Card settings → 생성 옵션 puts six toggles in one grid: coords,
+Card settings → 생성 옵션 puts eight toggles in one grid: coords,
 `card.nai5_first` (LLM한테 NAI V4, V5 선택권주기; simple→V4, dynamic→V5),
 `card.nai5_only` (무조건 NAI V5한테만 요청하기; wins over first + model tab),
+`card.nai5_speech` (NAI5 대사삽입), `card.auto_aspect` (자동 비율 조절),
 solo, costume, no humans. Off `nai5_first` uses the model-tab model for
 every shot. Dashboard save keeps the stored flags when those checkboxes
 are absent.
+Tag studio (샷 태그 수정) reads model / size / sampler from the image NAI
+metadata (`GET /v1/cards/:id/nai-prompt`). Dropping a PNG/WebP onto the
+canvas uses `POST /v1/cards/nai-from-image` `{ image_data_url }` (same
+payload, no card write). Unmatched char names stay C1/C2/C3. V4.5 / V5 and 가로·세로·정사각
+override that scene on generate. Metadata with a non-0.5 character center
+opens 좌표보기. AI 좌표 sends `use_coords: false`. `card.studio_seed_lock`
+(default off) keeps the 고정 켬 toggle across studio opens.
+`card.studio_folds` is `{ [sectionId]: true }` for collapsed tag-studio
+sections (`preset`, `post`, `gset`, `llm`, `llmPeek`, `ap`, `po`, `costume`,
+`xy`, `gs`). Missing keys stay open.
 
 Settings nav tab `comic_gen` (만화 생성, next to 생성 옵션) is
 `card.comic_gen` `off` | `on` (default `off`). Off leaves first-tagger + NAI
@@ -152,7 +163,9 @@ after the incoming URL has decoded. SafeDOM cannot mutate an image `src`, so a
 hidden cell receives its child through `setInnerHTML`; only that child changes,
 never the frame or either cell. Runtime metadata is mirrored onto readable
 `x-inlay-inline-*` attributes. Re-clicking an intact selected message is a
-no-op, and ordinary selection parking only changes opacity. A tag action alone
+no-op, and ordinary selection parking drops overlay photo children outside
+selected ±1 while keeping the spinner frame; return restamps from the URL cache.
+A tag action alone
 removes that bubble's spinner frames and photo cells, then restamps after the
 tagger finishes; reroll/regeneration retargets the stable shot slot in place. Frame keys include the API message index as well as
 session and content hash, so two identical message texts do not share clears or
@@ -169,7 +182,7 @@ shot (saved `two` / `double-tap` normalize here). `three` is a fast triple-tap
 (`triple` / `triple-tap`). `hold` is a long press. `both` is hold plus double-tap. On plugin boot and the first enter of a chat session,
 an attach toast reads `인레이 넥서스 조각 불러오는중..` until chips and shots
 land, or 10 seconds, whichever is first. Later message clicks do not raise it.
-Dashboard also has `card.nai4_fallback`, `card.nai5_speech`,
+Dashboard also has `card.nai4_fallback`
 and `card.inline_msg_actions` as a 3-way select: `off` (사용안함),
 `legacy` (편의성, 오류율 있음 — DIV hosts + top bar on the content
 parent),
@@ -401,7 +414,8 @@ lore_trigger_keys[], character_description, persona_description, force`.
 | `POST /v1/gallery/delete` | `{card_ids[]}` **or** `{folder_key}` |
 | `POST /v1/gallery/export` | `{all\|folder_key\|card_ids}` → `{ok, zip_base64, filename, count}` |
 | `POST /v1/gallery/import` | `{zip_base64, prefer_new_ids}` → `{ok, imported, report}` |
-| `GET /v1/cards/:id/nai-prompt` | image NovelAI tags for the shot-tag form: `{ok, main_prompt, negative_prompt, characters[]}` — pixels of that one card |
+| `GET /v1/cards/:id/nai-prompt` | image NovelAI tags for the shot-tag form: `{ok, main_prompt, negative_prompt, characters[], model, width, height, steps, cfg_scale, cfg_rescale, sampler, scheduler}` — pixels of that one card |
+| `POST /v1/cards/nai-from-image` | `{image_data_url}` → same shape as nai-prompt. No card write. Missing bytes → `{ok:false, error:{code:bad_request}}` |
 | `POST /v1/cards/:id/tags` | `{main_prompt, negative_prompt, characters[]}` — persist slim cast only; main/neg stay on the file |
 | `POST /v1/cards/:id/studio-generate` | assembled prompts → NAI replay bytes only (`{ok, image_data_url, seed}`). Does not replace the card |
 | `POST /v1/cards/:id/studio-commit` | center-canvas bytes + tags → same card id pixels + slim cast |

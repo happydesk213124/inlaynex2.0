@@ -1,8 +1,7 @@
-import { cleanText } from '../core/util/text.ts';
-import { composeCharacterCaptionTags } from '../domain/character/tags.ts';
+import { cleanText, joinTags } from '../core/util/text.ts';
 import { resolveCharacter } from '../domain/character/roster.ts';
 import type { CharacterInput } from '../domain/character/identity.ts';
-import { peelLookFromCaption, peelMain } from './peel.ts';
+import { peelMain, peelStudioCharFields } from './peel.ts';
 import {
   CHAR_SLOTS,
   assemble,
@@ -10,14 +9,18 @@ import {
   charList,
   emptyState,
   hydrateFromNai,
+  mergeStudioRosterPayloads,
   mergedRoster,
   nextId,
+  studioRowIsGlobal,
   type StudioChar,
   type StudioTab,
 } from './model.ts';
 import {
   commandRewrite,
+  loadNaiFromImage,
   loadNaiPrompt,
+  loadNaiQuota,
   loadRoster,
   loadSettings,
   rerollCard,
@@ -27,6 +30,7 @@ import {
   studioGenerate,
   updateCardTags,
 } from './api.ts';
+import { formatStudioQuota, studioQuotaFillPct } from './quota.ts';
 import { tagStudioCss } from './styles.ts';
 
 const MODELS: Array<[string, string]> = [
@@ -251,6 +255,9 @@ export async function openTagStudio(card: unknown): Promise<void> {
   let cardSettings: Record<string, unknown> = {};
   let stylePresets: StyleRow[] = [];
   let commandPresets: CmdRow[] = [];
+  let quotaLabel = '탭해서 할당량 새로고침';
+  let quotaFill = -1;
+  let quotaBusy = false;
   let currentUrl = fallbackUrl;
   let loaded: HTMLImageElement | null = null;
   let dragging = false;
@@ -345,15 +352,30 @@ export async function openTagStudio(card: unknown): Promise<void> {
   }
 
   function rowIsGlobal(row: CharacterInput | null | undefined): boolean {
-    if (!row) return false;
     const globals = Array.isArray(rosterPayload.global) ? rosterPayload.global : [];
-    const id = cleanText(row.id, 80);
-    const name = cleanText(row.name, 200);
-    return globals.some((g) => {
-      if (!g || typeof g !== 'object') return false;
-      const recG = g as CharacterInput;
-      return (id && cleanText(recG.id, 80) === id) || (name && cleanText(recG.name, 200) === name);
-    });
+    return studioRowIsGlobal(row, globals);
+  }
+
+  function liveUiRuntime(): Record<string, unknown> {
+    const g = globalThis as { INLAY_NEXUS_RUNTIME?: unknown };
+    return asRecord(g.INLAY_NEXUS_RUNTIME);
+  }
+
+  function liveUiScope(): { sessionId: string; characterId: string; unified: boolean } {
+    const last = asRecord(liveUiRuntime().lastScope);
+    return {
+      sessionId: cleanText(last.sessionId, 200),
+      characterId: cleanText(last.characterId, 200),
+      unified: last.unified === true,
+    };
+  }
+
+  function liveUiRoster(): Record<string, unknown> | null {
+    const t = liveUiRuntime();
+    const session = Array.isArray(t.charactersSession) ? t.charactersSession : null;
+    const global = Array.isArray(t.charactersGlobal) ? t.charactersGlobal : null;
+    if (!session && !global) return null;
+    return { characters: session || [], global: global || [] };
   }
 
   function liveChar(id: string): StudioChar | undefined {
@@ -386,10 +408,84 @@ export async function openTagStudio(card: unknown): Promise<void> {
     await saveSettings({ card: { ...cardSettings } });
   }
 
+  function applyNaiPayload(nai: Record<string, unknown>): void {
+    hydrateFromNai({
+      state,
+      nai,
+      settings: { card: cardSettings },
+      rosterPayload,
+      card: rec,
+    });
+    relabel();
+    renderAll();
+  }
+
+  function readDroppedImage(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('이미지를 읽지 못했습니다.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function ingestDroppedFile(file: File): Promise<void> {
+    if (!file.type.startsWith('image/') && !/\.(png|webp|jpe?g)$/i.test(file.name)) {
+      toast('이미지 파일만 넣을 수 있습니다.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const url = await readDroppedImage(file);
+      if (!url) throw new Error('이미지를 읽지 못했습니다.');
+      state.imageUrl = url;
+      currentUrl = url;
+      await showImage(url);
+      const nai = await loadNaiFromImage(url);
+      if (nai.ok === false || nai.error) {
+        toast(errMsg(nai, '이미지 메타를 읽지 못했습니다.'));
+        return;
+      }
+      applyNaiPayload(nai);
+      toast('드롭한 이미지 메타를 넣었습니다.');
+    } catch (err) {
+      toast(String((err as Error)?.message || err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function paintQuota(): void {
+    const fill = quotaFill >= 0
+      ? `<span class="qbar"><i style="width:${Math.max(0, Math.min(100, quotaFill))}%"></i></span>`
+      : '';
+    const html = `${esc(quotaLabel)}${fill}`;
+    $$('.quota').forEach((el) => { el.innerHTML = html; });
+  }
+
+  async function refreshQuota(): Promise<void> {
+    if (quotaBusy) return;
+    quotaBusy = true;
+    quotaLabel = '조회 중…';
+    paintQuota();
+    try {
+      const res = await loadNaiQuota();
+      quotaLabel = formatStudioQuota(res);
+      quotaFill = studioQuotaFillPct(res);
+    } catch (err) {
+      quotaLabel = String((err as Error)?.message || err);
+      quotaFill = -1;
+    } finally {
+      quotaBusy = false;
+      paintQuota();
+    }
+  }
+
   async function refreshRoster(payload?: Record<string, unknown>): Promise<void> {
-    rosterPayload = payload && (Array.isArray(payload.characters) || Array.isArray(payload.global))
+    const fetched = payload && (Array.isArray(payload.characters) || Array.isArray(payload.global))
       ? payload
       : await loadRoster(state.sessionId, state.characterId);
+    rosterPayload = mergeStudioRosterPayloads(fetched, liveUiRoster());
     roster = mergedRoster(rosterPayload);
   }
 
@@ -490,10 +586,6 @@ export async function openTagStudio(card: unknown): Promise<void> {
     </section>`;
   }
 
-  function secStatic(head: string, bodyHtml: string): string {
-    return `<section class="sec"><div class="h static">${head}</div><div class="c">${bodyHtml}</div></section>`;
-  }
-
   function optionBar(args: {
     nameAttr: string;
     nameValue: string;
@@ -559,7 +651,11 @@ export async function openTagStudio(card: unknown): Promise<void> {
         <label class="k">샘플러<select data-g="sampler">${opts(SAMPLERS, g.sampler)}</select></label>
         <label class="k">스케줄<select data-g="scheduler">${opts(SCHEDULERS, g.scheduler)}</select></label>
       </div>
-      <p class="hint">빈 칸은 이미지에 있던 값을 그대로 씁니다. 시드 고정만 이번 생성에 들어갑니다.</p>`;
+      <button class="quota" data-act="quotaRefresh" type="button">${esc(quotaLabel)}${
+        quotaFill >= 0
+          ? `<span class="qbar"><i style="width:${Math.max(0, Math.min(100, quotaFill))}%"></i></span>`
+          : ''
+      }</button>`;
   }
 
   function panelMain(): string {
@@ -572,7 +668,7 @@ export async function openTagStudio(card: unknown): Promise<void> {
         ${chip(m.autoPerson ? '인원수 자동' : '인원수 수동', m.autoPerson)}
         ${chip(`캐릭터 ${n}`, n > 0)}
       </div>`,
-      secStatic(
+      sec('preset',
         `<span class="name">선행 프리셋</span>
         <span class="grow"></span>
         <button class="btn sm ${m.autoPerson ? 'on' : ''}" data-act="autoPerson" type="button">인원수 자동넣기 ${m.autoPerson ? '켬' : '끔'}</button>`,
@@ -610,7 +706,7 @@ export async function openTagStudio(card: unknown): Promise<void> {
   function panelLlm(): string {
     const l = state.llm;
     return [
-      secStatic(
+      sec('llm',
         `<span class="name">LLM 명령 프리셋</span>
         <span class="grow"></span>
         <button class="btn sm" data-act="llmExport" type="button">내보내기</button>
@@ -658,9 +754,9 @@ export async function openTagStudio(card: unknown): Promise<void> {
 
     if (state.comic) {
       return [
-        sec(`ap-${tabId}`, `<span class="name">${esc(tab?.label || 'C')}</span>`,
+        sec('ap', `<span class="name">${esc(tab?.label || 'C')}</span>`,
           `<textarea class="t big" data-c="tags" data-tab="${esc(tabId)}" placeholder="캡션 태그">${esc(c.tags)}</textarea>`),
-        sec(`xy-${tabId}`, `<span class="name">좌표</span>`, coordBody),
+        sec('xy', `<span class="name">좌표</span>`, coordBody),
       ].join('');
     }
 
@@ -677,14 +773,14 @@ export async function openTagStudio(card: unknown): Promise<void> {
         saveAct: 'charSave',
         delAct: 'charDel',
       }),
-      sec(`ap-${tabId}`, `<span class="name">${esc(tab?.label || 'C')}</span>`,
+      sec('ap', `<span class="name">${esc(tab?.label || 'C')}</span>`,
         `<textarea class="t big" data-c="tags" data-tab="${esc(tabId)}" placeholder="1girl, long hair, blue eyes …">${esc(c.tags)}</textarea>`),
-      sec(`po-${tabId}`, `<span class="name">${esc((tab?.label || 'C').split(' ')[0] || 'C')} 후행</span>`,
+      sec('po', `<span class="name">${esc((tab?.label || 'C').split(' ')[0] || 'C')} 후행</span>`,
         `<textarea class="t" data-c="post" data-tab="${esc(tabId)}" placeholder="이 샷에서만 더할 것. 표정·상태 같은 것.">${esc(c.post)}</textarea>
          <label class="k">UC
           <textarea class="t" data-c="uc" data-tab="${esc(tabId)}" style="min-height:56px">${esc(c.uc)}</textarea>
          </label>`),
-      secStatic(
+      sec('costume',
         `<span class="name">코스튬</span>`,
         `${optionBar({
           nameAttr: `data-c="costumeName" data-tab="${esc(tabId)}"`,
@@ -704,8 +800,8 @@ export async function openTagStudio(card: unknown): Promise<void> {
         <textarea class="t" data-c="costumeTags" data-tab="${esc(tabId)}" placeholder="school uniform, blue tie …">${esc(c.costumeTags || costume.attire || '')}</textarea>
         <label class="chk"><input type="checkbox" data-c="lock" data-tab="${esc(tabId)}" ${c.lock ? 'checked' : ''}/> 룩 고정</label>`,
       ),
-      sec(`xy-${tabId}`, `<span class="name">좌표</span>`, coordBody),
-      sec(`gs-${tabId}`, `<span class="name">설정</span>`, genSettings()),
+      sec('xy', `<span class="name">좌표</span>`, coordBody),
+      sec('gs', `<span class="name">설정</span>`, genSettings()),
     ].join('');
   }
 
@@ -1333,10 +1429,16 @@ export async function openTagStudio(card: unknown): Promise<void> {
       }
       if (row.name) ch.charName = cleanText(row.name, 200);
       const stored = ch.charName ? resolveCharacter(ch.charName, roster) : null;
-      const look = stored
-        ? composeCharacterCaptionTags(stored, { costume: ch.costume || ch.costumeName })
-        : ch.tags;
-      ch.post = peelLookFromCaption(prompt || ch.tags, look);
+      const look = joinTags(stored?.appearance, ch.tags, ch.costumeTags);
+      const peeled = peelStudioCharFields({
+        slim: null,
+        caption: prompt || joinTags(ch.tags, ch.costumeTags, ch.post),
+        lookTags: look,
+        costumeAttire: ch.costumeTags,
+      });
+      ch.tags = peeled.tags;
+      ch.costumeTags = peeled.costumeTags;
+      ch.post = peeled.post;
     });
     relabel();
   }
@@ -1582,8 +1684,12 @@ export async function openTagStudio(card: unknown): Promise<void> {
         renderPanel();
         renderPeek();
         break;
+      case 'quotaRefresh':
+        void refreshQuota();
+        break;
       case 'seedLock':
         state.gen.seedLock = !state.gen.seedLock;
+        void saveSettings({ card: { studio_seed_lock: state.gen.seedLock } }).catch(() => {});
         renderPanel();
         break;
       case 'presetPos':
@@ -1714,6 +1820,7 @@ export async function openTagStudio(card: unknown): Promise<void> {
         const id = fold.dataset.foldhit || '';
         state.fold[id] = !state.fold[id];
         fold.parentElement?.classList.toggle('fold', !!state.fold[id]);
+        void persistCard({ studio_folds: { ...state.fold } }).catch(() => {});
         return;
       }
       const a = t.closest('[data-act]');
@@ -1787,6 +1894,25 @@ export async function openTagStudio(card: unknown): Promise<void> {
   }
 
   function bindViewport(): void {
+    on(viewport, 'dragenter', (e) => {
+      e.preventDefault();
+      viewport.classList.add('dropok');
+    });
+    on(viewport, 'dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      viewport.classList.add('dropok');
+    });
+    on(viewport, 'dragleave', (e) => {
+      if (e.target === viewport) viewport.classList.remove('dropok');
+    });
+    on(viewport, 'drop', (e) => {
+      e.preventDefault();
+      viewport.classList.remove('dropok');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) void ingestDroppedFile(file);
+    });
+
     on(viewport, 'wheel', (e) => {
       e.preventDefault();
       const r = viewport.getBoundingClientRect();
@@ -1960,9 +2086,32 @@ export async function openTagStudio(card: unknown): Promise<void> {
         cmd_post: cleanText(p.cmd_post || p.cmdPost, 2000),
       }))
       .filter((p) => p.id || p.name || p.cmd);
-    const naiCfg = asRecord(asRecord(settingsRes).nai);
-    if (naiCfg.model) state.gen.model = String(naiCfg.model);
-    await refreshRoster(rosterRes);
+    state.gen.seedLock = cardSettings.studio_seed_lock === true
+      || cardSettings.studio_seed_lock === 'true'
+      || cardSettings.studio_seed_lock === 1
+      || cardSettings.studio_seed_lock === '1'
+      || cardSettings.studio_seed_lock === 'on';
+    const folds = cardSettings.studio_folds;
+    if (folds && typeof folds === 'object' && !Array.isArray(folds)) {
+      const next: Record<string, boolean> = {};
+      for (const [key, value] of Object.entries(folds as Record<string, unknown>)) {
+        const id = cleanText(key, 80);
+        if (!id) continue;
+        next[id] = value === true || value === 'true' || value === 1 || value === '1' || value === 'on';
+      }
+      state.fold = next;
+    }
+    const live = liveUiScope();
+    if (!state.characterId && live.characterId) state.characterId = live.characterId;
+    if (!state.sessionId && live.sessionId && !live.unified) {
+      state.sessionId = live.sessionId;
+    }
+    let liveFetched: Record<string, unknown> | null = null;
+    if (live.sessionId && live.sessionId !== sessionId) {
+      liveFetched = await loadRoster(live.sessionId, live.characterId || characterId)
+        .catch(() => null);
+    }
+    await refreshRoster(mergeStudioRosterPayloads(rosterRes, liveFetched));
 
     const nai = asRecord(naiRes);
     if (nai.ok === false || nai.error) {
@@ -1983,6 +2132,7 @@ export async function openTagStudio(card: unknown): Promise<void> {
     if (imageUrl) await showImage(imageUrl);
     else drawStage();
     renderAll();
+    void refreshQuota();
   })();
 
   return closed;

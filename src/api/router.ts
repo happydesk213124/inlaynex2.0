@@ -394,6 +394,10 @@ const WRITE_ROUTES: readonly Route[] = [
     },
   },
   {
+    match: exact('/v1/cards/nai-from-image'),
+    handler: async ({ body }) => ok(await cards.readImageNaiPrompts(body)),
+  },
+  {
     match: wrapped('/v1/cards/', '/tags'),
     handler: async ({ param, body }) => ok(await cards.updateCardTags(param, body)),
   },

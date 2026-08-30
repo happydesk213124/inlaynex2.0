@@ -40,6 +40,14 @@ export async function loadNaiPrompt(cardId: string): Promise<Record<string, unkn
   return studioGet(`/v1/cards/${encodeURIComponent(cardId)}/nai-prompt`);
 }
 
+export async function loadNaiFromImage(imageDataUrl: string): Promise<Record<string, unknown>> {
+  return studioPost('/v1/cards/nai-from-image', { image_data_url: imageDataUrl });
+}
+
+export async function loadNaiQuota(): Promise<Record<string, unknown>> {
+  return studioGet('/v1/nai/quota');
+}
+
 export async function loadRoster(sessionId: string, characterId: string): Promise<Record<string, unknown>> {
   const q = new URLSearchParams();
   if (sessionId) q.set('session_id', sessionId);

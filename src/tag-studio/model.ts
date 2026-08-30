@@ -2,8 +2,9 @@ import { composeCharacterCaptionTags } from '../domain/character/tags.ts';
 import { resolveCharacter } from '../domain/character/roster.ts';
 import type { CharacterInput } from '../domain/character/identity.ts';
 import { QUALITY_TAGS } from '../config/defaults.ts';
+import { GLOBAL_SCOPE } from '../core/constants.ts';
 import { cleanText, joinTags } from '../core/util/text.ts';
-import { peelMain, resolveCharPost } from './peel.ts';
+import { peelMain, peelStudioCharFields } from './peel.ts';
 
 export const CHAR_SLOTS: Array<[number, number]> = [
   [0.3, 0.5], [0.7, 0.5], [0.5, 0.28], [0.22, 0.78], [0.78, 0.78], [0.5, 0.55],
@@ -178,6 +179,18 @@ function personTag(state: StudioState): string {
   return wrap(n === 1 ? '1girl' : `${n}people`);
 }
 
+/** One filled field is the file text — do not retokenize it. */
+function joinOrRaw(...parts: unknown[]): string {
+  const filled = parts.map((p) => (p == null ? '' : String(p))).filter((s) => s.trim());
+  if (filled.length <= 1) return filled[0] || '';
+  return joinTags(...parts);
+}
+
+function verbatimPrompt(value: unknown, limit: number): string {
+  if (value == null) return '';
+  return String(value).replace(/\x00/g, '').slice(0, limit);
+}
+
 function qualityTail(state: StudioState): string {
   if (!state.main.quality) return '';
   const model = state.gen.model || '';
@@ -187,12 +200,13 @@ function qualityTail(state: StudioState): string {
   return String(QUALITY_TAGS[key] || QUALITY_TAGS.naid5f || '').replace(/^,/, '').trim();
 }
 
-export function assemble(state: StudioState, roster: CharacterInput[]): Assembled {
+export function assemble(state: StudioState, _roster: CharacterInput[]): Assembled {
   const quality = qualityTail(state);
-  const main = joinTags(personTag(state), state.main.presetPrompt, state.main.post, quality);
+  const main = joinOrRaw(personTag(state), state.main.presetPrompt, state.main.post, quality);
   const chars = charList(state).map((c) => {
     if (state.comic) {
-      const prompt = joinTags(c.tags, c.post) || 'girl';
+      const prompt = joinOrRaw(c.tags, c.post);
+      if (!prompt) return null;
       return {
         no: c.i + 1,
         name: '',
@@ -203,13 +217,12 @@ export function assemble(state: StudioState, roster: CharacterInput[]): Assemble
         slim: { ...c.slim, center_x: c.x, center_y: c.y },
       };
     }
-    const stored = c.charName ? resolveCharacter(c.charName, roster) : null;
-    const look = composeCharacterCaptionTags(stored, { costume: c.costume || c.costumeName });
-    const prompt = joinTags(look || c.tags || c.costumeTags, c.post) || 'girl';
+    const prompt = joinOrRaw(c.tags, c.costumeTags, c.post);
+    if (!prompt && !String(c.uc || '').trim()) return null;
     return {
       no: c.i + 1,
       name: c.charName || '',
-      prompt,
+      prompt: prompt || 'girl',
       uc: c.uc,
       center_x: c.x,
       center_y: c.y,
@@ -222,7 +235,7 @@ export function assemble(state: StudioState, roster: CharacterInput[]): Assemble
         center_y: c.y,
       },
     };
-  }).filter((c) => c.prompt);
+  }).filter((c): c is NonNullable<typeof c> => !!c && !!c.prompt);
   return { main, neg: state.main.neg, chars };
 }
 
@@ -237,10 +250,41 @@ export function assembleOverrides(state: StudioState, roster: CharacterInput[]):
       uc: c.uc,
       center_x: state.coordMode === 'ai' ? undefined : c.center_x,
       center_y: state.coordMode === 'ai' ? undefined : c.center_y,
-      ...(state.comic ? {} : c.slim),
+      ...(state.comic ? {} : {
+        costume: c.slim.costume || undefined,
+        action: c.slim.action || undefined,
+      }),
     })),
     seed: state.gen.seedLock && state.gen.seed > 0 ? state.gen.seed : undefined,
+    ...(state.gen.model ? { model: state.gen.model } : {}),
+    width: state.gen.w,
+    height: state.gen.h,
+    ...(String(state.gen.steps || '').trim() ? { steps: state.gen.steps } : {}),
+    cfg_scale: state.gen.cfg,
+    cfg_rescale: state.gen.rescale,
+    ...(state.gen.sampler ? { sampler: state.gen.sampler } : {}),
+    ...(state.gen.scheduler ? { scheduler: state.gen.scheduler } : {}),
+    use_coords: state.coordMode !== 'ai',
   };
+}
+
+/** Map PNG / settings model ids onto the two studio family buttons. */
+export function studioModelChoice(raw: unknown): string {
+  const s = cleanText(raw, 200).toLowerCase();
+  if (!s) return '';
+  if (s.includes('4-5') || s.includes('4.5') || s.includes('v4.5')) return 'nai-diffusion-4-5-full';
+  if (s.includes('nai-diffusion-5') || s.includes('v5') || s.includes('nai diffusion 5')) {
+    return 'nai-diffusion-5-full';
+  }
+  return cleanText(raw, 200);
+}
+
+export function hasPlacedCoords(chars: Array<{ center_x?: unknown; center_y?: unknown; x?: unknown; y?: unknown }>): boolean {
+  return chars.some((c) => {
+    const x = Number(c.center_x ?? c.x);
+    const y = Number(c.center_y ?? c.y);
+    return Number.isFinite(x) && Number.isFinite(y) && (x !== 0.5 || y !== 0.5);
+  });
 }
 
 let seq = 0;
@@ -260,19 +304,32 @@ export function hydrateFromNai(args: {
   const cardCfg = asRecord(settings.card);
   const presets = Array.isArray(cardCfg.presets) ? cardCfg.presets : [];
   const roster = rosterList(rosterPayload);
-  const mainText = cleanText(nai.main_prompt, 8000);
+  const mainText = verbatimPrompt(nai.main_prompt, 8000);
   const peeled = peelMain(mainText, presets as Array<{ id?: unknown; name?: unknown; positive?: unknown; negative?: unknown }>);
   const hit = presets.find((p) => p && typeof p === 'object' && cleanText((p as Record<string, unknown>).id, 120) === peeled.preset.id) as Record<string, unknown> | undefined;
-  state.main.presetId = peeled.preset.id;
-  state.main.presetName = peeled.preset.name || cleanText(hit?.name, 200);
-  state.main.presetPrompt = peeled.preset.positive || cleanText(hit?.positive, 8000);
-  state.main.post = peeled.post;
-  state.main.neg = peeled.preset.negative || cleanText(nai.negative_prompt, 8000);
-  state.main.autoPerson = Boolean(peeled.person);
-  state.main.personMode = peeled.personMode || '';
-  state.main.personWeight = peeled.personWeight;
-  state.main.personSolo = peeled.personSolo;
-  state.main.quality = peeled.quality;
+  if (peeled.preset.id) {
+    state.main.presetId = peeled.preset.id;
+    state.main.presetName = peeled.preset.name || cleanText(hit?.name, 200);
+    state.main.presetPrompt = peeled.preset.positive || cleanText(hit?.positive, 8000);
+    state.main.post = peeled.post;
+    state.main.neg = peeled.preset.negative || verbatimPrompt(nai.negative_prompt, 8000);
+    state.main.autoPerson = Boolean(peeled.person);
+    state.main.personMode = peeled.personMode || '';
+    state.main.personWeight = peeled.personWeight;
+    state.main.personSolo = peeled.personSolo;
+    state.main.quality = peeled.quality;
+  } else {
+    state.main.presetId = '';
+    state.main.presetName = '';
+    state.main.presetPrompt = '';
+    state.main.post = mainText;
+    state.main.neg = verbatimPrompt(nai.negative_prompt, 8000);
+    state.main.autoPerson = false;
+    state.main.personMode = '';
+    state.main.personWeight = '';
+    state.main.personSolo = false;
+    state.main.quality = false;
+  }
 
   const kind = cleanText(card.kind || asRecord(card.meta).kind, 20);
   state.comic = kind === 'comic';
@@ -283,44 +340,76 @@ export function hydrateFromNai(args: {
     { id: 'main', kind: 'main', label: 'main' },
     { id: 'llm', kind: 'llm', label: 'LLM 명령수정' },
   ];
-  rawChars.slice(0, 6).forEach((raw, i) => {
+  let slotNo = 0;
+  rawChars.slice(0, 6).forEach((raw) => {
     const ch = asRecord(raw);
+    const caption = verbatimPrompt(ch.prompt, 4000);
+    const uc = verbatimPrompt(ch.uc, 2000);
+    const rawName = state.comic ? '' : cleanText(ch.name, 200);
+    if (!caption && !uc && !rawName) return;
     const id = nextId('c');
-    const slot = CHAR_SLOTS[i] || [0.5, 0.5];
-    const name = state.comic ? '' : cleanText(ch.name, 200);
-    const stored = name ? resolveCharacter(name, roster) : null;
+    const slot = CHAR_SLOTS[slotNo] || [0.5, 0.5];
+    slotNo += 1;
+    const stored = rawName ? resolveCharacter(rawName, roster) : null;
+    const name = stored ? (stored.name || rawName) : '';
     const costumePick = ch.costume ?? asRecord(ch.raw).costume;
     const look = stored ? composeCharacterCaptionTags(stored, { costume: costumePick }) : '';
-    const post = state.comic
-      ? ''
-      : resolveCharPost({ slim: ch, caption: ch.prompt, lookTags: look });
-    const caption = cleanText(ch.prompt, 4000);
     const costumes = Array.isArray(stored?.costumes) ? stored.costumes : [];
     const cos = costumes.find((c) => cleanText(c.name, 200) === cleanText(costumePick, 200))
       || costumes[0];
+    const peeledChar = state.comic
+      ? { tags: caption, costumeTags: '', post: '' }
+      : stored
+        ? peelStudioCharFields({
+          slim: ch,
+          caption: ch.prompt,
+          lookTags: look,
+          costumeAttire: cos?.attire,
+        })
+        : { tags: '', costumeTags: '', post: caption };
     state.chars[id] = {
       rosterId: cleanText(stored?.id || stored?.name, 80),
       charName: name,
       costume: cleanText(cos?.name || costumePick, 200),
       costumeName: cleanText(cos?.name || costumePick, 200),
-      costumeTags: cleanText(cos?.attire, 4000),
+      costumeTags: peeledChar.costumeTags,
       costumeNote: cleanText(cos?.note, 400),
-      tags: state.comic ? caption : (cleanText(stored?.appearance, 4000) || look),
-      post: state.comic ? '' : post,
-      uc: cleanText(ch.uc, 2000),
+      tags: peeledChar.tags,
+      post: peeledChar.post,
+      uc,
       x: Number(ch.center_x ?? slot[0]),
       y: Number(ch.center_y ?? slot[1]),
       auto: false,
       lock: false,
-      slim: ch,
+      slim: { ...ch, prompt: undefined },
     };
     state.tabs.push({
       id,
       kind: 'char',
-      label: state.comic ? `C${i + 1}` : `C${i + 1}${name ? ` ${name}` : ''}`,
+      label: state.comic ? `C${slotNo}` : `C${slotNo}${name ? ` ${name}` : ''}`,
     });
   });
   state.selChar = state.tabs.find((t) => t.kind === 'char')?.id || '';
+  const model = studioModelChoice(nai.model);
+  if (model) state.gen.model = model;
+  const width = Math.floor(Number(nai.width));
+  const height = Math.floor(Number(nai.height));
+  if (Number.isFinite(width) && width >= 64) state.gen.w = width;
+  if (Number.isFinite(height) && height >= 64) state.gen.h = height;
+  if (nai.steps != null && nai.steps !== '') state.gen.steps = String(Math.floor(Number(nai.steps)) || '');
+  const cfg = Number(nai.cfg_scale);
+  if (Number.isFinite(cfg)) state.gen.cfg = cfg;
+  const rescale = Number(nai.cfg_rescale);
+  if (Number.isFinite(rescale)) state.gen.rescale = rescale;
+  if (cleanText(nai.sampler, 80)) state.gen.sampler = cleanText(nai.sampler, 80);
+  if (cleanText(nai.scheduler, 80)) state.gen.scheduler = cleanText(nai.scheduler, 80);
+  const seed = Math.floor(Number(nai.seed));
+  if (Number.isFinite(seed) && seed > 0) state.gen.seed = seed;
+  const placed = hasPlacedCoords(Object.values(state.chars));
+  if (placed) {
+    state.coordMode = 'manual';
+    state.coordVisible = true;
+  }
   if (!state.comic && !rawChars.length) {
     /* illustration with no slots stays on main */
   }
@@ -328,4 +417,49 @@ export function hydrateFromNai(args: {
 
 export function mergedRoster(payload: Record<string, unknown>): CharacterInput[] {
   return rosterList(payload);
+}
+
+/** Session vs global is by id/scope — a shared display name is not enough. */
+export function studioRowIsGlobal(
+  row: CharacterInput | null | undefined,
+  globals: unknown[],
+): boolean {
+  if (!row) return false;
+  const scope = cleanText(row.scope, 200);
+  if (scope === GLOBAL_SCOPE || scope === 'global') return true;
+  const id = cleanText(row.id, 80);
+  if (!id) return false;
+  return globals.some((g) => {
+    if (!g || typeof g !== 'object') return false;
+    return cleanText((g as CharacterInput).id, 80) === id;
+  });
+}
+
+function rowKey(row: CharacterInput): string {
+  return cleanText(row.id, 80) || cleanText(row.name, 200);
+}
+
+/** Union session lists (first id wins). Last non-empty `global` list is kept. */
+export function mergeStudioRosterPayloads(
+  ...parts: Array<Record<string, unknown> | null | undefined>
+): Record<string, unknown> {
+  const seen = new Set<string>();
+  const characters: CharacterInput[] = [];
+  let global: unknown[] = [];
+  for (const part of parts) {
+    if (!part) continue;
+    if (Array.isArray(part.global) && part.global.length) global = part.global;
+    const rows = Array.isArray(part.characters) ? part.characters : [];
+    for (const raw of rows) {
+      if (!raw || typeof raw !== 'object') continue;
+      const row = raw as CharacterInput;
+      const key = rowKey(row);
+      if (key) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      characters.push(row);
+    }
+  }
+  return { characters, global };
 }

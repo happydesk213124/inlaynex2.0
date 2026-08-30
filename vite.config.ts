@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.7';
+const PLUGIN_VERSION = '2.5.8';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -308,6 +308,8 @@ const VENDOR_NATURAL_BASE_CT_PATCH =
       nai_use_coords: document.getElementById("nx-nai-coords") ? ee("nx-nai-coords") : e.nai_use_coords !== !1,
       nai5_first: document.getElementById("nx-nai5-first") ? ee("nx-nai5-first") : !!e.nai5_first,
       nai5_only: document.getElementById("nx-nai5-only") ? ee("nx-nai5-only") : !!e.nai5_only,
+      nai5_speech: document.getElementById("nx-nai5-speech") ? ee("nx-nai5-speech") : !!e.nai5_speech,
+      auto_aspect: document.getElementById("nx-auto-aspect") ? ee("nx-auto-aspect") : !!e.auto_aspect,
       comic_gen: document.getElementById("nx-comic-gen") ? (N("nx-comic-gen") === "on" ? "on" : "off") : (e.comic_gen === "on" || e.comic_gen === !0 ? "on" : "off"),
       comic_llm_batch: document.getElementById("nx-comic-llm-batch") ? (N("nx-comic-llm-batch") === "per_shot" ? "per_shot" : "once") : (e.comic_llm_batch === "per_shot" ? "per_shot" : "once"),
       comic_schedule: document.getElementById("nx-comic-schedule") ? (N("nx-comic-schedule") === "wait_taggers" ? "wait_taggers" : "overlap") : (e.comic_schedule === "wait_taggers" ? "wait_taggers" : "overlap"),
@@ -376,6 +378,8 @@ const GEN_OPTION_TOGGLES_HTML =
             <label class="toggle-row" data-nx-help-id="nx-nai-coords"><input type="checkbox" id="nx-nai-coords" \${i.nai_use_coords !== !1 ? "checked" : ""}><span>NAI 위치 좌표 사용하기</span></label>
             <label class="toggle-row" data-nx-help-id="nx-nai5-first"><input type="checkbox" id="nx-nai5-first" \${i.nai5_first ? "checked" : ""}><span>LLM한테 NAI V4, V5 선택권주기</span></label>
             <label class="toggle-row" data-nx-help-id="nx-nai5-only"><input type="checkbox" id="nx-nai5-only" \${i.nai5_only ? "checked" : ""}><span>무조건 NAI V5한테만 요청하기</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-nai5-speech"><input type="checkbox" id="nx-nai5-speech" \${i.nai5_speech ? "checked" : ""}><span>NAI5 대사삽입</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-auto-aspect"><input type="checkbox" id="nx-auto-aspect" \${i.auto_aspect ? "checked" : ""}><span>자동 비율 조절</span></label>
             <label class="toggle-row" data-nx-help-id="nx-person-tag-solo"><input type="checkbox" id="nx-person-tag-solo" \${i.person_tag_solo ? "checked" : ""}><span>캐릭 1명일 때 solo 태그</span></label>
             <label class="toggle-row" data-nx-help-id="nx-costume"><input type="checkbox" id="nx-costume" \${i.costume === !0 || i.costume === "true" || i.costume === 1 || i.costume === "1" || i.costume === "on" ? "checked" : ""}><span>코스튬 (샷에서 복장 고르기)</span></label>
             <label class="toggle-row" data-nx-help-id="nx-no-humans"><input type="checkbox" id="nx-no-humans" \${i.no_humans_when_no_char ? "checked" : ""}><span>캐릭 없을 때 no humans</span></label>
@@ -495,7 +499,7 @@ const VENDOR_CARD_TAG_PERSON_MODE_PATCH =
       return ["gender", "girls", "people", "off"].includes(Vt) ? Vt : "gender";
     }, applyAutoPerson = (Vt = !1) => {`;
 
-/** Dashboard: auto_aspect toggle only; asset NAI moved to card options select. */
+/** Dashboard: JSON retry + stream keywords; auto_aspect lives in gen options. */
 const VENDOR_ASSET_NAI_HTML_NEEDLE =
   `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
           </div>
@@ -503,8 +507,7 @@ const VENDOR_ASSET_NAI_HTML_NEEDLE =
 `;
 
 const VENDOR_ASSET_NAI_HTML_PATCH =
-  `<label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
-            <label class="toggle-row" data-nx-help-id="nx-auto-aspect"><input type="checkbox" id="nx-auto-aspect" \${i.auto_aspect ? "checked" : ""}><span>자동 비율 조절</span></label>
+  `            <label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
             <label class="toggle-row" data-nx-help-id="nx-llm-json-retry"><input type="checkbox" id="nx-llm-json-retry" \${i.llm_json_retry ? "checked" : ""}><span>JSON 오류 시 재시도</span></label>
           </div>
           <label class="toggle-row" data-nx-help-id="nx-stream-keywords" style="margin-top:12px;grid-column:1/-1"><input type="checkbox" id="nx-stream-keywords-on" \${i.stream_keywords_enabled ? "checked" : ""}><span>스트리밍 키워드</span></label>
@@ -521,7 +524,6 @@ const VENDOR_ASSET_NAI_SAVE_NEEDLE =
 
 const VENDOR_ASSET_NAI_SAVE_PATCH =
   `      char_appearance: ee("nx-appearance"),
-      auto_aspect: ee("nx-auto-aspect"),
       llm_json_retry: ee("nx-llm-json-retry"),
       stream_keywords_enabled: ee("nx-stream-keywords-on"),
       stream_keywords: w(N("nx-stream-keywords") || "", 4000),
@@ -762,6 +764,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.8</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>샷 태그 도화기: 드롭 이미지에서 시드를 읽고, 프리셋·로스터가 안 맞으면 메타 원문을 그대로 둡니다</li>
+            <li>말풍선 생성: 한 장씩 붙인 뒤 이미 있는 그림을 다시 칠하지 않습니다. 완료 때도 깜빡이지 않게 했습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.7</strong>
@@ -8296,8 +8305,7 @@ const VENDOR_INLINE_TOGGLE_PATCH =
                 <option value="both" \${i.image_press_inspect === "both" ? "selected" : ""}>꾸욱 누르기 + 더블탭</option>
               </select>
             </label>
-            <label class="toggle-row" data-nx-help-id="nx-nai4-fallback"><input type="checkbox" id="nx-nai4-fallback" \${i.nai4_fallback ? "checked" : ""}><span>할당량 끝나면 NAI4 폴백</span></label>
-            <label class="toggle-row" data-nx-help-id="nx-nai5-speech"><input type="checkbox" id="nx-nai5-speech" \${i.nai5_speech ? "checked" : ""}><span>NAI5 대사삽입</span></label>`;
+            <label class="toggle-row" data-nx-help-id="nx-nai4-fallback"><input type="checkbox" id="nx-nai4-fallback" \${i.nai4_fallback ? "checked" : ""}><span>할당량 끝나면 NAI4 폴백</span></label>`;
 
 const VENDOR_INLINE_SAVE_NEEDLE =
   `      overlay_markers: ee("nx-overlay"),`;
@@ -8310,8 +8318,7 @@ const VENDOR_INLINE_SAVE_PATCH =
       progress_toast: ee("nx-progress-toast"),
       toast_anchor: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeToastAnchor == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeToastAnchor(N("nx-toast-anchor")) : String(N("nx-toast-anchor") || "tc")),
       image_press_inspect: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeImagePressInspect == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeImagePressInspect(N("nx-image-press")) : String(N("nx-image-press") || "hold")),
-      nai4_fallback: ee("nx-nai4-fallback"),
-      nai5_speech: ee("nx-nai5-speech"),`;
+      nai4_fallback: ee("nx-nai4-fallback"),`;
 
 const VENDOR_DE_STRIP_NEEDLE =
   `  async function De(e) {
@@ -9295,7 +9302,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
     });
   }
-  /** Selection-window parking: hide photos but retain decoded children for an instant return. */
+  /** Opacity-only park. Selection hops now clear overlay children instead. */
   async function nxHideInlinePhotos(msgEl, isCurrent = () => !0) {
     if (!msgEl || typeof msgEl.querySelectorAll != "function") return;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
@@ -9414,12 +9421,12 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         ? VC.shouldOverlayInlinePhoto({ idx, selIdx, length: els.length, role })
         : idx === selIdx && role !== "user";
       if (!want) {
-        await nxHideInlinePhotos(els[idx], () => !stale());
+        await nxClearInlinePhotos(els[idx], () => !stale());
         if (stale()) return;
         continue;
       }
       if (idx === selIdx && !selectedCards.length && selectedConfirmedEmpty) {
-        await nxHideInlinePhotos(els[idx], () => !stale());
+        await nxClearInlinePhotos(els[idx], () => !stale());
         if (stale()) return;
         continue;
       }
@@ -9429,7 +9436,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     for (const prev of Array.isArray(t._inlinePhotoEls) ? t._inlinePhotoEls : []) {
       if (nextPhotoEls.some((row) => Number(row.idx) === Number(prev?.idx) && row.el === prev.el)) continue;
-      await nxHideInlinePhotos(prev.el, () => !stale());
+      await nxClearInlinePhotos(prev.el, () => !stale());
       if (stale()) return;
     }
     const selEl = els[selIdx];
@@ -9866,7 +9873,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       // display URL. Sequential per-wrapper reads were two IPC hops per shot.
       let prevProbe = await nxProbeInlineShots(msgEl, unwrapSafe);
       prevProbe = await nxRepairDuplicateInlineFrames(prevProbe, placements, VC);
-      if (!wantPhotos) await nxHideInlinePhotos(msgEl);
+      if (!wantPhotos) await nxClearInlinePhotos(msgEl);
       const prev = prevProbe.map((row) => row.node);
       const readyImgs = prevProbe.filter((row) => row.ready).length;
       // A marker with no bytes is still finished work when a live watcher owns
@@ -9926,9 +9933,9 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         return;
       }
       // Empty desired never means "delete layout". A gallery miss is temporary;
-      // confirmed empty and denied/offscreen roles only park retained photo bytes.
+      // confirmed empty and denied/offscreen roles drop overlay children only.
       if (!placements.length && !encodeLater.length) {
-        if (opts?.confirmedEmpty || denyRole || !wantPhotos) await nxHideInlinePhotos(msgEl);
+        if (opts?.confirmedEmpty || denyRole || !wantPhotos) await nxClearInlinePhotos(msgEl);
         y("info", "inline.inject.hold", \`shots=0 live=\${prev.length}\`);
         return;
       }
@@ -10512,7 +10519,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         return Array.isArray(arr) ? arr : [arr];
       };
       const evictPhotosIn = async (el) => {
-        await nxHideInlinePhotos(el);
+        await nxClearInlinePhotos(el);
       };
       const nextPhotoEls = [];
       for (const idx of spinnerIdxs) {
@@ -11220,11 +11227,10 @@ const VENDOR_INLINE_POLL_PATCH =
           const prevIds = (t.gallery || []).map((card) => String(card?.id || ""));
           try {
             // shot_done: force gallery so new cards appear; skip full Da-relink when already linked.
-            if (await ce(e, !!(c || a.state === "done")), t.selectedMessage) {
+            if (await ce(e, !!c), t.selectedMessage) {
               let l = linkedCards(t.selectedMessage);
               const pendingBusy = Array.isArray(t._inlinePending) && t._inlinePending.length;
-              if (a.state === "done" || (!l.length && !pendingBusy)) {
-                // Finalize hash / first link → full provisional relink.
+              if (!l.length && !pendingBusy) {
                 try {
                   await relinkSelectedMessageHash(a.state === "done" ? "job.done" : "job.shot");
                 } catch {
@@ -11249,18 +11255,22 @@ const VENDOR_INLINE_POLL_REFRESH_NEEDLE =
           else await onSelectionChanged("chrome");
         }`;
 const VENDOR_INLINE_POLL_REFRESH_PATCH =
-  `          if (idsChanged) {
+  `          const jobDone = a.state === "done" || a.state === "cancelled";
+          if (idsChanged && !jobDone) {
             if (c) scheduleOverlayPlace(120);
             await onSelectionChanged("content");
-          } else if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
-          else await onSelectionChanged("chrome");
-          // shot_done / leftover pending: paint even when linked ids did not change.
+          } else if (!jobDone && t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
+          else if (!jobDone) await onSelectionChanged("chrome");
+          // New shot only. Re-patching every linked card reloads 1/2 while 3 generates.
           if (t.backendSettings?.card?.inline_chat_images === !0) {
             let linkedChanged = !1;
+            let prevLinkedSet = new Set();
             try {
               const linkedNow = t.selectedMessage ? linkedCards(t.selectedMessage) : [];
+              const prevLinkedIds = String(t._inlineLinkedIds || "");
+              prevLinkedSet = new Set(prevLinkedIds.split("|").filter(Boolean));
               const linkedIds = linkedNow.map((card) => String(card?.id || "")).filter(Boolean).sort().join("|");
-              linkedChanged = linkedIds !== String(t._inlineLinkedIds || "");
+              linkedChanged = linkedIds !== prevLinkedIds;
               if (linkedChanged) t._inlineLinkedIds = linkedIds;
             } catch {
             }
@@ -11270,19 +11280,28 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
                 ? t._inlinePending.map((p) => \`\${Number(p?.shot_index)}:\${Number(p?.line)}\`).sort().join("|")
                 : "";
             const pendingChanged = pendingKeyNow !== String(t._inlineKeepPendingKey || "");
-            if (idsChanged || linkedChanged || c || pendingChanged || a.state === "done") {
+            if (pendingChanged) t._inlineKeepPendingKey = pendingKeyNow;
+            // pending clear on done is not a new shot — do not restamp the bubble.
+            if (idsChanged || linkedChanged || c || pendingChanged && pendingKeyNow) {
               try {
                 const linkedNow = t.selectedMessage ? linkedCards(t.selectedMessage) : [];
                 const shotCount = await nxSelectedInlineShotCount();
                 const needsStamp = nxNeedsInlineStamp(t.selectedMessage);
                 const pendingMatches = nxPendingMatchesInlineSelection(t.selectedMessage);
-                if (needsStamp || !shotCount && pendingMatches) {
+                const newCards = linkedNow.filter((card) => {
+                  const id = String(card?.id || "");
+                  return id && !prevLinkedSet.has(id);
+                });
+                if (!jobDone && (needsStamp || !shotCount && pendingMatches)) {
                   await refreshSelectedInlineImages(!0, { onlySel: !0 });
                   nxFinishInlineStamp(t.selectedMessage);
                 } else {
-                  const rootKey = nxInlineStampKey(t.selectedMessage);
-                  for (const card of linkedNow) {
-                    await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), "", null, rootKey ? ye(rootKey) : "");
+                  if (needsStamp && shotCount) nxFinishInlineStamp(t.selectedMessage);
+                  if (newCards.length) {
+                    const rootKey = nxInlineStampKey(t.selectedMessage);
+                    for (const card of newCards) {
+                      await nxPatchInlinePhotoByCardId(card?.id || "", nxCardDisplaySrc(card), "", null, rootKey ? ye(rootKey) : "");
+                    }
                   }
                 }
               } catch {
@@ -11311,6 +11330,12 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
 /** Job complete: remount viewer only if gallery/overlay roots were torn down. */
 const VENDOR_JOB_DONE_IT_NEEDLE =
   `          }, a.state === "cancelled" ? 600 : 1800), y("info", "gallery.refresh", \`\${(t.gallery || []).length} cards\`), await it();`;
+const VENDOR_JOB_DONE_FULL_NEEDLE =
+  `          scheduleOverlayPlace(80);
+          await onSelectionChanged("full");`;
+const VENDOR_JOB_DONE_FULL_PATCH =
+  `          `;
+
 const VENDOR_JOB_DONE_IT_PATCH =
   `          }, a.state === "cancelled" ? 600 : 1800), y("info", "gallery.refresh", \`\${(t.gallery || []).length} cards\`);
           try {
@@ -12536,8 +12561,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.7",
-    body: "말풍선 그림은 메시지 번호로 먼저 붙습니다. 태그 재생성은 연결을 끊고 스피너·그림을 뗍니다. 업데이트 내역 탭 참고."
+    title: "2.5.8",
+    body: "샷 태그는 매칭 없으면 메타 원문. 말풍선은 한 장씩만 붙이고 완료 때 다시 그리지 않습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -16097,6 +16122,7 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_POLL_NEEDLE, 'inline poll pending'],
     [VENDOR_INLINE_POLL_REFRESH_NEEDLE, 'inline poll refresh'],
     [VENDOR_JOB_DONE_IT_NEEDLE, 'job done skip remount if roots'],
+    [VENDOR_JOB_DONE_FULL_NEEDLE, 'job done skip full viewer remount'],
     [VENDOR_STREAM_SETTLE_KA_NEEDLE, 'stream settle Ka 0.5s'],
     [VENDOR_SELECT_GESTURE_HELP_NEEDLE, 'select gesture help'],
     [VENDOR_SELECT_GESTURE_HTML_NEEDLE, 'select gesture html'],
@@ -16495,6 +16521,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_POLL_NEEDLE, VENDOR_INLINE_POLL_PATCH)
     .replace(VENDOR_INLINE_POLL_REFRESH_NEEDLE, VENDOR_INLINE_POLL_REFRESH_PATCH)
     .replace(VENDOR_JOB_DONE_IT_NEEDLE, VENDOR_JOB_DONE_IT_PATCH)
+    .replace(VENDOR_JOB_DONE_FULL_NEEDLE, VENDOR_JOB_DONE_FULL_PATCH)
     .replace(VENDOR_STREAM_SETTLE_KA_NEEDLE, VENDOR_STREAM_SETTLE_KA_PATCH)
     .replace(VENDOR_SELECT_GESTURE_HELP_NEEDLE, VENDOR_SELECT_GESTURE_HELP_PATCH)
     .replace(VENDOR_SELECT_GESTURE_HTML_NEEDLE, VENDOR_SELECT_GESTURE_HTML_PATCH)
@@ -17075,6 +17102,34 @@ const loadVendorUi = (): string => {
     }
     if (out.includes('refreshSelectedInlineImages(!!(c || a.state === "done" || pendingChanged))')) {
       throw new Error('[build] shot_done must not rebuild the message');
+    }
+    if (out.includes('if (a.state === "done" || (!l.length && !pendingBusy))')) {
+      throw new Error('[build] job.done must not relink when shots are already linked');
+    }
+    if (out.includes('ce(e, !!(c || a.state === "done"))')) {
+      throw new Error('[build] job.done must not force-reload the gallery');
+    }
+    if (!out.includes('if (!jobDone && (needsStamp || !shotCount && pendingMatches))')) {
+      throw new Error('[build] job.done must not restamp inline frames');
+    }
+    if (!out.includes('if (idsChanged && !jobDone)')) {
+      throw new Error('[build] job.done must not rebuild the viewer strip');
+    }
+    if (out.includes('for (const card of linkedNow)') && out.includes('nxPatchInlinePhotoByCardId(card?.id')) {
+      throw new Error('[build] shot_done must not re-patch already painted inline shots');
+    }
+    if (!out.includes('for (const card of newCards)')) {
+      throw new Error('[build] shot_done must patch only newly linked cards');
+    }
+    if (out.includes('await onSelectionChanged("full")')) {
+      throw new Error('[build] job.done must not full-repaint the viewer');
+    }
+    {
+      const doneAt = out.indexOf('if (!t.galleryUi?.root || !t.overlayUi?.root) await it();');
+      const after = doneAt >= 0 ? out.slice(doneAt, doneAt + 280) : '';
+      if (after.includes('scheduleOverlayPlace(80)') || after.includes('onSelectionChanged(')) {
+        throw new Error('[build] job.done must not reflow overlay or viewer');
+      }
     }
     if (!out.includes('await refreshSelectedInlineImages(!0, { onlySel: !0 })')) {
       throw new Error('[build] first pending after tag must restamp the selected bubble only');

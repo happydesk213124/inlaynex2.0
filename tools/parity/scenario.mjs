@@ -143,6 +143,8 @@ export async function runScenario(N, handles) {
       nai5_only: card.nai5_only === true,
       nai4_fallback: card.nai4_fallback === true,
       nai5_speech: card.nai5_speech === true,
+      studio_seed_lock: card.studio_seed_lock === true,
+      studio_folds: card.studio_folds && typeof card.studio_folds === 'object' ? card.studio_folds : {},
       nai_use_coords: card.nai_use_coords !== false,
       v5_natural_lang: card.v5_natural_lang === 'ja' ? 'ja' : 'en',
       secondary_preset_id: String(card.secondary_preset_id || ''),
@@ -395,6 +397,7 @@ export async function runScenario(N, handles) {
   await rec('job.stop_idle', () => post('/v1/jobs/stop', { session_id: 'sess_stop_idle' }));
 
   await rec('cards.nai_prompt', () => get(`/v1/cards/${cardId}/nai-prompt`));
+  await rec('cards.nai_from_image_empty', () => post('/v1/cards/nai-from-image', {}));
   await rec('cards.tags', () => post(`/v1/cards/${cardId}/tags`, {
     main_prompt: 'PARITY EDITED PROMPT',
     negative_prompt: 'parity negative',

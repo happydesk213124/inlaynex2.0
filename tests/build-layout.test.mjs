@@ -136,12 +136,20 @@ test('nai5_first toggle lives in gen options next to coords, not dashboard', () 
     source.indexOf('VENDOR_INLINE_TOGGLE_PATCH'),
     source.indexOf('VENDOR_INLINE_SAVE_NEEDLE'),
   );
+  const dashExtras = source.slice(
+    source.indexOf('VENDOR_ASSET_NAI_HTML_PATCH'),
+    source.indexOf('VENDOR_ASSET_NAI_SAVE_NEEDLE'),
+  );
   assert.match(cardHtml, /LLM한테 NAI V4, V5 선택권주기/);
   assert.match(cardHtml, /무조건 NAI V5한테만 요청하기/);
   assert.match(cardHtml, /id="nx-nai5-first"/);
   assert.match(cardHtml, /id="nx-nai5-only"/);
-  assert.match(cardHtml, /nx-nai-coords[\s\S]*nx-nai5-first[\s\S]*nx-nai5-only/);
+  assert.match(cardHtml, /id="nx-nai5-speech"/);
+  assert.match(cardHtml, /id="nx-auto-aspect"/);
+  assert.match(cardHtml, /nx-nai-coords[\s\S]*nx-nai5-first[\s\S]*nx-nai5-only[\s\S]*nx-nai5-speech[\s\S]*nx-auto-aspect/);
   assert.doesNotMatch(dashHtml, /nx-nai5-first/);
+  assert.doesNotMatch(dashHtml, /nx-nai5-speech/);
+  assert.doesNotMatch(dashExtras, /nx-auto-aspect/);
   assert.doesNotMatch(source, /NAI5 우선/);
   // Mt() (dashboard collector) has no `e`. nai5_first lives on the card
   // tab and is saved by Ct(). A fallback to e.nai5_first here throws
@@ -151,6 +159,8 @@ test('nai5_first toggle lives in gen options next to coords, not dashboard', () 
     source.indexOf('const VENDOR_DE_STRIP_NEEDLE'),
   );
   assert.doesNotMatch(mtSave, /e\.nai5_first/);
+  assert.doesNotMatch(mtSave, /nai5_speech/);
+  assert.doesNotMatch(mtSave, /auto_aspect/);
   assert.doesNotMatch(mtSave, /\be\./);
 });
 
@@ -425,7 +435,7 @@ test('SanitizingSafeElement keeps one wrapper after three HTML prepends when ide
 test('inline photo replacement is double-buffered and skips identical src', () => {
   const source = read('vite.config.ts');
   const swapFrom = source.indexOf('async function nxSwapInlinePhoto(');
-  const swapTo = source.indexOf('/** Selection-window parking', swapFrom);
+  const swapTo = source.indexOf('async function nxHideInlinePhotos(', swapFrom);
   const swap = source.slice(swapFrom, swapTo);
   assert.match(source, /x-inlay-inline-cell/);
   assert.match(swap, /x-inlay-inline-active/);
@@ -654,7 +664,7 @@ return { nxSwapInlinePhoto, nxHideInlinePhotoWrap, nxClearInlinePhotoWrap };`,
 test('stale decode and selection passes cannot overwrite newer photos', () => {
   const source = read('vite.config.ts');
   const swapFrom = source.indexOf('async function nxSwapInlinePhoto(');
-  const swapTo = source.indexOf('/** Selection-window parking', swapFrom);
+  const swapTo = source.indexOf('async function nxHideInlinePhotos(', swapFrom);
   const swap = source.slice(swapFrom, swapTo);
   assert.match(source, /t\._inlinePhotoReq instanceof Map/);
   assert.match(source, /t\._inlinePhotoLocks instanceof Map/);
@@ -1158,31 +1168,31 @@ test('in-place frame retarget updates spinner aspect geometry', () => {
   assert.doesNotMatch(sync, /setAttribute\("(?:width|height|src)"/);
 });
 
-test('confirmed selected message without linked cards hides stale photos only', () => {
+test('confirmed selected message without linked cards clears stale overlay photos', () => {
   const source = read('vite.config.ts');
   const syncFrom = source.indexOf('async function nxSyncInlinePhotosOnly()');
   const syncTo = source.indexOf('async function nxSelectedInlineShotCount()', syncFrom);
   const sync = source.slice(syncFrom, syncTo);
   assert.match(sync, /selectedCards/);
   assert.match(sync, /idx === selIdx && !selectedCards\.length/);
-  assert.doesNotMatch(sync, /nxClearInlinePhotos/);
-  assert.match(sync, /await nxHideInlinePhotos\(els\[idx\], \(\) => !stale\(\)\)/);
+  assert.match(sync, /await nxClearInlinePhotos\(els\[idx\], \(\) => !stale\(\)\)/);
 
   const injectFrom = source.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
   const injectTo = source.indexOf('async function refreshSelectedInlineImages(force', injectFrom);
-  assert.doesNotMatch(source.slice(injectFrom, injectTo), /nxClearInlinePhotos/);
+  assert.match(source.slice(injectFrom, injectTo), /nxClearInlinePhotos/);
 });
 
-test('ordinary selection changes hide retained photos without clearing their layer HTML', () => {
+test('ordinary selection hops drop overlay photo children and keep the spinner', () => {
   const source = read('vite.config.ts');
   const syncFrom = source.indexOf('async function nxSyncInlinePhotosOnly()');
   const syncTo = source.indexOf('async function nxSelectedInlineShotCount()', syncFrom);
   const sync = source.slice(syncFrom, syncTo);
-  assert.match(sync, /await nxHideInlinePhotos\(els\[idx\], \(\) => !stale\(\)\)/);
-  assert.match(source, /async function nxHideInlinePhotoWrap\(/);
-  const hideFrom = source.indexOf('async function nxHideInlinePhotoWrap(');
-  const hideTo = source.indexOf('async function nxClearInlinePhotoWrap(', hideFrom);
-  assert.doesNotMatch(source.slice(hideFrom, hideTo), /setInnerHTML\(/);
+  assert.match(sync, /await nxClearInlinePhotos\(els\[idx\], \(\) => !stale\(\)\)/);
+  assert.match(sync, /await nxClearInlinePhotos\(prev\.el, \(\) => !stale\(\)\)/);
+  assert.match(source, /async function nxClearInlinePhotos\(/);
+  const refreshFrom = source.indexOf('const evictPhotosIn = async (el) => {');
+  const refreshTo = source.indexOf('const nextPhotoEls = [];', refreshFrom);
+  assert.match(source.slice(refreshFrom, refreshTo), /await nxClearInlinePhotos\(el\)/);
 });
 
 test('force tag clear and pending restamp stay scoped to their original message', () => {

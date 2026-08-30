@@ -162,6 +162,21 @@ export function tagStudioCss(): string {
 #nx-tag-studio .g3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
 #nx-tag-studio .inline { display: flex; align-items: center; gap: 6px; }
 #nx-tag-studio .hint { color: var(--muted); font-size: 11px; }
+#nx-tag-studio .quota {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 10px; border-radius: 9px;
+  border: 1px solid var(--line); background: #0e1017;
+  color: #c8c6d6; font-size: 11.5px; line-height: 1.45; white-space: pre-wrap;
+}
+#nx-tag-studio .quota:hover { border-color: var(--line-2); color: var(--ink); }
+#nx-tag-studio .quota .qbar {
+  display: block; margin-top: 7px; height: 7px; border-radius: 999px;
+  background: rgba(255,255,255,.08); overflow: hidden;
+}
+#nx-tag-studio .quota .qbar i {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #7c6cff, #c4b5fd);
+}
 #nx-tag-studio .seg { display: flex; gap: 6px; }
 #nx-tag-studio .seg button { flex: 1; height: 32px; border: 1px solid var(--line); background: #0e1017; border-radius: 8px; color: var(--muted); }
 #nx-tag-studio .seg button.on { background: #2b2350; border-color: #57499a; color: #ddd3ff; }
@@ -188,6 +203,7 @@ export function tagStudioCss(): string {
 #nx-tag-studio .cbar::-webkit-scrollbar { display: none; }
 #nx-tag-studio .viewport { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: grab; }
 #nx-tag-studio .viewport.grabbing { cursor: grabbing; }
+#nx-tag-studio .viewport.dropok { outline: 2px dashed #7c6cff; outline-offset: -8px; }
 #nx-tag-studio .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 #nx-tag-studio .frame canvas { display: block; border-radius: 4px; box-shadow: var(--shadow); }
 #nx-tag-studio .dots {

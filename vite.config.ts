@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.6';
+const PLUGIN_VERSION = '2.5.7';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -762,6 +762,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.7</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 그림은 Risu 메시지 번호가 있으면 그걸로 먼저 붙입니다. 없으면 해시, 그것도 안 되면 60% 비슷한 글로 다시 묶습니다</li>
+            <li>태그 재생성은 해시·번호·인덱스를 끊고 그 말풍선 스피너·그림을 뗍니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.6</strong>
@@ -8569,6 +8576,20 @@ const VENDOR_JOB_HOST_ID_PATCH =
       host_message_id: w(t.selectedMessage?.hostMessageId || t.selectedMessage?.host_message_id || "", 160),
       recent_messages: Xe(e.chat, r, !!a.userchat),`;
 
+const VENDOR_UNLINK_HOST_ID_NEEDLE =
+  `        body: {
+          session_id: e,
+          content_hash: n || "",
+          message_index: o
+        }`;
+const VENDOR_UNLINK_HOST_ID_PATCH =
+  `        body: {
+          session_id: e,
+          content_hash: n || "",
+          message_index: o,
+          host_message_id: w(t.selectedMessage?.hostMessageId || t.selectedMessage?.host_message_id || "", 160)
+        }`;
+
 const VENDOR_DA_SAME_CLICK_NEEDLE =
   `    const s = w(a), c = ye(s);
     if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c) return !0;`;
@@ -10798,8 +10819,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         const tagStampKey = nxInlineStampKey(A);
         t._inlineNeedStamp = !0;
         t._inlineNeedStampKey = tagStampKey;
+        if (els[idx]) await nxRemoveInlineFrames(els[idx]);
         if (tagStampKey) await nxRemoveInlineFramesByKey(t.hostDoc, ye(tagStampKey));
-        else if (els[idx]) await nxRemoveInlineFrames(els[idx]);
         await Be(await Z({ useOverride: !1 }), A.text, !0);
         y("info", "regen.tag", "msg-actions");
       } catch (err) { y("error", "regen.tag.fail", err?.message || err); }
@@ -12515,8 +12536,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.6",
-    body: "말풍선 칩은 캐릭터 턴·본문 20자 이상일 때만 붙습니다. 업데이트 내역 탭 참고."
+    title: "2.5.7",
+    body: "말풍선 그림은 메시지 번호로 먼저 붙습니다. 태그 재생성은 연결을 끊고 스피너·그림을 뗍니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -16067,6 +16088,7 @@ const loadVendorUi = (): string => {
     [VENDOR_SELECT_HOST_ID_NEEDLE, 'select host message id'],
     [VENDOR_SELECT_SAME_HOST_ID_NEEDLE, 'reselect host message id'],
     [VENDOR_JOB_HOST_ID_NEEDLE, 'job create host message id'],
+    [VENDOR_UNLINK_HOST_ID_NEEDLE, 'gallery unlink host message id'],
     [VENDOR_BIND_QA_NEEDLE, 'bindCard qa data-chat-index'],
     [VENDOR_INLINE_INJECT_FN_NEEDLE, 'inline inject fn'],
     [VENDOR_INLINE_CALL_NEEDLE, 'inline inject call'],
@@ -16463,6 +16485,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_SELECT_HOST_ID_NEEDLE, VENDOR_SELECT_HOST_ID_PATCH)
     .replace(VENDOR_SELECT_SAME_HOST_ID_NEEDLE, VENDOR_SELECT_SAME_HOST_ID_PATCH)
     .replace(VENDOR_JOB_HOST_ID_NEEDLE, VENDOR_JOB_HOST_ID_PATCH)
+    .replace(VENDOR_UNLINK_HOST_ID_NEEDLE, VENDOR_UNLINK_HOST_ID_PATCH)
     .replace(VENDOR_BIND_QA_NEEDLE, VENDOR_BIND_QA_PATCH)
     .replace(VENDOR_INLINE_INJECT_FN_NEEDLE, VENDOR_INLINE_INJECT_FN_PATCH)
     .replace(VENDOR_ENSURE_IN_VIEW_NEEDLE, VENDOR_ENSURE_IN_VIEW_PATCH)

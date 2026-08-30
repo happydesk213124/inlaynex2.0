@@ -1550,6 +1550,7 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /VC\.hostMessageId\(m\)/);
   assert.match(source, /host_message_id: w\(t\.selectedMessage\?\.hostMessageId/);
   assert.match(source, /hostMessageId: message\.hostMessageId \|\| message\.host_message_id/);
+  assert.match(source, /if \(els\[idx\]\) await nxRemoveInlineFrames\(els\[idx\]\);\s*if \(tagStampKey\) await nxRemoveInlineFramesByKey/);
   assert.match(source, /VC\.inlineRoleDisposition\(opts\.role/);
   assert.match(source, /if \(roleDisposition === "hold" && !haveWork\) return/);
   assert.match(source, /getAttribute\("x-inlay-inline-layout"\)/);

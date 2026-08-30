@@ -21,9 +21,18 @@ export function resolveStoredContentHash(
 export function cardMatchesMessageUnlink(args: {
   hashes: readonly unknown[];
   messageIndexes: readonly unknown[];
+  hostIds?: readonly unknown[];
   wantHash: string;
   wantMessageIndex: number | null;
+  wantHostId?: unknown;
 }): boolean {
+  const wantHost = cleanText(args.wantHostId, 160);
+  const storedHosts = (Array.isArray(args.hostIds) ? args.hostIds : [])
+    .map((id) => cleanText(id, 160))
+    .filter(Boolean);
+  if (wantHost && storedHosts.length) {
+    return storedHosts.includes(wantHost);
+  }
   const wantMsg = args.wantMessageIndex;
   if (wantMsg != null && wantMsg >= 0) {
     const stored = toInt(args.messageIndexes[0], -1);

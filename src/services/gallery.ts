@@ -409,6 +409,7 @@ export async function unlinkCardsForMessage(
   sessionId: string,
   contentHash = '',
   messageIndex: unknown = null,
+  hostMessageId: unknown = '',
 ): Promise<ApiResult> {
   const sid = cleanText(sessionId, 200);
   const hash = cleanText(contentHash);
@@ -420,7 +421,8 @@ export async function unlinkCardsForMessage(
   } catch {
     msgIdx = null;
   }
-  if (!sid || (!hash && msgIdx == null)) return { ok: true, unlinked: 0, ids: [] };
+  const hostId = cleanText(hostMessageId, 160);
+  if (!sid || (!hash && msgIdx == null && !hostId)) return { ok: true, unlinked: 0, ids: [] };
   // Session index plus a full scan: a late comic save can miss the index.
   const byId = new Map<string, CardRow>();
   for (const row of await cardsForSession(sid)) byId.set(row.id, row);
@@ -440,8 +442,10 @@ export async function unlinkCardsForMessage(
       // Re-adding raw/meta values here can revive an explicitly unlinked card.
       hashes: [loc.content_hash],
       messageIndexes: [loc.message_index],
+      hostIds: [loc.host_message_id, meta.host_message_id],
       wantHash: hash,
       wantMessageIndex: msgIdx,
+      wantHostId: hostId,
     })) continue;
     const existing = sidecar;
     const cleared = {
@@ -450,6 +454,7 @@ export async function unlinkCardsForMessage(
       image_id: row.id,
       session_id: sid,
       content_hash: '',
+      host_message_id: '',
       message_index: -1,
       character_id: '',
       chat_id: '',
@@ -459,6 +464,7 @@ export async function unlinkCardsForMessage(
     };
     await writeImageLocation(row.id, cleared);
     meta.content_hash = '';
+    meta.host_message_id = '';
     meta.assistant_preview = '';
     meta.message_index = -1;
     meta.unlinked_at = Date.now() / 1000;

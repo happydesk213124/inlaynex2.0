@@ -248,6 +248,49 @@ type IncomingRequest = Partial<JobRequest> & Record<string, unknown>;
 
 // ── target identity and epochs ──────────────────────────────────────────────
 
+const lastGeneratingReady = new Set<string>();
+const lastGeneratingWaiters = new Map<string, () => void>();
+
+function resetLastGeneratingPoll(jobId: string): void {
+  lastGeneratingReady.delete(jobId);
+  lastGeneratingWaiters.delete(jobId);
+}
+
+function noteLastGeneratingPoll(
+  jobId: string,
+  state: string,
+  result: Record<string, unknown> | null,
+): void {
+  if (state !== 'generating' || !result) return;
+  const shotDone = Number(result.shot_done);
+  const shotCount = Number(result.shot_count);
+  if (!(shotCount > 0) || shotDone !== shotCount) return;
+  lastGeneratingReady.add(jobId);
+  const release = lastGeneratingWaiters.get(jobId);
+  if (release) {
+    lastGeneratingWaiters.delete(jobId);
+    release();
+  }
+}
+
+function waitForLastGeneratingPoll(jobId: string, timeoutMs = 1500): Promise<void> {
+  if (lastGeneratingReady.has(jobId)) {
+    lastGeneratingReady.delete(jobId);
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      lastGeneratingWaiters.delete(jobId);
+      resolve();
+    }, timeoutMs);
+    lastGeneratingWaiters.set(jobId, () => {
+      clearTimeout(timer);
+      lastGeneratingReady.delete(jobId);
+      resolve();
+    });
+  });
+}
+
 function beginJobEpoch(jobId: string, request: IncomingRequest, sessionId: string): { key: string; epoch: number } {
   const key = jobKey(request, sessionId);
   const prev = jobEpochByKey.get(key);
@@ -256,6 +299,7 @@ function beginJobEpoch(jobId: string, request: IncomingRequest, sessionId: strin
   // busy-check first, so that a queued duplicate is rejected rather than
   // silently replacing work the user is already waiting on.
   jobEpochByKey.set(key, { epoch, jobId });
+  resetLastGeneratingPoll(jobId);
   const preview = cleanText(request.assistant_text || '', ASSISTANT_PREVIEW_LIMIT);
   const hash = cleanText(request.content_hash || '', 128);
   jobRunMeta.set(jobId, {
@@ -555,7 +599,10 @@ export async function getJob(jobId: string): Promise<ApiResult> {
       if (key in result) progress[key] = result[key];
     }
   }
-  if (result) await attachImageUrls(result);
+  noteLastGeneratingPoll(jobId, row.state, result);
+  // Cache only. Encoding here is what left the toast on generating N/N
+  // after the last shot had already attached — the done poll never returned.
+  if (result) await attachImageUrls(result, { cachedOnly: true, warmMissing: false });
   return {
     ok: true,
     job_id: row.id,
@@ -1244,6 +1291,20 @@ async function runJob(jobId: string): Promise<void> {
         };
         const done = cardsDone();
         dbg('job.shot.revealed', { shot: idx, card_id: cardId, has_url: Boolean(resolveImageUrl(cardId)) });
+        await idbPut('cards', {
+          id: cardId,
+          job_id: jobId,
+          session_id: sessionId,
+          shot_index: idx,
+          paragraph: Number(shot.paragraph || 0),
+          main_prompt: '',
+          negative_prompt: '',
+          characters_json: JSON.stringify(slimCardCharacters(meta.characters || [])),
+          seed,
+          meta_json: JSON.stringify(cardMeta),
+          created_at: now,
+        });
+        dbg('job.shot.saved', { shot: idx, card_id: cardId });
         await setJob(
           jobId,
           'generating',
@@ -1259,21 +1320,6 @@ async function runJob(jobId: string): Promise<void> {
             pending_message_index: pendingMessageIndex,
           }),
         );
-        // Card row persist can trail the visible swap; next NAI already overlaps.
-        await idbPut('cards', {
-          id: cardId,
-          job_id: jobId,
-          session_id: sessionId,
-          shot_index: idx,
-          paragraph: Number(shot.paragraph || 0),
-          main_prompt: '',
-          negative_prompt: '',
-          characters_json: JSON.stringify(slimCardCharacters(meta.characters || [])),
-          seed,
-          meta_json: JSON.stringify(cardMeta),
-          created_at: now,
-        });
-        dbg('job.shot.saved', { shot: idx, card_id: cardId });
       })().catch((err) => {
         shotSaveFailed = err;
         throw err;
@@ -1325,7 +1371,9 @@ async function runJob(jobId: string): Promise<void> {
       message: `이미지 ${shots.length}/${shots.length} 완료`,
       // Done = no spinners. Leaving pending_inline here kept circles on finished bubbles.
     };
-    await attachImageUrls(result);
+    // Last shot needs one generating poll tick, same as shots 1..N-1, before
+    // done. 2.5.8 skips painting on done on purpose.
+    await waitForLastGeneratingPoll(jobId);
     await setJob(jobId, 'done', result);
     // The run succeeded, so its cards are the user's now and must survive any
     // later supersession of this job id.

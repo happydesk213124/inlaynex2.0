@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.11';
+const PLUGIN_VERSION = '2.5.18';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -764,6 +764,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.18</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>마지막 컷도 앞 컷처럼 붙인 뒤에야 완료로 넘깁니다. 끝나면 전체를 다시 그리지 않습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.11</strong>
@@ -11460,6 +11466,19 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
               }
             }
           }
+          // Last inline insert is the finish. Waiting for the next getJob(done)
+          // left the toast on generating N/N while that poll never hid it.
+          if (Number(r.shot_count || 0) > 0 && i >= Number(r.shot_count) && a.state === "generating") {
+            t.jobProgress = {
+              ...t.jobProgress,
+              state: "done",
+              progress: 100,
+              message: r.message || "생성 완료"
+            };
+            t.lastJobState = "done";
+            o && t.jobsInFlight.delete(o);
+            await Se();
+          }
         } else if (s || a.state === "generating" || a.state === "tagging" || a.state === "queued") {
           if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
           else await onSelectionChanged("chrome");
@@ -12713,8 +12732,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.11",
-    body: "프리셋 룩 미리보기. 프리셋 vibe는 쓸 때 encode. 태그 저장 후 인라인 컷 교체. 업데이트 내역 탭 참고."
+    title: "2.5.18",
+    body: "마지막 컷도 앞 컷처럼 붙인 뒤에야 완료합니다. 끝나면 전체를 다시 그리지 않습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -17273,6 +17292,12 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('for (const card of newCards)')) {
       throw new Error('[build] shot_done must patch only newly linked cards');
+    }
+    if (!out.includes('i >= Number(r.shot_count) && a.state === "generating"')) {
+      throw new Error('[build] last inline insert must mark the job toast done');
+    }
+    if (!out.includes('o && t.jobsInFlight.delete(o)')) {
+      throw new Error('[build] last inline insert must release the in-flight lock');
     }
     if (out.includes('await onSelectionChanged("full")')) {
       throw new Error('[build] job.done must not full-repaint the viewer');

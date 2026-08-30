@@ -1224,6 +1224,11 @@ test('force tag clear and pending restamp stay scoped to their original message'
     'toast must flip to 생성 완료 in the same tick as the last inline insert',
   );
   assert.match(poll, /o && t\.jobsInFlight\.delete\(o\)/);
+  assert.match(poll, /t\._pollJobId = ""/);
+  assert.match(poll, /clearInterval\(t\.pollTimer\)/);
+  assert.match(poll, /String\(t\.jobProgress\?\.jobId \|\| ""\) !== String\(doneJobId/);
+  assert.match(source, /if \(t\._pollJobId !== n\) return;/);
+  assert.match(source, /t\._lastShotDone = -1, t\._pollJobId = ""/);
   assert.match(source, /function nxPendingForInlineSelection\(sel\)/);
   assert.match(source, /injectChatInlineImages\(els\[idx\], cards, idx === selIdx \? nxPendingForInlineSelection\(sel\) : \[\], \{/);
 });

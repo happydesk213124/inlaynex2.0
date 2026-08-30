@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.18';
+const PLUGIN_VERSION = '2.5.19';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -764,6 +764,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.19</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>완료 직후 바로 다시 생성해도 이전 폴이 마지막 컷을 삼키지 않습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.18</strong>
@@ -11477,7 +11483,17 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
             };
             t.lastJobState = "done";
             o && t.jobsInFlight.delete(o);
+            // Stop this job's poll here. A later getJob(done) for *this* job
+            // would clearInterval the *next* job and delete the same hash lock.
+            t._pollJobId = "";
+            t.pollTimer && (clearInterval(t.pollTimer), t.pollTimer = null);
             await Se();
+            const doneJobId = n;
+            setTimeout(() => {
+              if (String(t.jobProgress?.jobId || "") !== String(doneJobId || "")) return;
+              t.jobProgress = null, Se().catch(() => {
+              });
+            }, 1800);
           }
         } else if (s || a.state === "generating" || a.state === "tagging" || a.state === "queued") {
           if (t.galleryUi?.paintStatus) await t.galleryUi.paintStatus();
@@ -11497,6 +11513,28 @@ const VENDOR_INLINE_POLL_REFRESH_PATCH =
             }
           }
         }`;
+
+/** Stale poll ticks must not write _lastShotDone or clear the next job's timer. */
+const VENDOR_POLL_JOB_GUARD_NEEDLE =
+  `  function ua(e, n, o = "") {
+    n && (t.pollTimer && clearInterval(t.pollTimer), t.pollTimer = setInterval(async () => {
+      try {
+        const a = await K(\`/v1/jobs/\${n}\`, { method: "GET" }, 15e3);
+        if (!a?.ok) return;`;
+const VENDOR_POLL_JOB_GUARD_PATCH =
+  `  function ua(e, n, o = "") {
+    n && (t.pollTimer && clearInterval(t.pollTimer), t._pollJobId = n, t.pollTimer = setInterval(async () => {
+      try {
+        const a = await K(\`/v1/jobs/\${n}\`, { method: "GET" }, 15e3);
+        if (t._pollJobId !== n) return;
+        if (!a?.ok) return;`;
+
+/** New generate must drop the previous job's poll before create returns. */
+const VENDOR_JOB_CLAIM_POLL_NEEDLE =
+  `    t.jobsInFlight.set(m, Date.now()), t._lastShotDone = -1;`;
+const VENDOR_JOB_CLAIM_POLL_PATCH =
+  `    t.jobsInFlight.set(m, Date.now()), t._lastShotDone = -1, t._pollJobId = "";
+    t.pollTimer && (clearInterval(t.pollTimer), t.pollTimer = null);`;
 
 /** Job complete: remount viewer only if gallery/overlay roots were torn down. */
 const VENDOR_JOB_DONE_IT_NEEDLE =
@@ -12732,8 +12770,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.18",
-    body: "마지막 컷도 앞 컷처럼 붙인 뒤에야 완료합니다. 끝나면 전체를 다시 그리지 않습니다. 업데이트 내역 탭 참고."
+    title: "2.5.19",
+    body: "완료 직후 바로 다시 생성해도 마지막 컷이 빠지지 않습니다. 끝나면 전체를 다시 그리지 않습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -16293,6 +16331,8 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_PENDING_UI_NEEDLE, 'inline pending before ui-open return'],
     [VENDOR_INLINE_POLL_NEEDLE, 'inline poll pending'],
     [VENDOR_INLINE_POLL_REFRESH_NEEDLE, 'inline poll refresh'],
+    [VENDOR_POLL_JOB_GUARD_NEEDLE, 'poll ignore stale job ticks'],
+    [VENDOR_JOB_CLAIM_POLL_NEEDLE, 'job claim drops previous poll'],
     [VENDOR_JOB_DONE_IT_NEEDLE, 'job done skip remount if roots'],
     [VENDOR_JOB_DONE_FULL_NEEDLE, 'job done skip full viewer remount'],
     [VENDOR_STREAM_SETTLE_KA_NEEDLE, 'stream settle Ka 0.5s'],
@@ -16692,6 +16732,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_PENDING_UI_NEEDLE, VENDOR_INLINE_PENDING_UI_PATCH)
     .replace(VENDOR_INLINE_POLL_NEEDLE, VENDOR_INLINE_POLL_PATCH)
     .replace(VENDOR_INLINE_POLL_REFRESH_NEEDLE, VENDOR_INLINE_POLL_REFRESH_PATCH)
+    .replace(VENDOR_POLL_JOB_GUARD_NEEDLE, VENDOR_POLL_JOB_GUARD_PATCH)
+    .replace(VENDOR_JOB_CLAIM_POLL_NEEDLE, VENDOR_JOB_CLAIM_POLL_PATCH)
     .replace(VENDOR_JOB_DONE_IT_NEEDLE, VENDOR_JOB_DONE_IT_PATCH)
     .replace(VENDOR_JOB_DONE_FULL_NEEDLE, VENDOR_JOB_DONE_FULL_PATCH)
     .replace(VENDOR_STREAM_SETTLE_KA_NEEDLE, VENDOR_STREAM_SETTLE_KA_PATCH)
@@ -17298,6 +17340,19 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('o && t.jobsInFlight.delete(o)')) {
       throw new Error('[build] last inline insert must release the in-flight lock');
+    }
+    if (!out.includes('if (t._pollJobId !== n) return;')) {
+      throw new Error('[build] poll ticks must ignore a job that is no longer current');
+    }
+    if (!out.includes('t._lastShotDone = -1, t._pollJobId = ""')) {
+      throw new Error('[build] claiming a job must invalidate the previous poll');
+    }
+    {
+      const lastInsertAt = out.indexOf('i >= Number(r.shot_count) && a.state === "generating"');
+      const lastInsert = lastInsertAt >= 0 ? out.slice(lastInsertAt, lastInsertAt + 900) : '';
+      if (!lastInsert.includes('clearInterval(t.pollTimer)')) {
+        throw new Error('[build] last inline insert must stop the poll so done cannot kill the next job');
+      }
     }
     if (out.includes('await onSelectionChanged("full")')) {
       throw new Error('[build] job.done must not full-repaint the viewer');

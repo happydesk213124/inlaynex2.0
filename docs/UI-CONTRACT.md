@@ -409,10 +409,13 @@ lore_trigger_keys[], character_description, persona_description, force`.
 | `POST /v1/messages/reroll` | `{session_id, content_hash, message_index}` |
 | `/v1/images/:id`, `/v1/images/:id.json` | raw bytes / placement sidecar |
 
-Card fields the UI reads: `id, content_hash, session_id, message_index, paragraph,
+Card fields the UI reads: `id, content_hash, host_message_id, session_id, message_index, paragraph,
 shot_index, y_percent, anchor_percent, read_percent, created_at, image_url,
 main_prompt, negative_prompt, assistant_preview, text, characters[],
 character_name, chat_name, folder_key`.
+`host_message_id` is Risu's per-message id when the host exposes one. Link
+prefers that over `content_hash`; hash and the Dice≥60% rebind remain fallbacks.
+`chatId` is the chat, not a turn, and is never stored here.
 
 ### Characters
 | Route | Notes |

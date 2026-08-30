@@ -426,6 +426,7 @@ export interface CardRow {
   y_percent: number;
   message_index: number;
   message_role?: string;
+  host_message_id?: string;
   content_hash: string;
   character_id?: string;
   character_name?: string;
@@ -492,6 +493,7 @@ export interface JobRequest {
   assistant_text?: string;
   message_index?: number;
   message_role?: string;
+  host_message_id?: string;
   content_hash?: string;
   recent_messages?: Array<{ role: string; content: string }>;
   lorebook?: LoreEntry[];

@@ -8538,6 +8538,37 @@ const VENDOR_DA_QA_PATCH =
   `    const nxApi = await nxChatAttrIndex(o);
     const i = qa(a, r.messages, e, Array.isArray(n) ? n.length : 0, { prevText, nextText, chatIndex: nxApi }), l = w(i.role || "");`;
 
+const VENDOR_ZA_HOST_ID_NEEDLE =
+  `        generationInfo: m?.generationInfo ?? m?.generation_info ?? null,
+        isChar: b === "char" || b === "assistant" || b === "bot",
+        isUser: b === "user"`;
+const VENDOR_ZA_HOST_ID_PATCH =
+  `        generationInfo: m?.generationInfo ?? m?.generation_info ?? null,
+        hostMessageId: typeof VC?.hostMessageId == "function" ? VC.hostMessageId(m) : "",
+        isChar: b === "char" || b === "assistant" || b === "bot",
+        isUser: b === "user"`;
+
+const VENDOR_SELECT_HOST_ID_NEEDLE =
+  `      hash: c,
+      paragraphCount: p.length || 1,`;
+const VENDOR_SELECT_HOST_ID_PATCH =
+  `      hash: c,
+      hostMessageId: w(i.hostMessageId || "", 160),
+      paragraphCount: p.length || 1,`;
+
+const VENDOR_SELECT_SAME_HOST_ID_NEEDLE =
+  `t.selectedMessage.role = l, t.selectedMessage.matchMethod = i.matchMethod || t.selectedMessage.matchMethod, t.selectedMessage.text = s,`;
+const VENDOR_SELECT_SAME_HOST_ID_PATCH =
+  `t.selectedMessage.role = l, t.selectedMessage.hostMessageId = w(i.hostMessageId || "", 160), t.selectedMessage.matchMethod = i.matchMethod || t.selectedMessage.matchMethod, t.selectedMessage.text = s,`;
+
+const VENDOR_JOB_HOST_ID_NEEDLE =
+  `      content_hash: m,
+      recent_messages: Xe(e.chat, r, !!a.userchat),`;
+const VENDOR_JOB_HOST_ID_PATCH =
+  `      content_hash: m,
+      host_message_id: w(t.selectedMessage?.hostMessageId || t.selectedMessage?.host_message_id || "", 160),
+      recent_messages: Xe(e.chat, r, !!a.userchat),`;
+
 const VENDOR_DA_SAME_CLICK_NEEDLE =
   `    const s = w(a), c = ye(s);
     if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c) return !0;`;
@@ -12037,7 +12068,8 @@ const VENDOR_REBIND_RETARGET_PATCH =
         chatId: message.chatId || sc.chatId || "",
         sessionId: sid,
         messageIndex: Number(message.chatIndex ?? message.messageIndex ?? -1),
-        role: message.role || ""
+        role: message.role || "",
+        hostMessageId: message.hostMessageId || message.host_message_id || ""
       });
       if (candidates.length) {
         try {
@@ -16031,6 +16063,10 @@ const loadVendorUi = (): string => {
     [VENDOR_DT_FN_NEEDLE, 'risu-chat data-chat-id list'],
     [VENDOR_DA_SAME_CLICK_NEEDLE, 'same click inline no-op'],
     [VENDOR_DA_QA_NEEDLE, 'Da qa data-chat-index'],
+    [VENDOR_ZA_HOST_ID_NEEDLE, 'Za host message id'],
+    [VENDOR_SELECT_HOST_ID_NEEDLE, 'select host message id'],
+    [VENDOR_SELECT_SAME_HOST_ID_NEEDLE, 'reselect host message id'],
+    [VENDOR_JOB_HOST_ID_NEEDLE, 'job create host message id'],
     [VENDOR_BIND_QA_NEEDLE, 'bindCard qa data-chat-index'],
     [VENDOR_INLINE_INJECT_FN_NEEDLE, 'inline inject fn'],
     [VENDOR_INLINE_CALL_NEEDLE, 'inline inject call'],
@@ -16423,6 +16459,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_DT_FN_NEEDLE, VENDOR_DT_FN_PATCH)
     .replace(VENDOR_DA_SAME_CLICK_NEEDLE, VENDOR_DA_SAME_CLICK_PATCH)
     .replace(VENDOR_DA_QA_NEEDLE, VENDOR_DA_QA_PATCH)
+    .replace(VENDOR_ZA_HOST_ID_NEEDLE, VENDOR_ZA_HOST_ID_PATCH)
+    .replace(VENDOR_SELECT_HOST_ID_NEEDLE, VENDOR_SELECT_HOST_ID_PATCH)
+    .replace(VENDOR_SELECT_SAME_HOST_ID_NEEDLE, VENDOR_SELECT_SAME_HOST_ID_PATCH)
+    .replace(VENDOR_JOB_HOST_ID_NEEDLE, VENDOR_JOB_HOST_ID_PATCH)
     .replace(VENDOR_BIND_QA_NEEDLE, VENDOR_BIND_QA_PATCH)
     .replace(VENDOR_INLINE_INJECT_FN_NEEDLE, VENDOR_INLINE_INJECT_FN_PATCH)
     .replace(VENDOR_ENSURE_IN_VIEW_NEEDLE, VENDOR_ENSURE_IN_VIEW_PATCH)

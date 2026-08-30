@@ -91,7 +91,39 @@ export interface SelectedMessage {
   chatIndex?: number;
   messageIndex?: number;
   text?: string;
+  hostMessageId?: string;
+  host_message_id?: string;
   [key: string]: unknown;
+}
+
+/**
+ * Risu's per-message id when the host exposes one. Never chatId — that is the
+ * chat, not the turn, and would glue every bubble to the same shots.
+ */
+export function hostMessageId(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number') {
+    const s = String(value).trim();
+    return s && s.length <= 160 ? s : '';
+  }
+  if (typeof value !== 'object') return '';
+  const rec = value as Record<string, unknown>;
+  // Cards store the shot id in `id`. That must never win over a missing host id.
+  const looksLikeCard = rec.content_hash != null || rec.shot_index != null || rec.main_prompt != null;
+  const keys = looksLikeCard
+    ? ['hostMessageId', 'host_message_id', 'messageId', 'message_id', 'msgId', 'm_id', 'generationId']
+    : ['hostMessageId', 'host_message_id', 'messageId', 'message_id', 'msgId', 'm_id', 'id', 'uid', 'uuid', 'generationId'];
+  for (const key of keys) {
+    const s = String(rec[key] ?? '').trim();
+    if (s && s.length <= 160) return s;
+  }
+  const gi = rec.generationInfo ?? rec.generation_info ?? rec.messageGenerationInfo;
+  if (gi && typeof gi === 'object') {
+    const g = gi as Record<string, unknown>;
+    const s = String(g.generationId ?? g.generation_id ?? '').trim();
+    if (s && s.length <= 160) return s;
+  }
+  return '';
 }
 
 /** Hash-independent owner for serialising writes into one physical message bubble. */
@@ -319,6 +351,8 @@ export interface RebindIdentity {
   messageIndex?: number;
   role?: string;
   messageRole?: string;
+  hostMessageId?: string;
+  host_message_id?: string;
 }
 
 /**
@@ -333,15 +367,14 @@ export function linkCardsForMessage<T extends GalleryCard = GalleryCard>(
 ): T[] {
   if (!selectedMessage) return [];
   const list = Array.isArray(cards) ? cards : [];
+  const selHost = hostMessageId(selectedMessage);
   const hash = String(selectedMessage.hash || '');
-  if (!hash) return [];
   const rawSelectedIndex = selectedMessage.messageIndex ?? selectedMessage.chatIndex;
   const selectedIndex = Number(rawSelectedIndex);
   const hasSelectedIndex = rawSelectedIndex != null
     && Number.isInteger(selectedIndex)
     && selectedIndex >= 0;
-  return dedupeShotSlots(list.filter((card) => {
-    if (!card?.content_hash || card.content_hash !== hash) return false;
+  const indexOk = (card: T): boolean => {
     if (!hasSelectedIndex) return true;
     const rawCardIndex = card.message_index;
     const cardIndex = Number(rawCardIndex);
@@ -349,6 +382,19 @@ export function linkCardsForMessage<T extends GalleryCard = GalleryCard>(
       || !Number.isInteger(cardIndex)
       || cardIndex < 0
       || cardIndex === selectedIndex;
+  };
+  const byHost = selHost
+    ? list.filter((card) => {
+      const cardHost = hostMessageId(card);
+      return !!cardHost && cardHost === selHost;
+    })
+    : [];
+  if (byHost.length) return dedupeShotSlots(byHost);
+  if (!hash) return [];
+  return dedupeShotSlots(list.filter((card) => {
+    if (selHost && hostMessageId(card) && hostMessageId(card) !== selHost) return false;
+    if (!card?.content_hash || card.content_hash !== hash) return false;
+    return indexOk(card);
   }));
 }
 
@@ -366,6 +412,8 @@ export function findCardsForMessageIdentity<T extends GalleryCard = GalleryCard>
     messageIndex?: number;
     role?: string;
     messageRole?: string;
+    hostMessageId?: string;
+    host_message_id?: string;
   } = {},
 ): T[] {
   const list = Array.isArray(cards) ? cards : [];
@@ -388,7 +436,13 @@ export function findCardsForMessageIdentity<T extends GalleryCard = GalleryCard>
     } else {
       continue;
     }
-    if (Number(card?.message_index) !== messageIndex) continue;
+    const selHost = hostMessageId(identity);
+    const cardHost = hostMessageId(card);
+    if (selHost && cardHost) {
+      if (cardHost !== selHost) continue;
+    } else if (Number(card?.message_index) !== messageIndex) {
+      continue;
+    }
     const cardRole = normalizeMessageRole(card?.message_role || card?.role || '');
     if (!cardRole || cardRole !== role) continue;
     out.push(card);
@@ -426,9 +480,18 @@ export function findHashRebindCandidates<T extends GalleryCard = GalleryCard>(
     sessionId,
     messageIndex,
     role,
+    hostMessageId: identity.hostMessageId,
+    host_message_id: identity.host_message_id,
   })) {
     const cardHash = String(card?.content_hash || '');
     if (!cardHash || cardHash === newHash) continue;
+    const selHost = hostMessageId(identity);
+    const cardHost = hostMessageId(card);
+    if (selHost && cardHost) {
+      if (cardHost !== selHost) continue;
+      out.push({ card, score: 1 });
+      continue;
+    }
     const preview = String(card?.assistant_preview || '');
     if (!preview) continue;
     const score = prefixMatchRatio(text, preview);
@@ -1160,6 +1223,7 @@ export interface ChatMessageMatch {
   role: string;
   matchMethod: ChatMatchMethod;
   score: number;
+  hostMessageId?: string;
 }
 
 export interface DomApiCompare {
@@ -1342,6 +1406,7 @@ export function resolveChatMessageMatch(
     role: rawMessageRole(row) || String(row?.role || '').trim().toLowerCase(),
     matchMethod: method,
     score,
+    hostMessageId: hostMessageId(row),
   });
 
   const attrIdx = Math.floor(finiteNumber((_opts as { chatIndex?: unknown } | undefined)?.chatIndex, Number.NaN));
@@ -1358,6 +1423,7 @@ export function resolveChatMessageMatch(
       role: '',
       matchMethod: 'fallback',
       score: 0,
+      hostMessageId: '',
     };
   }
 

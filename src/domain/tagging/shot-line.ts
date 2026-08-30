@@ -13,11 +13,34 @@ export function splitTaggerMessageLines(text: unknown): string[] {
     .filter(Boolean);
 }
 
+const CSS_PREVIEW_CHARS = 50;
+
+/** Heuristic: stylesheet text leaked from <style> after tag strip. */
+export function looksLikeCssLine(line: unknown): boolean {
+  const s = String(line ?? '').trim();
+  if (s.length < 24) return false;
+  if (/^@(?:keyframes|media|supports|font-face|import|charset)\b/i.test(s)) return true;
+  if (/^\.[a-zA-Z_-][\w-]*(?:\s+\.[a-zA-Z_-][\w-]*)*\s*\{/.test(s)) return true;
+  if (
+    /[{;].*(?:position|display|rgba?\(|linear-gradient|border-radius|z-index|padding|margin|font-size|background|transform|opacity)\s*:/i.test(s)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function lineForTaggerPrompt(line: string): string {
+  if (!looksLikeCssLine(line)) return line;
+  const preview = line.slice(0, CSS_PREVIEW_CHARS);
+  const more = line.length > CSS_PREVIEW_CHARS ? '…' : '';
+  return `maybeCSSCode<< ${preview}${more}`;
+}
+
 /** Prefix each line so the tagger can cite L# in shot.line. */
 export function numberMessageLinesForTagger(text: unknown): string {
   const lines = splitTaggerMessageLines(text);
   if (!lines.length) return '';
-  return lines.map((line, i) => `L${i + 1}|${line}`).join('\n');
+  return lines.map((line, i) => `L${i + 1}|${lineForTaggerPrompt(line)}`).join('\n');
 }
 
 /** True when lines are exactly 1..N in order (lazy shot-index fill). */

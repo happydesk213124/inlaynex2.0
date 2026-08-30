@@ -61,6 +61,7 @@ type ExploreRow = {
   message_index: number;
   message_role: string;
   content_hash: string;
+  host_message_id?: string;
   character_id: string;
   character_name: string;
   chat_id: string;
@@ -100,6 +101,7 @@ type GalleryRow = {
   message_index: number;
   message_role: string;
   content_hash: string;
+  host_message_id?: string;
   character_id: string;
   chat_id: string;
   character_name: string;
@@ -211,6 +213,7 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
       message_index: loc.message_index ?? -1,
       message_role: loc.message_role || '',
       content_hash: loc.content_hash || '',
+      ...(loc.host_message_id ? { host_message_id: loc.host_message_id } : {}),
       character_id: characterId,
       character_name: folder.character_name,
       chat_id: chatId,
@@ -305,6 +308,7 @@ export async function gallery(
       message_index: loc.message_index ?? -1,
       message_role: loc.message_role || '',
       content_hash: loc.content_hash || '',
+      ...(loc.host_message_id ? { host_message_id: loc.host_message_id } : {}),
       character_id: loc.character_id || '',
       chat_id: loc.chat_id || '',
       character_name: loc.character_name || '',

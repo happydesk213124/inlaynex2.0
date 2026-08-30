@@ -19,6 +19,7 @@ import {
   galleryForMessage,
   gallerySelectedCount,
   linkCardsForMessage,
+  hostMessageId,
   stripInlayInlineHtml,
   keepMsgActionBarIndexes,
   isInlayPaintHost,
@@ -112,6 +113,8 @@ import {
   inlineDomWindow,
   inlineDomWindowFromSel,
   shouldOverlayInlinePhoto,
+  shouldMountMsgActions,
+  MSG_ACTION_MIN_BODY_CHARS,
   desiredInlinePlacements,
   runBoundedPool,
   canSkipInlineInject,
@@ -1072,6 +1075,21 @@ test("allowInlineImagesOnRole blocks user unless allRoles", () => {
   assert.equal(allowInlineImagesOnRole("user", true), true);
 });
 
+test("shouldMountMsgActions is char-only and needs 20 real body chars", () => {
+  const body20 = "가나다라마바사아자차카타파하아야어여로와";
+  assert.equal(body20.replace(/\s+/g, "").length, MSG_ACTION_MIN_BODY_CHARS);
+  assert.equal(shouldMountMsgActions({ role: "char", text: body20 }), true);
+  assert.equal(shouldMountMsgActions({ role: "assistant", text: body20 }), true);
+  assert.equal(shouldMountMsgActions({ role: "user", text: body20 }), false);
+  assert.equal(shouldMountMsgActions({ role: "char", text: "짧음" }), false);
+  assert.equal(shouldMountMsgActions({ role: "char", text: "" }), false);
+  assert.equal(shouldMountMsgActions({ role: "", text: body20 }), false);
+  assert.equal(shouldMountMsgActions({
+    role: "char",
+    text: `[LBDATA START]\n${"위키".repeat(40)}\n[LBDATA END]\n짧음`,
+  }), false);
+});
+
 test("inlineRoleDisposition holds an unresolved role instead of treating it as user", () => {
   assert.equal(inlineRoleDisposition("", false), "hold");
   assert.equal(inlineRoleDisposition(null, false), "hold");
@@ -1997,6 +2015,26 @@ test("prefixMatchRatio tolerates a few opening-character edits", () => {
   assert.ok(prefixMatchRatio(a, `완전히다른이야기완전다른이야기완전다른이야기`) < 0.6);
 });
 
+test("hostMessageId prefers Risu message ids and ignores card id / chatId", () => {
+  assert.equal(hostMessageId({ messageId: "risu-m1", id: "card-or-msg" }), "risu-m1");
+  assert.equal(hostMessageId({ id: "raw-msg-9" }), "raw-msg-9");
+  assert.equal(hostMessageId({ content_hash: "h", id: "card-uuid", host_message_id: "risu-m2" }), "risu-m2");
+  assert.equal(hostMessageId({ content_hash: "h", id: "card-uuid" }), "");
+  assert.equal(hostMessageId({ chatId: "chat-only", chat_id: "chat-only" }), "");
+  assert.equal(hostMessageId({ generationInfo: { generationId: "gen-3" } }), "gen-3");
+});
+
+test("linkCardsForMessage prefers host message id over a drifted hash", () => {
+  const cards = [
+    { id: "shot", content_hash: "h-old", host_message_id: "risu-m1", paragraph: 0, shot_index: 0, created_at: 1 },
+    { id: "other", content_hash: "h-new", host_message_id: "risu-m9", paragraph: 0, shot_index: 1, created_at: 2 },
+  ];
+  assert.deepEqual(
+    linkCardsForMessage(cards, { hash: "h-new", hostMessageId: "risu-m1" }).map((c) => c.id),
+    ["shot"],
+  );
+});
+
 test("linkCardsForMessage is exact hash only", () => {
   const partial = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789가나다라마바사아자차카타파하";
   const full = partial + "EXTRA_TAIL_TEXT_HERE";
@@ -2135,6 +2173,38 @@ test("findHashRebindCandidates requires same character/chat/msg/role and Dice>=6
       identity,
     ).map((c) => c.id),
     ["late"],
+  );
+});
+
+test("findHashRebindCandidates accepts same host message id without Dice", () => {
+  const base = {
+    id: "c1",
+    content_hash: "h-stream",
+    host_message_id: "risu-m1",
+    assistant_preview: "짧음",
+    character_id: "charA",
+    chat_id: "chatA",
+    session_id: "sessA",
+    message_index: 10,
+    message_role: "char",
+    paragraph: 0,
+    shot_index: 0,
+    created_at: 1,
+  };
+  const identity = {
+    newHash: "h-final",
+    text: "완전히다른충분히긴본문입니다그리고더길게써야합니다추가문장입니다요",
+    characterId: "charA",
+    chatId: "chatA",
+    sessionId: "sessA",
+    messageIndex: 99,
+    role: "char",
+    hostMessageId: "risu-m1",
+  };
+  assert.deepEqual(findHashRebindCandidates([base], identity).map((c) => c.id), ["c1"]);
+  assert.deepEqual(
+    findHashRebindCandidates([{ ...base, host_message_id: "other" }], identity),
+    [],
   );
 });
 

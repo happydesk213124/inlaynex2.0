@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.5';
+const PLUGIN_VERSION = '2.5.6';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -762,6 +762,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.6</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>말풍선 칩(태그·재생성·중단·캐릭터·프리셋)은 캐릭터 턴이고 실질 본문이 20자 이상일 때만 붙습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.5</strong>
@@ -8532,6 +8538,37 @@ const VENDOR_DA_QA_PATCH =
   `    const nxApi = await nxChatAttrIndex(o);
     const i = qa(a, r.messages, e, Array.isArray(n) ? n.length : 0, { prevText, nextText, chatIndex: nxApi }), l = w(i.role || "");`;
 
+const VENDOR_ZA_HOST_ID_NEEDLE =
+  `        generationInfo: m?.generationInfo ?? m?.generation_info ?? null,
+        isChar: b === "char" || b === "assistant" || b === "bot",
+        isUser: b === "user"`;
+const VENDOR_ZA_HOST_ID_PATCH =
+  `        generationInfo: m?.generationInfo ?? m?.generation_info ?? null,
+        hostMessageId: typeof VC?.hostMessageId == "function" ? VC.hostMessageId(m) : "",
+        isChar: b === "char" || b === "assistant" || b === "bot",
+        isUser: b === "user"`;
+
+const VENDOR_SELECT_HOST_ID_NEEDLE =
+  `      hash: c,
+      paragraphCount: p.length || 1,`;
+const VENDOR_SELECT_HOST_ID_PATCH =
+  `      hash: c,
+      hostMessageId: w(i.hostMessageId || "", 160),
+      paragraphCount: p.length || 1,`;
+
+const VENDOR_SELECT_SAME_HOST_ID_NEEDLE =
+  `t.selectedMessage.role = l, t.selectedMessage.matchMethod = i.matchMethod || t.selectedMessage.matchMethod, t.selectedMessage.text = s,`;
+const VENDOR_SELECT_SAME_HOST_ID_PATCH =
+  `t.selectedMessage.role = l, t.selectedMessage.hostMessageId = w(i.hostMessageId || "", 160), t.selectedMessage.matchMethod = i.matchMethod || t.selectedMessage.matchMethod, t.selectedMessage.text = s,`;
+
+const VENDOR_JOB_HOST_ID_NEEDLE =
+  `      content_hash: m,
+      recent_messages: Xe(e.chat, r, !!a.userchat),`;
+const VENDOR_JOB_HOST_ID_PATCH =
+  `      content_hash: m,
+      host_message_id: w(t.selectedMessage?.hostMessageId || t.selectedMessage?.host_message_id || "", 160),
+      recent_messages: Xe(e.chat, r, !!a.userchat),`;
+
 const VENDOR_DA_SAME_CLICK_NEEDLE =
   `    const s = w(a), c = ye(s);
     if ((source === "scroll" || source === "text" || source === "provisional") && t.selectedMessage && Number(t.selectedMessage.domIndex) === Number(e) && t.selectedMessage.selectSource === source && t.selectedMessage.hash === c) return !0;`;
@@ -10494,6 +10531,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       for (const idx of spinnerIdxs) {
         if (stale()) return;
         const row = msgCache.get(idx) || await resolveAt(idx);
+        await injectChatMsgActions(els[idx], [], idx, { role: roleAt(idx), text: row?.text });
         if (isSkipBodyAt(idx)) continue;
         let cards = [];
         try {
@@ -10521,7 +10559,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         const injectOwner = typeof VC?.inlineInjectOwnerKey == "function"
           ? VC.inlineInjectOwnerKey(row?.msg, idx, sel.sessionId)
           : \`\${String(row?.msg?.sessionId || sel.sessionId || "unknown")}|\${Number.isInteger(Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)) ? \`m\${Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)}\` : \`d\${idx}\`}\`;
-        await injectChatMsgActions(els[idx], cards, idx);
         if (t.backendSettings?.card?.inline_chat_images === !0) {
           await injectChatInlineImages(els[idx], cards, idx === selIdx ? nxPendingForInlineSelection(sel) : [], {
             lockKey,
@@ -10843,9 +10880,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     return null;
   }
-  async function injectChatMsgActions(msgEl, cards, msgIndex) {
+  async function injectChatMsgActions(msgEl, cards, msgIndex, opts) {
     if (!msgEl || typeof msgEl.querySelectorAll != "function") return;
     const on = nxMsgAct() !== "off";
+    const VCAct = globalThis.__INLAY_VIEWER_CORE__;
+    const allowChips = typeof VCAct?.shouldMountMsgActions == "function"
+      ? VCAct.shouldMountMsgActions({ role: opts?.role, text: opts?.text })
+      : !1;
     const unwrapSafe = async (arr) => {
       if (!arr) return [];
       if (typeof k.unwarpSafeArray == "function") {
@@ -10874,7 +10915,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const removeBars = async (bars) => {
       for (const bar of bars || []) await removeNode(bar);
     };
-    if (!on) {
+    if (!on || !allowChips) {
       await removeBars(await readBars());
       return;
     }
@@ -12027,7 +12068,8 @@ const VENDOR_REBIND_RETARGET_PATCH =
         chatId: message.chatId || sc.chatId || "",
         sessionId: sid,
         messageIndex: Number(message.chatIndex ?? message.messageIndex ?? -1),
-        role: message.role || ""
+        role: message.role || "",
+        hostMessageId: message.hostMessageId || message.host_message_id || ""
       });
       if (candidates.length) {
         try {
@@ -12473,8 +12515,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.5",
-    body: "스크롤 끝 스티키는 한 통로입니다. 스티키는 data URL만 그리고, 말풍선 칩은 어두운 보라입니다. 업데이트 내역 탭 참고."
+    title: "2.5.6",
+    body: "말풍선 칩은 캐릭터 턴·본문 20자 이상일 때만 붙습니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -16021,6 +16063,10 @@ const loadVendorUi = (): string => {
     [VENDOR_DT_FN_NEEDLE, 'risu-chat data-chat-id list'],
     [VENDOR_DA_SAME_CLICK_NEEDLE, 'same click inline no-op'],
     [VENDOR_DA_QA_NEEDLE, 'Da qa data-chat-index'],
+    [VENDOR_ZA_HOST_ID_NEEDLE, 'Za host message id'],
+    [VENDOR_SELECT_HOST_ID_NEEDLE, 'select host message id'],
+    [VENDOR_SELECT_SAME_HOST_ID_NEEDLE, 'reselect host message id'],
+    [VENDOR_JOB_HOST_ID_NEEDLE, 'job create host message id'],
     [VENDOR_BIND_QA_NEEDLE, 'bindCard qa data-chat-index'],
     [VENDOR_INLINE_INJECT_FN_NEEDLE, 'inline inject fn'],
     [VENDOR_INLINE_CALL_NEEDLE, 'inline inject call'],
@@ -16413,6 +16459,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_DT_FN_NEEDLE, VENDOR_DT_FN_PATCH)
     .replace(VENDOR_DA_SAME_CLICK_NEEDLE, VENDOR_DA_SAME_CLICK_PATCH)
     .replace(VENDOR_DA_QA_NEEDLE, VENDOR_DA_QA_PATCH)
+    .replace(VENDOR_ZA_HOST_ID_NEEDLE, VENDOR_ZA_HOST_ID_PATCH)
+    .replace(VENDOR_SELECT_HOST_ID_NEEDLE, VENDOR_SELECT_HOST_ID_PATCH)
+    .replace(VENDOR_SELECT_SAME_HOST_ID_NEEDLE, VENDOR_SELECT_SAME_HOST_ID_PATCH)
+    .replace(VENDOR_JOB_HOST_ID_NEEDLE, VENDOR_JOB_HOST_ID_PATCH)
     .replace(VENDOR_BIND_QA_NEEDLE, VENDOR_BIND_QA_PATCH)
     .replace(VENDOR_INLINE_INJECT_FN_NEEDLE, VENDOR_INLINE_INJECT_FN_PATCH)
     .replace(VENDOR_ENSURE_IN_VIEW_NEEDLE, VENDOR_ENSURE_IN_VIEW_PATCH)
@@ -16978,7 +17028,11 @@ const loadVendorUi = (): string => {
       if (!out.includes('if (legacy && name === "DIV") {')) {
         throw new Error('[build] the nested-host probe must be legacy-only');
       }
-      const from = out.indexOf('async function injectChatMsgActions(msgEl, cards, msgIndex) {');
+      const from = out.indexOf('async function injectChatMsgActions(msgEl, cards, msgIndex, opts) {');
+      if (!out.includes('VCAct.shouldMountMsgActions({ role: opts?.role, text: opts?.text })')
+        || !out.includes('if (!on || !allowChips)')) {
+        throw new Error('[build] msg-action chips must gate on shouldMountMsgActions before paint');
+      }
       const early = out.indexOf('const earlyBars = await readBars();', from);
       const scan = out.indexOf('const scan = await nxScanBubbleHosts(msgEl);', from);
       if (from < 0 || early < 0 || scan < 0 || early > scan) {

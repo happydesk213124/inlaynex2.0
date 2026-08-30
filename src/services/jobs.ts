@@ -1221,6 +1221,7 @@ async function runJob(jobId: string): Promise<void> {
           message_index: location.message_index ?? -1,
           message_role: location.message_role || '',
           content_hash: location.content_hash || '',
+          ...(location.host_message_id ? { host_message_id: location.host_message_id } : {}),
           character_id: location.character_id || '',
           chat_id: location.chat_id || '',
           character_name: location.character_name || '',

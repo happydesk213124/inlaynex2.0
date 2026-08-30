@@ -225,6 +225,7 @@ export type ImageLocation = {
   y_percent: number | null;
   line: number | null;
   content_hash: string;
+  host_message_id?: string;
 };
 
 /** The location fields a card response carries, resolved against its stored meta. */
@@ -242,6 +243,7 @@ export type CardLocationFields = {
   y_percent: number | null;
   line: number | null;
   content_hash: string;
+  host_message_id?: string;
   assistant_preview: string;
   unified_session_id: string;
   location_file: string;
@@ -766,6 +768,13 @@ export function buildImageLocation({
     y_percent: yPercent,
     line: Number.isFinite(lineN) && lineN >= 1 ? lineN : null,
     content_hash: cleanText(contentHash || request.content_hash || '', 128),
+    ...(() => {
+      const host = cleanText(
+        request.host_message_id || request.hostMessageId || '',
+        160,
+      );
+      return host ? { host_message_id: host } : {};
+    })(),
   };
 }
 
@@ -822,6 +831,10 @@ export function locationFieldsFrom(
       return Number.isFinite(n) && n >= 1 ? n : null;
     })(),
     content_hash: resolveStoredContentHash(loc, base),
+    ...(() => {
+      const host = cleanText(loc.host_message_id || base.host_message_id || '', 160);
+      return host ? { host_message_id: host } : {};
+    })(),
     assistant_preview: cleanText(loc.assistant_preview || base.assistant_preview || '', ASSISTANT_PREVIEW_LIMIT),
     unified_session_id: cleanText(loc.unified_session_id || base.unified_session_id || '', 200),
     // UI-compat field: was a sidecar .json path; now an IndexedDB key ref.
@@ -846,6 +859,10 @@ export function cardMetaFromLocation(meta: unknown, location: unknown, pngBytes 
     message_index: toInt(loc.message_index ?? base.message_index, -1),
     message_role: cleanText(loc.message_role || base.message_role || '', 40).toLowerCase(),
     content_hash: cleanText(loc.content_hash || base.content_hash || '', 128),
+    ...(() => {
+      const host = cleanText(loc.host_message_id || base.host_message_id || '', 160);
+      return host ? { host_message_id: host } : {};
+    })(),
     assistant_preview: cleanText(loc.assistant_preview || base.assistant_preview || '', ASSISTANT_PREVIEW_LIMIT),
     unified_session_id: cleanText(loc.unified_session_id || base.unified_session_id || '', 200),
     y_percent: toOptionalFloat(loc.y_percent ?? base.y_percent),

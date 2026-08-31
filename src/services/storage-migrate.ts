@@ -38,6 +38,7 @@ import {
   setPauseDiskPersist,
   stampStorageMigrated,
   storageMigratedVersion,
+  type LegacyImageRow,
 } from '../storage/stores';
 
 export type MigratePhase = 'idle' | 'images' | 'cleanup' | 'purge' | 'done' | 'cancelled' | 'error';
@@ -94,15 +95,15 @@ function legacySaveFileKeys(): string[] {
   ];
 }
 
-async function migrateImages(rows: Array<{ id: string; png_bytes: number }>): Promise<void> {
+async function migrateImages(rows: LegacyImageRow[]): Promise<void> {
   for (let i = 0; i < rows.length; i += BATCH) {
     if (cancelRequested) return;
     const batch = rows.slice(i, i + BATCH);
-    const entries: Array<{ id: string; bytes: ArrayBuffer; bytes_len: number }> = [];
+    const entries: Array<{ id: string; bytes: ArrayBuffer; bytes_len: number; session_id: string }> = [];
 
     for (const row of batch) {
       const png = await imagePng(row.id);
-      if (png) entries.push({ id: row.id, bytes: png, bytes_len: png.byteLength });
+      if (png) entries.push({ id: row.id, bytes: png, bytes_len: png.byteLength, session_id: row.session_id });
       else state.done += 1; // has_png with no bytes anywhere: nothing to move.
       // Decoding base64 is CPU work on the UI thread. Yielding between images is
       // the only thing keeping a large gallery from freezing Risu outright.
@@ -110,7 +111,9 @@ async function migrateImages(rows: Array<{ id: string; png_bytes: number }>): Pr
     }
 
     if (!entries.length) continue;
-    const saved = await putShotAssetsBatch(entries.map((e) => ({ id: e.id, bytes: e.bytes })));
+    const saved = await putShotAssetsBatch(
+      entries.map((e) => ({ id: e.id, bytes: e.bytes, session_id: e.session_id })),
+    );
     const byId = new Map(saved.map((row) => [row.id, row]));
 
     for (const entry of entries) {
@@ -132,7 +135,7 @@ async function migrateImages(rows: Array<{ id: string; png_bytes: number }>): Pr
   }
 }
 
-async function run(rows: Array<{ id: string; png_bytes: number }>): Promise<void> {
+async function run(rows: LegacyImageRow[]): Promise<void> {
   setPauseDiskPersist(true);
   try {
     state.phase = 'images';

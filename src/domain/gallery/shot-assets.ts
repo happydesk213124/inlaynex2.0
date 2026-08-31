@@ -18,17 +18,48 @@ export function isShotAssetName(name: unknown): boolean {
   return n.startsWith(SHOT_ASSET_PREFIX);
 }
 
-export function shotAssetName(id: unknown, ext = 'webp'): string {
+/**
+ * Marks the room segment of an asset name: `inxshot_<id>.s<session>.<ext>`.
+ *
+ * `.` separates because `sanitizeShotId` strips it, so neither the card id nor
+ * the session id can contain one. That is what keeps the split unambiguous for
+ * ids that already hold underscores, and it leaves the extension last for hosts
+ * that sniff the name.
+ */
+const SESSION_MARK = 's';
+
+export function sanitizeSessionId(id: unknown): string {
+  return String(id || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+}
+
+export function shotAssetName(id: unknown, ext = 'webp', sessionId?: unknown): string {
   const safe = sanitizeShotId(id);
+  if (!safe) return '';
   const e = String(ext || 'webp').toLowerCase().replace(/[^a-z0-9]/g, '') || 'webp';
-  return safe ? `${SHOT_ASSET_PREFIX}${safe}.${e}` : '';
+  const sid = sanitizeSessionId(sessionId);
+  const room = sid ? `.${SESSION_MARK}${sid}` : '';
+  return `${SHOT_ASSET_PREFIX}${safe}${room}.${e}`;
+}
+
+/** The `.s<session>` and `.<ext>` segments of a name, `['', '']` when absent. */
+function shotNameParts(name: unknown): { id: string; session: string } {
+  const n = cleanText(name, 400);
+  if (!n.toLowerCase().startsWith(SHOT_ASSET_PREFIX)) return { id: '', session: '' };
+  const parts = n.slice(SHOT_ASSET_PREFIX.length).split('.');
+  const id = sanitizeShotId(parts[0]);
+  // parts: [id, ext] before rooms were stamped, [id, s<session>, ext] after.
+  const mid = parts.length >= 3 ? cleanText(parts[1], 80) : '';
+  const session = mid.startsWith(SESSION_MARK) ? sanitizeSessionId(mid.slice(SESSION_MARK.length)) : '';
+  return { id, session };
 }
 
 export function idFromShotAssetName(name: unknown): string {
-  const n = cleanText(name, 400);
-  const lower = n.toLowerCase();
-  if (!lower.startsWith(SHOT_ASSET_PREFIX)) return '';
-  return sanitizeShotId(n.slice(SHOT_ASSET_PREFIX.length).replace(/\.[a-z0-9]+$/i, ''));
+  return shotNameParts(name).id;
+}
+
+/** Which character-chat a stored shot belongs to, '' for pre-room names. */
+export function sessionFromShotAssetName(name: unknown): string {
+  return shotNameParts(name).session;
 }
 
 /** Risu getDatabase may wrap arrays; accept array-likes and {name,path} rows. */

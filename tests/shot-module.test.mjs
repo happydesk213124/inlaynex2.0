@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   dropShotAsset,
+  listShotAssets,
   putShotAsset,
   putShotAssetsBatch,
   readShotAssetBytes,
@@ -149,6 +150,45 @@ test("putShotAssetsBatch skips unreadable shots and writes nothing", async () =>
   assert.deepEqual(await putShotAssetsBatch([{ id: "card-1", bytes: webpBytes }]), []);
   assert.equal(host.setDatabaseCalls, 0);
   assert.equal(host.db.modules.length, 0);
+});
+
+test("the room reaches the asset name and comes back out of the list", async () => {
+  const host = createHost();
+  globalThis.risuai = host;
+
+  await putShotAssetsBatch([
+    { id: "card-1", bytes: webpBytes, session_id: "risu_aaaa" },
+    { id: "card-2", bytes: webpBytes, session_id: "risu_bbbb" },
+    { id: "card-3", bytes: webpBytes },
+  ]);
+
+  assert.deepEqual(await listShotAssets(), [
+    { id: "card-1", session: "risu_aaaa", path: "assets/shot-1.webp", name: "inxshot_card-1.srisu_aaaa.webp" },
+    { id: "card-2", session: "risu_bbbb", path: "assets/shot-2.webp", name: "inxshot_card-2.srisu_bbbb.webp" },
+    { id: "card-3", session: "", path: "assets/shot-3.webp", name: "inxshot_card-3.webp" },
+  ]);
+});
+
+// The room now lives in the name, so replacing a shot must still find the old
+// tuple by card id rather than by an exact name match.
+test("a re-generated shot replaces its tuple even when the room changed", async () => {
+  const host = createHost();
+  globalThis.risuai = host;
+  await putShotAsset("card-1", webpBytes, "risu_aaaa");
+  await putShotAsset("card-1", webpBytes, "risu_bbbb");
+
+  const rows = await listShotAssets();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].session, "risu_bbbb");
+});
+
+test("dropShotAsset finds a shot whose name carries a room", async () => {
+  const host = createHost();
+  globalThis.risuai = host;
+  await putShotAsset("card-1", webpBytes, "risu_aaaa");
+
+  assert.equal(await dropShotAsset("card-1"), true);
+  assert.deepEqual(await listShotAssets(), []);
 });
 
 // PocketRisu 1.11 lazy-loads module assets, so a read can hand back an empty

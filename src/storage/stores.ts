@@ -793,7 +793,9 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
       chargePng(png.byteLength);
       imagePersistChain = imagePersistChain
         .then(async () => {
-          const saved = await putShotAsset(k, png);
+          // The room goes in the asset name so the module array alone can say
+          // which character-chat a shot belongs to, without loading its pack.
+          const saved = await putShotAsset(k, png, String(row.location?.session_id || ''));
           if (saved?.path) {
             row.asset_path = saved.path;
             row.asset_name = saved.name;
@@ -1079,6 +1081,8 @@ export async function imageLocation(id: string): Promise<Record<string, unknown>
 export interface LegacyImageRow {
   id: string;
   png_bytes: number;
+  /** Stamped into the module asset name so the room survives the move. */
+  session_id: string;
 }
 
 /**
@@ -1093,7 +1097,11 @@ export async function legacyImageRows(): Promise<LegacyImageRow[]> {
   for (const row of memStores.images.values()) {
     if (!row.has_png) continue;
     if (String(row.asset_path || row.location?.asset_path || '')) continue;
-    out.push({ id: row.id, png_bytes: row.png_bytes });
+    out.push({
+      id: row.id,
+      png_bytes: row.png_bytes,
+      session_id: String(row.location?.session_id || ''),
+    });
   }
   return out;
 }

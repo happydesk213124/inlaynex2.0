@@ -10,6 +10,7 @@ import {
   normalizeAssetPath,
   parseShotModuleAssets,
   sanitizeShotId,
+  sessionFromShotAssetName,
   shotAssetName,
 } from "../.test-build/shot-assets.mjs";
 
@@ -22,6 +23,35 @@ test("shot asset names stay in a gallery-only prefix", () => {
   assert.equal(idFromShotAssetName("inxshot_card-1.webp"), "card-1");
   assert.equal(sanitizeShotId("a/b c"), "a_b_c");
   assert.equal(normalizeAssetPath("assets\\x.webp"), "assets/x.webp");
+});
+
+// The asset list is the only card inventory we can read without loading a room
+// pack, so the room has to be recoverable from the name. `.` is the separator
+// because `sanitizeShotId` strips it, which makes the split unambiguous even for
+// an id that already contains underscores.
+test("a shot asset name carries its room and still yields the card id", () => {
+  const name = shotAssetName("card-1", "webp", "risu_f3bc3a029c755829");
+
+  assert.equal(name, "inxshot_card-1.srisu_f3bc3a029c755829.webp");
+  assert.equal(isShotAssetName(name), true);
+  assert.equal(idFromShotAssetName(name), "card-1");
+  assert.equal(sessionFromShotAssetName(name), "risu_f3bc3a029c755829");
+});
+
+test("names written before rooms were stamped still parse", () => {
+  assert.equal(idFromShotAssetName("inxshot_card-1.webp"), "card-1");
+  assert.equal(sessionFromShotAssetName("inxshot_card-1.webp"), "");
+  assert.equal(shotAssetName("card-1", "webp"), "inxshot_card-1.webp");
+  assert.equal(shotAssetName("card-1", "webp", ""), "inxshot_card-1.webp");
+});
+
+test("an id holding underscores is not mistaken for a room stamp", () => {
+  const name = shotAssetName("a__sb", "webp", "risu_1");
+
+  assert.equal(idFromShotAssetName(name), "a__sb");
+  assert.equal(sessionFromShotAssetName(name), "risu_1");
+  assert.equal(idFromShotAssetName("inxshot_a__sb.webp"), "a__sb");
+  assert.equal(sessionFromShotAssetName("inxshot_a__sb.webp"), "");
 });
 
 test("parseShotModuleAssets accepts tuples and named objects", () => {

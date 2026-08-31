@@ -18,7 +18,9 @@ import {
   isShotAssetName,
   normalizeAssetPath,
   parseShotModuleAssets,
+  sanitizeSessionId,
   sanitizeShotId,
+  sessionFromShotAssetName,
   shotAssetName,
 } from '../domain/gallery/shot-assets';
 
@@ -173,12 +175,13 @@ function copyBytes(bytes: BytesLike): ArrayBuffer {
 async function storeShotBytes(
   id: string,
   bytes: BytesLike,
+  sessionId: string,
 ): Promise<{ path: string; name: string } | null> {
   const host = hostOrNull();
   if (!host || typeof host.saveAsset !== 'function') return null;
   const stored = copyBytes(bytes);
   if (stored.byteLength < MIN_IMAGE_BYTES) return null;
-  const name = shotAssetName(id, storeExtFromBytes(stored));
+  const name = shotAssetName(id, storeExtFromBytes(stored), sessionId);
   if (!name) return null;
   const path = normalizeAssetPath(await host.saveAsset(stored));
   if (!path) return null;
@@ -229,8 +232,9 @@ function upsertShotTuples(modules: ModuleRow[], saved: ShotAssetSaved[]): void {
 export async function putShotAsset(
   id: string,
   bytes: BytesLike,
+  sessionId?: string,
 ): Promise<{ path: string; name: string } | null> {
-  const saved = await putShotAssetsBatch([{ id, bytes }]);
+  const saved = await putShotAssetsBatch([{ id, bytes, session_id: sessionId }]);
   const hit = saved[0];
   return hit ? { path: hit.path, name: hit.name } : null;
 }
@@ -248,7 +252,7 @@ export type ShotAssetSaved = { id: string; path: string; name: string };
  * do not own, and a one-time migration is not worth racing it.
  */
 export async function putShotAssetsBatch(
-  entries: Array<{ id: string; bytes: BytesLike }>,
+  entries: Array<{ id: string; bytes: BytesLike; session_id?: string }>,
 ): Promise<ShotAssetSaved[]> {
   const list = (Array.isArray(entries) ? entries : []).filter((e) => e && cleanText(e.id, 80));
   if (!list.length || !shotModuleAvailable()) return [];
@@ -258,7 +262,7 @@ export async function putShotAssetsBatch(
 
   const saved: ShotAssetSaved[] = [];
   for (const entry of list) {
-    const hit = await storeShotBytes(entry.id, entry.bytes);
+    const hit = await storeShotBytes(entry.id, entry.bytes, sanitizeSessionId(entry.session_id));
     if (hit) saved.push({ id: entry.id, path: hit.path, name: hit.name });
   }
   if (!saved.length) return [];
@@ -289,6 +293,33 @@ export async function putShotAssetsBatch(
   await host.setDatabase!({ modules: modules as never, enabledModules: enabled as string[] });
   pendingShotTuples.clear();
   return saved;
+}
+
+export type ShotAssetRow = { id: string; session: string; path: string; name: string };
+
+/**
+ * Every stored shot, oldest first, straight from the module array.
+ *
+ * This is the one card inventory we can read without loading a single room
+ * pack, which is what lets the explorer show all rooms at once. Insertion order
+ * is generation order, so a newest-first view just reverses it.
+ */
+export async function listShotAssets(): Promise<ShotAssetRow[]> {
+  if (!shotModuleAvailable()) return [];
+  await ensureDbAccess();
+  const host = hostOrNull();
+  if (!host) return [];
+  const db = await host.getDatabase!(['modules']);
+  const modules = readModules(db);
+  const idx = findModuleIndex(modules);
+  if (idx < 0) return [];
+  const out: ShotAssetRow[] = [];
+  for (const [name, path] of parseShotModuleAssets(modules[idx]!.assets)) {
+    if (!isShotAssetName(name)) continue;
+    const id = idFromShotAssetName(name);
+    if (id) out.push({ id, session: sessionFromShotAssetName(name), path, name });
+  }
+  return out;
 }
 
 export async function dropShotAsset(id: string): Promise<boolean> {

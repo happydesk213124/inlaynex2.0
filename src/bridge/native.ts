@@ -20,7 +20,8 @@ import { getDeviceStore } from '../storage/device-store';
 import { ensureBlobUrl, pngToDataUrl, resolveImageUrl, subscribeImageUrl, warmImages, warmProgress, warmFocusProgress, onWarmProgress, pinImageUrls, retainImageUrls, dropImageUrl, prioritizeWarmFocus, clearWarmFocus } from '../storage/image-urls';
 import { dropExplorerThumbUrl, ensureExplorerThumbUrl, pinExplorerThumbs, resolveExplorerThumbUrl, retainExplorerThumbs, warmExplorerThumbs } from '../storage/explorer-thumbs';
 import { loadSettingsFromStorage } from '../storage/settings-store';
-import { blobUrlCount, idbGet, isStorageMigrated, openDb, storeSize } from '../storage/stores';
+import { blobUrlCount, idbGet, isStorageMigrated, knownCharRefHashCount, openDb, storeSize } from '../storage/stores';
+import { setKnownCharRefCount } from '../services/char-ref-module';
 import {
   getRefPreviewUrl,
   getVibePreviewUrl,
@@ -119,6 +120,10 @@ export function installNativeBridge(): void {
     jobs: storeSize('jobs'),
     blob_urls: blobUrlCount(),
   }));
+
+  // Same reason: the reference-image module must be able to tell "no assets
+  // stored" from "the host did not load them", and only the roster knows.
+  setKnownCharRefCount(knownCharRefHashCount);
 
   Reflect.set(globalThis, '__INLAY_NATIVE__', {
     VERSION,

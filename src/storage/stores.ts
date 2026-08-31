@@ -50,7 +50,7 @@ import { cardIdsToStripPreview } from '../domain/gallery/preview-retention';
 import { jobIdsToPrune } from '../domain/jobs/retention';
 import { psGet, psRemove, psSet, resetDeviceStore } from './device-store';
 import { blobUrlCache, explorerThumbCache } from './blob-url-cache';
-import { dropShotAsset, putShotAsset, readShotAssetBytes } from './shot-module';
+import { dropShotAsset, putShotAsset, readShotAssetBytes, setKnownShotCount } from './shot-module';
 
 /** Rows as held in memory. Images carry metadata even when pixels are absent. */
 interface ImageMemRow {
@@ -1198,6 +1198,29 @@ export async function imagePng(id: string): Promise<ArrayBuffer | null> {
   const row = await idbGet('images', String(id));
   return row?.png ?? null;
 }
+
+/**
+ * How many shots our own index accounts for.
+ *
+ * The gallery module guard compares this against the asset list the host hands
+ * back: an empty list here means "nothing stored", while an empty list *there*
+ * with a non-zero count here means the host did not load the assets.
+ */
+export function knownShotRowCount(): number {
+  return memStores.images.size;
+}
+
+/** Distinct reference-image hashes the roster still points at. */
+export function knownCharRefHashCount(): number {
+  const seen = new Set<string>();
+  for (const rec of memStores.characters.values()) {
+    const hash = String((rec as { ref_hash?: unknown }).ref_hash || '');
+    if (hash) seen.add(hash);
+  }
+  return seen.size;
+}
+
+setKnownShotCount(knownShotRowCount);
 
 /** Test seam: clears every in-memory store and forces a reload on next access. */
 export function resetStores(): void {

@@ -38,6 +38,39 @@ function hostOrNull(): ReturnType<typeof risuHost> {
   return risuHost();
 }
 
+/**
+ * How many shots our own index says exist. Injected rather than imported:
+ * `stores.ts` sits above this module and importing it back would be a cycle.
+ */
+let knownShotCount: () => number = () => 0;
+
+export function setKnownShotCount(fn: () => number): void {
+  knownShotCount = fn;
+}
+
+/**
+ * True when the host handed back an empty asset list for a module we know holds
+ * shots. PocketRisu 1.11 loads module assets lazily, and a plugin that writes
+ * back what it read in that state replaces the whole list with whatever it was
+ * adding — this is how AssetGod users lost their character assets.
+ *
+ * Only the all-or-nothing case counts. A list that is merely shorter than our
+ * index is a deletion the user really made, and refusing those writes would
+ * strand the module for good.
+ */
+function assetListLooksUnloaded(raw: unknown): boolean {
+  return parseShotModuleAssets(raw).length === 0 && knownShotCount() > 0;
+}
+
+/** Shots whose bytes landed but whose tuple could not be committed yet. */
+const pendingShotTuples = new Map<string, ShotAssetSaved>();
+
+/** Test seam: drops the held-back tuples and the injected count. */
+export function resetShotModuleState(): void {
+  pendingShotTuples.clear();
+  knownShotCount = () => 0;
+}
+
 export function shotModuleAvailable(): boolean {
   return hostHas('saveAsset') && hostHas('readImage') && hostHas('getDatabase') && hostHas('setDatabase');
 }
@@ -235,11 +268,26 @@ export async function putShotAssetsBatch(
   const db = await host.getDatabase!(['modules', 'enabledModules']);
   if (!db) return [];
   const modules = readModules(db);
+  const existing = findModuleIndex(modules);
+  if (existing >= 0 && assetListLooksUnloaded(modules[existing]!.assets)) {
+    // The rows still ship. Returning nothing here makes `idbPut` treat the shot
+    // as lost and clear the image it just generated, which is worse than the
+    // missing tuple: the bytes are stored and already read back once, so the
+    // card displays from `asset_path` either way.
+    for (const row of saved) pendingShotTuples.set(sanitizeShotId(row.id), row);
+    dbg('shot.module.assets.unloaded', {
+      message: `${saved.length} tuple(s) held back, ${knownShotCount()} known`,
+      background: true,
+    }, 'warn');
+    return saved;
+  }
   const enabled = asShotAssetRows(db.enabledModules).map((row) => cleanText(row, 200)).filter(Boolean);
   const moduleEnabled = enabled.includes(SHOT_MODULE_ID) || enabled.includes(SHOT_MODULE_NS);
-  upsertShotTuples(modules, saved);
+  const held = [...pendingShotTuples.values()].filter((row) => !saved.some((s) => s.id === row.id));
+  upsertShotTuples(modules, held.length ? [...held, ...saved] : saved);
   if (!moduleEnabled) enabled.push(SHOT_MODULE_ID);
   await host.setDatabase!({ modules: modules as never, enabledModules: enabled as string[] });
+  pendingShotTuples.clear();
   return saved;
 }
 
@@ -253,6 +301,10 @@ export async function dropShotAsset(id: string): Promise<boolean> {
   const idx = findModuleIndex(modules);
   if (idx < 0) return false;
   const want = sanitizeShotId(id);
+  // A held-back tuple for a deleted shot must not be revived by the next write.
+  pendingShotTuples.delete(want);
+  // An unloaded list needs no guard here: it filters to itself, so `kept` and
+  // `assets` match and the early return below skips the write.
   const assets = parseShotModuleAssets(modules[idx]!.assets);
   const kept = assets.filter((row) => {
     if (!isShotAssetName(row[0])) return true;

@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  clearAllCharRefModuleAssets,
   getCharRefAssetBytes,
   putCharRefAsset,
+  resetCharRefModuleState,
+  setKnownCharRefCount,
 } from '../.test-build/char-ref-module.mjs';
 
 const webpBytes = Uint8Array.from([
@@ -55,6 +58,39 @@ function createHost({ readback = true } = {}) {
   };
   return host;
 }
+
+// PocketRisu 1.11 loads module assets lazily. If a read hands back an empty
+// list for a module the roster says holds references, committing our one new
+// tuple replaces every existing one — the way AssetGod users lost their assets.
+test('char ref module keeps the new path but does not commit an unloaded list', async () => {
+  const host = createHost();
+  globalThis.risuai = host;
+  setKnownCharRefCount(() => 4);
+  try {
+    const saved = await putCharRefAsset(webpBytes);
+
+    assert.ok(saved.path);
+    assert.deepEqual(host.setDatabaseCalls, [], 'the empty list must not be written back');
+    assert.deepEqual(host.db.modules[0].assets, []);
+    // The roster gets a usable hash either way, resolved from memory this session.
+    const bytes = await getCharRefAssetBytes(saved.hash);
+    assert.deepEqual(new Uint8Array(bytes), webpBytes);
+  } finally {
+    resetCharRefModuleState();
+  }
+});
+
+test('char ref module refuses to clear a list it could not read', async () => {
+  const host = createHost();
+  globalThis.risuai = host;
+  setKnownCharRefCount(() => 4);
+  try {
+    assert.equal(await clearAllCharRefModuleAssets(), 0);
+    assert.deepEqual(host.setDatabaseCalls, []);
+  } finally {
+    resetCharRefModuleState();
+  }
+});
 
 test('char ref module records the exact Risu v3 returned path', async () => {
   const host = createHost();

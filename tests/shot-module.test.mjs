@@ -1,4 +1,4 @@
-import { describe, test } from "node:test";
+import { beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
@@ -6,6 +6,8 @@ import {
   putShotAsset,
   putShotAssetsBatch,
   readShotAssetBytes,
+  resetShotModuleState,
+  setKnownShotCount,
   shotModuleAvailable,
 } from "../.test-build/shot-module.mjs";
 
@@ -47,6 +49,11 @@ function createHost({ readback = true } = {}) {
 }
 
 describe("shot module", { concurrency: 1 }, () => {
+// Tuples held back by the unloaded-list guard live in module scope on purpose —
+// they are meant to survive until a write lands. Each test states its own
+// preconditions instead of inheriting the previous one's.
+beforeEach(() => resetShotModuleState());
+
 test("shot module is unavailable without host asset APIs", () => {
   const prev = globalThis.risuai;
   globalThis.risuai = {};
@@ -142,6 +149,77 @@ test("putShotAssetsBatch skips unreadable shots and writes nothing", async () =>
   assert.deepEqual(await putShotAssetsBatch([{ id: "card-1", bytes: webpBytes }]), []);
   assert.equal(host.setDatabaseCalls, 0);
   assert.equal(host.db.modules.length, 0);
+});
+
+// PocketRisu 1.11 lazy-loads module assets, so a read can hand back an empty
+// list for a module that has hundreds. Writing that back is what erased
+// AssetGod users' assets. The bytes are already stored and readable here, so
+// the saved row must still come back — `idbPut` discards the image it just
+// generated when this returns null (stores.ts, the `else if` after putShotAsset).
+test("an empty asset list while our index holds shots skips the module write", async () => {
+  const host = createHost();
+  host.db.modules = [{
+    id: "inlay-gallery",
+    name: "Inlay 갤러리",
+    namespace: "inlay.gallery",
+    assets: [],
+  }];
+  host.db.enabledModules = ["inlay-gallery"];
+  globalThis.risuai = host;
+  setKnownShotCount(() => 12);
+  try {
+    const saved = await putShotAsset("card-9", webpBytes);
+
+    assert.ok(saved?.path, "the shot must still report its stored path");
+    assert.deepEqual(new Uint8Array(await readShotAssetBytes(saved.path)), webpBytes);
+    assert.equal(host.setDatabaseCalls, 0, "a one-item list must not replace the module");
+    assert.deepEqual(host.db.modules[0].assets, []);
+  } finally {
+    setKnownShotCount(() => 0);
+  }
+});
+
+// The mirror image: a list that is merely shorter than our index is a deletion
+// the user actually made. Refusing those writes would strand the module.
+test("a shorter but non-empty asset list still writes", async () => {
+  const host = createHost();
+  globalThis.risuai = host;
+  await putShotAsset("card-1", webpBytes);
+  setKnownShotCount(() => 5);
+  try {
+    await putShotAsset("card-2", webpBytes);
+
+    assert.equal(host.db.modules[0].assets.length, 2);
+  } finally {
+    setKnownShotCount(() => 0);
+  }
+});
+
+test("a shot skipped by the guard is registered by the next successful write", async () => {
+  const host = createHost();
+  host.db.modules = [{
+    id: "inlay-gallery",
+    name: "Inlay 갤러리",
+    namespace: "inlay.gallery",
+    assets: [],
+  }];
+  host.db.enabledModules = ["inlay-gallery"];
+  globalThis.risuai = host;
+  setKnownShotCount(() => 12);
+  try {
+    const skipped = await putShotAsset("card-9", webpBytes);
+    assert.equal(host.setDatabaseCalls, 0);
+
+    // The host recovers: the next read carries the real list again.
+    host.db.modules[0].assets = [["inxshot_old.webp", "assets/old.webp", "inxshot_old.webp"]];
+    await putShotAsset("card-10", webpBytes);
+
+    const names = host.db.modules[0].assets.map((row) => row[0]).sort();
+    assert.deepEqual(names, ["inxshot_card-10.webp", "inxshot_card-9.webp", "inxshot_old.webp"]);
+    assert.ok(host.db.modules[0].assets.some((row) => row[1] === skipped.path));
+  } finally {
+    setKnownShotCount(() => 0);
+  }
 });
 
 test("dropShotAsset removes only that shot tuple", async () => {

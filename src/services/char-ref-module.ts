@@ -76,6 +76,34 @@ function findModuleIndex(modules: ModuleRow[]): number {
   );
 }
 
+/**
+ * How many reference hashes the roster still points at. Injected so this module
+ * stays independent of the store it would otherwise have to import.
+ */
+let knownCharRefCount: () => number = () => 0;
+
+export function setKnownCharRefCount(fn: () => number): void {
+  knownCharRefCount = fn;
+}
+
+/**
+ * True when the host returned an empty asset list for a module the roster says
+ * holds reference images. Writing that list back replaces the module contents
+ * with whatever we were adding — the failure that erased AssetGod users' assets
+ * under PocketRisu 1.11's lazy asset loading.
+ *
+ * Only the empty case counts. A shorter list is a real deletion, and refusing
+ * those writes would strand the module.
+ */
+function charRefListLooksUnloaded(raw: unknown): boolean {
+  return parseCharRefModuleAssets(raw).length === 0 && knownCharRefCount() > 0;
+}
+
+/** Test seam: forgets the injected roster count. */
+export function resetCharRefModuleState(): void {
+  knownCharRefCount = () => 0;
+}
+
 export async function refreshCharRefAssetIndex(): Promise<Map<string, string>> {
   const mod = await ensureCharRefModule();
   rebuildIndex(parseCharRefModuleAssets(mod.assets));
@@ -118,10 +146,17 @@ export async function ensureCharRefModule(): Promise<ModuleRow> {
     enabled.push(CHAR_REF_MODULE_ID);
     changed = true;
   }
+  const mod = modules[idx] || modules[modules.length - 1]!;
+  if (charRefListLooksUnloaded(mod.assets)) {
+    // Neither write nor reindex: the hideIcon repair above would carry the empty
+    // list into storage, and rebuilding from it would drop paths the roster is
+    // still using this session.
+    dbg('char_ref.module.assets.unloaded', { known: knownCharRefCount(), background: true }, 'warn');
+    return mod;
+  }
   if (changed) {
     await host.setDatabase!({ modules: modules as never, enabledModules: enabled as string[] });
   }
-  const mod = modules[idx] || modules[modules.length - 1]!;
   rebuildIndex(parseCharRefModuleAssets(mod.assets));
   return mod;
 }
@@ -142,6 +177,11 @@ export async function clearCharRefHideIcon(): Promise<{ cleared: boolean; blocke
   const enabled = asUnknownArray(db?.enabledModules).map((id) => cleanText(id, 200)).filter(Boolean);
   const idx = findModuleIndex(modules);
   let cleared = false;
+  if (idx >= 0 && charRefListLooksUnloaded(modules[idx]!.assets)) {
+    // Clearing the flag rewrites the whole module row, empty asset list included.
+    dbg('char_ref.module.assets.unloaded', { known: knownCharRefCount(), background: true }, 'warn');
+    return { cleared: false, blockedBy: [] };
+  }
   if (idx >= 0 && modules[idx]!.hideIcon) {
     modules[idx] = { ...modules[idx], hideIcon: false };
     await host.setDatabase!({ modules: modules as never, enabledModules: enabled as string[] });
@@ -247,7 +287,8 @@ export async function putCharRefAsset(bytes: BytesLike): Promise<{ hash: string;
   if (!db) throw new Error('Risu 데이터베이스를 열 수 없습니다');
   const modules = readModules(db);
   let idx = findModuleIndex(modules);
-  rebuildIndex(idx >= 0 ? parseCharRefModuleAssets(modules[idx]!.assets) : []);
+  const unloaded = idx >= 0 && charRefListLooksUnloaded(modules[idx]!.assets);
+  if (!unloaded) rebuildIndex(idx >= 0 ? parseCharRefModuleAssets(modules[idx]!.assets) : []);
   const enabled = asUnknownArray(db.enabledModules).map((id) => cleanText(id, 200)).filter(Boolean);
   const moduleEnabled = enabled.includes(CHAR_REF_MODULE_ID) || enabled.includes(CHAR_REF_MODULE_NS);
   const existing = assetIndex.get(hash) || '';
@@ -303,6 +344,14 @@ export async function putCharRefAsset(bytes: BytesLike): Promise<{ hash: string;
   if (!moduleEnabled) {
     enabled.push(CHAR_REF_MODULE_ID);
   }
+  if (unloaded) {
+    // The bytes are saved and read back, so hand the path to the roster and let
+    // this session resolve it from memory. Committing would trade every existing
+    // reference image for this one.
+    assetIndex.set(hash, path);
+    dbg('char_ref.module.assets.unloaded', { hash: hash.slice(0, 12), known: knownCharRefCount(), background: true }, 'warn');
+    return { hash, bytes: stored, path };
+  }
   await host.setDatabase!({ modules: modules as never, enabledModules: enabled as string[] });
   rebuildIndex(assets);
   dbg('char_ref.module.put', { hash: hash.slice(0, 12), bytes: stored.byteLength, ext, path });
@@ -331,6 +380,11 @@ export async function clearAllCharRefModuleAssets(): Promise<number> {
   const idx = findModuleIndex(modules);
   if (idx < 0) {
     assetIndex = new Map();
+    return 0;
+  }
+  if (charRefListLooksUnloaded(modules[idx]!.assets)) {
+    // "Clear everything" on a list we cannot see would clear assets we never read.
+    dbg('char_ref.module.assets.unloaded', { known: knownCharRefCount(), background: true }, 'warn');
     return 0;
   }
   const assets = parseCharRefModuleAssets(modules[idx]!.assets);

@@ -483,6 +483,14 @@ const INTENTIONAL_DIFF_STEPS = new Set([
  */
 const NEW_ONLY_STEPS = new Map([
   [
+    // 1.x counted the window, so this step reads 1 there. 2.5.23 counts the room.
+    'gallery.explore_window_folder_counts',
+    (v) => (v?.items === 1 && v?.full_items > 1 && v?.folder_total === v?.full_items
+      ? null
+      : '2.5.23 explorer folders must count every shot in the room, not the window'
+        + ` — got ${JSON.stringify(v)}`),
+  ],
+  [
     'gallery.display_url_scheme',
     (v) => (v === 'data'
       ? null

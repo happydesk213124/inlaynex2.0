@@ -545,6 +545,19 @@ export async function runScenario(N, handles) {
   }));
   await rec('job.wait_for_folder', () => waitForJob(folderJob?.job_id));
   const exploreForDelete = await rec('gallery.explore_for_delete', () => get('/v1/gallery/explore?limit=200'));
+  // Intended difference from 1.x: a folder now reports every shot stored in it,
+  // not just the ones inside the explorer's window. 1.x counted the window, so a
+  // folder of 800 read "120장" once the limit bit. One item ships here and the
+  // folder tallies must still add up to the whole gallery.
+  await rec('gallery.explore_window_folder_counts', async () => {
+    const windowed = await get('/v1/gallery/explore?limit=1');
+    const full = await get('/v1/gallery/explore?limit=200');
+    return {
+      items: (windowed?.items ?? []).length,
+      folder_total: (windowed?.folders ?? []).reduce((n, f) => n + (Number(f.count) || 0), 0),
+      full_items: (full?.items ?? []).length,
+    };
+  });
   // Folder rows expose `key`; only item rows carry `folder_key`.
   await rec('gallery.explore_folder_keys', () => (exploreForDelete?.folders ?? []).map((f) => f.key).sort());
 

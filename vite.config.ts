@@ -774,6 +774,7 @@ const VENDOR_CURATION_PANEL_PATCH =
             <li>기존 데이터는 처음 열 때 한 번에 옮겨집니다. 따로 누를 버튼은 없습니다</li>
             <li>에셋 이름에 어느 캐릭터챗인지 들어갑니다</li>
             <li>Risu가 에셋 목록을 0개로 넘겨주면 저장을 보내지 않습니다 (에셋 유실 방지)</li>
+            <li>탐색기 폴더 장수는 저장된 전체 장수입니다. 화면에 뜬 만큼만 세지 않습니다</li>
           </ul>
         </div>
         <div class="card" style="margin-top:14px">

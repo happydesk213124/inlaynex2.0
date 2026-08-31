@@ -322,6 +322,53 @@ export async function listShotAssets(): Promise<ShotAssetRow[]> {
   return out;
 }
 
+/**
+ * Gives pre-2.5.23 assets their room, in one commit.
+ *
+ * Only the label changes — the path is what holds the bytes, so nothing is
+ * re-saved. Names without a room cost a read of every room pack to resolve, and
+ * this is what removes that cost permanently.
+ */
+export async function restampShotAssetNames(rooms: ReadonlyMap<string, string>): Promise<number> {
+  if (!rooms.size || !shotModuleAvailable()) return 0;
+  await ensureDbAccess();
+  const host = hostOrNull();
+  if (!host) return 0;
+  const db = await host.getDatabase!(['modules', 'enabledModules']);
+  const modules = readModules(db);
+  const idx = findModuleIndex(modules);
+  if (idx < 0) return 0;
+  if (assetListLooksUnloaded(modules[idx]!.assets)) {
+    dbg('shot.module.assets.unloaded', { message: 'restamp skipped', background: true }, 'warn');
+    return 0;
+  }
+  const assets = parseShotModuleAssets(modules[idx]!.assets);
+  let changed = 0;
+  for (let i = 0; i < assets.length; i += 1) {
+    const [name, path, ext] = assets[i]!;
+    if (!isShotAssetName(name) || sessionFromShotAssetName(name)) continue;
+    const id = idFromShotAssetName(name);
+    const sid = rooms.get(id) || '';
+    if (!id || !sid) continue;
+    const next = shotAssetName(id, extFromAssetName(name) || ext, sid);
+    if (!next || next === name) continue;
+    assets[i] = [next, path, next];
+    changed += 1;
+  }
+  if (!changed) return 0;
+  modules[idx] = { ...modules[idx], assets };
+  await host.setDatabase!({
+    modules: modules as never,
+    enabledModules: asShotAssetRows(db?.enabledModules).map((row) => cleanText(row, 200)).filter(Boolean) as string[],
+  });
+  dbg('shot.module.restamp', { message: `${changed} name(s)`, background: true });
+  return changed;
+}
+
+function extFromAssetName(name: string): string {
+  return (/\.([a-z0-9]+)$/i.exec(name)?.[1] || '').toLowerCase();
+}
+
 export async function dropShotAsset(id: string): Promise<boolean> {
   if (!shotModuleAvailable()) return false;
   await ensureDbAccess();

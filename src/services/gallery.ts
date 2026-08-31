@@ -25,7 +25,20 @@ import type { ApiResult, CardRow } from '../core/types';
 import { asU8, base64ToBytes, bytesToBase64, u8ToArrayBuffer } from '../core/util/bytes';
 import { ASSISTANT_PREVIEW_LIMIT, cleanText, toInt, toOptionalFloat, uuid } from '../core/util/text';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
-import { cardsForSession, idbDelete, idbGet, idbGetAll, idbPut, imageMeta, imagePng, removeCardImageRows } from '../storage/stores';
+import {
+  cardsForSession,
+  ensureRoom,
+  galleryIndexNewestFirst,
+  idbDelete,
+  idbGet,
+  idbGetAll,
+  idbPut,
+  imageMeta,
+  imagePng,
+  knownShotRowCount,
+  removeCardImageRows,
+  roomTallies,
+} from '../storage/stores';
 import type { ZipEntryInput } from '../ui-contract/gallery-zip';
 import { buildGalleryManifest, packGalleryZip, resolveReattach, unpackGalleryZip } from '../ui-contract/gallery-zip';
 import {
@@ -169,11 +182,27 @@ async function rowLocation(id: string, meta: Record<string, unknown>) {
  * rows directly while `galleryExplore` still hands the UI a plain result.
  */
 async function exploreCards(limit: number): Promise<ExplorePayload> {
-  const all = (await idbGetAll('cards'))
-    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
   const cap = Math.floor(Number(limit));
-  const rows = Number.isFinite(cap) && cap > 0 ? all.slice(0, cap) : all;
+  const windowed = Number.isFinite(cap) && cap > 0;
+  // The unlimited call is export/import, which needs every row anyway. A limited
+  // call is the explorer, and it reads the module asset index instead: that is
+  // the one card inventory available without opening a room pack.
+  const index = windowed ? await galleryIndexNewestFirst() : [];
+  // A shot stored before the gallery module — or on a host with no module at all —
+  // has no asset name, so the index cannot see it. Listing from a short index
+  // would hide those cards entirely, so anything short falls back to the full
+  // read. A migrated gallery matches exactly and takes the cheap path.
+  const indexed = windowed && index.length >= knownShotRowCount();
+  let rows: CardRow[];
+  if (indexed) {
+    rows = await windowedExploreRows(index, cap);
+  } else {
+    const all = (await idbGetAll('cards')).sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+    rows = windowed ? all.slice(0, cap) : all;
+  }
   const folders: Record<string, ExploreFolder> = {};
+  const tally = indexed ? folderTallyFromRooms() : null;
+  if (tally) for (const [key, folder] of tally.folders) folders[key] = folder;
   const items: ExploreRow[] = [];
   for (const row of rows) {
     const meta = parseMeta(row);
@@ -202,7 +231,18 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
     // dropping it would be a behaviour change if that ever stops holding.
     if (characterName && !folder.character_name) folder.character_name = characterName;
     if (chatName) folder.chat_name = chatName;
-    folder.count += 1;
+    if (!tally) {
+      folder.count += 1;
+    } else {
+      // The room already counted this row. It only moves when the row's own
+      // location puts it in a different folder than its room does.
+      const roomKey = tally.roomFolder.get(String(row.session_id || '')) || '';
+      if (roomKey !== folderKey) {
+        folder.count += 1;
+        const from = roomKey ? folders[roomKey] : undefined;
+        if (from && from.count > 0) from.count -= 1;
+      }
+    }
     items.push({
       id: row.id,
       job_id: row.job_id,
@@ -239,7 +279,9 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
       png_bytes: pngBytes,
     });
   }
-  const folderList = Object.values(folders).sort((a, b) =>
+  // A room whose every shot moved to another folder is left holding nothing, and
+  // an empty folder button is worse than no button.
+  const folderList = Object.values(folders).filter((f) => f.count > 0).sort((a, b) =>
     `${a.character_name || ''}`.localeCompare(`${b.character_name || ''}`, undefined, { sensitivity: 'base' })
     || `${a.chat_name || ''}`.localeCompare(`${b.chat_name || ''}`, undefined, { sensitivity: 'base' }),
   );
@@ -255,6 +297,65 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
   // Refresh used to queue hundreds of base64 encodes and freeze Chrome.
   await attachImageUrls(payload, { cachedOnly: true, warmMissing: false });
   return payload;
+}
+
+type GalleryIndexRow = { id: string; session: string };
+
+/** The newest `cap` cards, opening only the rooms they live in. */
+async function windowedExploreRows(index: GalleryIndexRow[], cap: number): Promise<CardRow[]> {
+  // Newest-first picks the window, then storage order is restored: a re-import
+  // copies a card's `created_at` verbatim, so the original and the copy tie, and
+  // a stable sort has to break that tie the way the full read always did —
+  // oldest-stored first.
+  const want = index.slice(0, cap).reverse();
+  for (const sid of new Set(want.map((row) => row.session).filter(Boolean))) await ensureRoom(sid);
+  const rows: CardRow[] = [];
+  for (const { id } of want) {
+    const row = await idbGet('cards', id);
+    if (row) rows.push(row);
+  }
+  return rows.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+}
+
+/**
+ * One folder per character-chat, counting every shot stored — not just the ones
+ * inside the explorer's window.
+ *
+ * A folder holding 800 shots must not read "120장" because that is where the
+ * window stopped. The room index carries a per-room count and the room's names,
+ * so this costs no pack read at all.
+ *
+ * A room's folder is where its shots normally sit, but a card's own location can
+ * disagree — an imported card can arrive without character ids. Every shipped row
+ * is checked against its room below and moved if it does, which keeps the counts
+ * adding up to what the folder actually shows.
+ */
+function folderTallyFromRooms(): { folders: Map<string, ExploreFolder>; roomFolder: Map<string, string> } {
+  const folders = new Map<string, ExploreFolder>();
+  const roomFolder = new Map<string, string>();
+  for (const room of roomTallies()) {
+    const characterId = cleanText(room.character_id, 200) || 'unknown';
+    const chatId = cleanText(room.chat_id, 200) || 'unknown';
+    const key = `${characterId}|${chatId}`;
+    roomFolder.set(room.session_id, key);
+    let folder = folders.get(key);
+    if (!folder) {
+      folder = {
+        key,
+        character_id: characterId,
+        chat_id: chatId,
+        character_name: cleanText(room.character_name, 200) || characterId.slice(0, 12) || 'Unknown',
+        chat_name: cleanText(room.chat_name, 200) || `chat ${room.chat_index ?? '?'}`,
+        char_index: room.char_index ?? -1,
+        chat_index: room.chat_index ?? -1,
+        count: 0,
+        storage: 'indexeddb',
+      };
+      folders.set(key, folder);
+    }
+    folder.count += room.cards;
+  }
+  return { folders, roomFolder };
 }
 
 export async function galleryExplore(limit = 0): Promise<ApiResult> {

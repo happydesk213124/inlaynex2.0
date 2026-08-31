@@ -57,6 +57,7 @@ import {
   listShotAssets,
   putShotAsset,
   readShotAssetBytes,
+  restampShotAssetNames,
   setKnownShotCount,
 } from './shot-module';
 
@@ -157,6 +158,8 @@ export interface RoomIndexRow {
   character_name: string;
   chat_id: string;
   chat_name: string;
+  char_index: number;
+  chat_index: number;
   newest_at: number;
 }
 
@@ -371,6 +374,8 @@ function roomRowFrom(sid: string, pack: RoomPack): RoomIndexRow {
     character_name: '',
     chat_id: '',
     chat_name: '',
+    char_index: -1,
+    chat_index: -1,
     newest_at: 0,
   };
   for (const img of Object.values(pack.images) as Array<Record<string, unknown>>) {
@@ -380,6 +385,8 @@ function roomRowFrom(sid: string, pack: RoomPack): RoomIndexRow {
     row.character_name ||= String(loc.character_name || '');
     row.chat_id ||= String(loc.chat_id || '');
     row.chat_name ||= String(loc.chat_name || '');
+    if (row.char_index < 0) row.char_index = Number(loc.char_index ?? -1);
+    if (row.chat_index < 0) row.chat_index = Number(loc.chat_index ?? -1);
   }
   for (const card of Object.values(pack.cards) as Array<Record<string, unknown>>) {
     row.newest_at = Math.max(row.newest_at, Number(card.created_at) || 0);
@@ -756,6 +763,8 @@ function loadRoomIndex(obj: Record<string, unknown> | null): void {
       character_name: String(v.character_name || ''),
       chat_id: String(v.chat_id || ''),
       chat_name: String(v.chat_name || ''),
+      char_index: Number.isFinite(Number(v.char_index)) ? Number(v.char_index) : -1,
+      chat_index: Number.isFinite(Number(v.chat_index)) ? Number(v.chat_index) : -1,
       newest_at: Number(v.newest_at) || 0,
     });
   }
@@ -788,6 +797,7 @@ async function splitLegacyPacks(): Promise<boolean> {
   await persistRooms();
   await psSet(STORE_KEY('cards'), {});
   await psSet(STORE_KEY('images'), {});
+  await restampAssetRooms().catch(() => {});
   dbg('storage.rooms.split', {
     message: `${roomIndex.size} rooms`,
     cards: cardEntries.length,
@@ -951,6 +961,27 @@ export async function openDb(): Promise<boolean> {
 // Room loading
 // ---------------------------------------------------------------------------
 
+let restampChecked = false;
+
+/**
+ * Hands pre-2.5.23 asset names their room, once per page load.
+ *
+ * Only called from the two places that already have every row in memory: the
+ * one-time split, and the all-rooms fallback in `ensureCard`. A name without a
+ * room is exactly what forces that fallback, so this removes its own cause.
+ */
+async function restampAssetRooms(): Promise<void> {
+  if (restampChecked) return;
+  restampChecked = true;
+  const rooms = new Map<string, string>();
+  for (const row of await listShotAssets()) {
+    if (row.session) continue;
+    const sid = roomOf(row.id);
+    if (sid !== NO_ROOM) rooms.set(row.id, sid);
+  }
+  await restampShotAssetNames(rooms);
+}
+
 /** Reads one room's pack into memory. A loaded room is never dropped. */
 export async function ensureRoom(sessionId: unknown): Promise<void> {
   await openDb();
@@ -1005,6 +1036,7 @@ export async function ensureCard(id: unknown): Promise<void> {
     if (memStores.cards.has(k) || memStores.images.has(k)) return;
   }
   await ensureAllRooms();
+  await restampAssetRooms().catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -1399,6 +1431,81 @@ export function roomRows(): RoomIndexRow[] {
 }
 
 /**
+ * Like `roomRows`, but a loaded room is counted from memory.
+ *
+ * The index catches up when a pack is written, so a room that was just written
+ * to and not yet flushed reads short there. Anything showing the user a count
+ * has to see the write it just made.
+ */
+export function roomTallies(): RoomIndexRow[] {
+  const out = new Map<string, RoomIndexRow>();
+  for (const [sid, row] of roomIndex) out.set(sid, { ...row });
+  for (const sid of loadedRooms) {
+    const row = out.get(sid) ?? { ...EMPTY_ROOM_ROW, session_id: sid };
+    row.cards = cardsBySession.get(sid)?.size ?? 0;
+    // A room written this session has no index entry yet, so its names are still
+    // blank. They are in memory, on the image rows.
+    if (!row.character_id) nameRoomFromMemory(sid, row);
+    if (!row.cards && !row.images) {
+      out.delete(sid);
+      continue;
+    }
+    out.set(sid, row);
+  }
+  return [...out.values()];
+}
+
+/** Fills a room's names from the loaded image rows that belong to it. */
+function nameRoomFromMemory(sid: string, row: RoomIndexRow): void {
+  for (const [id, img] of memStores.images) {
+    if (roomOf(id) !== sid) continue;
+    const loc = img.location || {};
+    row.character_id ||= String(loc.character_id || '');
+    row.character_name ||= String(loc.character_name || '');
+    row.chat_id ||= String(loc.chat_id || '');
+    row.chat_name ||= String(loc.chat_name || '');
+    if (row.char_index < 0) row.char_index = Number(loc.char_index ?? -1);
+    if (row.chat_index < 0) row.chat_index = Number(loc.chat_index ?? -1);
+    if (row.character_id) return;
+  }
+}
+
+const EMPTY_ROOM_ROW: RoomIndexRow = {
+  session_id: '',
+  cards: 0,
+  images: 0,
+  png_bytes: 0,
+  character_id: '',
+  character_name: '',
+  chat_id: '',
+  chat_name: '',
+  char_index: -1,
+  chat_index: -1,
+  newest_at: 0,
+};
+
+/**
+ * Every stored shot, newest first, with the room it belongs to.
+ *
+ * Read from the gallery module's asset array, so it costs one host call and no
+ * pack reads at all — this is what lets the explorer show every room at once.
+ * Insertion order is generation order, so reversing gives newest first.
+ *
+ * A name written before 2.5.23 carries no room. The first call that sees one
+ * loads every room and rewrites the names, so later calls are clean.
+ */
+export async function galleryIndexNewestFirst(): Promise<Array<{ id: string; session: string }>> {
+  await openDb();
+  let rows = await listShotAssets();
+  if (!restampChecked && rows.some((row) => !row.session)) {
+    await ensureAllRooms();
+    await restampAssetRooms().catch(() => {});
+    rows = await listShotAssets();
+  }
+  return rows.reverse().map((row) => ({ id: row.id, session: row.session }));
+}
+
+/**
  * One image's location, without hydrating its pixels.
  *
  * `idbGet('images', id)` decodes the stored base64 on first touch, which is right
@@ -1583,6 +1690,7 @@ export function resetStores(): void {
   loadedRooms.clear();
   dirtyRooms.clear();
   cardRoomHint = null;
+  restampChecked = false;
   blobUrlCache.clear();
   explorerThumbCache.clear();
   dirty.clear();

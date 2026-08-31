@@ -392,7 +392,8 @@ export async function collectAssetNaiTags(
     message?: string;
   } = {},
 ): Promise<AssetTagCollectResult | null> {
-  const triggers = filterAssetTriggersForUnfilledLooks(triggerKeys, opts.roster);
+  const preferFilledLooks = !!getConfig()?.card?.unified_chat_priority;
+  const triggers = filterAssetTriggersForUnfilledLooks(triggerKeys, opts.roster, { preferFilledLooks });
   if (!triggers.length) {
     dbg('asset-tags.skip', {
       reason: opts.roster?.length ? 'no_unfilled_triggers' : 'no_long_triggers',
@@ -493,7 +494,8 @@ export async function collectBestLookAssets(
   triggerKeys: readonly unknown[],
   opts: { roster?: CharacterInput[] | null } = {},
 ): Promise<BestLookAsset[]> {
-  const triggers = filterAssetTriggersForUnfilledLooks(triggerKeys, opts.roster);
+  const preferFilledLooks = !!getConfig()?.card?.unified_chat_priority;
+  const triggers = filterAssetTriggersForUnfilledLooks(triggerKeys, opts.roster, { preferFilledLooks });
   if (!triggers.length) return [];
   if (!hostHas('getCharacter') || !hostHas('readImage')) return [];
 
@@ -579,7 +581,9 @@ export async function probeAssetNaiTags(body: Record<string, unknown> = {}): Pro
   const triggerPool = [...backendKeys];
   const matchTriggersAll = assetMatchTriggers(triggerPool);
   const roster = Array.isArray(body.roster) ? (body.roster as CharacterInput[]) : null;
-  const matchTriggers = filterAssetTriggersForUnfilledLooks(triggerPool, roster);
+  const matchTriggers = filterAssetTriggersForUnfilledLooks(triggerPool, roster, {
+    preferFilledLooks: !!card?.unified_chat_priority,
+  });
   const mode = normalizeAssetNaiTagsMode(card.asset_nai_tags);
   const settingOn = mode !== 'off';
 

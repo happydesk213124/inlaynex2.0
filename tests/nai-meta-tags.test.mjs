@@ -217,6 +217,31 @@ test('filterAssetTriggersForUnfilledLooks drops filled character triggers only',
   assert.deepEqual([...out].sort(), ['성당', '세노이', 'senoy'].sort());
 });
 
+test('filterAssetTriggersForUnfilledLooks preferFilledLooks drops a twin empty row', () => {
+  const roster = [
+    {
+      name: '하츠세 이즈나',
+      aliases: ['Izuna', '이즈나'],
+      appearance: 'girl, blue eyes, animal_ears, tail',
+      hair_color: 'black hair',
+      hair_style: 'short hair',
+      scope: 'risu_filled',
+    },
+    {
+      name: '하츠세 이즈나',
+      aliases: ['Izuna', '이즈나'],
+      appearance: '',
+      scope: 'risu_empty',
+    },
+  ];
+  const raw = filterAssetTriggersForUnfilledLooks(['Izuna', '이즈나', '성당'], roster);
+  assert.ok(raw.includes('Izuna') || raw.includes('이즈나'));
+  const prefer = filterAssetTriggersForUnfilledLooks(['Izuna', '이즈나', '성당'], roster, {
+    preferFilledLooks: true,
+  });
+  assert.deepEqual([...prefer].sort(), ['성당'].sort());
+});
+
 test('asset priority: exact > default > profile > (normal = smil*, shorter wins)', () => {
   const tr = 'senoy';
   assert.ok(assetPriorityForTrigger('Senoy.webp', tr) > assetPriorityForTrigger('Senoy-normal.webp', tr));

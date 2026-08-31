@@ -16,7 +16,7 @@
  */
 import { cleanText } from '../../core/util/text.ts';
 import type { CharacterInput } from '../character/identity.ts';
-import { characterTriggers } from '../character/roster.ts';
+import { characterTriggers, pickUnifiedWinners } from '../character/roster.ts';
 import { characterHasAppearance } from '../character/tags.ts';
 
 const MIN_LATIN_HANJA_LEN = 3;
@@ -95,17 +95,25 @@ export function isAssetMatchTrigger(key: unknown): boolean {
  * Drop lore triggers that belong to characters who already have looks.
  * Keep incomplete-character triggers and triggers that match nobody on the roster
  * (possible new cast). Empty roster → no filtering.
+ *
+ * `preferFilledLooks`: same person across linked chats — a filled row beats an
+ * empty one, then this filter sees only that winner. Without it an empty twin
+ * keeps the trigger (incomplete keys win) and the asset looks LLM runs again.
  */
 export function filterAssetTriggersForUnfilledLooks(
   triggers: readonly unknown[],
   roster: readonly CharacterInput[] | null | undefined,
+  opts?: { preferFilledLooks?: boolean },
 ): string[] {
   const eligible = assetMatchTriggers(triggers);
   if (!roster?.length) return eligible;
+  const rows = opts?.preferFilledLooks
+    ? pickUnifiedWinners(roster, characterHasAppearance)
+    : roster;
 
   const filledKeys = new Set<string>();
   const incompleteKeys = new Set<string>();
-  for (const char of roster) {
+  for (const char of rows) {
     const keys = characterTriggers(char)
       .map((t) => compactAssetKey(t, 200))
       .filter((k) => k.length >= 2);

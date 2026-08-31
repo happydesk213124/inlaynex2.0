@@ -6276,7 +6276,6 @@ const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `    document.getElementById("nx-clos
         try { await restoreFloatingViewerAfterModal(); } catch {}
         try { await blockHostChrome(!1); } catch {}
         try { await it(); } catch {}
-        try { await refreshSelectedInlineImages(!0); } catch {}
         try {
           typeof nxHostToast == "function" && await nxHostToast("뷰어 복구됨", { ms: 1500 });
         } catch {
@@ -17575,8 +17574,17 @@ const loadVendorUi = (): string => {
         throw new Error('[build] a shifted chip bar must be reindexed in place');
       }
     }
-    if (!out.includes('evictPhotosIn') || !out.includes('refreshSelectedInlineImages(!0)')) {
+    if (!out.includes('evictPhotosIn') || !out.includes('refreshSelectedInlineImages(!0, { onlySel: !0 })')) {
       throw new Error('[build] missing photo evict / inline refresh');
+    }
+    {
+      const from = out.indexOf('nxHostToast("뷰어 복구 중…');
+      const to = out.indexOf('nxHostToast("뷰어 복구됨"');
+      const body = from >= 0 && to > from ? out.slice(from, to) : '';
+      if (!body) throw new Error('[build] viewer restore toast pair missing');
+      if (body.includes('refreshSelectedInlineImages')) {
+        throw new Error('[build] settings close must not restamp inline shots');
+      }
     }
     if (!out.includes('async function nxRemoveInlineFramesByKey(') || !out.includes('t._inlineNeedStamp = !0')) {
       throw new Error('[build] tag button must remove frames and flag a one-bubble restamp');

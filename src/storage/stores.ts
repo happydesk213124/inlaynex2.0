@@ -23,6 +23,8 @@
  */
 
 import {
+  CARD_PACK_KEY,
+  ROOM_INDEX_KEY,
   charRefDiskDataKey,
   charRefDiskImageKey,
   IMAGE_KEY,
@@ -50,7 +52,13 @@ import { cardIdsToStripPreview } from '../domain/gallery/preview-retention';
 import { jobIdsToPrune } from '../domain/jobs/retention';
 import { psGet, psRemove, psSet, resetDeviceStore } from './device-store';
 import { blobUrlCache, explorerThumbCache } from './blob-url-cache';
-import { dropShotAsset, putShotAsset, readShotAssetBytes, setKnownShotCount } from './shot-module';
+import {
+  dropShotAsset,
+  listShotAssets,
+  putShotAsset,
+  readShotAssetBytes,
+  setKnownShotCount,
+} from './shot-module';
 
 /** Rows as held in memory. Images carry metadata even when pixels are absent. */
 interface ImageMemRow {
@@ -117,6 +125,86 @@ function deindexCard(row: CardRow | undefined): void {
   if (!set) return;
   set.delete(String(row.id));
   if (set.size === 0) cardsBySession.delete(sid);
+}
+
+// ---------------------------------------------------------------------------
+// Per-room packs
+// ---------------------------------------------------------------------------
+
+/**
+ * `cards` and `images` are stored one character-chat at a time.
+ *
+ * They used to be two rows holding every room, so opening any chat read the
+ * whole gallery's metadata — roughly 3 MB before it could draw anything. A room
+ * pack holds both stores for one chat, because a card and its image row share an
+ * id and are always wanted together.
+ *
+ * `inx_nxrooms` is the index: it says which rooms exist and how much each holds,
+ * so totals and the explorer's folder list never open a pack.
+ */
+interface RoomPack {
+  cards: Record<string, unknown>;
+  images: Record<string, unknown>;
+}
+
+/** What `inx_nxrooms` keeps per room. Counts come from the pack as it is written. */
+export interface RoomIndexRow {
+  session_id: string;
+  cards: number;
+  images: number;
+  png_bytes: number;
+  character_id: string;
+  character_name: string;
+  chat_id: string;
+  chat_name: string;
+  newest_at: number;
+}
+
+/** Rows with no session at all still need somewhere to live. */
+const NO_ROOM = '__noroom';
+
+/** Stores that are still one row for everything. */
+const MONO_STORES = STORE_NAMES.filter((name) => name !== 'cards' && name !== 'images');
+
+const roomIndex = new Map<string, RoomIndexRow>();
+const loadedRooms = new Set<string>();
+const dirtyRooms = new Set<string>();
+
+/**
+ * Which room a card id belongs to, for ids we have not loaded yet.
+ *
+ * Built from the gallery module's asset names, which carry the room since 2.5.23.
+ * That is the only inventory readable without opening a pack.
+ */
+let cardRoomHint: Map<string, string> | null = null;
+
+/**
+ * The room for one id, from whichever of the two rows names a session.
+ *
+ * Both stores go through this so a card and its image can never be split across
+ * packs: the card is written after its image during generation, so the image row
+ * is the only one with a session at first, and the card is the only one with one
+ * after an import.
+ */
+function roomOf(id: string): string {
+  const card = memStores.cards.get(id);
+  const fromCard = String(card?.session_id || '');
+  if (fromCard) return fromCard;
+  const img = memStores.images.get(id);
+  const fromImage = String((img?.location as { session_id?: unknown } | undefined)?.session_id || '');
+  return fromImage || NO_ROOM;
+}
+
+function markRoomDirty(sid: string): void {
+  if (!sid) return;
+  dirtyRooms.add(sid);
+  loadedRooms.add(sid);
+}
+
+/** Both rooms, when a rewrite may have moved an id between them. */
+function markRoomDirtyFor(id: string, previous?: string): void {
+  if (previous) markRoomDirty(previous);
+  markRoomDirty(roomOf(id));
 }
 
 // ---------------------------------------------------------------------------
@@ -194,74 +282,147 @@ function slimJobRowForDisk(row: JobRow): JobRow {
   return out;
 }
 
+/** One row in the shape it is stored in. Shared by the store and pack writers. */
+function diskRow(store: StoreName, k: string, v: unknown): unknown {
+  if (store === 'images') {
+    const img = v as ImageMemRow;
+    const assetPath = String(img.asset_path || '');
+    return {
+      id: img.id,
+      location: locationWithoutPreview(img.location),
+      has_png: img.has_png,
+      png_bytes: img.png_bytes,
+      storage: assetPath ? 'module' : 'indexeddb',
+      storage_key: assetPath || IMAGE_KEY(k),
+      ...(assetPath ? { asset_path: assetPath, asset_name: img.asset_name || '' } : {}),
+    };
+  }
+  const row = v as Record<string, unknown>;
+  if (store === 'meta' && row?.key === 'reference_image') {
+    return { key: 'reference_image', has_png: Boolean(row.png), updated_at: row.updated_at || 0 };
+  }
+  return diskMetaOrJobRow(store, v, row);
+}
+
 function snapshotOf(store: StoreName): Record<string, unknown> {
   const obj: Record<string, unknown> = {};
-  if (store === 'images') {
-    for (const [k, v] of memStores.images) {
-      const assetPath = String(v.asset_path || '');
-      obj[k] = {
-        id: v.id,
-        location: locationWithoutPreview(v.location),
-        has_png: v.has_png,
-        png_bytes: v.png_bytes,
-        storage: assetPath ? 'module' : 'indexeddb',
-        storage_key: assetPath || IMAGE_KEY(k),
-        ...(assetPath ? { asset_path: assetPath, asset_name: v.asset_name || '' } : {}),
-      };
-    }
-    return obj;
-  }
-  for (const [k, v] of memStores[store] as Map<string, unknown>) {
-    const row = v as Record<string, unknown>;
-    if (store === 'meta' && row?.key === 'reference_image') {
-      obj[k] = { key: 'reference_image', has_png: Boolean(row.png), updated_at: row.updated_at || 0 };
-      continue;
-    }
-    if (store === 'meta' && row?.key === 'vibe_transfer') {
-      obj[k] = {
-        key: 'vibe_transfer',
-        has_png: Boolean(row.png),
-        has_encoded: Boolean(row.encoded),
-        model: row.model || '',
-        information_extracted: row.information_extracted ?? 1.0,
-        updated_at: row.updated_at || 0,
-      };
-      continue;
-    }
-    if (store === 'meta' && isVibePresetMetaKey(row?.key)) {
-      obj[k] = {
-        key: row.key,
-        has_png: Boolean(row.png),
-        has_encoded: Boolean(row.encoded),
-        model: row.model || '',
-        information_extracted: row.information_extracted ?? 1.0,
-        updated_at: row.updated_at || 0,
-      };
-      continue;
-    }
-    // Never JSON-embed ArrayBuffers into the meta blob — they become `{}` and
-    // leave "configured" ghosts with no preview after reload (same as vibe).
-    if (store === 'meta' && isCharRefMetaKey(row?.key)) {
-      obj[k] = {
-        key: row.key,
-        has_png: Boolean(row.png && (row.png as ArrayBuffer).byteLength > 0),
-        has_encoded: Boolean(row.encoded),
-        model: row.model || '',
-        information_extracted: row.information_extracted ?? 1.0,
-        updated_at: row.updated_at || 0,
-      };
-      continue;
-    }
-    if (store === 'jobs') {
-      obj[k] = slimJobRowForDisk(row as JobRow);
-      continue;
-    }
-    obj[k] = v;
-  }
+  for (const [k, v] of memStores[store] as Map<string, unknown>) obj[k] = diskRow(store, k, v);
   return obj;
 }
 
+function diskMetaOrJobRow(store: StoreName, v: unknown, row: Record<string, unknown>): unknown {
+  if (store === 'meta' && row?.key === 'vibe_transfer') {
+    return {
+      key: 'vibe_transfer',
+      has_png: Boolean(row.png),
+      has_encoded: Boolean(row.encoded),
+      model: row.model || '',
+      information_extracted: row.information_extracted ?? 1.0,
+      updated_at: row.updated_at || 0,
+    };
+  }
+  if (store === 'meta' && isVibePresetMetaKey(row?.key)) {
+    return {
+      key: row.key,
+      has_png: Boolean(row.png),
+      has_encoded: Boolean(row.encoded),
+      model: row.model || '',
+      information_extracted: row.information_extracted ?? 1.0,
+      updated_at: row.updated_at || 0,
+    };
+  }
+  // Never JSON-embed ArrayBuffers into the meta blob — they become `{}` and
+  // leave "configured" ghosts with no preview after reload (same as vibe).
+  if (store === 'meta' && isCharRefMetaKey(row?.key)) {
+    return {
+      key: row.key,
+      has_png: Boolean(row.png && (row.png as ArrayBuffer).byteLength > 0),
+      has_encoded: Boolean(row.encoded),
+      model: row.model || '',
+      information_extracted: row.information_extracted ?? 1.0,
+      updated_at: row.updated_at || 0,
+    };
+  }
+  if (store === 'jobs') return slimJobRowForDisk(row as JobRow);
+  return v;
+}
+
+/** Everything loaded that belongs to one room, in its on-disk shape. */
+function packForRoom(sid: string): RoomPack {
+  const pack: RoomPack = { cards: {}, images: {} };
+  for (const [k, v] of memStores.cards) if (roomOf(k) === sid) pack.cards[k] = diskRow('cards', k, v);
+  for (const [k, v] of memStores.images) if (roomOf(k) === sid) pack.images[k] = diskRow('images', k, v);
+  return pack;
+}
+
+/**
+ * The index entry for a room, derived from the pack about to be written.
+ *
+ * A room is always fully loaded before it can be written, so counting the pack
+ * is exact — the index never drifts from what is on disk.
+ */
+function roomRowFrom(sid: string, pack: RoomPack): RoomIndexRow {
+  const row: RoomIndexRow = {
+    session_id: sid,
+    cards: Object.keys(pack.cards).length,
+    images: Object.keys(pack.images).length,
+    png_bytes: 0,
+    character_id: '',
+    character_name: '',
+    chat_id: '',
+    chat_name: '',
+    newest_at: 0,
+  };
+  for (const img of Object.values(pack.images) as Array<Record<string, unknown>>) {
+    row.png_bytes += Number(img.png_bytes) || 0;
+    const loc = (img.location || {}) as Record<string, unknown>;
+    row.character_id ||= String(loc.character_id || '');
+    row.character_name ||= String(loc.character_name || '');
+    row.chat_id ||= String(loc.chat_id || '');
+    row.chat_name ||= String(loc.chat_name || '');
+  }
+  for (const card of Object.values(pack.cards) as Array<Record<string, unknown>>) {
+    row.newest_at = Math.max(row.newest_at, Number(card.created_at) || 0);
+  }
+  return row;
+}
+
+function roomIndexSnapshot(): Record<string, unknown> {
+  const obj: Record<string, unknown> = {};
+  for (const [sid, row] of roomIndex) obj[sid] = row;
+  return obj;
+}
+
+/** Bulk rewrites touch every loaded row, so they dirty every loaded room. */
+function markAllLoadedRoomsDirty(): void {
+  for (const sid of loadedRooms) dirtyRooms.add(sid);
+}
+
+/** Writes the rooms that changed, then the index. */
+async function persistRooms(): Promise<void> {
+  const rooms = [...dirtyRooms];
+  dirtyRooms.clear();
+  if (!rooms.length) return;
+  for (const sid of rooms) {
+    const pack = packForRoom(sid);
+    if (!Object.keys(pack.cards).length && !Object.keys(pack.images).length) {
+      roomIndex.delete(sid);
+      await psRemove(CARD_PACK_KEY(sid));
+      continue;
+    }
+    roomIndex.set(sid, roomRowFrom(sid, pack));
+    await psSet(CARD_PACK_KEY(sid), pack);
+  }
+  await psSet(ROOM_INDEX_KEY, roomIndexSnapshot());
+}
+
 async function persistStore(store: StoreName): Promise<void> {
+  // Both packed stores live in the same pack, so either one flushes both. The
+  // second call in a flush finds `dirtyRooms` already empty and does nothing.
+  if (store === 'cards' || store === 'images') {
+    await persistRooms();
+    return;
+  }
   await psSet(STORE_KEY(store), snapshotOf(store));
 }
 
@@ -542,44 +703,113 @@ async function hydrateImage(id: string, row: ImageMemRow): Promise<ArrayBuffer |
 
 let storeReady: Promise<boolean> | null = null;
 
+/** Parses a stored row, whether it came from a room pack or the old blob. */
+function loadImageRow(k: string, v: Record<string, unknown>): void {
+  const hasPng = Boolean(v.has_png);
+  const loc = (v.location as Record<string, unknown>) || {};
+  memStores.images.set(k, {
+    id: String(v.id || k),
+    location: loc,
+    png: null,
+    has_png: hasPng,
+    png_bytes: Number(v.png_bytes) || 0,
+    hydrated: !hasPng,
+    durable: true,
+    ...(typeof v.asset_path === 'string' && v.asset_path
+      ? { asset_path: v.asset_path, asset_name: String(v.asset_name || '') }
+      : typeof loc.asset_path === 'string' && loc.asset_path
+        ? { asset_path: String(loc.asset_path), asset_name: String(loc.asset_name || '') }
+        : {}),
+  });
+}
+
+function loadCardRow(k: string, v: Record<string, unknown>): void {
+  const row = v as unknown as CardRow;
+  memStores.cards.set(k, row);
+  indexCard(row);
+}
+
+/** Reads a stored JSON value that may already be parsed. */
+function parseStored(raw: unknown): Record<string, unknown> | null {
+  if (raw == null || raw === '') return null;
+  let obj: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  return obj && typeof obj === 'object' ? (obj as Record<string, unknown>) : null;
+}
+
+function loadRoomIndex(obj: Record<string, unknown> | null): void {
+  if (!obj) return;
+  for (const [sid, raw] of Object.entries(obj)) {
+    const v = (raw ?? {}) as Record<string, unknown>;
+    roomIndex.set(sid, {
+      session_id: String(v.session_id || sid),
+      cards: Number(v.cards) || 0,
+      images: Number(v.images) || 0,
+      png_bytes: Number(v.png_bytes) || 0,
+      character_id: String(v.character_id || ''),
+      character_name: String(v.character_name || ''),
+      chat_id: String(v.chat_id || ''),
+      chat_name: String(v.chat_name || ''),
+      newest_at: Number(v.newest_at) || 0,
+    });
+  }
+}
+
+/**
+ * Turns the two whole-gallery rows into one pack per room. Runs once.
+ *
+ * Everything lands in memory for this boot, which is exactly what the old layout
+ * did, so the preview-pruning passes still see every row. Afterwards the old
+ * keys are emptied rather than deleted: `psGet` falls back to the 1.x save-file
+ * key when a device key is missing, and a deleted key would be re-found and
+ * re-split on every boot.
+ */
+async function splitLegacyPacks(): Promise<boolean> {
+  const cardsRaw = parseStored(await psGet(STORE_KEY('cards'), LEGACY_STORE_KEY('cards')));
+  const imagesRaw = parseStored(await psGet(STORE_KEY('images'), LEGACY_STORE_KEY('images')));
+  const cardEntries = Object.entries(cardsRaw || {});
+  const imageEntries = Object.entries(imagesRaw || {});
+  if (!cardEntries.length && !imageEntries.length) return false;
+
+  for (const [k, v] of cardEntries) loadCardRow(k, (v ?? {}) as Record<string, unknown>);
+  for (const [k, v] of imageEntries) loadImageRow(k, (v ?? {}) as Record<string, unknown>);
+  for (const k of memStores.cards.keys()) markRoomDirty(roomOf(k));
+  for (const k of memStores.images.keys()) markRoomDirty(roomOf(k));
+
+  stripImageLocationPreviewsUnlocked();
+  pruneCardPreviewsUnlocked({ persist: false });
+  markAllLoadedRoomsDirty();
+  await persistRooms();
+  await psSet(STORE_KEY('cards'), {});
+  await psSet(STORE_KEY('images'), {});
+  dbg('storage.rooms.split', {
+    message: `${roomIndex.size} rooms`,
+    cards: cardEntries.length,
+    images: imageEntries.length,
+  });
+  return true;
+}
+
 export async function openDb(): Promise<boolean> {
   if (storeReady) return storeReady;
   storeReady = (async () => {
     // Legacy sidecar rewrites found while loading. Deferred because the stamp
     // row is written late in `meta` and so is not yet visible mid-loop.
     const legacyWrites: Array<() => Promise<void>> = [];
-    for (const store of STORE_NAMES) {
-      const raw = await psGet(STORE_KEY(store), LEGACY_STORE_KEY(store));
-      if (raw == null || raw === '') continue;
-      let obj: unknown = raw;
-      if (typeof raw === 'string') {
-        try {
-          obj = JSON.parse(raw);
-        } catch {
-          continue;
-        }
-      }
-      if (!obj || typeof obj !== 'object') continue;
-      for (const [k, rawRow] of Object.entries(obj as Record<string, unknown>)) {
+    // `cards` and `images` are deliberately absent: they are read one room at a
+    // time by `ensureRoom`, which is the whole point of the per-room packs.
+    for (const store of MONO_STORES) {
+      const obj = parseStored(await psGet(STORE_KEY(store), LEGACY_STORE_KEY(store)));
+      if (!obj) continue;
+      for (const [k, rawRow] of Object.entries(obj)) {
         const v = (rawRow ?? {}) as Record<string, unknown>;
-        if (store === 'images') {
-          const hasPng = Boolean(v.has_png);
-          const loc = (v.location as Record<string, unknown>) || {};
-          memStores.images.set(k, {
-            id: String(v.id || k),
-            location: loc,
-            png: null,
-            has_png: hasPng,
-            png_bytes: Number(v.png_bytes) || 0,
-            hydrated: !hasPng,
-            durable: true,
-            ...(typeof v.asset_path === 'string' && v.asset_path
-              ? { asset_path: v.asset_path, asset_name: String(v.asset_name || '') }
-              : typeof loc.asset_path === 'string' && loc.asset_path
-                ? { asset_path: String(loc.asset_path), asset_name: String(loc.asset_name || '') }
-                : {}),
-          });
-        } else if (store === 'meta' && (v.key === 'reference_image' || k === 'reference_image')) {
+        if (store === 'meta' && (v.key === 'reference_image' || k === 'reference_image')) {
           const png = decodeStoredPng(await psGet(REF_IMAGE_KEY, LEGACY_REF_IMAGE_KEY));
           memStores.meta.set('reference_image', { key: 'reference_image', png });
         } else if (store === 'meta' && (v.key === 'vibe_transfer' || k === 'vibe_transfer')) {
@@ -674,15 +904,14 @@ export async function openDb(): Promise<boolean> {
               }
             });
           }
-        } else if (store === 'cards') {
-          const row = v as unknown as CardRow;
-          memStores.cards.set(k, row);
-          indexCard(row);
         } else {
           (memStores[store] as Map<string, unknown>).set(k, v);
         }
       }
     }
+    loadRoomIndex(parseStored(await psGet(ROOM_INDEX_KEY)));
+    await splitLegacyPacks();
+
     if (migratedVersionUnlocked() >= MIGRATION_VERSION) return true;
 
     if (legacyWrites.length) {
@@ -693,7 +922,8 @@ export async function openDb(): Promise<boolean> {
         .catch(() => {});
     }
 
-    const empty = STORE_NAMES.every((name) => (memStores[name] as Map<string, unknown>).size === 0);
+    const empty =
+      !roomIndex.size && STORE_NAMES.every((name) => (memStores[name] as Map<string, unknown>).size === 0);
     if (empty) {
       // Fresh install: there is no pre-2.5 data to find, so stamp now and never
       // pay for a boot scan at all.
@@ -705,15 +935,76 @@ export async function openDb(): Promise<boolean> {
     // Unmigrated install: keep doing the full-store cleanup every boot. These
     // only ever find legacy rows, but a user who never presses the migrate
     // button must not be worse off than before.
+    // The card and image passes run inside `splitLegacyPacks`, which is the one
+    // boot that has those rows in memory. Later boots load no packs, so running
+    // them here would only ever scan nothing.
     if (pruneJobStoreUnlocked({ persist: false }) > 0) await persistStore('jobs');
-    if (stripImageLocationPreviewsUnlocked() > 0) await persistStore('images');
-    if (pruneCardPreviewsUnlocked({ persist: false }) > 0) await persistStore('cards');
     return true;
   })().catch((error: unknown) => {
     storeReady = null;
     throw error;
   });
   return storeReady;
+}
+
+// ---------------------------------------------------------------------------
+// Room loading
+// ---------------------------------------------------------------------------
+
+/** Reads one room's pack into memory. A loaded room is never dropped. */
+export async function ensureRoom(sessionId: unknown): Promise<void> {
+  await openDb();
+  const sid = String(sessionId || '');
+  if (!sid || loadedRooms.has(sid)) return;
+  loadedRooms.add(sid);
+  const pack = parseStored(await psGet(CARD_PACK_KEY(sid)));
+  if (!pack) return;
+  const cards = (pack.cards || {}) as Record<string, unknown>;
+  const images = (pack.images || {}) as Record<string, unknown>;
+  // A row already in memory is newer than the pack: it was written during this
+  // session and its room may not have been flushed yet.
+  for (const [k, v] of Object.entries(cards)) {
+    if (!memStores.cards.has(k)) loadCardRow(k, (v ?? {}) as Record<string, unknown>);
+  }
+  for (const [k, v] of Object.entries(images)) {
+    if (!memStores.images.has(k)) loadImageRow(k, (v ?? {}) as Record<string, unknown>);
+  }
+}
+
+/**
+ * Reads every room. The slow path, for callers that genuinely need the whole
+ * gallery: the ZIP export, the legacy image migration, and retention cleanup.
+ */
+export async function ensureAllRooms(): Promise<void> {
+  await openDb();
+  for (const sid of [...roomIndex.keys()]) await ensureRoom(sid);
+  await ensureRoom(NO_ROOM);
+}
+
+/**
+ * Loads the room that owns one card id.
+ *
+ * The room index counts rooms, not ids, so the id-to-room map comes from the
+ * gallery module's asset names. A card with no asset — one whose image failed,
+ * or an old name written before rooms were stamped — falls back to reading every
+ * room, which is correct and rare.
+ */
+export async function ensureCard(id: unknown): Promise<void> {
+  await openDb();
+  const k = String(id || '');
+  if (!k || memStores.cards.has(k) || memStores.images.has(k)) return;
+  if (!cardRoomHint) {
+    cardRoomHint = new Map();
+    for (const row of await listShotAssets()) {
+      if (row.session) cardRoomHint.set(row.id, row.session);
+    }
+  }
+  const sid = cardRoomHint.get(k) || '';
+  if (sid) {
+    await ensureRoom(sid);
+    if (memStores.cards.has(k) || memStores.images.has(k)) return;
+  }
+  await ensureAllRooms();
 }
 
 // ---------------------------------------------------------------------------
@@ -727,6 +1018,7 @@ export async function openDb(): Promise<boolean> {
 export async function idbGet<S extends StoreName>(store: S, key: unknown): Promise<RowOf<S> | undefined> {
   await openDb();
   const k = storeKeyOf(store, key);
+  if (store === 'cards' || store === 'images') await ensureCard(k);
   if (store === 'images') {
     const row = memStores.images.get(k);
     if (!row) return undefined;
@@ -752,7 +1044,7 @@ export interface ImageMeta {
  * should ask once. `imageLocation` remains for callers that only need placement.
  */
 export async function imageMeta(id: string): Promise<ImageMeta | undefined> {
-  await openDb();
+  await ensureCard(id);
   const row = memStores.images.get(String(id));
   if (!row) return undefined;
   const loc = row.location;
@@ -775,8 +1067,12 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
   const persist = opts.persist !== false;
 
   if (store === 'images') {
+    // The room must be in memory before the row is replaced, or the pack write
+    // that follows would drop every other row in that room.
+    await ensureCard(k);
     const png = (value.png as ArrayBuffer | null) || null;
     const prev = memStores.images.get(k);
+    const prevRoom = prev ? roomOf(k) : '';
     if (prev?.png) pngCacheBytes -= prev.png.byteLength;
     const row: ImageMemRow = {
       id: String(value.id),
@@ -789,6 +1085,7 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
       durable: !png,
     };
     memStores.images.set(k, row);
+    markRoomDirtyFor(k, prevRoom);
     if (png) {
       chargePng(png.byteLength);
       imagePersistChain = imagePersistChain
@@ -800,6 +1097,9 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
             row.asset_path = saved.path;
             row.asset_name = saved.name;
             await psRemove(IMAGE_KEY(k));
+            // This runs long after the debounced flush that the write scheduled,
+            // so the room has to be named again or the pack write finds nothing.
+            markRoomDirtyFor(k);
             await persistStore('images');
           } else if (memStores.images.get(k) === row) {
             // One try at the gallery module. Plugin IDB is never a pixel store —
@@ -812,6 +1112,7 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
             delete row.asset_path;
             delete row.asset_name;
             dropBlobUrl(k);
+            markRoomDirtyFor(k);
             await persistStore('images');
           }
           // Only now may the cache reclaim these bytes.
@@ -934,11 +1235,16 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
   }
 
   if (store === 'cards') {
+    await ensureCard(k);
+    const prevRoom = memStores.cards.has(k) || memStores.images.has(k) ? roomOf(k) : '';
     deindexCard(memStores.cards.get(k));
     const row = value as unknown as CardRow;
     memStores.cards.set(k, row);
     indexCard(row);
+    markRoomDirtyFor(k, prevRoom);
+    // Stripping previews rewrites rows across every loaded room, not just this one.
     const stripped = pruneCardPreviewsUnlocked({ persist: false });
+    if (stripped > 0) markAllLoadedRoomsDirty();
     if (persist || stripped > 0) schedulePersist('cards');
     return k;
   }
@@ -952,6 +1258,12 @@ export async function idbPut(store: StoreName, value: Record<string, unknown>, o
 export async function idbDelete(store: StoreName, key: unknown): Promise<boolean> {
   await openDb();
   const k = storeKeyOf(store, key);
+  if (store === 'cards' || store === 'images') {
+    // Loading first is what makes the pack rewrite a deletion of one row rather
+    // than of every row in the room that is not currently in memory.
+    await ensureCard(k);
+    markRoomDirtyFor(k);
+  }
   if (store === 'cards') deindexCard(memStores.cards.get(k));
   if (store === 'images') {
     const prev = memStores.images.get(k);
@@ -992,6 +1304,8 @@ export async function removeCardImageRows(ids: readonly string[]): Promise<strin
   for (const raw of ids) {
     const k = String(raw || '');
     if (!k) continue;
+    await ensureCard(k);
+    markRoomDirtyFor(k);
     const card = memStores.cards.get(k);
     if (card) {
       deindexCard(card);
@@ -1018,14 +1332,23 @@ export async function removeCardImageRows(ids: readonly string[]): Promise<strin
   return deleted;
 }
 
+/**
+ * Every row in a store.
+ *
+ * For `cards` and `images` that means opening every room pack, so it is the slow
+ * path by construction — the ZIP export and the legacy image migration are the
+ * callers that genuinely need it. A per-room listing goes through
+ * `cardsForSession`, and an all-rooms *listing* should use the module asset array.
+ */
 export async function idbGetAll<S extends StoreName>(store: S): Promise<Array<RowOf<S>>> {
   await openDb();
+  if (store === 'cards' || store === 'images') await ensureAllRooms();
   return [...(memStores[store] as Map<string, unknown>).values()] as Array<RowOf<S>>;
 }
 
-/** Cards for one session, via the session index instead of a full scan. */
+/** Cards for one session — one pack read, then the session index. */
 export async function cardsForSession(sessionId: string): Promise<CardRow[]> {
-  await openDb();
+  await ensureRoom(sessionId);
   const ids = cardsBySession.get(String(sessionId));
   if (!ids) return [];
   const out: CardRow[] = [];
@@ -1036,29 +1359,43 @@ export async function cardsForSession(sessionId: string): Promise<CardRow[]> {
   return out;
 }
 
+/**
+ * How many rows a store holds.
+ *
+ * `cards` and `images` come from the room index rather than from memory, so the
+ * answer is the whole gallery whether or not a single pack has been opened.
+ */
 export function storeSize(store: StoreName): number {
+  if (store === 'cards' || store === 'images') {
+    let total = closedRoomTotal(store === 'cards' ? 'cards' : 'images');
+    // A row can only reach memory through `ensureRoom` or a write, both of which
+    // mark the room loaded, so memory is the whole of every loaded room — and it
+    // is fresher than the index, which catches up when the pack is written.
+    total += (store === 'cards' ? memStores.cards : memStores.images).size;
+    return total;
+  }
   return (memStores[store] as Map<string, unknown>).size;
 }
 
-/** Total bytes of stored PNGs, from metadata — never hydrates. */
-export function totalImageBytes(): number {
+/** The index's tally for rooms not currently in memory. */
+function closedRoomTotal(field: 'cards' | 'images' | 'png_bytes'): number {
   let total = 0;
+  for (const [sid, room] of roomIndex) {
+    if (!loadedRooms.has(sid)) total += room[field];
+  }
+  return total;
+}
+
+/** Total bytes of stored PNGs, from the room index — never hydrates. */
+export function totalImageBytes(): number {
+  let total = closedRoomTotal('png_bytes');
   for (const row of memStores.images.values()) total += row.png_bytes;
   return total;
 }
 
-export function imageIds(): string[] {
-  return [...memStores.images.keys()];
-}
-
-/**
- * Every stored image's location, from the index. Synchronous and never hydrates,
- * so the health payload can count gallery folders without decoding any PNG.
- */
-export function imageLocations(): Array<Record<string, unknown>> {
-  const out: Array<Record<string, unknown>> = [];
-  for (const row of memStores.images.values()) out.push(row.location || {});
-  return out;
+/** Which rooms exist and what each holds, without opening a pack. */
+export function roomRows(): RoomIndexRow[] {
+  return [...roomIndex.values()];
 }
 
 /**
@@ -1071,7 +1408,7 @@ export function imageLocations(): Array<Record<string, unknown>> {
  * hydration was introduced to avoid.
  */
 export async function imageLocation(id: string): Promise<Record<string, unknown>> {
-  await openDb();
+  await ensureCard(id);
   const row = memStores.images.get(String(id));
   const loc = row?.location;
   return loc && typeof loc === 'object' ? (loc as Record<string, unknown>) : {};
@@ -1089,10 +1426,11 @@ export interface LegacyImageRow {
  * Images whose bytes still live in a legacy `inx_nximg_*` / `nximg_*` row.
  *
  * Reads the index only — the whole point of the migration is to move these
- * without decoding the gallery twice.
+ * without decoding the gallery twice. It does open every room, because a legacy
+ * row can be in any of them and there is no cheaper way to find out.
  */
 export async function legacyImageRows(): Promise<LegacyImageRow[]> {
-  await openDb();
+  await ensureAllRooms();
   const out: LegacyImageRow[] = [];
   for (const row of memStores.images.values()) {
     if (!row.has_png) continue;
@@ -1114,10 +1452,11 @@ export async function legacyImageRows(): Promise<LegacyImageRow[]> {
  * screen. The next read fetches from the module, which is where they now live.
  */
 export async function setImageAssetPath(id: string, path: string, name: string): Promise<boolean> {
-  await openDb();
+  await ensureCard(id);
   const k = String(id);
   const row = memStores.images.get(k);
   if (!row || !path) return false;
+  markRoomDirtyFor(k);
   row.asset_path = path;
   row.asset_name = name;
   if (row.png) {
@@ -1135,13 +1474,17 @@ export async function setImageAssetPath(id: string, path: string, name: string):
  * Returns how many rows each pass touched so the migration can report it.
  */
 export async function runRetentionCleanup(): Promise<{ jobs: number; images: number; cards: number }> {
-  await openDb();
+  // Both card passes rewrite rows wherever they are, so every room has to be in
+  // memory first or the ones left closed would keep their previews.
+  await ensureAllRooms();
   const jobs = pruneJobStoreUnlocked({ persist: false });
   const images = stripImageLocationPreviewsUnlocked();
   const cards = pruneCardPreviewsUnlocked({ persist: false });
   if (jobs > 0) await persistStore('jobs');
-  if (images > 0) await persistStore('images');
-  if (cards > 0) await persistStore('cards');
+  if (images > 0 || cards > 0) {
+    markAllLoadedRoomsDirty();
+    await persistRooms();
+  }
   return { jobs, images, cards };
 }
 
@@ -1150,24 +1493,26 @@ export async function runRetentionCleanup(): Promise<{ jobs: number; images: num
  * `idbGet`+`idbPut` would decode base64 just to rewrite `location`.
  */
 export async function putImageLocation(id: string, location: Record<string, unknown>): Promise<void> {
-  await openDb();
+  await ensureCard(id);
   const k = String(id);
   const row = memStores.images.get(k);
+  const prevRoom = row ? roomOf(k) : '';
   const loc = locationWithoutPreview(location) || {};
   if (row) {
     row.location = loc;
-    schedulePersist('images');
-    return;
+  } else {
+    memStores.images.set(k, {
+      id: k,
+      location: loc,
+      png: null,
+      has_png: false,
+      png_bytes: 0,
+      hydrated: true,
+      durable: true,
+    });
   }
-  memStores.images.set(k, {
-    id: k,
-    location: loc,
-    png: null,
-    has_png: false,
-    png_bytes: 0,
-    hydrated: true,
-    durable: true,
-  });
+  // A rewritten location can name a different room, so both ends are dirty.
+  markRoomDirtyFor(k, prevRoom);
   schedulePersist('images');
 }
 
@@ -1215,7 +1560,7 @@ export async function imagePng(id: string): Promise<ArrayBuffer | null> {
  * with a non-zero count here means the host did not load the assets.
  */
 export function knownShotRowCount(): number {
-  return memStores.images.size;
+  return storeSize('images');
 }
 
 /** Distinct reference-image hashes the roster still points at. */
@@ -1234,6 +1579,10 @@ setKnownShotCount(knownShotRowCount);
 export function resetStores(): void {
   for (const name of STORE_NAMES) (memStores[name] as Map<string, unknown>).clear();
   cardsBySession.clear();
+  roomIndex.clear();
+  loadedRooms.clear();
+  dirtyRooms.clear();
+  cardRoomHint = null;
   blobUrlCache.clear();
   explorerThumbCache.clear();
   dirty.clear();

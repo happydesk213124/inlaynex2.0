@@ -883,6 +883,31 @@ export async function runScenario(N, handles) {
     ok: true,
     value: [...handles.storage.keys()].some((k) => /^inx_nximg_/.test(k)) ? 'plugin' : 'module',
   });
+  // Cards and image metadata are stored one character-chat at a time, so
+  // opening a chat reads that room and nothing else. `storageKeys` above folds
+  // the whole group into one token; the counts here are the actual assertion.
+  {
+    const keys = [...handles.storage.keys()];
+    const packs = keys.filter((k) => /^inx_nxcards_/.test(k));
+    const packed = packs.reduce((n, k) => {
+      const raw = handles.storage.get(k);
+      const pack = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return n + Object.keys(pack?.cards || {}).length;
+    }, 0);
+    const monolith = handles.storage.get('inx_nxstore_cards');
+    const monolithRows = typeof monolith === 'string' ? JSON.parse(monolith) : monolith;
+    transcript.push({
+      step: step + 3,
+      name: 'host.room_packs',
+      ok: true,
+      value: {
+        packs: packs.length,
+        has_index: keys.includes('inx_nxrooms'),
+        packed_cards: packed,
+        monolith_cards: Object.keys(monolithRows || {}).length,
+      },
+    });
+  }
 
   return transcript;
 }

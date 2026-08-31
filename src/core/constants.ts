@@ -37,6 +37,20 @@ export const GLOBAL_SCOPE = '__global__';
 // Settings also mirror to risuai.pluginStorage (account save). Images do not.
 export const SETTINGS_KEY = 'inx_native_settings';
 export const STORE_KEY = (name: string): string => `inx_nxstore_${name}`;
+/**
+ * One character-chat's cards and image address book.
+ *
+ * `inx_nxstore_cards` held every room in one row, so opening any chat read the
+ * whole gallery's metadata. These are read one room at a time. The old keys stay
+ * readable — see `stores.ts` for the per-room move.
+ */
+export const CARD_PACK_KEY = (sessionId: string): string =>
+  `inx_nxcards_${String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)}`;
+/**
+ * Which rooms exist, and enough about each to draw the explorer's folder list
+ * without opening a single pack.
+ */
+export const ROOM_INDEX_KEY = 'inx_nxrooms';
 export const IMAGE_KEY = (id: string): string => `inx_nximg_${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 export const REF_IMAGE_KEY = 'inx_nxref_image';
 export const VIBE_IMAGE_KEY = 'inx_nxvibe_image';

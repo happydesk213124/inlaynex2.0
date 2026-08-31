@@ -30,7 +30,7 @@ import { LLM_ROLE_IDS, normalizeLlmRolesSettings } from '../domain/llm/roles';
 import { comfyConfigured, imageBackendKind } from '../providers/comfy/client';
 import { llmConfigured } from '../providers/llm/transform';
 import { saveSettingsToStorage } from '../storage/settings-store';
-import { idbGet, idbGetAll, idbPut, imageLocations, storeSize, totalImageBytes } from '../storage/stores';
+import { idbGet, idbGetAll, idbPut, roomRows, storeSize, totalImageBytes } from '../storage/stores';
 import { configLock, getConfig, getPresetLookPreviewUrl, getPresetVibePreviewUrl, getRefPreviewUrl, getVibePreviewUrl, setConfig } from './context';
 
 /** Values that read as "the feature is switched off" in the settings UI. */
@@ -281,10 +281,12 @@ export function health(): Record<string, unknown> {
     // From the metadata index: summing decoded buffers would force every stored
     // image to be hydrated just to report a number.
     pngBytes = totalImageBytes();
+    // From the room index, so the count covers rooms whose packs were never
+    // opened. Grouping stays by character+chat because two rooms can share both.
     const folderKeys = new Set<string>();
-    for (const loc of imageLocations()) {
-      const cid = cleanText((loc.character_id as string) || '', 200) || 'unknown';
-      const chid = cleanText((loc.chat_id as string) || '', 200) || 'unknown';
+    for (const room of roomRows()) {
+      const cid = cleanText(room.character_id, 200) || 'unknown';
+      const chid = cleanText(room.chat_id, 200) || 'unknown';
       folderKeys.add(`${cid}|${chid}`);
     }
     folders = folderKeys.size;

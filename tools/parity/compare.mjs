@@ -162,8 +162,17 @@ const normalize = (root) => {
     }
     if (Array.isArray(node)) {
       // 2.x writes new shots to the gallery module; 1.x used inx_nximg_* base64 keys.
+      // The card + image *index* moved from two gallery-wide rows to one pack per
+      // character-chat plus inx_nxrooms, so that group is folded into a single
+      // token: which keys it consists of is asserted by `host.room_packs`, and
+      // every other key here still has to match exactly.
       if (key === 'storageKeys' && node.every((v) => typeof v === 'string')) {
-        return node.filter((k) => k !== 'inx_nximg_*' && !String(k).startsWith('inx_nximg_')).map((v) => walk(v, key));
+        const GALLERY_INDEX = /^(inx_nxstore_(cards|images)|inx_nxcards_.*|inx_nxrooms)$/;
+        return [...new Set(
+          node
+            .filter((k) => k !== 'inx_nximg_*' && !String(k).startsWith('inx_nximg_'))
+            .map((k) => (GALLERY_INDEX.test(String(k)) ? '<GALLERY_INDEX>' : k)),
+        )].sort().map((v) => walk(v, key));
       }
       // New 2.0-only prompts have no 1.x equivalent; comparing list length/order fails.
       if (
@@ -502,6 +511,13 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (Number(v?.hashed_rows) >= 1 && v?.all_match === true && Number(v?.unknown_hash_rows) === 0
       ? null
       : `2.0 must ship a named hash's cards with an empty window, and nothing for an unknown hash, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'host.room_packs',
+    (v) => (Number(v?.packs) >= 1 && v?.has_index === true
+      && Number(v?.packed_cards) >= 1 && Number(v?.monolith_cards) === 0
+      ? null
+      : `2.5.23 must store cards in one pack per character-chat plus inx_nxrooms, and leave the old gallery-wide row empty, got ${JSON.stringify(v)}`),
   ],
   [
     'host.gallery_pixels',

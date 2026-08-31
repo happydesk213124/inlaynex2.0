@@ -6,6 +6,7 @@ import { normalizeLlmRolesSettings } from '../domain/llm/roles.ts';
 import { naiStepsForFamily, normalizeNaiSampler, optionalNaiSampler } from '../domain/nai/samplers.ts';
 import { normalizeComicCoordsMode } from '../domain/comic/coords.ts';
 import { comicGenOn } from '../domain/comic/kind.ts';
+import { normalizeComicAspect } from '../domain/comic/aspect.ts';
 import { normalizeComicGenRatio, normalizeComicLlmBatch, normalizeComicMaxPages, normalizeComicSchedule } from '../domain/comic/params.ts';
 import { normalizeInlineMsgActions } from '../domain/inline-msg-actions.ts';
 import { normalizeImagePressInspect, normalizeToastAnchor } from '../domain/toast-press.ts';
@@ -381,6 +382,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     card.comic_gen_ratio = normalizeComicGenRatio(card.comic_gen_ratio);
   }
   card.comic_coords = normalizeComicCoordsMode(card.comic_coords);
+  card.comic_aspect = normalizeComicAspect(card.comic_aspect);
   card.comic_prompt = String(card.comic_prompt ?? '').trim().slice(0, 8000);
   card.comic_uc = String(card.comic_uc ?? '').trim().slice(0, 8000);
   if (card.comic_prompt_prefix == null) {

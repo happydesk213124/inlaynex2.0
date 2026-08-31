@@ -42,7 +42,7 @@ import {
   appendNoHumansWhenNoCast,
 } from '../domain/character/tags';
 import { resolveStoredContentHash } from '../domain/gallery/unlink-match';
-import { dimsForAspect } from '../domain/nai-meta/aspect.ts';
+import { canvasDimsForShot } from '../domain/nai-meta/aspect.ts';
 import { composeComicSlotCaption } from '../domain/comic/caption';
 import { resolveComicUseCoords } from '../domain/comic/coords';
 import { normalizeShotKind } from '../domain/comic/kind';
@@ -508,12 +508,20 @@ export function isComicShot(shot: TaggedShot | null | undefined): boolean {
 }
 
 /** Runs one generation on the configured backend and returns the bytes and seed. */
-export async function generateImage(plan: ImageRequest, shotAspect?: unknown): Promise<GeneratedImage> {
+export async function generateImage(
+  plan: ImageRequest,
+  shotAspect?: unknown,
+  opts?: { useShotAspect?: boolean },
+): Promise<GeneratedImage> {
   const nai: NaiSettings = getConfig().nai;
-  const autoAspect = Boolean(getConfig().card?.auto_aspect);
   const dims = plan.width && plan.height
     ? { width: clampNaiDim(plan.width, 832), height: clampNaiDim(plan.height, 1216), aspect: 'settings' as const }
-    : dimsForAspect(shotAspect, nai, autoAspect);
+    : canvasDimsForShot(
+      shotAspect,
+      nai,
+      Boolean(getConfig().card?.auto_aspect),
+      Boolean(opts?.useShotAspect),
+    );
   // Both providers type their cast as `ShotCharacter`, which requires a `name`;
   // captions carry none and only the four caption fields are ever read.
   const characters = plan.captions as unknown as ShotCharacter[];
@@ -714,7 +722,7 @@ export async function generateImage(plan: ImageRequest, shotAspect?: unknown): P
     family: routeFamily,
     char_ref: charRefMode,
     aspect: dims.aspect,
-    auto_aspect: autoAspect,
+    auto_aspect: Boolean(getConfig().card?.auto_aspect) || Boolean(opts?.useShotAspect),
     steps: req.steps,
     focus: true,
   });

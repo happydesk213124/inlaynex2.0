@@ -324,6 +324,7 @@ const normalize = (root) => {
           || k === 'comic_max_pages'
           || k === 'comic_gen_ratio'
           || k === 'comic_coords'
+          || k === 'comic_aspect'
           || k === 'comic_steps'
           || k === 'comic_sampler'
           || k === 'comic_prompt'

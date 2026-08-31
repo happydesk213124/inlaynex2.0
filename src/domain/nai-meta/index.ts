@@ -35,7 +35,15 @@ export {
   type NaiScene,
   type NaiSceneChar,
 } from './replay.ts';
-export { dimsForAspect, normalizeShotAspect, resolveShotAspect, ASPECT_SIZES, type ShotAspect } from './aspect.ts';
+export {
+  canvasDimsForShot,
+  dimsForAspect,
+  generationUsesShotAspect,
+  normalizeShotAspect,
+  resolveShotAspect,
+  ASPECT_SIZES,
+  type ShotAspect,
+} from './aspect.ts';
 export {
   filterStylePresetPositive,
   styleFieldsFromNaiMetadata,

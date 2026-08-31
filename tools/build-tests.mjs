@@ -109,6 +109,8 @@ const MODULES = {
   'comic-tags': 'src/domain/comic/tags.ts',
   'comic-caption': 'src/domain/comic/caption.ts',
   'comic-params': 'src/domain/comic/params.ts',
+  'comic-aspect': 'src/domain/comic/aspect.ts',
+  'tagger-char-user': 'src/domain/tagging/char-user-info.ts',
   'job-retention': 'src/domain/jobs/retention.ts',
 };
 

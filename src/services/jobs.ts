@@ -48,7 +48,7 @@ import {
   hasNaiBodyControl,
 } from '../providers/nai/http';
 import { allUniqueNaiTokens, tokensForFamily } from '../domain/nai/keys';
-import { resolveShotAspect } from '../domain/nai-meta/aspect';
+import { canvasDimsForShot, resolveShotAspect } from '../domain/nai-meta/aspect';
 import {
   cardFlagOn,
   isNaiQuotaError,
@@ -60,6 +60,7 @@ import {
 import { callLlm } from '../providers/llm/client';
 import { resolveLlmRole } from '../domain/llm/roles';
 import { comicGenOn, clampComicByRatio } from '../domain/comic/kind';
+import { applyComicAspect } from '../domain/comic/aspect';
 import { normalizeComicSchedule } from '../domain/comic/params';
 import { pickNextReadyShot } from '../domain/comic/schedule';
 import { characterHasAppearance, characterMaxLimit, applyWearContinuityToShots, applyCostumeContinuityToShots, applyCreatedCostumesToShots, collectCostumePairs, createdCostumeWearByName, ensureCostumes } from '../domain/character/tags';
@@ -436,7 +437,14 @@ export async function requestJobStop(args: { session_id?: string } = {}): Promis
 
 // ── progress and state ─────────────────────────────────────────────────────
 
-type PendingInlineRow = { shot_index: number; line: number; aspect?: string; kind?: 'comic' };
+type PendingInlineRow = {
+  shot_index: number;
+  line: number;
+  aspect?: string;
+  width?: number;
+  height?: number;
+  kind?: 'comic';
+};
 
 interface ProgressExtra {
   shot_count?: number;
@@ -881,6 +889,7 @@ async function runJob(jobId: string): Promise<void> {
     const imageMax = Math.max(imageMin, Number(card.image_max ?? 3));
     shots = shots.slice(0, imageMax);
     if (comicGenOn(card)) shots = clampComicByRatio(shots, card.comic_gen_ratio);
+    shots = applyComicAspect(shots, card.comic_aspect);
 
     const curationMode = getCurationMode();
     if (curationMode === 'two_stage') {
@@ -1000,13 +1009,22 @@ async function runJob(jobId: string): Promise<void> {
     const pendingMessageIndex =
       request.message_index != null ? toInt(request.message_index, -1) : -1;
     const pendingInline: PendingInlineRow[] = [];
+    const nai = getConfig().nai;
     shots.forEach((shot, i) => {
       const line = Math.floor(Number((shot as { line?: unknown }).line));
       if (!Number.isFinite(line) || line < 1) return;
+      const canvas = canvasDimsForShot(
+        shot.aspect,
+        nai,
+        Boolean(card.auto_aspect),
+        isComicShot(shot),
+      );
       pendingInline.push({
         shot_index: i,
         line,
         aspect: resolveShotAspect(shot.aspect),
+        width: canvas.width,
+        height: canvas.height,
         ...(isComicShot(shot) ? { kind: 'comic' as const } : {}),
       });
     });
@@ -1148,6 +1166,7 @@ async function runJob(jobId: string): Promise<void> {
             cfg,
           },
           shot.aspect,
+          { useShotAspect: isComicShot(shot) },
         );
         for (const token of tryKeys) {
           try {

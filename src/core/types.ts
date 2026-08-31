@@ -194,6 +194,8 @@ export interface CardSettings {
   comic_gen_ratio?: number;
   /** Tab: AI choice / LLM per page / always position. */
   comic_coords?: 'ai_choice' | 'llm' | 'position';
+  /** Comic canvas: tagger aspect, or lock landscape/portrait/square. */
+  comic_aspect?: 'llm' | 'landscape' | 'portrait' | 'square';
   /** Empty → NAI V5 steps. */
   comic_steps?: number | null | '';
   /** Empty → NAI V5 sampler. */

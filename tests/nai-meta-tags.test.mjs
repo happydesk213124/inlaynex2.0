@@ -10,7 +10,13 @@ import {
 } from '../.test-build/nai-meta-prompt-tags.mjs';
 import { assetMatchTriggers, assetNameTokens, scoreAssetName, assetPriorityForTrigger, pickAssetsPerTrigger, filterAssetTriggersForUnfilledLooks, loreKeysByCompactTrigger, originalTagFromPlains, matchFoundLooksToRoster } from '../.test-build/nai-meta-match.mjs';
 import { naiMetaHasPrompt, pickNaiMeta, promptFromNaiMetadata } from '../.test-build/nai-meta-from-metadata.mjs';
-import { dimsForAspect, normalizeShotAspect, resolveShotAspect } from '../.test-build/nai-meta-aspect.mjs';
+import {
+  canvasDimsForShot,
+  dimsForAspect,
+  generationUsesShotAspect,
+  normalizeShotAspect,
+  resolveShotAspect,
+} from '../.test-build/nai-meta-aspect.mjs';
 import { filterStylePresetPositive, styleFieldsFromNaiMetadata } from '../.test-build/nai-meta-style-preset.mjs';
 import {
   extractStealthFromRgba,
@@ -330,6 +336,16 @@ test('normalizeShotAspect and dimsForAspect', () => {
     aspect: 'landscape',
   });
   assert.equal(dimsForAspect('portrait', { width: 900, height: 900 }, false).aspect, 'settings');
+  assert.equal(generationUsesShotAspect(false, false), false);
+  assert.equal(generationUsesShotAspect(false, true), true);
+  assert.deepEqual(
+    canvasDimsForShot('landscape', { width: 832, height: 1216 }, false, false),
+    { width: 832, height: 1216, aspect: 'settings' },
+  );
+  assert.deepEqual(
+    canvasDimsForShot('landscape', { width: 832, height: 1216 }, false, true),
+    { width: 1216, height: 832, aspect: 'landscape' },
+  );
 });
 
 test('resolveShotAspect defaults missing or unknown values to portrait', () => {

@@ -399,6 +399,10 @@ test("inlinePlaceholderSize follows the first-tagger aspect aliases", () => {
   assert.deepEqual(inlinePlaceholderSize({ aspect: "horizontal" }), { width: 1216, height: 832 });
   assert.deepEqual(inlinePlaceholderSize({ aspect: "1:1" }), { width: 1024, height: 1024 });
   assert.deepEqual(inlinePlaceholderSize({}), { width: 832, height: 1216 });
+  assert.deepEqual(
+    inlinePlaceholderSize({ aspect: "landscape", width: 832, height: 1216 }),
+    { width: 832, height: 1216 },
+  );
 });
 
 test("markerBlockHtml parks a sized SVG and overlays the real image on top", () => {

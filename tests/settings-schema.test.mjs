@@ -268,6 +268,13 @@ test("settings reset keeps window pin and card presets on the factory blob", () 
   assert.deepEqual(next.card.presets, [{ id: "mine", name: "내꺼" }]);
 });
 
+test("comic_aspect migrates to llm|landscape|portrait|square", () => {
+  assert.equal(migrateSettings({ card: {} }).card.comic_aspect, "llm");
+  assert.equal(migrateSettings({ card: { comic_aspect: "square" } }).card.comic_aspect, "square");
+  assert.equal(migrateSettings({ card: { comic_aspect: "가로" } }).card.comic_aspect, "landscape");
+  assert.equal(migrateSettings({ card: { comic_aspect: "nope" } }).card.comic_aspect, "llm");
+});
+
 test("overlay_markers is canonical for left-line overlay + inline previews", () => {
   const on = migrateSettings({ card: { overlay_markers: true, inline_previews: false } });
   assert.equal(on.card.overlay_markers, true);

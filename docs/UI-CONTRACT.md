@@ -141,7 +141,12 @@ are people/text boxes, not panels. `card.comic_llm_batch` is `once` | `per_shot`
 message's shots that may be `kind: comic`. Extra comic shots become
 illustration. `card.comic_max_pages` is kept for old saves (0 pages →
 ratio 0). `card.comic_coords` is `ai_choice` | `llm` | `position` (default
-`llm`). Empty comic NAI overrides (`comic_steps`, `comic_sampler`,
+`llm`). `card.comic_aspect` is `llm` | `landscape` | `portrait` | `square`
+(default `llm`): comic shots use the tagger canvas, or lock 1216×832 /
+832×1216 / 1024×1024. Spinner and NAI size follow that lock even when
+`auto_aspect` is off. Illustration shots still use the gen-option auto-aspect
+toggle: off means NAI tab W×H for both the spinner (`pending_inline` width/height)
+and the canvas; on means the tagger aspect trio. Empty comic NAI overrides (`comic_steps`, `comic_sampler`,
 `comic_cfg_scale`, `comic_cfg_rescale`) fall back to the existing NAI tab +
 style preset. `card.comic_prompt_prefix` / `comic_prompt_suffix` wrap the
 comic main like the gen-option fixed prompts. Legacy `comic_prompt` copies

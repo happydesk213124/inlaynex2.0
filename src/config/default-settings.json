@@ -110,6 +110,7 @@
     "comic_max_pages": 2,
     "comic_gen_ratio": 50,
     "comic_coords": "llm",
+    "comic_aspect": "llm",
     "comic_steps": "",
     "comic_sampler": "",
     "comic_prompt": "",

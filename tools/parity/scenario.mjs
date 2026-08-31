@@ -162,6 +162,7 @@ export async function runScenario(N, handles) {
       comic_max_pages: Number(card.comic_max_pages ?? 2),
       comic_gen_ratio: Number(card.comic_gen_ratio ?? 50),
       comic_coords: String(card.comic_coords || 'llm'),
+      comic_aspect: String(card.comic_aspect || 'llm'),
     };
   });
   // 2.4.7: leftover human_focus is forced to none (1.x kept human_focus).

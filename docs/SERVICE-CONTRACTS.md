@@ -148,6 +148,7 @@ Depends on: `settings` (for `saveConfig`), `nai-assets` (`seedCharRefsFromLooks`
 Builds the LLM tagging request and flattens the reply into shots.
 
 ```ts
+export async function hydrateTaggerCharUser(request: TaggerArgs): Promise<void>;
 export async function buildTaggerMessages(args: TaggerArgs): Promise<LlmMessage[]>; // 4779
 export async function buildCharacterLooksMessages(
   request: TaggerArgs,

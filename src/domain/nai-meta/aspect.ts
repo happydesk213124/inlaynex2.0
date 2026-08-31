@@ -64,3 +64,18 @@ export function dimsForAspect(
   const height = Math.max(64, Math.min(5000, Math.round(Number(nai.height) || 1216)));
   return { width, height, aspect: 'settings' };
 }
+
+/** Illustration auto-aspect, or comic shots (always use the tagger / comic lock). */
+export function generationUsesShotAspect(autoAspect: boolean, useShotAspect: boolean): boolean {
+  return Boolean(autoAspect) || Boolean(useShotAspect);
+}
+
+/** Same W×H as generateImage when the plan has no explicit size. */
+export function canvasDimsForShot(
+  aspect: unknown,
+  nai: Pick<NaiSettings, 'width' | 'height'>,
+  autoAspect: boolean,
+  useShotAspect = false,
+): { width: number; height: number; aspect: ShotAspect | 'settings' } {
+  return dimsForAspect(aspect, nai, generationUsesShotAspect(autoAspect, useShotAspect));
+}

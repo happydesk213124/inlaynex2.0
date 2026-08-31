@@ -18,6 +18,7 @@ import { stripComicKomaFromUc, stripComicPageStyleTags, stripComicStyleWords } f
 import { comicSpeechCaption, composeComicSlotCaption } from "../.test-build/comic-caption.mjs";
 import { resolveComicNaiParams } from "../.test-build/comic-params.mjs";
 import { COMIC_FULL_MESSAGE_REF, comicProseBlockForLlm } from "../.test-build/comic-llm-prose.mjs";
+import { applyComicAspect, normalizeComicAspect } from "../.test-build/comic-aspect.mjs";
 
 test("normalizeShotKind maps comic aliases", () => {
   assert.equal(normalizeShotKind("comic"), "comic");
@@ -246,6 +247,31 @@ test("composeComicSlotCaption keeps looks, costume, action, and korean text", ()
   assert.match(caption, /navy dress/);
   assert.match(caption, /walking/);
   assert.match(caption, /speechbubble, korean text:아\.\.\.\. 힘들다\.\.\./);
+});
+
+test("normalizeComicAspect defaults to llm", () => {
+  assert.equal(normalizeComicAspect(undefined), "llm");
+  assert.equal(normalizeComicAspect("landscape"), "landscape");
+  assert.equal(normalizeComicAspect("가로"), "landscape");
+  assert.equal(normalizeComicAspect("square"), "square");
+  assert.equal(normalizeComicAspect("1:1"), "square");
+  assert.equal(normalizeComicAspect("portrait"), "portrait");
+});
+
+test("applyComicAspect only rewrites comic shots", () => {
+  const shots = [
+    { kind: "illustration", aspect: "landscape" },
+    { kind: "comic", aspect: "portrait" },
+  ];
+  const out = applyComicAspect(shots, "square");
+  assert.equal(out[0].aspect, "landscape");
+  assert.equal(out[1].aspect, "square");
+});
+
+test("applyComicAspect llm keeps tagger comic aspect", () => {
+  const shots = [{ kind: "comic", aspect: "landscape" }];
+  const out = applyComicAspect(shots, "llm");
+  assert.equal(out[0].aspect, "landscape");
 });
 
 test("resolveComicNaiParams uses empty overrides as existing V5 values", () => {

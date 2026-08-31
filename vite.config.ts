@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.21';
+const PLUGIN_VERSION = '2.5.22';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -316,6 +316,7 @@ const VENDOR_NATURAL_BASE_CT_PATCH =
       comic_max_pages: e.comic_max_pages ?? 2,
       comic_gen_ratio: document.getElementById("nx-comic-gen-ratio") ? (() => { const r = N("nx-comic-gen-ratio"); if (r === "" || r == null) return 50; const n = Number(r); return Number.isFinite(n) ? n : 50; })() : (e.comic_gen_ratio ?? 50),
       comic_coords: document.getElementById("nx-comic-coords") ? (N("nx-comic-coords") || "llm") : (e.comic_coords || "llm"),
+      comic_aspect: document.getElementById("nx-comic-aspect") ? (N("nx-comic-aspect") || "llm") : (e.comic_aspect || "llm"),
       comic_steps: document.getElementById("nx-comic-steps") ? N("nx-comic-steps") : (e.comic_steps ?? ""),
       comic_sampler: document.getElementById("nx-comic-sampler") ? N("nx-comic-sampler") : (e.comic_sampler || ""),
       comic_cfg_scale: document.getElementById("nx-comic-cfg") ? N("nx-comic-cfg") : (e.comic_cfg_scale ?? ""),
@@ -364,6 +365,7 @@ const VENDOR_NATURAL_BASE_HELP_PATCH =
   "nx-comic-schedule": { title: "생성 순서", body: "겹쳐 생성은 삽화를 먼저 보내고 만화 LLM은 옆에서 돌립니다. 태거 전부 완료 후는 만화 태그가 끝난 뒤 번호 순으로만 보냅니다." },
   "nx-comic-ratio": { title: "만화 생성 비율", body: "이번 메시지에서 만화로 고를 수 있는 샷 비율입니다. 0이면 만화를 고르지 않습니다. 남는 만화 후보는 삽화가 됩니다." },
   "nx-comic-coords": { title: "위치", body: "LLM이 알아서: 페이지마다 position 또는 AI choice. Position: 좌표 필수, 하나라도 없으면 AI choice. AI choice: 좌표를 보내지 않습니다." },
+  "nx-comic-aspect": { title: "만화 비율", body: "LLM이 알아서: 태거가 고른 portrait/square/landscape. 가로·세로·정사각은 만화 샷만 그 캔버스로 고정합니다. 스피너도 같은 비율입니다. 일반 삽화는 생성 옵션의 자동 비율을 따릅니다." },
   "nx-comic-steps": { title: "Steps", body: "비우면 모델 탭 V5 steps를 씁니다. 만화만 이 값을 씁니다." },
   "nx-comic-sampler": { title: "샘플러", body: "비우면 모델 탭 V5 샘플러를 씁니다." },
   "nx-comic-cfg": { title: "가이던스", body: "비우면 기존 CFG를 씁니다." },
@@ -764,6 +766,14 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.22</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>이미지 탐색 크게보기·저장이 썸네일 캐시와 본문 URL을 같이 씁니다</li>
+            <li>유저정보는 선택 페르소나 프롬프트를 태거에 넣습니다. 캐릭터 personality는 쓰지 않습니다</li>
+            <li>만화 생성 탭에서 비율을 LLM / 가로 / 세로 / 정사각으로 고를 수 있습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.21</strong>
@@ -2836,6 +2846,7 @@ const VENDOR_CARD_TAB_SPLIT_CLOSE_PATCH = `            <input id="nx-preset-file
       const comicBatch = i.comic_llm_batch === "per_shot" ? "per_shot" : "once";
       const comicSched = i.comic_schedule === "wait_taggers" ? "wait_taggers" : "overlap";
       const comicCoords = i.comic_coords === "ai_choice" || i.comic_coords === "position" ? i.comic_coords : "llm";
+      const comicAspect = i.comic_aspect === "landscape" || i.comic_aspect === "portrait" || i.comic_aspect === "square" ? i.comic_aspect : "llm";
       const comicSampler = String(i.comic_sampler || "");
       u = \`
         <div class="card model-card">
@@ -2866,6 +2877,14 @@ const VENDOR_CARD_TAB_SPLIT_CLOSE_PATCH = `            <input id="nx-preset-file
                 <option value="llm" \${comicCoords === "llm" ? "selected" : ""}>LLM이 알아서</option>
                 <option value="position" \${comicCoords === "position" ? "selected" : ""}>Position</option>
                 <option value="ai_choice" \${comicCoords === "ai_choice" ? "selected" : ""}>AI choice</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-comic-aspect"><span>만화 비율</span>
+              <select id="nx-comic-aspect">
+                <option value="llm" \${comicAspect === "llm" ? "selected" : ""}>LLM이 알아서</option>
+                <option value="landscape" \${comicAspect === "landscape" ? "selected" : ""}>무조건 가로</option>
+                <option value="portrait" \${comicAspect === "portrait" ? "selected" : ""}>무조건 세로</option>
+                <option value="square" \${comicAspect === "square" ? "selected" : ""}>정사각형</option>
               </select>
             </label>
             <label data-nx-help-id="nx-comic-steps"><span>Steps</span><input id="nx-comic-steps" type="number" min="1" max="150" placeholder="기존" value="\${h(i.comic_steps ?? "")}"></label>
@@ -4675,6 +4694,145 @@ const VENDOR_EXPLORER_LONGPRESS_PATCH =
       n.addEventListener("pointercancel", () => {
         clearTimeout(pressTimer), pressTimer = 0;
       });`;
+
+const VENDOR_EXPLORER_LB_CSS_NEEDLE =
+  `.explorer-lightbox{position:fixed;inset:0;z-index:300;`;
+const VENDOR_EXPLORER_LB_CSS_PATCH =
+  `.explorer-lightbox{position:fixed;inset:0;z-index:10000;`;
+
+const VENDOR_EXPLORER_LB_OPEN_NEEDLE =
+  `  function openExplorerLightbox(id) {
+    const { items } = Ze();
+    const idx = items.findIndex((x) => x.id === id);
+    if (idx < 0) return;
+    t.explorer.lbIndex = idx;
+    const lb = document.getElementById("nx-explorer-lightbox");
+    if (!lb) return;
+    const paint = () => {
+      const list = Ze().items, i = Math.max(0, Math.min(list.length - 1, t.explorer.lbIndex || 0));
+      t.explorer.lbIndex = i;
+      const card = list[i];
+      if (!card) return;
+      const img = lb.querySelector("img");
+      const meta = lb.querySelector("[data-lb-meta]");
+      const favBtn = document.getElementById("nx-lb-fav");
+      const favOn = (ensureExplorerState().favorites || []).includes(card.id);
+      img && (img.src = Ie(card), img.style.transform = \`translate(\${t.explorer.lbPanX || 0}px,\${t.explorer.lbPanY || 0}px) scale(\${t.explorer.lbZoom || 1})\`);
+      meta && (meta.textContent = \`\${i + 1}/\${list.length} · msg #\${Number(card.message_index) >= 0 ? card.message_index + 1 : "?"} · shot \${Number(card.shot_index) + 1}\`);
+      if (favBtn) {
+        favBtn.textContent = favOn ? "★ 즐겨찾기" : "☆ 즐겨찾기";
+        favBtn.classList.toggle("active", favOn);
+      }
+    };
+    t.explorer.lbZoom = 1, t.explorer.lbPanX = 0, t.explorer.lbPanY = 0;
+    lb.classList.add("show"), paint(), t._explorerLbPaint = paint;
+  }`;
+
+const VENDOR_EXPLORER_LB_OPEN_PATCH =
+  `  function nxExplorerLbPreview(card) {
+    try {
+      const N = globalThis.__INLAY_NATIVE__;
+      const thumb = typeof N?.resolveExplorerThumbUrl == "function" ? N.resolveExplorerThumbUrl(card?.id) : "";
+      if (typeof nxReadyImg == "function" ? nxReadyImg(thumb) : typeof thumb == "string" && (/^data:image\\//i.test(thumb) || /^blob:/i.test(thumb))) return thumb;
+      return Ie(card);
+    } catch {
+      return Ie(card);
+    }
+  }
+  async function nxExplorerLbFull(card) {
+    const N = globalThis.__INLAY_NATIVE__;
+    let src = "";
+    try {
+      if (card?.id && typeof N?.ensureImageUrl == "function") src = await N.ensureImageUrl(card.id) || "";
+    } catch {
+    }
+    const ready = (u) => typeof nxReadyImg == "function" ? nxReadyImg(u) : typeof u == "string" && (/^data:image\\//i.test(u) || /^blob:/i.test(u));
+    if (!ready(src)) {
+      try {
+        if (card?.id && typeof N?.ensureExplorerThumbUrl == "function") src = await N.ensureExplorerThumbUrl(card.id) || "";
+      } catch {
+      }
+    }
+    if (!ready(src)) src = nxExplorerLbPreview(card);
+    return ready(src) ? src : "";
+  }
+  function openExplorerLightbox(id) {
+    const { items } = Ze();
+    const idx = items.findIndex((x) => x.id === id);
+    if (idx < 0) return;
+    t.explorer.lbIndex = idx;
+    const lb = document.getElementById("nx-explorer-lightbox");
+    if (!lb) return;
+    try {
+      if (lb.parentElement !== document.body) document.body.appendChild(lb);
+    } catch {
+    }
+    const paint = () => {
+      const list = Ze().items, i = Math.max(0, Math.min(list.length - 1, t.explorer.lbIndex || 0));
+      t.explorer.lbIndex = i;
+      const card = list[i];
+      if (!card) return;
+      const img = lb.querySelector("img");
+      const meta = lb.querySelector("[data-lb-meta]");
+      const favBtn = document.getElementById("nx-lb-fav");
+      const favOn = (ensureExplorerState().favorites || []).includes(card.id);
+      const preview = nxExplorerLbPreview(card);
+      t._explorerLbGen = (t._explorerLbGen || 0) + 1;
+      const gen = t._explorerLbGen;
+      img && (img.src = preview || "", img.style.transform = \`translate(\${t.explorer.lbPanX || 0}px,\${t.explorer.lbPanY || 0}px) scale(\${t.explorer.lbZoom || 1})\`);
+      meta && (meta.textContent = \`\${i + 1}/\${list.length} · msg #\${Number(card.message_index) >= 0 ? card.message_index + 1 : "?"} · shot \${Number(card.shot_index) + 1}\`);
+      if (favBtn) {
+        favBtn.textContent = favOn ? "★ 즐겨찾기" : "☆ 즐겨찾기";
+        favBtn.classList.toggle("active", favOn);
+      }
+      nxExplorerLbFull(card).then((src) => {
+        if (gen !== t._explorerLbGen) return;
+        if (src && img) img.src = src;
+      });
+    };
+    t.explorer.lbZoom = 1, t.explorer.lbPanX = 0, t.explorer.lbPanY = 0;
+    lb.classList.add("show"), paint(), t._explorerLbPaint = paint;
+  }`;
+
+const VENDOR_EXPLORER_SAVE_ONE_NEEDLE =
+  `    document.getElementById("nx-explorer-save-one")?.addEventListener("click", async () => {
+      const id = ensureExplorerState().selection?.focusId || [...ensureExplorerState().selection?.selected || []][0];
+      const card = (Ze().items || []).find((x) => x.id === id) || (t.explorer?.items || []).find((x) => x.id === id);
+      if (!card) return $e("선택된 이미지가 없습니다", !1);
+      const a = document.createElement("a");
+      a.href = Ie(card);
+      a.download = \`\${card.character_name || "inlay"}_msg\${Number(card.message_index) >= 0 ? card.message_index + 1 : "x"}_s\${Number(card.shot_index) + 1}.png\`;
+      a.click();
+      $e("이미지 저장");
+    });`;
+const VENDOR_EXPLORER_SAVE_ONE_PATCH =
+  `    document.getElementById("nx-explorer-save-one")?.addEventListener("click", async () => {
+      const id = ensureExplorerState().selection?.focusId || [...ensureExplorerState().selection?.selected || []][0];
+      const card = (Ze().items || []).find((x) => x.id === id) || (t.explorer?.items || []).find((x) => x.id === id);
+      if (!card) return $e("선택된 이미지가 없습니다", !1);
+      const href = await nxExplorerLbFull(card);
+      if (!href) return $e("이미지를 불러오지 못했습니다", !1);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = \`\${card.character_name || "inlay"}_msg\${Number(card.message_index) >= 0 ? card.message_index + 1 : "x"}_s\${Number(card.shot_index) + 1}.png\`;
+      a.click();
+      $e("이미지 저장");
+    });`;
+
+const VENDOR_EXPLORER_CTX_SAVE_NEEDLE =
+  `        else if (act === "save") {
+          if (!card) return;
+          const a = document.createElement("a");
+          a.href = Ie(card), a.download = \`\${id}.png\`, a.click();
+        }`;
+const VENDOR_EXPLORER_CTX_SAVE_PATCH =
+  `        else if (act === "save") {
+          if (!card) return;
+          const href = await nxExplorerLbFull(card);
+          if (!href) return $e("이미지를 불러오지 못했습니다", !1);
+          const a = document.createElement("a");
+          a.href = href, a.download = \`\${id}.png\`, a.click();
+        }`;
 
 /** Card click stopPropagation ate the doc click that should dismiss the ctx menu. */
 const VENDOR_EXPLORER_CTX_DISMISS_NEEDLE =
@@ -12782,8 +12940,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.21",
-    body: "코믹 태거에 구간 본문과 참고용 전체문(CSS 압축)을 같이 보냅니다. 업데이트 내역 탭 참고."
+    title: "2.5.22",
+    body: "탐색 크게보기 수정. 유저정보는 페르소나. 만화 비율 옵션. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -16049,6 +16207,10 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_EXPLORER_CAP_CSS_NEEDLE, 'explorer cap overlay');
   assertOnce(raw, VENDOR_EXPLORER_TIP_BIND_NEEDLE, 'explorer tip bind off');
   assertOnce(raw, VENDOR_EXPLORER_LONGPRESS_NEEDLE, 'explorer longpress ctx');
+  assertOnce(raw, VENDOR_EXPLORER_LB_CSS_NEEDLE, 'explorer lightbox z-index');
+  assertOnce(raw, VENDOR_EXPLORER_LB_OPEN_NEEDLE, 'explorer lightbox open');
+  assertOnce(raw, VENDOR_EXPLORER_SAVE_ONE_NEEDLE, 'explorer save-one download');
+  assertOnce(raw, VENDOR_EXPLORER_CTX_SAVE_NEEDLE, 'explorer ctx save');
   assertOnce(raw, VENDOR_EXPLORER_CTX_DISMISS_NEEDLE, 'explorer ctx dismiss');
   assertOnce(raw, VENDOR_VIEWER_THUMB_SHELL_NEEDLE, 'viewer thumb shell contain');
   assertOnce(raw, VENDOR_CHAR_EDIT_HEADER_NEEDLE, 'char edit header finite index');
@@ -16854,6 +17016,10 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_EXPLORER_CAP_CSS_NEEDLE, VENDOR_EXPLORER_CAP_CSS_PATCH)
     .replace(VENDOR_EXPLORER_TIP_BIND_NEEDLE, VENDOR_EXPLORER_TIP_BIND_PATCH)
     .replace(VENDOR_EXPLORER_LONGPRESS_NEEDLE, VENDOR_EXPLORER_LONGPRESS_PATCH)
+    .replace(VENDOR_EXPLORER_LB_CSS_NEEDLE, VENDOR_EXPLORER_LB_CSS_PATCH)
+    .replace(VENDOR_EXPLORER_LB_OPEN_NEEDLE, VENDOR_EXPLORER_LB_OPEN_PATCH)
+    .replace(VENDOR_EXPLORER_SAVE_ONE_NEEDLE, VENDOR_EXPLORER_SAVE_ONE_PATCH)
+    .replace(VENDOR_EXPLORER_CTX_SAVE_NEEDLE, VENDOR_EXPLORER_CTX_SAVE_PATCH)
     .replace(VENDOR_EXPLORER_CTX_DISMISS_NEEDLE, VENDOR_EXPLORER_CTX_DISMISS_PATCH)
     .replace(VENDOR_VIEWER_THUMB_SHELL_NEEDLE, VENDOR_VIEWER_THUMB_SHELL_PATCH)
     .replaceAll(VENDOR_STICKY_COVER_NEEDLE, VENDOR_STICKY_COVER_PATCH)
@@ -17551,6 +17717,9 @@ const loadVendorUi = (): string => {
       ;
     if (!out.includes('N("nx-nai-steps-v5")') || !out.includes('N("nx-nai-steps-v4")')) {
       throw new Error('[build] Oe() must collect per-family NAI steps');
+    }
+    if (!out.includes('async function nxExplorerLbFull(card)') || !out.includes('nx-comic-aspect')) {
+      throw new Error('[build] explorer lightbox full-src or comic aspect select missing');
     }
     return out;
   })();

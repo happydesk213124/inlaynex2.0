@@ -39,6 +39,9 @@ import type { LlmContentPart, LlmMessage } from '../providers/llm/transform';
 import { applyComicKindGuard, comicGenOn } from '../domain/comic/kind';
 import { resolveShotAspect } from '../domain/nai-meta/aspect';
 import { normalizeComicGenRatio } from '../domain/comic/params';
+import { hostHas, risuHost } from '../core/host';
+import { mergeTaggerCharUserFields, pickSelectedPersona } from '../domain/tagging/char-user-info';
+import { normalizeComicAspect } from '../domain/comic/aspect';
 import { numberMessageLinesForTagger, repairLazyShotLines } from '../domain/tagging/shot-line';
 import { collectAssetNaiTags, setLastAssetWeightMap, type AssetLookPreview } from './asset-tags';
 import { loadTaggerRoster, rosterForSession } from './characters';
@@ -65,6 +68,49 @@ export function extractTaggerChatContext(messages: readonly LlmMessage[]): strin
     return content;
   }
   return '';
+}
+
+/** Replace UI `personality` with the selected Risu persona; fill CharInfo from desc if empty. */
+export async function hydrateTaggerCharUser(request: TaggerArgs): Promise<void> {
+  const card = getConfig().card || {};
+  const charInfoOn = Boolean(card.char_info);
+  const userInfoOn = Boolean(card.user_info);
+  let hostChar: { description?: unknown; desc?: unknown } | null = null;
+  if (charInfoOn && !cleanText(request.character_description)) {
+    if (hostHas('getCharacter')) {
+      try {
+        const c = await risuHost()!.getCharacter!();
+        hostChar = c && typeof c === 'object' ? (c as { description?: unknown; desc?: unknown }) : null;
+      } catch {
+        hostChar = null;
+      }
+    }
+  }
+  let hostPersona: { personaPrompt?: unknown; note?: unknown } | null = null;
+  if (userInfoOn && hostHas('getDatabase')) {
+    try {
+      const db = await risuHost()!.getDatabase!(['personas', 'selectedPersona']);
+      hostPersona = pickSelectedPersona(db);
+    } catch {
+      hostPersona = null;
+    }
+  }
+  const merged = mergeTaggerCharUserFields({
+    charInfoOn,
+    userInfoOn,
+    requestChar: request.character_description,
+    requestPersona: request.persona_description,
+    hostChar,
+    hostPersona,
+  });
+  request.character_description = merged.character_description;
+  request.persona_description = merged.persona_description;
+  dbg('tagger.char_user', {
+    char_info: charInfoOn,
+    user_info: userInfoOn,
+    char_len: merged.character_description.length,
+    user_len: merged.persona_description.length,
+  });
 }
 
 /** Optional switches for the main scene tagger call. */
@@ -393,6 +439,7 @@ export async function buildTaggerMessages(
   request: TaggerArgs,
   opts: BuildTaggerOptions = {},
 ): Promise<LlmMessage[]> {
+  await hydrateTaggerCharUser(request);
   const card = deepMerge(getConfig().card, (request.card as Record<string, unknown>) || {});
   const sessionId = cleanText(request.session_id, 200);
   const tagger = stripCbs(await getPrompt('tagger'));
@@ -439,7 +486,7 @@ export async function buildTaggerMessages(
         : '',
       cardFlagOn(card.nai_use_coords, true) ? naiCoordsHowTo() : '',
       cardFlagOn(card.nai5_speech, false) ? naiSpeechHowTo() : '',
-      comicGenOn(card) ? comicKindHowTo(card.comic_gen_ratio) : '',
+      comicGenOn(card) ? comicKindHowTo(card.comic_gen_ratio, card.comic_aspect) : '',
       assetHow,
       placement,
     ].filter(Boolean).join('\n\n'),
@@ -563,8 +610,17 @@ export function flattenShots(tagged: unknown, messageText?: unknown): TaggedShot
   return repaired;
 }
 
-function comicKindHowTo(ratioPct: unknown): string {
+function comicKindHowTo(ratioPct: unknown, comicAspect?: unknown): string {
   const share = normalizeComicGenRatio(ratioPct);
+  const aspectMode = normalizeComicAspect(comicAspect);
+  const aspectLock =
+    aspectMode === 'landscape'
+      ? 'Every comic shot MUST set `aspect` to exactly `landscape` (1216×832). Illustration shots still pick aspect from the scene.'
+      : aspectMode === 'portrait'
+        ? 'Every comic shot MUST set `aspect` to exactly `portrait` (832×1216). Illustration shots still pick aspect from the scene.'
+        : aspectMode === 'square'
+          ? 'Every comic shot MUST set `aspect` to exactly `square` (1024×1024). Illustration shots still pick aspect from the scene.'
+          : '';
   return [
     'KIND: every shot MUST set `kind` to `illustration` or `comic`.',
     'Use `comic` only when the moment needs two or more sequential panels (dialogue + continuous action). A single still scene is `illustration`.',
@@ -575,7 +631,8 @@ function comicKindHowTo(ratioPct: unknown): string {
     'Do not infer a comic range from neighboring shot `line` values.',
     'Ignore `<img>`, `┣ observation/insight/foreshadow ┫`, `<RP-Guide>`, `<AOS>`, HTML comments, and Upcoming lines — they are not scenes.',
     'Comic shots still list `characters[].name` for who appears. Do not write panel layout here.',
-  ].join(' ');
+    aspectLock,
+  ].filter(Boolean).join(' ');
 }
 
 function focusCharacterSystemMessage(

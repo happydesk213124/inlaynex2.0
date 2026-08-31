@@ -112,6 +112,7 @@ import {
   clampInlineDomRadius,
   inlineDomWindow,
   inlineDomWindowFromSel,
+  inlineWindowFromRoles,
   shouldOverlayInlinePhoto,
   shouldMountMsgActions,
   MSG_ACTION_MIN_BODY_CHARS,
@@ -393,6 +394,109 @@ test("shouldOverlayInlinePhoto is selected ±1 unless that bubble is a user turn
   assert.equal(shouldOverlayInlinePhoto({ idx: 5, selIdx: 5, length: 20, role: "" }), true);
   assert.equal(shouldOverlayInlinePhoto({ idx: 6, selIdx: 5, length: 20, role: "user" }), false);
   assert.equal(shouldOverlayInlinePhoto({ idx: 7, selIdx: 5, length: 20, role: "char" }), false);
+});
+
+test("shouldOverlayInlinePhoto takes a character-counted window over DOM ±1", () => {
+  // Chars at 1 and 5 with users between: DOM ±1 would refuse both.
+  const window = [3, 5, 1];
+  assert.equal(shouldOverlayInlinePhoto({ idx: 1, selIdx: 3, length: 7, role: "char", window }), true);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 5, selIdx: 3, length: 7, role: "char", window }), true);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 2, selIdx: 3, length: 7, role: "char", window }), false);
+  // The role guard still wins: a slot proven to be a user turn takes no photo
+  // even when the window listed it.
+  assert.equal(shouldOverlayInlinePhoto({ idx: 5, selIdx: 3, length: 7, role: "user", window }), false);
+  // An empty window is a window, not "fall back to ±1".
+  assert.equal(shouldOverlayInlinePhoto({ idx: 3, selIdx: 3, length: 7, role: "char", window: [] }), false);
+});
+
+test("inlineWindowFromRoles counts character bubbles, not DOM slots", () => {
+  // 123456 with 2 and 3 as users, 4 selected. DOM ±1 reaches 4 and 5 only;
+  // counting chars reaches 1 as well. Indices are 0-based: msg N is idx N-1.
+  const roles = ["char", "user", "user", "char", "char", "char"];
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  const { spinner, photos } = inlineWindowFromRoles({ selIdx: 3, length: 6, radius: 4, isCharAt });
+  assert.deepEqual(spinner, [3, 4, 0, 5]);
+  assert.deepEqual(photos, [3, 4, 0]);
+});
+
+test("inlineWindowFromRoles radiates from the selection and keeps radius per side", () => {
+  const roles = Array.from({ length: 21 }, (_, i) => (i % 2 ? "user" : "char"));
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  const { spinner, photos } = inlineWindowFromRoles({ selIdx: 10, length: 21, radius: 4, isCharAt });
+  // Selected first, then one step out on each side in turn.
+  assert.deepEqual(spinner, [10, 12, 8, 14, 6, 16, 4, 18, 2]);
+  assert.deepEqual(photos, [10, 12, 8]);
+});
+
+test("inlineWindowFromRoles treats an unresolved role as a character bubble", () => {
+  // Unknown is not evidence of a user turn: dropping those slots is what left
+  // first boot with chips and no spinner.
+  const roles = ["char", "", "user", "char"];
+  const isCharAt = (i) => roles[i] === "" || isCharMessageRole(roles[i]);
+  const { spinner } = inlineWindowFromRoles({ selIdx: 0, length: 4, radius: 2, isCharAt });
+  assert.deepEqual(spinner, [0, 1, 3]);
+});
+
+test("inlineWindowFromRoles stops at the scan cap instead of trusting unseen slots", () => {
+  const roles = ["char", "user", "user", "user", "user", "char", "char"];
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  const capped = inlineWindowFromRoles({ selIdx: 0, length: 7, radius: 4, scanCap: 3, isCharAt });
+  assert.deepEqual(capped.spinner, [0]);
+  const full = inlineWindowFromRoles({ selIdx: 0, length: 7, radius: 4, scanCap: 6, isCharAt });
+  assert.deepEqual(full.spinner, [0, 5, 6]);
+});
+
+test("inlineWindowFromRoles skips empty bodies like user turns", () => {
+  const roles = ["char", "char", "char", "char"];
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  const { spinner, photos } = inlineWindowFromRoles({
+    selIdx: 0,
+    length: 4,
+    radius: 2,
+    isCharAt,
+    isSkipBodyAt: (i) => i === 1,
+  });
+  assert.deepEqual(spinner, [0, 2, 3]);
+  assert.deepEqual(photos, [0, 2]);
+});
+
+test("inlineWindowFromRoles allRoles keeps user bubbles in both windows", () => {
+  const roles = ["char", "user", "user", "char"];
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  const { spinner, photos } = inlineWindowFromRoles({
+    selIdx: 1,
+    length: 4,
+    radius: 2,
+    isCharAt,
+    allRoles: true,
+  });
+  assert.deepEqual(spinner, [1, 2, 0, 3]);
+  assert.deepEqual(photos, [1, 2, 0]);
+});
+
+test("inlineWindowFromRoles always keeps the selection, even a user bubble", () => {
+  const roles = ["char", "user", "char"];
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  const { spinner, photos } = inlineWindowFromRoles({ selIdx: 1, length: 3, radius: 2, isCharAt });
+  // The selected bubble still gets its own pass; shouldOverlayInlinePhoto is
+  // what refuses it a photo.
+  assert.equal(spinner[0], 1);
+  assert.deepEqual(spinner, [1, 2, 0]);
+  assert.deepEqual(photos, [1, 2, 0]);
+  assert.equal(shouldOverlayInlinePhoto({ idx: 1, selIdx: 1, length: 3, role: "user", window: photos }), false);
+});
+
+test("pickInlineKeepDomIndices scanCap bounds the walk per side", () => {
+  const roles = ["char", "user", "user", "char", "char", "user", "user", "char"];
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  const opts = { selIdx: 4, length: 8, allRoles: false, isCharAt, maxPerSide: 2 };
+  assert.deepEqual(pickInlineKeepDomIndices({ ...opts }).sort((a, b) => a - b), [0, 3, 4, 7]);
+  assert.deepEqual(pickInlineKeepDomIndices({ ...opts, scanCap: 1 }).sort((a, b) => a - b), [3, 4]);
+  // No cap is the old behaviour, so existing callers are untouched.
+  assert.deepEqual(
+    pickInlineKeepDomIndices({ ...opts, scanCap: Number.NaN }).sort((a, b) => a - b),
+    [0, 3, 4, 7],
+  );
 });
 
 test("inlinePlaceholderSize follows the first-tagger aspect aliases", () => {

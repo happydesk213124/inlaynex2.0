@@ -903,16 +903,27 @@ export function inlineDomWindowFromSel(selIdx: unknown, length: unknown, radius:
   return out;
 }
 
-/** Photos sit on selected ±1 unless that bubble is a verified user turn. */
+/**
+ * Photos sit on the selection and its nearest neighbour each side, unless that
+ * bubble is a verified user turn.
+ *
+ * `window` is the character-counted photo list from `inlineWindowFromRoles`.
+ * Without it this falls back to DOM ±1, which is what a caller that has no role
+ * information can still answer correctly.
+ */
 export function shouldOverlayInlinePhoto(opts: {
   idx?: unknown;
   selIdx?: unknown;
   length?: unknown;
   role?: unknown;
+  window?: readonly number[] | null;
 } = {}): boolean {
   const idx = Math.floor(Number(opts.idx));
   if (!Number.isInteger(idx) || idx < 0) return false;
-  if (!inlineDomWindow(opts.selIdx, opts.length, 1).includes(idx)) return false;
+  const scope = Array.isArray(opts.window)
+    ? opts.window.map((value) => Math.floor(Number(value)))
+    : inlineDomWindow(opts.selIdx, opts.length, 1);
+  if (!scope.includes(idx)) return false;
   return normalizeMessageRole(opts.role) !== 'user';
 }
 
@@ -1066,11 +1077,18 @@ export function pickInlineKeepDomIndices(opts: {
   isCharAt: (idx: number) => boolean;
   maxPerSide?: number;
   isSkipBodyAt?: (idx: number) => boolean;
+  /** DOM slots examined per side. Omitted = walk until the chat runs out. */
+  scanCap?: number;
 }): number[] {
   const selIdx = opts.selIdx;
   const length = opts.length;
   const maxPerSide = opts.maxPerSide ?? INLINE_KEEP_MAX_PER_SIDE;
   if (!Number.isFinite(selIdx) || selIdx < 0 || selIdx >= length || length <= 0) return [];
+  // Roles come from a bounded prefetch, so the walk must stop where the answers
+  // do. Past the cap every slot reads "unknown", which counts as char and would
+  // hand back slots nobody looked at.
+  const rawCap = Number(opts.scanCap);
+  const cap = Number.isFinite(rawCap) && rawCap >= 0 ? Math.floor(rawCap) : Infinity;
 
   const skipBody = opts.isSkipBodyAt || (() => false);
   const canKeep = (i: number) => {
@@ -1087,18 +1105,79 @@ export function pickInlineKeepDomIndices(opts: {
   if (canKeep(selIdx)) add(selIdx);
 
   let found = 0;
-  for (let i = selIdx + 1; i < length && found < maxPerSide; i += 1) {
+  for (let i = selIdx + 1; i < length && found < maxPerSide && i - selIdx <= cap; i += 1) {
     if (canKeep(i)) {
       add(i);
       found += 1;
     }
   }
   found = 0;
-  for (let i = selIdx - 1; i >= 0 && found < maxPerSide; i -= 1) {
+  for (let i = selIdx - 1; i >= 0 && found < maxPerSide && selIdx - i <= cap; i -= 1) {
     if (canKeep(i)) {
       add(i);
       found += 1;
     }
+  }
+  return out;
+}
+
+/**
+ * The two inline windows, counted in character bubbles rather than DOM slots.
+ *
+ * A chat alternates user and character turns, so a DOM-slot window of 4 only
+ * ever reached two character bubbles — the setting promised four. Both windows
+ * therefore walk past user and empty-body bubbles instead of spending a slot on
+ * them.
+ *
+ * `spinner` radiates from the selection outwards so the bubble being read is
+ * stamped first. `photos` is the selection plus the nearest character bubble on
+ * each side, which is the ±1 rule restated in character terms.
+ */
+export function inlineWindowFromRoles(opts: {
+  selIdx: number;
+  length: number;
+  radius: number;
+  scanCap?: number;
+  isCharAt: (idx: number) => boolean;
+  isSkipBodyAt?: (idx: number) => boolean;
+  allRoles?: boolean;
+}): { spinner: number[]; photos: number[] } {
+  const selIdx = Math.floor(Number(opts.selIdx));
+  const length = Math.floor(Number(opts.length));
+  const radius = Math.max(0, Math.floor(Number(opts.radius) || 0));
+  const inRange = Number.isFinite(selIdx) && selIdx >= 0 && selIdx < length;
+  const walk = (maxPerSide: number): number[] => {
+    const kept = pickInlineKeepDomIndices({
+      selIdx,
+      length,
+      allRoles: opts.allRoles === true,
+      isCharAt: opts.isCharAt,
+      isSkipBodyAt: opts.isSkipBodyAt,
+      maxPerSide,
+      scanCap: opts.scanCap,
+    });
+    // The walk drops a user or short selection; the windows must not. The
+    // selected bubble is the one being read, and its own pass is what keeps its
+    // chips and inline frames in step. Whether it earns a photo is still the
+    // role guard's call downstream.
+    if (inRange && !kept.includes(selIdx)) kept.unshift(selIdx);
+    return kept;
+  };
+  const spinner = radiateFromSel(selIdx, walk(radius));
+  // Derived from the same walk, so a photo slot is always a spinner slot too.
+  const photos = radius <= 1 ? [...spinner] : radiateFromSel(selIdx, walk(1));
+  return { spinner, photos };
+}
+
+/** Selection first, then the nearest slot on each side, then the next pair. */
+function radiateFromSel(selIdx: number, idxs: readonly number[]): number[] {
+  const rest = idxs.filter((idx) => idx !== selIdx);
+  const above = rest.filter((idx) => idx > selIdx).sort((a, b) => a - b);
+  const below = rest.filter((idx) => idx < selIdx).sort((a, b) => b - a);
+  const out = idxs.includes(selIdx) ? [selIdx] : [];
+  for (let i = 0; i < Math.max(above.length, below.length); i += 1) {
+    if (i < above.length) out.push(above[i]!);
+    if (i < below.length) out.push(below[i]!);
   }
   return out;
 }

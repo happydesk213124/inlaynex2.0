@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.23';
+const PLUGIN_VERSION = '2.5.24';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -766,6 +766,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.24</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스피너·사진 범위를 캐릭터 말풍선 기준으로 셉니다. 유저 말풍선은 건너뜁니다</li>
+            <li>설정 '스피너 캐릭터 개수' 4면 위·아래로 캐릭터 4개씩입니다. 사진은 위·아래 캐릭터 1개씩입니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.23</strong>
@@ -8593,7 +8600,7 @@ const VENDOR_INLINE_HELP_PATCH =
     "nx-inline-chat": { title: "이미지 채팅에", body: "선택 기준에서 설정한 탐색 숫자만큼 위·아래의 char 말풍선을 유지합니다. 유저·라이트보드(본문 30자 이하)는 건너뜁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "사용안함 / 편의성(오류율 있음 · 2.4.7, 칩을 본문 위에 붙임) / 호환성(2.4.9, 본문 문단에만 붙임). 헤더가 비면 채팅 카드 복구를 쓰세요. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
     "nx-inline-chat-scale": { title: "이미지 채팅 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
-    "nx-inline-dom-radius": { title: "스피너 DOM 탐색 숫자", body: "선택한 메시지 기준으로 위·아래에서 유지할 적격 말풍선 수입니다. 기본 4, 범위 3–20입니다. 유저와 본문 30자 이하 메시지는 건너뜁니다." },
+    "nx-inline-dom-radius": { title: "스피너 캐릭터 개수", body: "선택한 메시지 기준으로 위·아래에서 유지할 캐릭터 말풍선 수입니다. 기본 4, 범위 3–20입니다. 유저와 본문 30자 이하 메시지는 세지 않고 건너뜁니다. 사진은 위·아래 가장 가까운 캐릭터 1개씩입니다." },
     "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트. 칩·샷을 꽂기 직전에는 조각 불러오는 중 스피너가 같은 자리에 뜹니다." },
     "nx-toast-anchor": { title: "토스트 위치", body: "진행·선택·알림·조각 로딩 토스트가 붙는 화면 모서리입니다. 기본은 중상단입니다." },
     "nx-image-press": { title: "이미지 크게보기", body: "인라인·스티키 샷을 크게 봅니다. 사용안함 / 더블 탭(이미지 위 빠른 두 번) / 트리플 탭(빠른 세 번) / 꾸욱 누르기 / 꾸욱 누르기 + 더블탭. 탐색기·메시지 선택 길게 누르기는 그대로입니다." },
@@ -8615,7 +8622,7 @@ const VENDOR_INLINE_TOGGLE_PATCH =
             <label data-nx-help-id="nx-inline-chat-scale"><span>이미지 채팅 배율 (%)</span>
               <input id="nx-inline-chat-scale" type="number" min="25" max="200" step="5" value="\${h(i.inline_chat_scale_pct ?? 100)}">
             </label>
-            <label data-nx-help-id="nx-inline-dom-radius"><span>스피너 DOM 탐색 숫자</span>
+            <label data-nx-help-id="nx-inline-dom-radius"><span>스피너 캐릭터 개수</span>
               <input id="nx-inline-dom-radius" type="number" min="3" max="20" step="1" value="\${h(i.inline_chat_dom_radius ?? 4)}">
             </label>
             <label class="toggle-row" data-nx-help-id="nx-progress-toast"><input type="checkbox" id="nx-progress-toast" \${i.progress_toast ? "checked" : ""}><span>진행 토스트</span></label>
@@ -9711,6 +9718,96 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
     }
   }
+  /**
+   * The inline windows, counted in character bubbles.
+   *
+   * Both inline passes need the same three things — which slots to touch, what
+   * role each slot is, and how long its body is — so they read them here once.
+   * Roles arrive in a single \`Promise.all\` wave: counting characters means
+   * walking past user bubbles, and asking slot by slot would spend one bridge
+   * round-trip per step before the window is even known.
+   */
+  async function nxInlineWindow(els, selIdx, sel, radius, opts) {
+    const VC = globalThis.__INLAY_VIEWER_CORE__;
+    const t0 = typeof performance < "u" && performance.now ? performance.now() : Date.now();
+    const len = Array.isArray(els) ? els.length : 0;
+    const onlySel = !!(opts && opts.onlySel);
+    const isStale = opts && typeof opts.isStale == "function" ? opts.isStale : () => !1;
+    const want = Math.max(0, Math.round(Number(radius) || 0));
+    // Three slots per wanted character, because a chat alternates turns and
+    // some bubbles are too short to count. The 24 ceiling bounds the wave.
+    const scanCap = onlySel ? 0 : Math.max(1, Math.min(24, want * 3));
+    const scope = await Za().catch(() => null);
+    const msgs = scope?.messages || [];
+    const msgCache = new Map();
+    const roleCache = new Map();
+    const readAt = async (idx) => {
+      if (msgCache.has(idx)) return msgCache.get(idx);
+      let row = null;
+      try {
+        const raw = await De(els[idx]);
+        const text = w(raw || "");
+        // Da already bound this bubble. Re-matching it through qa was how a
+        // refresh/re-enter dropped the cards the chips were already using.
+        if (idx === selIdx && sel) {
+          row = { idx, msg: sel, text: text.length >= 4 ? text : w(sel.text || "") || text };
+        } else if (text.length >= 4) {
+          const hit = typeof qa == "function" ? qa(text, msgs, idx, len, {}) : null;
+          row = { idx, msg: hit || { text, hash: "", role: "", chatIndex: idx }, text };
+        }
+      } catch {
+        row = idx === selIdx && sel ? { idx, msg: sel, text: w(sel.text || "") } : null;
+      }
+      msgCache.set(idx, row);
+      return row;
+    };
+    const wave = [selIdx];
+    for (let d = 1; d <= scanCap; d += 1) {
+      if (selIdx + d < len) wave.push(selIdx + d);
+      if (selIdx - d >= 0) wave.push(selIdx - d);
+    }
+    await Promise.all(wave.map((idx) => readAt(idx)));
+    if (isStale()) return null;
+    const roleAt = (idx) => {
+      if (roleCache.has(idx)) return roleCache.get(idx);
+      const row = msgCache.get(idx);
+      const role = typeof VC?.roleForInlineBubble == "function"
+        ? VC.roleForInlineBubble({
+          idx,
+          selIdx,
+          selRole: sel?.role,
+          selHash: sel?.hash,
+          liveHash: row?.msg?.hash,
+          matchedRole: row?.msg?.role,
+          domText: row?.text,
+          matchedText: row?.msg?.text
+        })
+        : String(row?.msg?.role || (idx === selIdx ? sel?.role : "") || "");
+      roleCache.set(idx, role);
+      return role;
+    };
+    const isSkipBodyAt = (idx) => {
+      const row = msgCache.get(idx);
+      return typeof VC?.isInlineSkipBody == "function" ? VC.isInlineSkipBody(row?.text) : !1;
+    };
+    // An unread role is not evidence of a user turn. Dropping those slots is
+    // what left first boot with chips and no spinner.
+    const isCharAt = (idx) => {
+      const role = String(roleAt(idx) || "");
+      if (!role) return !0;
+      return typeof VC?.isCharMessageRole == "function" ? VC.isCharMessageRole(role) : role !== "user";
+    };
+    const win = !onlySel && typeof VC?.inlineWindowFromRoles == "function"
+      ? VC.inlineWindowFromRoles({ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt })
+      : { spinner: [selIdx], photos: [selIdx] };
+    const spinnerIdxs = Array.isArray(win?.spinner) && win.spinner.length ? win.spinner : [selIdx];
+    const photoIdxs = Array.isArray(win?.photos) && win.photos.length ? win.photos : [selIdx];
+    if (typeof nxScrollDbg == "function") {
+      const ms = Math.round(((typeof performance < "u" && performance.now ? performance.now() : Date.now()) - t0) * 10) / 10;
+      nxScrollDbg("inline.window", \`want=\${want} chars=\${spinnerIdxs.length} photos=\${photoIdxs.length} scan=\${wave.length} cap=\${scanCap} ms=\${ms}\`);
+    }
+    return { spinnerIdxs, photoIdxs, resolveAt: readAt, msgAt: (idx) => msgCache.get(idx) || null, roleAt, isSkipBodyAt };
+  }
   /** Selection hop: photos on/off only. Never tears a spinner. */
   async function nxSyncInlinePhotosOnly() {
     if (typeof nxScrollDbg == "function") nxScrollDbg("inline.sync.start", \`src=\${t.selectedMessage?.selectSource || ""} DOM#\${t.selectedMessage?.domIndex ?? "?"}\`);
@@ -9738,19 +9835,17 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const selIdx = selDom;
     if (!Number.isFinite(selIdx) || selIdx < 0 || !els[selIdx]) return;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
-    const photoIdxs = typeof VC?.inlineDomWindowFromSel == "function"
-      ? VC.inlineDomWindowFromSel(selIdx, els.length, 1)
-      : typeof VC?.inlineDomWindow == "function"
-        ? VC.inlineDomWindow(selIdx, els.length, 1)
-        : [selIdx];
+    const win = await nxInlineWindow(els, selIdx, sel, 1, { isStale: stale });
+    if (!win || stale()) return;
+    const photoIdxs = win.photoIdxs;
     const selectedCards = linkedCards(sel) || [];
     const selectedConfirmedEmpty = !selectedCards.length
       && String(t._galleryCache?.sessionId || "") === String(sel.sessionId || "");
     const nextPhotoEls = [];
     for (const idx of photoIdxs) {
-      const role = idx === selIdx ? String(sel.role || "") : "";
+      const role = idx === selIdx ? String(sel.role || "") : win.roleAt(idx);
       const want = typeof VC?.shouldOverlayInlinePhoto == "function"
-        ? VC.shouldOverlayInlinePhoto({ idx, selIdx, length: els.length, role })
+        ? VC.shouldOverlayInlinePhoto({ idx, selIdx, length: els.length, role, window: photoIdxs })
         : idx === selIdx && role !== "user";
       if (!want) {
         await nxClearInlinePhotos(els[idx], () => !stale());
@@ -10795,61 +10890,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const radius = typeof VC?.clampInlineDomRadius == "function"
         ? VC.clampInlineDomRadius(t.backendSettings?.card?.inline_chat_dom_radius)
         : Math.max(3, Math.min(20, Math.round(Number(t.backendSettings?.card?.inline_chat_dom_radius) || 4)));
-      const spinnerIdxs = onlySel
-        ? [selIdx]
-        : typeof VC?.inlineDomWindowFromSel == "function"
-          ? VC.inlineDomWindowFromSel(selIdx, els.length, radius)
-          : typeof VC?.inlineDomWindow == "function"
-            ? VC.inlineDomWindow(selIdx, els.length, radius)
-            : [];
-      const scope = await Za().catch(() => null);
-      const msgs = scope?.messages || [];
-      const roleCache = new Map();
-      const msgCache = new Map();
-      const resolveAt = async (idx) => {
-        if (msgCache.has(idx)) return msgCache.get(idx);
-        let row = null;
-        try {
-          const raw = await De(els[idx]);
-          const text = w(raw || "");
-          // Da already bound this bubble. Re-matching it through qa was how a
-          // refresh/re-enter dropped the cards the chips were already using.
-          if (idx === selIdx && sel) {
-            row = { idx, msg: sel, text: text.length >= 4 ? text : w(sel.text || "") || text };
-          } else if (text.length >= 4) {
-            const hit = typeof qa == "function"
-              ? qa(text, msgs, idx, els.length, {})
-              : null;
-            row = { idx, msg: hit || { text, hash: "", role: "", chatIndex: idx }, text };
-          }
-        } catch {
-          row = idx === selIdx && sel ? { idx, msg: sel, text: w(sel.text || "") } : null;
-        }
-        msgCache.set(idx, row);
-        return row;
-      };
-      const roleAt = (idx) => {
-        if (roleCache.has(idx)) return roleCache.get(idx);
-        const row = msgCache.get(idx);
-        const role = typeof VC?.roleForInlineBubble == "function"
-          ? VC.roleForInlineBubble({
-            idx,
-            selIdx,
-            selRole: sel.role,
-            selHash: sel.hash,
-            liveHash: row?.msg?.hash,
-            matchedRole: row?.msg?.role,
-            domText: row?.text,
-            matchedText: row?.msg?.text
-          })
-          : String(row?.msg?.role || (idx === selIdx ? sel.role : "") || "");
-        roleCache.set(idx, role);
-        return role;
-      };
-      const isSkipBodyAt = (idx) => {
-        const row = msgCache.get(idx);
-        return typeof VC?.isInlineSkipBody == "function" ? VC.isInlineSkipBody(row?.text) : !1;
-      };
+      const win = await nxInlineWindow(els, selIdx, sel, radius, { onlySel, isStale: stale });
+      if (!win || stale()) return;
+      const spinnerIdxs = win.spinnerIdxs;
+      const photoIdxs = win.photoIdxs;
+      const resolveAt = win.resolveAt;
+      const roleAt = win.roleAt;
+      const isSkipBodyAt = win.isSkipBodyAt;
       const unwrapSafe = async (arr) => {
         if (!arr) return [];
         if (typeof k.unwarpSafeArray == "function") {
@@ -10872,7 +10919,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         if (isSkipBodyAt(idx)) continue;
         const role = roleAt(idx);
         const wantPhoto = typeof VC?.shouldOverlayInlinePhoto == "function"
-          ? VC.shouldOverlayInlinePhoto({ idx, selIdx, length: els.length, role })
+          ? VC.shouldOverlayInlinePhoto({ idx, selIdx, length: els.length, role, window: photoIdxs })
           : !1;
         if (wantPhoto) nextPhotoEls.push({ idx, el: els[idx] });
       }
@@ -10881,7 +10928,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         const N = globalThis.__INLAY_NATIVE__;
         const focusIds = [];
         for (const row of nextPhotoEls) {
-          const msg = msgCache.get(row.idx)?.msg;
+          const msg = win.msgAt(row.idx)?.msg;
           const cards = msg ? linkedCards(msg) || [] : [];
           for (const card of cards) {
             const id = String(card?.id || "");
@@ -10902,7 +10949,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       for (const idx of spinnerIdxs) {
         if (stale()) return;
-        const row = msgCache.get(idx) || await resolveAt(idx);
+        const row = win.msgAt(idx) || await resolveAt(idx);
         await injectChatMsgActions(els[idx], [], idx, { role: roleAt(idx), text: row?.text });
         if (isSkipBodyAt(idx)) continue;
         let cards = [];
@@ -12950,8 +12997,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.23",
-    body: "카드·이미지 장부를 캐릭터챗별로 쪼갰습니다. 데이터 이전은 자동입니다. 업데이트 내역 탭 참고."
+    title: "2.5.24",
+    body: "스피너·사진 범위를 캐릭터 말풍선 기준으로 셉니다. 유저 말풍선은 건너뜁니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -17094,14 +17141,11 @@ const loadVendorUi = (): string => {
       if ((body.match(/maybeRebindAndLink\(/g) || []).length !== 1) {
         throw new Error('[build] refreshSelectedInlineImages must reach maybeRebindAndLink only through nxRebind');
       }
-      if (!body.includes('VC.shouldOverlayInlinePhoto({') || !body.includes('VC.inlineDomWindowFromSel(selIdx, els.length, radius)')) {
-        throw new Error('[build] inline refresh must stamp ±radius and overlay ±1 char only');
+      if (!body.includes('VC.shouldOverlayInlinePhoto({') || !body.includes('window: photoIdxs')) {
+        throw new Error('[build] inline refresh must overlay only the character photo window');
       }
       if (!body.includes('wantPhotos: nextPhotoIdx.has(idx)') || !body.includes('evictPhotosIn')) {
         throw new Error('[build] photos outside ±1 must be evicted without tearing spinners');
-      }
-      if (!body.includes('if (idx === selIdx && sel)') || !body.includes('row = { idx, msg: sel,')) {
-        throw new Error('[build] selected bubble must reuse Da cards, not qa-miss empty hash');
       }
       if (body.includes('nxInlineAlreadyPainted(els[selIdx]')) {
         throw new Error('[build] one painted bubble must not abort missing-neighbour repair');
@@ -17109,8 +17153,43 @@ const loadVendorUi = (): string => {
       if (!body.includes('confirmedEmpty: !cards.length')) {
         throw new Error('[build] confirmed empty selections must clear photos without removing frames');
       }
-      if (!body.includes('const onlySel = !!(opts && opts.onlySel)') || !body.includes('? [selIdx]')) {
+      if (!body.includes('const onlySel = !!(opts && opts.onlySel)')
+        || !body.includes('nxInlineWindow(els, selIdx, sel, radius, { onlySel, isStale: stale })')) {
         throw new Error('[build] tag restamp must stay on the selected bubble');
+      }
+    }
+    {
+      // The window is one shared helper on purpose: the full pass and the
+      // photo-only hop disagreeing about which bubbles are in scope is what
+      // left photos on bubbles the spinner pass had already left behind.
+      const from = out.indexOf('async function nxInlineWindow(els, selIdx, sel, radius, opts) {');
+      const to = out.indexOf('async function nxSyncInlinePhotosOnly() {', from);
+      const body = from >= 0 && to > from ? out.slice(from, to) : '';
+      if (!body) throw new Error('[build] nxInlineWindow body not found');
+      if (!body.includes('VC.inlineWindowFromRoles({ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt })')) {
+        throw new Error('[build] the inline window must be counted in character bubbles');
+      }
+      // Roles slot-by-slot is one bridge round-trip per step, and the walk
+      // cannot start until they are all in.
+      if (!body.includes('await Promise.all(wave.map((idx) => readAt(idx)))')) {
+        throw new Error('[build] inline roles must be prefetched in one parallel wave');
+      }
+      if (/for \(const idx of wave\)[\s\S]{0,80}await readAt/.test(body)) {
+        throw new Error('[build] inline role prefetch fell back to a sequential await loop');
+      }
+      if (!body.includes('if (isStale()) return null;')) {
+        throw new Error('[build] a superseded pass must drop out right after the prefetch wave');
+      }
+      if (!body.includes('if (idx === selIdx && sel)') || !body.includes('row = { idx, msg: sel,')) {
+        throw new Error('[build] selected bubble must reuse Da cards, not qa-miss empty hash');
+      }
+      if (!body.includes('nxScrollDbg("inline.window"')) {
+        throw new Error('[build] the inline window must report its walk to the scroll debug log');
+      }
+      const full = out.match(/nxInlineWindow\(els, selIdx, sel, radius, \{ onlySel, isStale: stale \}\)/g) || [];
+      const photoOnly = out.match(/nxInlineWindow\(els, selIdx, sel, 1, \{ isStale: stale \}\)/g) || [];
+      if (full.length !== 1 || photoOnly.length !== 1) {
+        throw new Error('[build] both inline paths must take their window from nxInlineWindow');
       }
     }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
@@ -17330,7 +17409,7 @@ const loadVendorUi = (): string => {
     if (out.includes('inlineGoneFromSel') || out.includes('inline.keep.skip') || out.includes('stripInlineMarkersIn')) {
       throw new Error('[build] the keep-window driver must stay gone');
     }
-    assertOnce(out, 'VC.inlineDomWindowFromSel(selIdx, els.length, radius)', 'spinner stamp radiates from the selected bubble');
+    assertOnce(out, 'async function nxInlineWindow(els, selIdx, sel, radius, opts) {', 'both inline paths share one window helper');
     if ((out.match(/VC.shouldOverlayInlinePhoto\(\{/g) || []).length !== 2) {
       throw new Error('[build] photos overlay selected ±1 char only');
     }

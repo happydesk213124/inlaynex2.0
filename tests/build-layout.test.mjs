@@ -1407,7 +1407,7 @@ test('inline refresh is a DOM window, not a keep-list keyed on index', () => {
   const refresh = source.slice(start, end);
   assert.doesNotMatch(refresh, /_inlineKeepIdxs/);
   assert.doesNotMatch(refresh, /_inlineKeepEls = nextKeep/);
-  assert.match(refresh, /VC\.inlineDomWindowFromSel\(selIdx, els\.length, radius\)/);
+  assert.match(refresh, /nxInlineWindow\(els, selIdx, sel, radius, \{ onlySel, isStale: stale \}\)/);
   assert.match(source, /setAttribute\("x-inlay-msg-index", String\(msgIdx\)\)/);
 });
 
@@ -1614,7 +1614,7 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /id="nx-inline-dom-radius" type="number" min="3" max="20" step="1"/);
   assert.match(source, /inline_chat_dom_radius: Math\.max\(3, Math\.min\(20,/);
   assert.match(source, /inline_chat_dom_radius\) \|\| 4/);
-  assert.match(source, /VC\.inlineDomWindowFromSel\(selIdx, els\.length, radius\)/);
+  assert.match(source, /VC\.inlineWindowFromRoles\(\{ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt \}\)/);
   assert.match(source, /N\?\.prioritizeWarmFocus/);
   {
     const injectFrom = source.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
@@ -1630,16 +1630,42 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
     const refreshFrom = source.indexOf('async function refreshSelectedInlineImages(force');
     const refreshTo = source.indexOf('async function openSettingsTab(tab) {', refreshFrom);
     const refresh = refreshFrom >= 0 && refreshTo > refreshFrom ? source.slice(refreshFrom, refreshTo) : '';
-    assert.match(refresh, /VC\.inlineDomWindowFromSel\(selIdx, els\.length, radius\)/);
+    assert.match(refresh, /nxInlineWindow\(els, selIdx, sel, radius, \{ onlySel, isStale: stale \}\)/);
     assert.match(refresh, /N\?\.prioritizeWarmFocus/);
     assert.match(refresh, /VC\.shouldOverlayInlinePhoto\(\{/);
+    assert.match(refresh, /window: photoIdxs/);
     assert.match(refresh, /wantPhotos: nextPhotoIdx\.has\(idx\)/);
     assert.match(refresh, /evictPhotosIn/);
-    assert.match(refresh, /if \(idx === selIdx && sel\)/);
-    assert.match(refresh, /row = \{ idx, msg: sel,/);
     assert.doesNotMatch(refresh, /nxInlineAlreadyPainted\(els\[selIdx\]/);
     assert.match(refresh, /onlySel/);
     assert.doesNotMatch(refresh, /data-inlay-inline-shot\],\[data-inlay-inline-pending\],\[x-inlay-msg-actions\]/);
+  }
+  {
+    // Both inline passes read their window here, so the full pass and the
+    // photo-only hop cannot disagree about which bubbles are in scope.
+    const from = source.indexOf('async function nxInlineWindow(els, selIdx, sel, radius, opts) {');
+    const to = source.indexOf('async function nxSyncInlinePhotosOnly() {', from);
+    const win = from >= 0 && to > from ? source.slice(from, to) : '';
+    assert.ok(win, 'nxInlineWindow body not found');
+    assert.match(win, /VC\.inlineWindowFromRoles\(\{ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt \}\)/);
+    // One parallel wave, not a round-trip per slot.
+    assert.match(win, /await Promise\.all\(wave\.map\(\(idx\) => readAt\(idx\)\)\)/);
+    assert.doesNotMatch(win, /for \(const idx of wave\)[\s\S]{0,80}await readAt/);
+    assert.match(win, /if \(isStale\(\)\) return null;/);
+    assert.match(win, /if \(idx === selIdx && sel\)/);
+    assert.match(win, /row = \{ idx, msg: sel,/);
+    assert.match(win, /nxScrollDbg\("inline\.window"/);
+    // Counted in the emitted bundle, because vite.config.ts also carries these
+    // strings inside its own build assertions.
+    const emitted = read('dist', 'inlaynexus2.0.js');
+    assert.equal(
+      (emitted.match(/nxInlineWindow\(els, selIdx, sel, radius, \{ onlySel, isStale: stale \}\)/g) || []).length,
+      1,
+    );
+    assert.equal(
+      (emitted.match(/nxInlineWindow\(els, selIdx, sel, 1, \{ isStale: stale \}\)/g) || []).length,
+      1,
+    );
   }
   assert.match(source, /async function nxClearInlinePhotos\(/);
   assert.match(source, /t\._inlineNeedStamp = !0/);

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.22';
+const PLUGIN_VERSION = '2.5.23';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -766,6 +766,15 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.23</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>카드·이미지 장부를 캐릭터챗별로 쪼갰습니다. 방을 열 때 그 방 몫만 읽습니다</li>
+            <li>기존 데이터는 처음 열 때 한 번에 옮겨집니다. 따로 누를 버튼은 없습니다</li>
+            <li>에셋 이름에 어느 캐릭터챗인지 들어갑니다</li>
+            <li>Risu가 에셋 목록을 0개로 넘겨주면 저장을 보내지 않습니다 (에셋 유실 방지)</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.22</strong>
@@ -12940,8 +12949,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.22",
-    body: "탐색 크게보기 수정. 유저정보는 페르소나. 만화 비율 옵션. 업데이트 내역 탭 참고."
+    title: "2.5.23",
+    body: "카드·이미지 장부를 캐릭터챗별로 쪼갰습니다. 데이터 이전은 자동입니다. 업데이트 내역 탭 참고."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

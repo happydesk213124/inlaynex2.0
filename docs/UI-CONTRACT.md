@@ -222,7 +222,7 @@ current pointer (`provisional`, no auto-gen). A real click in that window
 cancels the timer. Listener binding also requests an immediate repaint on an
 independent timer, leaving the boot timer intact; if required messages/settings
 are not ready, it schedules one delayed bind retry.
-`card.preset_from_image_filter` (boolean, default `true`) keeps artist/quality tags when loading a style preset from an image; off dumps the meta main as-is.
+`card.preset_from_image_filter` (boolean, default `true`) keeps artist/quality tags when loading a style preset from an image; off dumps the meta main but still strips 1girl/1boy/solo so the person-tag injector stays in charge.
 Style presets may set `steps`, `sampler`, `scheduler`, `model_family` (`v4`|`v5`).
 Empty `sampler` uses the Models-tab sampler for that family. The preset
 sampler list matches Models (Euler Ancestral … DPM++ SDE).

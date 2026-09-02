@@ -1876,6 +1876,9 @@ test('from-image filter, look attach, and NAI badge are wired in source', () => 
   assert.match(vite, /\/v1\/presets\/look/);
   assert.match(vite, /VENDOR_NAI_IMG_BADGE_PATCH/);
   assert.match(vite, /data-preset-filter-tags/);
+  assert.match(vite, /nx-from-image-filter/);
+  assert.match(vite, /await flushSettingsSave\(\)/);
+  assert.match(vite, /await pe\(\{ card: \{ \.\.\.a \} \}\)/);
   const look = read('src', 'services', 'preset-look.ts');
   assert.match(look, /PRESET_LOOK_WEBP_QUALITY/);
   const diag = read('src', 'services', 'diagnostics.ts');

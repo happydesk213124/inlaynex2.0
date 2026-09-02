@@ -1563,7 +1563,12 @@ const VENDOR_PRESET_CHIP_CSS_PATCH =
 .preset-look-thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .preset-look-thumb:disabled{opacity:.45;cursor:default}
 .preset-look-box{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:24px}
-.preset-look-box img{max-width:min(92vw,720px);max-height:88vh;object-fit:contain;border-radius:12px}`;
+.preset-look-box img{max-width:min(92vw,720px);max-height:88vh;object-fit:contain;border-radius:12px}
+.nx-from-image-split{display:inline-flex;align-items:stretch;border-radius:8px;overflow:hidden;border:1px solid rgba(148,163,184,.35);background:rgba(18,24,38,.95)}
+.nx-from-image-split.armed{border-color:rgba(124,108,255,.65)}
+.nx-from-image-split > [data-preset-from-image]{border:0;border-radius:0;background:transparent}
+.nx-from-image-filter{display:inline-flex;align-items:center;gap:4px;margin:0;padding:0 10px;border-left:1px solid rgba(148,163,184,.28);font:700 12px Segoe UI,sans-serif;color:#c9d4e6;cursor:pointer;white-space:nowrap}
+.nx-from-image-filter input{margin:0}`;
 
 const VENDOR_PRESET_LOOK_BAR_NEEDLE =
   `            <button type="button" id="nx-preset-del" class="secondary">삭제</button>
@@ -2770,8 +2775,10 @@ const VENDOR_PRESET_HEAD_SAVE_PATCH = `              <div class="prompt-title">�
             </div>
             <div class="row" style="margin:0;gap:8px;align-items:center;flex-shrink:0">
               <span class="badge \${U.length ? "custom" : "default"}">\${U.length}개</span>
-              <button type="button" id="nx-preset-from-image-head" class="secondary\${t.presetImageFocus ? " armed" : ""}" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">\${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
-              <label class="check" data-nx-help-id="nx-preset-from-image-filter" style="margin:0"><input type="checkbox" data-preset-filter-tags \${i.preset_from_image_filter !== !1 ? "checked" : ""}> 태그 필터</label>
+              <span class="nx-from-image-split\${t.presetImageFocus ? " armed" : ""}">
+                <button type="button" id="nx-preset-from-image-head" class="secondary" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">\${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
+                <label class="nx-from-image-filter" data-nx-help-id="nx-preset-from-image-filter"><input type="checkbox" data-preset-filter-tags \${i.preset_from_image_filter !== !1 ? "checked" : ""}> 필터</label>
+              </span>
               <button type="button" id="nx-save-card-head">스타일 프리셋 저장</button>
             </div>
           </div>
@@ -3177,8 +3184,10 @@ const VENDOR_PRESET_HTML_PATCH = `            <label class="wide"><span>프리�
             <div class="ref-preview wide" id="nx-preset-vibe-preview">\${f?.vibe_configured && f?.vibe_preview_url ? \`<img src="\${h(f.vibe_preview_url)}" alt="vibe">\` : '<span class="muted">없음 · 생성 시 NAI 모델설정 vibe 사용</span>'}</div>
           </div>
           <div class="row" style="margin-top:14px">
-            <button type="button" id="nx-preset-from-image" class="secondary\${t.presetImageFocus ? " armed" : ""}" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">\${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
-            <label class="check" data-nx-help-id="nx-preset-from-image-filter" style="margin:0"><input type="checkbox" id="nx-preset-from-image-filter" data-preset-filter-tags \${i.preset_from_image_filter !== !1 ? "checked" : ""}> 태그 필터</label>
+            <span class="nx-from-image-split\${t.presetImageFocus ? " armed" : ""}">
+              <button type="button" id="nx-preset-from-image" class="secondary" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">\${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
+              <label class="nx-from-image-filter" data-nx-help-id="nx-preset-from-image-filter"><input type="checkbox" id="nx-preset-from-image-filter" data-preset-filter-tags \${i.preset_from_image_filter !== !1 ? "checked" : ""}> 필터</label>
+            </span>
             <span class="autotag-badge\${t.presetImageFocus ? " show" : ""}" data-preset-image-badge>\${t.presetImageFocus ? "선택됨 · Ctrl+V" : ""}</span>
             <input id="nx-preset-from-image-file" type="file" accept="image/*" style="display:none">
             <button id="nx-save-card">스타일 프리셋 저장</button>
@@ -3538,11 +3547,17 @@ const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
           a.custom_neg = negative;
           t.presetImageFocus = !1;
           queueSettingsSave({ card: { ...a } });
+          await flushSettingsSave();
+          await pe({ card: { ...a } });
           $e("이미지 프리셋 추가됨");
           try {
             const look = await K("/v1/presets/look", { method: "POST", body: { preset_id: id, image_b64 } }, 6e4);
-            const pr = (a.presets || []).find((p) => presetIdEq(p.id, id));
-            pr && (pr.look_configured = !0, pr.look_preview_url = look?.preview_url || "", pr.look_hash = look?.look_hash || "");
+            const applyLook = (presets) => {
+              const pr = (presets || []).find((p) => presetIdEq(p.id, id));
+              pr && (pr.look_configured = !0, pr.look_preview_url = look?.preview_url || "", pr.look_hash = look?.look_hash || "");
+            };
+            applyLook(a.presets);
+            applyLook(t.backendSettings?.card?.presets);
             t._nxPaintPresetLook && t._nxPaintPresetLook();
           } catch (lookErr) {
             $e("참고컷 저장 실패");
@@ -3554,6 +3569,7 @@ const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
         }
       };
       const paintPresetImageFocus = () => {
+        document.querySelectorAll(".nx-from-image-split").forEach((w) => w.classList.toggle("armed", !!t.presetImageFocus));
         document.querySelectorAll("[data-preset-from-image]").forEach((b) => {
           b.classList.toggle("armed", !!t.presetImageFocus);
           b.textContent = t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드";
@@ -3564,6 +3580,8 @@ const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
         });
       };
       document.querySelectorAll("[data-preset-filter-tags]").forEach((box) => {
+        box.addEventListener("click", (ev) => ev.stopPropagation());
+        box.closest("label")?.addEventListener("click", (ev) => ev.stopPropagation());
         box.addEventListener("change", () => {
           const on = !!box.checked;
           document.querySelectorAll("[data-preset-filter-tags]").forEach((other) => { other.checked = on; });

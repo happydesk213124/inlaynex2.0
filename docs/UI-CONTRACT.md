@@ -222,6 +222,7 @@ current pointer (`provisional`, no auto-gen). A real click in that window
 cancels the timer. Listener binding also requests an immediate repaint on an
 independent timer, leaving the boot timer intact; if required messages/settings
 are not ready, it schedules one delayed bind retry.
+`card.preset_from_image_filter` (boolean, default `true`) keeps artist/quality tags when loading a style preset from an image; off dumps the meta main as-is.
 Style presets may set `steps`, `sampler`, `scheduler`, `model_family` (`v4`|`v5`).
 Empty `sampler` uses the Models-tab sampler for that family. The preset
 sampler list matches Models (Euler Ancestral … DPM++ SDE).
@@ -485,7 +486,7 @@ then persisted.
 `POST /v1/nai/vibe` `{image_b64, information_extracted, strength}` ·
 `POST /v1/nai/vibe/clear` · `/v1/nai/reference` · `/v1/nai/vibe` ·
 `POST /v1/autotag` `{image_b64, threshold}` → `{ok, appearance, attire, accessories, tags, text}`
-`POST /v1/presets/from-image` `{image_b64}` → `{ok, positive, negative, cfg_scale, cfg_rescale, name}`.
+`POST /v1/presets/from-image` `{image_b64, filter_tags?}` → `{ok, positive, negative, cfg_scale, cfg_rescale, name, model_family}`. `filter_tags` defaults true.
 `POST /v1/presets/look` `{preset_id, image_b64}` · `POST /v1/presets/look/clear` `{preset_id}` ·
 `POST /v1/presets/look/generate` `{preset_id, positive?, negative?, model_family?}` →
 `{ok, look_hash, preview_url}` (appends `1girl, smile,`; stores module webp like char-ref).

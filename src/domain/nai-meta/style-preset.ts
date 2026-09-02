@@ -3,7 +3,7 @@
  * keep artist:* (with emphasis), quality / illustration / collaboration / bad anatomy
  * tokens (with emphasis), drop everything else. Negative is kept separately as-is.
  */
-import { joinTags } from '../../core/util/text.ts';
+import { cleanText, joinTags } from '../../core/util/text.ts';
 import { negativeFromNaiMetadata } from './from-metadata.ts';
 import { expandTokenPlains, splitNaiPromptTokens } from './prompt-tags.ts';
 
@@ -75,6 +75,7 @@ function numOrNull(value: unknown): number | null {
 export function styleFieldsFromNaiMetadata(
   meta: unknown,
   positivePrompt: string,
+  opts?: { filterTags?: boolean },
 ): StylePresetFromMeta {
   let root = parseMaybeJson(meta);
   const rootObj = asRecord(root);
@@ -91,8 +92,9 @@ export function styleFieldsFromNaiMetadata(
     commentObj?.cfg_rescale ?? commentObj?.cfgRescale ?? rootObj?.cfg_rescale,
   );
 
+  const filterTags = opts?.filterTags !== false;
   return {
-    positive: filterStylePresetPositive(positivePrompt),
+    positive: filterTags ? filterStylePresetPositive(positivePrompt) : cleanText(positivePrompt, 20000),
     negative: neg,
     cfg_scale,
     cfg_rescale,

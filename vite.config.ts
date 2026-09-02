@@ -46,10 +46,15 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.24';
+const PLUGIN_VERSION = '2.5.25';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
+
+const VENDOR_NAI_IMG_BADGE_NEEDLE =
+  `\${U ? "활성" : "비활성"} · API key \${s.api_key_configured ? "설정됨" : "없음"}`;
+const VENDOR_NAI_IMG_BADGE_PATCH =
+  `\${U ? "활성" : "비활성"} · API key \${s.api_key_configured || s.api_keys_v5_configured || s.api_keys_v4_configured ? "설정됨" : "없음"}`;
 
 /**
  * Settings reset already asks via `globalThis.confirm`; prompt restore did not.
@@ -304,6 +309,7 @@ const VENDOR_NATURAL_BASE_CT_NEEDLE =
 const VENDOR_NATURAL_BASE_CT_PATCH =
   `      lore_extra: document.getElementById("nx-lore-extra") ? normalizeLoreExtraMode(N("nx-lore-extra")) : normalizeLoreExtraMode(e.lore_extra),
       natural_base: document.getElementById("nx-natural-base") ? N("nx-natural-base") || "short" : e.natural_base || "short",
+      preset_from_image_filter: document.getElementById("nx-preset-from-image-filter") ? ee("nx-preset-from-image-filter") : e.preset_from_image_filter !== !1,
       v5_natural_lang: document.getElementById("nx-v5-natural-lang") ? (N("nx-v5-natural-lang") === "ja" ? "ja" : "en") : (e.v5_natural_lang === "ja" ? "ja" : "en"),
       nai_use_coords: document.getElementById("nx-nai-coords") ? ee("nx-nai-coords") : e.nai_use_coords !== !1,
       nai5_first: document.getElementById("nx-nai5-first") ? ee("nx-nai5-first") : !!e.nai5_first,
@@ -766,6 +772,14 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.25</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>NAI4·NAI5 키 하나만 있어도 다른 쪽 생성·Vibe에 그 키를 씁니다</li>
+            <li>이미지 프리셋 로드가 메타에서 4/5를 읽고, 그 그림을 참고컷으로 붙입니다</li>
+            <li>스타일 프리셋 탭에서 드롭·Positive 붙여넣기로도 로드합니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.24</strong>
@@ -2757,6 +2771,7 @@ const VENDOR_PRESET_HEAD_SAVE_PATCH = `              <div class="prompt-title">�
             <div class="row" style="margin:0;gap:8px;align-items:center;flex-shrink:0">
               <span class="badge \${U.length ? "custom" : "default"}">\${U.length}개</span>
               <button type="button" id="nx-preset-from-image-head" class="secondary\${t.presetImageFocus ? " armed" : ""}" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">\${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
+              <label class="check" data-nx-help-id="nx-preset-from-image-filter" style="margin:0"><input type="checkbox" data-preset-filter-tags \${i.preset_from_image_filter !== !1 ? "checked" : ""}> 태그 필터</label>
               <button type="button" id="nx-save-card-head">스타일 프리셋 저장</button>
             </div>
           </div>
@@ -3163,6 +3178,7 @@ const VENDOR_PRESET_HTML_PATCH = `            <label class="wide"><span>프리�
           </div>
           <div class="row" style="margin-top:14px">
             <button type="button" id="nx-preset-from-image" class="secondary\${t.presetImageFocus ? " armed" : ""}" data-preset-from-image title="클릭: 붙여넣기 대기 · 더블클릭: 파일 선택">\${t.presetImageFocus ? "붙여넣기 대기" : "이미지 프리셋 로드"}</button>
+            <label class="check" data-nx-help-id="nx-preset-from-image-filter" style="margin:0"><input type="checkbox" id="nx-preset-from-image-filter" data-preset-filter-tags \${i.preset_from_image_filter !== !1 ? "checked" : ""}> 태그 필터</label>
             <span class="autotag-badge\${t.presetImageFocus ? " show" : ""}" data-preset-image-badge>\${t.presetImageFocus ? "선택됨 · Ctrl+V" : ""}</span>
             <input id="nx-preset-from-image-file" type="file" accept="image/*" style="display:none">
             <button id="nx-save-card">스타일 프리셋 저장</button>
@@ -3490,10 +3506,16 @@ const VENDOR_PRESET_VIBE_EVT_NEEDLE = `    }), document.getElementById("nx-prese
     }), document.getElementById("nx-preset-file-input")?.addEventListener("change", async (a) => {`;
 
 const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
+      const presetFilterOn = () => {
+        const el = document.getElementById("nx-preset-from-image-filter");
+        if (el) return !!el.checked;
+        return t.backendSettings?.card?.preset_from_image_filter !== !1;
+      };
       const runPresetFromImage = async (file) => {
         if (!file) return;
         try {
-          const res = await K("/v1/presets/from-image", { method: "POST", body: { image_b64: await It(file) } }, 6e4);
+          const image_b64 = await It(file);
+          const res = await K("/v1/presets/from-image", { method: "POST", body: { image_b64, filter_tags: presetFilterOn() } }, 6e4);
           const a = _e();
           Array.isArray(a.presets) || (a.presets = []);
           const id = mt(res?.name || "이미지 프리셋", a.presets.length);
@@ -3501,13 +3523,15 @@ const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
           const negative = String(res?.negative || "");
           const cfg = res?.cfg_scale == null || res?.cfg_scale === "" ? null : Number(res.cfg_scale);
           const rescale = res?.cfg_rescale == null || res?.cfg_rescale === "" ? null : Number(res.cfg_rescale);
+          const family = res?.model_family === "v5" ? "v5" : "v4";
           a.presets.push({
             id,
             name: String(res?.name || \`이미지 프리셋 \${a.presets.length + 1}\`),
             positive,
             negative,
             cfg_scale: Number.isFinite(cfg) ? cfg : null,
-            cfg_rescale: Number.isFinite(rescale) ? rescale : null
+            cfg_rescale: Number.isFinite(rescale) ? rescale : null,
+            model_family: family
           });
           pinActivePreset(a, id);
           a.custom_pos = positive;
@@ -3515,6 +3539,14 @@ const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
           t.presetImageFocus = !1;
           queueSettingsSave({ card: { ...a } });
           $e("이미지 프리셋 추가됨");
+          try {
+            const look = await K("/v1/presets/look", { method: "POST", body: { preset_id: id, image_b64 } }, 6e4);
+            const pr = (a.presets || []).find((p) => presetIdEq(p.id, id));
+            pr && (pr.look_configured = !0, pr.look_preview_url = look?.preview_url || "", pr.look_hash = look?.look_hash || "");
+            t._nxPaintPresetLook && t._nxPaintPresetLook();
+          } catch (lookErr) {
+            $e("참고컷 저장 실패");
+          }
           await P();
         } catch (err) {
           t.uiMessage = { type: "error", text: z(err?.message || err) };
@@ -3531,6 +3563,15 @@ const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
           badge.textContent = t.presetImageFocus ? "선택됨 · Ctrl+V" : "";
         });
       };
+      document.querySelectorAll("[data-preset-filter-tags]").forEach((box) => {
+        box.addEventListener("change", () => {
+          const on = !!box.checked;
+          document.querySelectorAll("[data-preset-filter-tags]").forEach((other) => { other.checked = on; });
+          const a = _e();
+          a.preset_from_image_filter = on;
+          queueSettingsSave({ card: { ...a } });
+        });
+      });
       const fileEl = document.getElementById("nx-preset-from-image-file");
       document.querySelectorAll("[data-preset-from-image]").forEach((btn) => {
         btn.addEventListener("click", (ev) => {
@@ -3563,12 +3604,22 @@ const VENDOR_PRESET_VIBE_EVT_PATCH = `    }), (() => {
         await runPresetFromImage(f);
       });
       t._presetImagePasteBound || (t._presetImagePasteBound = !0, window.addEventListener("paste", async (ev) => {
-        if (!t.presetImageFocus || !t.uiOpen || t.uiTab !== "style_presets" && t.uiTab !== "card") return;
+        if (!t.uiOpen || t.uiTab !== "style_presets" && t.uiTab !== "card") return;
         const item = Array.from(ev.clipboardData?.items || []).find((x) => x.type.startsWith("image/"));
         if (!item) return;
         ev.preventDefault();
         const f = item.getAsFile();
         f && await runPresetFromImage(f);
+      }), window.addEventListener("dragover", (ev) => {
+        if (!t.uiOpen || t.uiTab !== "style_presets" && t.uiTab !== "card") return;
+        if (!Array.from(ev.dataTransfer?.types || []).includes("Files")) return;
+        ev.preventDefault();
+      }), window.addEventListener("drop", async (ev) => {
+        if (!t.uiOpen || t.uiTab !== "style_presets" && t.uiTab !== "card") return;
+        const f = Array.from(ev.dataTransfer?.files || []).find((x) => String(x.type || "").startsWith("image/"));
+        if (!f) return;
+        ev.preventDefault();
+        await runPresetFromImage(f);
       }));
     })(), document.getElementById("nx-preset-vibe-pick")?.addEventListener("click", () => {
       document.getElementById("nx-preset-vibe-file")?.click();
@@ -12996,8 +13047,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.24",
-    body: "스피너·사진 범위를 캐릭터 말풍선 기준으로 셉니다. 유저 말풍선은 건너뜁니다."
+    title: "2.5.25",
+    body: "NAI 키 하나면 4/5 둘 다 쓰고, 이미지 프리셋 로드가 참고컷까지 붙입니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -16359,6 +16410,7 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_CT_GATE_NEEDLE, 'Ct() gate for preset-only tab');
   assertOnce(raw, VENDOR_SHOW_CARD_TAB_NEEDLE, 'showCardTab → style_presets');
   assertOnce(raw, VENDOR_MODELS_LLM_NEEDLE, 'models LLM role subtabs HTML');
+  assertOnce(raw, VENDOR_NAI_IMG_BADGE_NEEDLE, 'models NAI image-card key badge');
   assertOnce(raw, VENDOR_OE_LLM_NEEDLE, 'Oe() llm roles read');
   assertOnce(raw, VENDOR_OE_RETURN_NEEDLE, 'Oe() return llm_roles');
   assertOnce(raw, VENDOR_LLM_BIND_NEEDLE, 'models LLM role bind events');
@@ -16773,6 +16825,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_PRESET_SWITCH_OPT_NEEDLE, VENDOR_PRESET_SWITCH_OPT_PATCH)
     .replace(VENDOR_SHOW_CARD_TAB_NEEDLE, VENDOR_SHOW_CARD_TAB_PATCH)
     .replace(VENDOR_MODELS_LLM_NEEDLE, VENDOR_MODELS_LLM_PATCH)
+    .replace(VENDOR_NAI_IMG_BADGE_NEEDLE, VENDOR_NAI_IMG_BADGE_PATCH)
     .replace(VENDOR_OE_LLM_NEEDLE, VENDOR_OE_LLM_PATCH)
     .replace(VENDOR_OE_RETURN_NEEDLE, VENDOR_OE_RETURN_PATCH)
     .replace(VENDOR_LLM_BIND_NEEDLE, VENDOR_LLM_BIND_PATCH)

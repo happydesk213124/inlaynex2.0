@@ -216,6 +216,8 @@ export interface CardSettings {
   unified_chat_priority: boolean;
   /** Unified character tab: keep one row per name (priority, then newest). */
   unified_winners_only: boolean;
+  /** Style-preset from-image: keep artist/quality only. Off = dump meta main as-is. */
+  preset_from_image_filter?: boolean;
   generate_all_roles: boolean;
   /** off | legacy (2.4.7 parent mount) | compat (body hosts only). */
   inline_msg_actions?: 'off' | 'legacy' | 'compat' | boolean;

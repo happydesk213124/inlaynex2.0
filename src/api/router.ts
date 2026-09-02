@@ -669,7 +669,9 @@ const WRITE_ROUTES: readonly Route[] = [
       const rawB64 = uploadBase64(body).replace(/\s+/g, '');
       if (!rawB64) throw new Error('image_b64 required');
       const bytes = base64ToBytes(rawB64);
-      return ok(await diagnostics.evaluatePresetFromImage(u8ToArrayBuffer(bytes)));
+      const rawFilter = body.filter_tags;
+      const filterTags = rawFilter !== false && rawFilter !== 'false' && rawFilter !== 0 && rawFilter !== '0';
+      return ok(await diagnostics.evaluatePresetFromImage(u8ToArrayBuffer(bytes), { filterTags }));
     },
   },
 ];

@@ -272,8 +272,11 @@ async function readAssetBytes(path: string): Promise<ArrayBuffer | null> {
   }
 }
 
-export async function putCharRefAsset(bytes: BytesLike): Promise<{ hash: string; bytes: ArrayBuffer; path: string }> {
-  const stored = await encodeCharRefWebp(bytes);
+export async function putCharRefAsset(
+  bytes: BytesLike,
+  opts?: { quality?: number },
+): Promise<{ hash: string; bytes: ArrayBuffer; path: string }> {
+  const stored = await encodeCharRefWebp(bytes, opts?.quality);
   if (stored.byteLength < MIN_IMAGE_BYTES) throw new Error('참고 이미지가 비어 있습니다');
   const hash = sanitizeHash(await sha256Hex(stored));
   if (!hash) throw new Error('참고 이미지 해시를 만들지 못했습니다');

@@ -348,6 +348,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   };
   card.nai5_first = flagOn(card.nai5_first, false);
   card.nai5_only = flagOn(card.nai5_only, false);
+  card.preset_from_image_filter = flagOn(card.preset_from_image_filter, true);
   card.nai4_fallback = flagOn(card.nai4_fallback, false);
   card.nai5_speech = flagOn(card.nai5_speech, false);
   card.studio_seed_lock = flagOn(card.studio_seed_lock, false);

@@ -108,7 +108,7 @@ export function filterAssetTriggersForUnfilledLooks(
   const eligible = assetMatchTriggers(triggers);
   if (!roster?.length) return eligible;
   const rows = opts?.preferFilledLooks
-    ? pickUnifiedWinners(roster, characterHasAppearance)
+    ? pickUnifiedWinners([...roster], characterHasAppearance)
     : roster;
 
   const filledKeys = new Set<string>();

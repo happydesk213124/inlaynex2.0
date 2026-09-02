@@ -115,9 +115,13 @@ function drawToCanvas(
  * at 400, prefer webp @ 0.8. Plugin hosts often fail `toBlob('image/webp')`,
  * so this falls back to PNG then the original bytes instead of aborting.
  */
-export async function encodeCharRefWebp(buf: BytesLike): Promise<ArrayBuffer> {
+export async function encodeCharRefWebp(
+  buf: BytesLike,
+  quality = CHAR_REF_STORE_WEBP_QUALITY,
+): Promise<ArrayBuffer> {
   const src = asU8(buf);
   if (!src.length) throw new Error('참고 이미지가 비어 있습니다');
+  const q = Number.isFinite(quality) && quality > 0 && quality <= 1 ? quality : CHAR_REF_STORE_WEBP_QUALITY;
   const mime = sniffImageMime(src);
   const image = await decodeImage(src, mime, true);
   if (!image || !(image.width > 0 && image.height > 0)) {
@@ -129,10 +133,10 @@ export async function encodeCharRefWebp(buf: BytesLike): Promise<ArrayBuffer> {
     const { w, h } = charRefStoreSize(image.width, image.height, CHAR_REF_STORE_MAX_WIDTH);
     const drawn = drawToCanvas(image, w, h, false) || drawToCanvas(image, w, h, true);
     if (!drawn) return u8ToArrayBuffer(src);
-    const webp = await canvasToWebp(drawn, CHAR_REF_STORE_WEBP_QUALITY);
+    const webp = await canvasToWebp(drawn, q);
     if (webp && isWebpBytes(asU8(webp))) {
       dbg('image.char_ref.webp', {
-        message: `${w}x${h} · q${CHAR_REF_STORE_WEBP_QUALITY} · ${Math.round(webp.byteLength / 1024)}KB · from ${mime}`,
+        message: `${w}x${h} · q${q} · ${Math.round(webp.byteLength / 1024)}KB · from ${mime}`,
         bytes: webp.byteLength,
       });
       return webp;

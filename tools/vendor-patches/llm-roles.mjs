@@ -28,7 +28,7 @@ export const VENDOR_MODELS_LLM_PATCH = `    else if (t.uiTab === "models") {
       const LH = globalThis.__INLAY_LLM__ || {};
       const roles = typeof LH.normalizeLlmRolesSettings == "function" ? LH.normalizeLlmRolesSettings(t.backendSettings?.llm_roles) : { autotag: { follow_main: !0 }, asset_char: { follow_main: !0 }, curator: { follow_main: !0 } };
       const tab = t.modelsLlmTab === "autotag" || t.modelsLlmTab === "asset_char" || t.modelsLlmTab === "curator" ? t.modelsLlmTab : "main";
-      const imgBk = w(s.backend) === "comfy" ? "comfy" : "nai", U = imgBk === "comfy" ? !!s.comfy_configured || !!w(s.comfy_workflow_json) : !!s.api_key_configured;
+      const imgBk = w(s.backend) === "comfy" ? "comfy" : "nai", U = imgBk === "comfy" ? !!s.comfy_configured || !!w(s.comfy_workflow_json) : !!(s.api_key_configured || s.api_keys_v5_configured || s.api_keys_v4_configured);
       const tabsHtml = typeof LH.renderLlmRoleTabsHtml == "function" ? LH.renderLlmRoleTabsHtml(tab) : "";
       const renderCard = typeof LH.renderLlmRoleCardHtml == "function" ? LH.renderLlmRoleCardHtml.bind(LH) : null;
       const mainCard = renderCard ? renderCard({ prefix: "nx-llm", title: "메인 태깅", settings: c, hidden: tab !== "main", testResultHtml: $t("llm") }) : "";

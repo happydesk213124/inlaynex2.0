@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   characterReferenceCandidates,
   effectiveCharacterReferenceMode,
+  naiFamilyOfModel,
   pickPresetForFamily,
   resolveShotFamily,
   shouldPrepareSharedVibe,
@@ -147,6 +148,13 @@ test('coords drop when any two characters share a pair', () => {
   assert.equal(shouldUseNaiCoords(true, [{ x: 0.2, y: 0.5 }, { x: 0.2, y: 0.8 }]), true);
 });
 
+test('naiFamilyOfModel maps diffusion 5 to v5 and everything else to v4', () => {
+  assert.equal(naiFamilyOfModel('nai-diffusion-5-full'), 'v5');
+  assert.equal(naiFamilyOfModel('nai-diffusion-5-curated'), 'v5');
+  assert.equal(naiFamilyOfModel('nai-diffusion-4-5-full'), 'v4');
+  assert.equal(naiFamilyOfModel('nai-diffusion-4-full'), 'v4');
+});
+
 test('NAI4 and NAI5 keep their own sampler and steps', () => {
   const nai = {
     sampler: 'k_euler',
@@ -169,7 +177,7 @@ test('family sampler falls back to shared nai.sampler and drops unknown ids', ()
   assert.equal(naiStepsForFamily({ steps: 18 }, 'v4'), 18);
 });
 
-test('vibe encode uses the V4 key list, not V5', () => {
+test('vibe encode prefers V4, then the other family, then legacy', () => {
   assert.equal(vibeEncodeToken({
     api_key: 'pst-legacy',
     api_keys_v5: ['pst-v5'],
@@ -179,12 +187,21 @@ test('vibe encode uses the V4 key list, not V5', () => {
     api_key: 'pst-legacy',
     api_keys_v5: ['pst-v5'],
     api_keys_v4: [],
-  }), 'pst-legacy');
+  }), 'pst-v5');
   assert.equal(vibeEncodeToken({
     api_key: '',
     api_keys_v5: ['pst-v5'],
     api_keys_v4: [],
-  }), '');
+  }), 'pst-v5');
+});
+
+test('empty family list borrows the other family before legacy api_key', () => {
+  const v5Only = { api_key: '', api_keys_v5: ['pst-v5'], api_keys_v4: [] };
+  assert.deepEqual(tokensForFamily(v5Only, 'v4'), ['pst-v5']);
+  assert.deepEqual(tokensForFamily(v5Only, 'v5'), ['pst-v5']);
+  const v4Only = { api_key: 'pst-legacy', api_keys_v5: [], api_keys_v4: ['pst-v4'] };
+  assert.deepEqual(tokensForFamily(v4Only, 'v5'), ['pst-v4']);
+  assert.deepEqual(tokensForFamily(v4Only, 'v4'), ['pst-v4']);
 });
 
 test('legacy api_key fills both families when lists are empty', () => {

@@ -408,6 +408,15 @@ test('pickNaiMeta prefers stealth when text chunks have prompt but no uc', () =>
   assert.equal(pickNaiMeta(textOnly, null), textOnly);
 });
 
+test('styleFieldsFromNaiMetadata can dump main without the artist filter', () => {
+  const raw = '0.5::artist:freng::, best quality, dark green hair, 1girl';
+  const filtered = styleFieldsFromNaiMetadata({ Comment: { uc: 'lowres' } }, raw);
+  assert.equal(filtered.positive.includes('dark green hair'), false);
+  const dumped = styleFieldsFromNaiMetadata({ Comment: { uc: 'lowres' } }, raw, { filterTags: false });
+  assert.match(dumped.positive, /dark green hair/);
+  assert.match(dumped.positive, /1girl/);
+});
+
 test('styleFieldsFromNaiMetadata reads neg and cfg', () => {
   const fields = styleFieldsFromNaiMetadata(
     {

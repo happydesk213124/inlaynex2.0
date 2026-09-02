@@ -23,18 +23,21 @@ export function maskNaiToken(token: string): string {
 }
 
 /**
- * encode-vibe is a V4-family NovelAI call. Prefer `api_keys_v4`, then the
- * legacy single `api_key` — never the V5 list.
+ * encode-vibe is a V4-family NovelAI call. Uses `tokensForFamily(v4)`:
+ * V4 list, then the other family's list, then legacy `api_key`.
  */
 export function vibeEncodeToken(nai: NaiSettings): string {
   return tokensForFamily(nai, 'v4')[0] || '';
 }
 
-/** Tokens for one family. Empty list → fall back to legacy `api_key`. */
+/** Own list, then the other family's list, then legacy `api_key`. */
 export function tokensForFamily(nai: NaiSettings, family: NaiFamily): string[] {
-  const extra = family === 'v5' ? nai.api_keys_v5 : nai.api_keys_v4;
-  const listed = normalizeTokenList(extra);
+  const own = family === 'v5' ? nai.api_keys_v5 : nai.api_keys_v4;
+  const other = family === 'v5' ? nai.api_keys_v4 : nai.api_keys_v5;
+  const listed = normalizeTokenList(own);
   if (listed.length) return listed;
+  const borrowed = normalizeTokenList(other);
+  if (borrowed.length) return borrowed;
   const legacy = cleanText(nai.api_key, 4000);
   return legacy ? [legacy] : [];
 }

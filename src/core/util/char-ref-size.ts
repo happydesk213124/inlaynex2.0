@@ -2,6 +2,8 @@
 export const CHAR_REF_STORE_MAX_WIDTH = 400;
 /** Forced webp quality for the module store. */
 export const CHAR_REF_STORE_WEBP_QUALITY = 0.8;
+/** Style-preset look shots (등록 / 생성 / from-image). */
+export const PRESET_LOOK_WEBP_QUALITY = 0.9;
 
 export function charRefStoreSize(
   width: number,

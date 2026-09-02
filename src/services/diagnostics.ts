@@ -22,8 +22,10 @@ import { cleanText } from '../core/util/text';
 import {
   extractNaiMetadata,
   promptFromNaiMetadata,
+  sceneFromNaiMetadata,
   styleFieldsFromNaiMetadata,
 } from '../domain/nai-meta/index.ts';
+import { naiFamilyOfModel } from '../domain/nai/routing';
 import {
   buildComfyPlaceholderValues,
   buildComfyWorkflowFromTemplate,
@@ -302,18 +304,23 @@ export async function evaluateAutotag(bytes: ArrayBuffer, threshold: number): Pr
  * Build a style-preset draft from NovelAI image metadata (not vision).
  * Positive keeps artist + quality-style tags with emphasis; negative/CFG copied as-is.
  */
-export async function evaluatePresetFromImage(bytes: ArrayBuffer): Promise<ApiResult> {
+export async function evaluatePresetFromImage(
+  bytes: ArrayBuffer,
+  opts?: { filterTags?: boolean },
+): Promise<ApiResult> {
   if (!bytes?.byteLength) throw new Error('image is empty');
   const meta = await extractNaiMetadata(bytes);
   if (!meta) throw new Error('이미지에서 NovelAI 메타데이터를 읽지 못했습니다. PNG/WebP NAI 원본인지 확인하세요.');
   const prompt = promptFromNaiMetadata(meta);
   if (!cleanText(prompt)) throw new Error('메타데이터에 프롬프트가 없습니다.');
-  const fields = styleFieldsFromNaiMetadata(meta, prompt);
-  if (!fields.positive && !fields.negative) {
+  const filterTags = opts?.filterTags !== false;
+  const fields = styleFieldsFromNaiMetadata(meta, prompt, { filterTags });
+  if (filterTags && !fields.positive && !fields.negative) {
     throw new Error('프리셋에 넣을 artist/품질 태그와 네거티브가 비어 있습니다.');
   }
+  const model_family = naiFamilyOfModel(sceneFromNaiMetadata(meta).model);
   dbg('preset-from-image.done', {
-    message: `pos=${fields.positive.length} neg=${fields.negative.length} cfg=${fields.cfg_scale}`,
+    message: `pos=${fields.positive.length} neg=${fields.negative.length} cfg=${fields.cfg_scale} family=${model_family} filter=${filterTags}`,
     focus: true,
   });
   return {
@@ -323,6 +330,7 @@ export async function evaluatePresetFromImage(bytes: ArrayBuffer): Promise<ApiRe
     cfg_scale: fields.cfg_scale,
     cfg_rescale: fields.cfg_rescale,
     name: '이미지 프리셋',
+    model_family,
   };
 }
 

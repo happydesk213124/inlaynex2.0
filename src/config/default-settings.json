@@ -151,6 +151,7 @@
     "viewer_minimize_mode": "icon",
     "unified_chat_priority": false,
     "unified_winners_only": false,
+    "preset_from_image_filter": true,
     "overlay_hide_offscreen": true,
     "scroll_message_track": true,
     "click_message_track": true,

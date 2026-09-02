@@ -6,6 +6,7 @@
 
 import { API_URL } from '../core/constants';
 import type { ApiResult, StylePreset } from '../core/types';
+import { PRESET_LOOK_WEBP_QUALITY } from '../core/util/char-ref-size';
 import { pngToDataUrl } from '../storage/image-urls';
 import { cleanText } from '../core/util/text';
 import { sanitizeHash } from '../domain/character/char-ref-store';
@@ -45,7 +46,7 @@ function requirePreset(presetId: string): StylePreset {
 
 async function storeLookBytes(presetId: string, bytes: ArrayBuffer): Promise<ApiResult> {
   const id = cleanText(presetId, 120);
-  const stored = await putCharRefAsset(bytes);
+  const stored = await putCharRefAsset(bytes, { quality: PRESET_LOOK_WEBP_QUALITY });
   const row = requirePreset(id);
   row.look_hash = stored.hash;
   const preview = pngToDataUrl(stored.bytes);

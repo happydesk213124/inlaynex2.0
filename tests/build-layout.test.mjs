@@ -1867,3 +1867,18 @@ test('import-fill text path can attach lb-xnai; asset looks cannot', () => {
   assert.doesNotMatch(looks.slice(looksStart, looksEnd), /extraOnly/);
   assert.doesNotMatch(looks.slice(looksStart, looksEnd), /collectLorePayload/);
 });
+
+test('from-image filter, look attach, and NAI badge are wired in source', () => {
+  const keys = read('src', 'domain', 'nai', 'keys.ts');
+  assert.match(keys, /const borrowed = normalizeTokenList\(other\)/);
+  const vite = read('vite.config.ts');
+  assert.match(vite, /filter_tags: presetFilterOn\(\)/);
+  assert.match(vite, /\/v1\/presets\/look/);
+  assert.match(vite, /VENDOR_NAI_IMG_BADGE_PATCH/);
+  assert.match(vite, /data-preset-filter-tags/);
+  const look = read('src', 'services', 'preset-look.ts');
+  assert.match(look, /PRESET_LOOK_WEBP_QUALITY/);
+  const diag = read('src', 'services', 'diagnostics.ts');
+  assert.match(diag, /model_family/);
+  assert.match(diag, /filterTags/);
+});

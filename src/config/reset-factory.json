@@ -294,6 +294,7 @@
     "viewer_minimize_mode": "actions",
     "unified_chat_priority": true,
     "unified_winners_only": false,
+    "preset_from_image_filter": true,
     "overlay_hide_offscreen": true,
     "scroll_message_track": true,
     "click_message_track": true,

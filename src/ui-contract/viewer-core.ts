@@ -82,6 +82,7 @@ export interface GalleryCard {
   y_percent?: number;
   anchor_percent?: number;
   read_percent?: number;
+  image_url?: string;
   [key: string]: unknown;
 }
 
@@ -1205,6 +1206,23 @@ export interface SessionGalleryMerge<T> {
  * response says nothing, except about hashes it was explicitly asked for: an
  * asked hash that came back with no rows has no cards left.
  */
+function carryGalleryImageUrls<T extends GalleryCard>(prev: readonly T[], next: T[]): T[] {
+  if (!prev.length || !next.length) return next;
+  const urls = new Map<string, string>();
+  for (const card of prev) {
+    const id = String(card?.id || '');
+    const url = card?.image_url;
+    if (id && typeof url === 'string' && url) urls.set(id, url);
+  }
+  if (!urls.size) return next;
+  return next.map((card) => {
+    const id = String(card?.id || '');
+    if (!id || card.image_url) return card;
+    const image_url = urls.get(id);
+    return image_url ? { ...card, image_url } : card;
+  });
+}
+
 export function mergeSessionGallery<T extends GalleryCard = GalleryCard>(opts: {
   prev: readonly T[] | null | undefined;
   next: readonly T[] | null | undefined;
@@ -1213,8 +1231,10 @@ export function mergeSessionGallery<T extends GalleryCard = GalleryCard>(opts: {
   askedHashes?: readonly unknown[] | null;
   cap?: number;
 }): SessionGalleryMerge<T> {
-  const next = Array.isArray(opts.next) ? [...opts.next] : [];
   const prev = Array.isArray(opts.prev) ? opts.prev : [];
+  // GET /v1/gallery never returns pixels. Keep in-memory data URLs on the same
+  // card ids so Ht() does not rebuild the active sticky thumb after a refetch.
+  const next = carryGalleryImageUrls(prev, Array.isArray(opts.next) ? [...opts.next] : []);
   const total = Math.max(0, finiteNumber(opts.total, 0));
   const cap = Math.max(1, finiteNumber(opts.cap, 2000));
   if (!prev.length || next.length >= total) {

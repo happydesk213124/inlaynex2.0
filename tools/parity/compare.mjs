@@ -171,6 +171,8 @@ const normalize = (root) => {
         return [...new Set(
           node
             .filter((k) => k !== 'inx_nximg_*' && !String(k).startsWith('inx_nximg_'))
+            // 2.5.27 session note + command presets — no 1.x keys.
+            .filter((k) => !String(k).startsWith('inx_session_author_note_') && k !== 'inx_char_command_presets')
             .map((k) => (GALLERY_INDEX.test(String(k)) ? '<GALLERY_INDEX>' : k)),
         )].sort().map((v) => walk(v, key));
       }
@@ -184,7 +186,7 @@ const normalize = (root) => {
           .filter((p) => {
             const k = String(p.key);
             if (k.startsWith('curation_')) return false;
-            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll' || k === 'lorefilter_scan' || k === 'asset_author_note' || k === 'comic') return false;
+            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll' || k === 'command_char_edit' || k === 'lorefilter_scan' || k === 'asset_author_note' || k === 'global_author_note' || k === 'comic') return false;
             return true;
           })
           .map((v) => walk(v, key));
@@ -198,7 +200,7 @@ const normalize = (root) => {
         && node.includes('format')
       ) {
         return node
-          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll' && k !== 'lorefilter_scan' && k !== 'asset_author_note' && k !== 'comic')
+          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll' && k !== 'command_char_edit' && k !== 'lorefilter_scan' && k !== 'asset_author_note' && k !== 'global_author_note' && k !== 'comic')
           .map((v) => walk(v, key));
       }
       return node.map((v) => walk(v, key));
@@ -474,6 +476,8 @@ const INTENTIONAL_DIFF_STEPS = new Set([
   'chars.chat_b_after_delete',
   // 2.5.9 reset applies the recommended pack (not 1.x extract) and resets prompts.
   // The sharper check is settings.reset_factory_floor.
+  // 2.5.29: Comfy "연결 테스트" only persists; 1.x still hit /system_stats.
+  'comfy.test',
   'settings.reset',
   'settings.after_reset',
 ]);
@@ -553,6 +557,54 @@ const NEW_ONLY_STEPS = new Map([
     (v) => (v?.ok === true && v?.look_kept === true && v?.action === 'waving'
       ? null
       : `2.0 command-rewrite must keep look + apply action, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'session_note.put',
+    (v) => (v?.ok === true && v?.text === 'parity session note' && v?.prefix === 'parity session note'
+      ? null
+      : `session-author-note PUT must persist text as prefix, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'session_note.get',
+    (v) => (v?.ok === true && v?.text === 'parity session note' && v?.prefix === 'parity session note'
+      ? null
+      : `session-author-note GET must return the saved text as prefix, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'session_note.split_put',
+    (v) => (v?.ok === true && v?.prefix === 'pre-note' && v?.suffix === 'post-note'
+      ? null
+      : `session-author-note split PUT must keep prefix/suffix, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'session_note.split_get',
+    (v) => (v?.ok === true && v?.prefix === 'pre-note' && v?.suffix === 'post-note'
+      ? null
+      : `session-author-note split GET must return prefix/suffix, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'char_example.get',
+    (v) => (v?.ok === true && v?.configured === false && !v?.example_hash
+      ? null
+      : `example-shot GET on a new char must be empty, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'char_cmd_presets.put',
+    (v) => (v?.ok === true && Array.isArray(v?.items) && v.items.length === 1
+      ? null
+      : `command presets PUT must keep items[], got ${JSON.stringify(v)}`),
+  ],
+  [
+    'char_cmd_presets.get',
+    (v) => (v?.ok === true && v?.items?.[0]?.id === 'p1'
+      ? null
+      : `command presets GET must return p1, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'chars.command_rewrite',
+    (v) => (v?.ok === true && v?.mole === true && v?.costumes >= 2
+      ? null
+      : `character command-rewrite must apply add + new_costume, got ${JSON.stringify(v)}`),
   ],
   [
     'cards.studio_commit',
@@ -694,6 +746,15 @@ for (const name of oldSteps.keys()) {
   if (INTENTIONAL_DIFF_STEPS.has(name)) {
     if (!oldStep.ok) findings.push({ at: name, old: 'failed', new: '(intentional)', note: 'old step errored' });
     if (!newStep.ok) findings.push({ at: name, old: '(intentional)', new: 'failed', note: 'new step errored' });
+    if (name === 'comfy.test'
+      && (newStep.value?.ok !== true || !String(newStep.value?.message || '').includes('연결 테스트 생략'))) {
+      findings.push({
+        at: name,
+        old: JSON.stringify(oldStep.value),
+        new: JSON.stringify(newStep.value),
+        note: '2.5.29 Comfy test must persist without /system_stats',
+      });
+    }
     // Reroll replays the image file. Settings presets must not rewrite base.
     if (name === 'presets.reroll_swaps_style' && newStep.value?.kept_file !== true) {
       findings.push({

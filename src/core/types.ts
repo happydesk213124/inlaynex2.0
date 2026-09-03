@@ -383,6 +383,10 @@ export interface CharacterRecord {
   ref_configured?: boolean;
   /** Data URL preview when available in-memory. */
   ref_preview_url?: string;
+  /** Shared 예제샷 (not ref_hash). */
+  example_hash?: string;
+  example_configured?: boolean;
+  example_preview_url?: string;
   /** Convenience field the UI reads: original + appearance + attire + accessories. */
   tags?: string;
   [key: string]: unknown;

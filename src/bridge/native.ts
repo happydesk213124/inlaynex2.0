@@ -34,6 +34,18 @@ import { hydratePresetVibePreviews } from '../services/nai-assets';
 import { hydratePresetLookPreviews } from '../services/preset-look';
 import { seedPrompts } from '../services/settings';
 import { closeTagStudio, openTagStudio } from '../tag-studio/mount';
+import {
+  bindCharacterExampleShot,
+  bindCharacterHeaderRef,
+  closeCharacterCommandEdit,
+  closeImagePeek,
+  openCharacterCommandEdit,
+  openImagePeek,
+  paintExampleSlot,
+  paintHeaderRefSlot,
+  readCharacterFromForm,
+  setGenSpin,
+} from '../char-command/mount';
 
 let readyPromise: Promise<void> | null = null;
 
@@ -155,5 +167,15 @@ export function installNativeBridge(): void {
     clearDebug,
     openTagStudio,
     closeTagStudio,
+    openCharacterCommandEdit,
+    closeCharacterCommandEdit,
+    openImagePeek,
+    closeImagePeek,
+    bindCharacterHeaderRef,
+    paintHeaderRefSlot,
+    bindCharacterExampleShot,
+    paintExampleSlot,
+    readCharacterFromForm,
+    setGenSpin,
   });
 }

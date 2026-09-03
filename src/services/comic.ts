@@ -17,6 +17,8 @@ import { assignComicPagesToShots, parseComicPages, type ComicPage } from '../dom
 import { resolveShotAspect } from '../domain/nai-meta/aspect.ts';
 import { callLlm } from '../providers/llm/client.ts';
 import { getConfig } from './context.ts';
+import { authorNoteSystemContent } from '../domain/tagging/session-note.ts';
+import { sessionAuthorNoteLlmContent } from './session-author-note.ts';
 import { getPrompt } from './settings.ts';
 
 function rosterBlock(
@@ -47,17 +49,21 @@ function rosterBlock(
   return blocks.join('\n\n');
 }
 
-async function callComicLlm(user: string, extraNote: string): Promise<ComicPage[]> {
+async function callComicLlm(user: string, extraNote: string, sessionId: unknown): Promise<ComicPage[]> {
   const sys = (await getPrompt('comic')).trim();
+  const globalNote = authorNoteSystemContent("Global Author's Note", await getPrompt('global_author_note'));
   const note = cleanText(extraNote, 8000);
+  const sessMsg = await sessionAuthorNoteLlmContent(sessionId);
   const messages = [
     { role: 'system' as const, content: sys },
+    ...(globalNote ? [{ role: 'system' as const, content: globalNote }] : []),
     ...(note
       ? [{
         role: 'system' as const,
         content: `# Priority: Comic author's note\n${note}\nIf this conflicts with earlier rules, follow this note (except never emit comic/manga/hatching/thick outlines).`,
       }]
       : []),
+    ...(sessMsg ? [{ role: 'system' as const, content: sessMsg }] : []),
     { role: 'user' as const, content: user },
   ];
   const raw = await callLlm(resolveLlmRole(getConfig(), 'main'), messages);
@@ -68,8 +74,9 @@ export async function fillComicPagesForShots(args: {
   shots: TaggedShot[];
   roster: CharacterRecord[];
   assistantText: unknown;
+  sessionId?: unknown;
 }): Promise<Set<number>> {
-  const { shots, roster, assistantText } = args;
+  const { shots, roster, assistantText, sessionId } = args;
   const card = getConfig().card || {};
   const note = cleanText(card.comic_author_note, 8000);
   const batch = normalizeComicLlmBatch(card.comic_llm_batch);
@@ -97,7 +104,7 @@ export async function fillComicPagesForShots(args: {
   if (batch === 'per_shot') {
     for (const i of comicIdx) {
       try {
-        const got = await callComicLlm(packOne(i), note);
+        const got = await callComicLlm(packOne(i), note, sessionId);
         if (got[0]) got[0]!.shot_index = i;
         pages.push(...got);
       } catch {
@@ -109,6 +116,7 @@ export async function fillComicPagesForShots(args: {
     pages = await callComicLlm(
       `Produce one page per comic shot below, in order.\n\n${body}`,
       note,
+      sessionId,
     );
   }
   return assignComicPagesToShots(shots, pages);

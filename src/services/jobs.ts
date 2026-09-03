@@ -48,6 +48,7 @@ import {
   hasNaiBodyControl,
 } from '../providers/nai/http';
 import { allUniqueNaiTokens, tokensForFamily } from '../domain/nai/keys';
+import { imageBackendKind, imageGenTokens } from '../providers/comfy/client';
 import { canvasDimsForShot, resolveShotAspect } from '../domain/nai-meta/aspect';
 import {
   cardFlagOn,
@@ -989,6 +990,7 @@ async function runJob(jobId: string): Promise<void> {
           shots,
           roster,
           assistantText: request.assistant_text,
+          sessionId,
         });
         for (const idx of assigned) ready.add(idx);
         dbg('job.comic.done', { assigned: assigned.size, comics: shots.filter((s) => isComicShot(s)).length });
@@ -1150,7 +1152,10 @@ async function runJob(jobId: string): Promise<void> {
         // for, so let it land and discard afterwards if the job went stale.
         const uniqueTokens = (list: string[]): string[] =>
           list.map((t) => cleanText(t)).filter((t, i, arr) => t && arr.indexOf(t) === i);
-        const tryKeys = uniqueTokens([workerToken, ...tokensForFamily(getConfig().nai, route.family)]);
+        const tryKeys = imageGenTokens(
+          imageBackendKind(getConfig().nai),
+          [workerToken, ...tokensForFamily(getConfig().nai, route.family)],
+        );
         let lastErr: unknown;
         let sawQuota = false;
         const runGenerate = (token: string) => generateImage(
@@ -1221,7 +1226,13 @@ async function runJob(jobId: string): Promise<void> {
           }
         }
         if (lastErr) throw lastErr;
-        if (!raw) throw new Error('NAI api_key가 설정되지 않았습니다.');
+        if (!raw) {
+          throw new Error(
+            imageBackendKind(getConfig().nai) === 'comfy'
+              ? 'ComfyUI 생성 결과가 비어 있습니다.'
+              : 'NAI api_key가 설정되지 않았습니다.',
+          );
+        }
       } finally {
         clearInterval(hb);
       }

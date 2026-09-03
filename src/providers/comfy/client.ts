@@ -88,6 +88,20 @@ export function imageBackendKind(nai: Partial<NaiSettings> | null | undefined): 
   return b === 'comfy' ? 'comfy' : 'nai';
 }
 
+/** Comfy ignores NAI tokens — one empty slot so the job loop still fires once. */
+export function imageGenTokens(backend: ImageBackend, tokens: readonly string[]): string[] {
+  if (backend === 'comfy') return [''];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of tokens) {
+    const t = cleanText(raw);
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
+}
+
 /** Per-generation budget in ms, clamped to 30s…30min. */
 export function backendTimeoutMs(nai: Partial<NaiSettings> | null | undefined): number {
   const s = Number(nai?.backend_timeout_seconds ?? 300);
@@ -247,21 +261,34 @@ export function applyComfyConditionalBlocks(text: unknown, values: ComfyPlacehol
   return out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n');
 }
 
-/** Substitutes `[[name]]` in workflow strings; a value that is exactly `[[name]]` keeps its type. */
+const RISU_MUSTACHE: Record<string, 'pos' | 'neg'> = {
+  risu_prompt: 'pos',
+  risu_neg: 'neg',
+};
+
+function applyRisuMustache(text: string, values: ComfyPlaceholderValues): string {
+  return text.replace(/\{\{\s*(risu_prompt|risu_neg)\s*\}\}/gi, (_, name: string) => {
+    const key = RISU_MUSTACHE[String(name).toLowerCase()];
+    return key != null ? String(values[key] ?? '') : _;
+  });
+}
+
+/** Substitutes `[[name]]` and `{{risu_prompt}}` / `{{risu_neg}}` in workflow strings. */
 export function substituteComfyPlaceholders(wf: ComfyWorkflow, values: ComfyPlaceholderValues): void {
   for (const node of Object.values(wf)) {
     const inputs = node?.inputs;
     if (!inputs || typeof inputs !== 'object') continue;
     for (const key of Object.keys(inputs)) {
       const val = inputs[key];
-      if (typeof val !== 'string' || !val.includes('[[')) continue;
-      const text = applyComfyConditionalBlocks(val, values);
+      if (typeof val !== 'string' || (!val.includes('[[') && !val.includes('{{'))) continue;
+      let text = applyComfyConditionalBlocks(val, values);
       const exact = text.match(/^\[\[\s*(\w+)\s*\]\]$/);
       if (exact && exact[1] in values) {
         inputs[key] = values[exact[1]];
         continue;
       }
-      inputs[key] = text.replace(/\[\[\s*(\w+)\s*\]\]/g, (m, name: string) => (name in values ? String(values[name]) : m));
+      text = text.replace(/\[\[\s*(\w+)\s*\]\]/g, (m, name: string) => (name in values ? String(values[name]) : m));
+      inputs[key] = applyRisuMustache(text, values);
     }
   }
 }
@@ -372,8 +399,8 @@ export function buildComfyWorkflowFromTemplate(templateJson: unknown, values: Co
     throw new Error("UI 저장 포맷 워크플로입니다. ComfyUI에서 'Export (API)'로 내보낸 JSON을 넣으세요.");
   }
   const raw = JSON.stringify(wf);
-  if (!/\[\[\s*pos\s*\]\]/.test(raw)) {
-    throw new Error('워크플로에 [[pos]]가 없습니다. 긍정 프롬프트를 넣는 칸에 [[pos]]를 적어 주세요.');
+  if (!/\[\[\s*pos\s*\]\]/.test(raw) && !/\{\{\s*risu_prompt\s*\}\}/i.test(raw)) {
+    throw new Error('워크플로에 [[pos]] 또는 {{risu_prompt}}가 없습니다. 긍정 프롬프트를 넣는 칸에 적어 주세요.');
   }
   wf = JSON.parse(raw) as ComfyWorkflow;
   substituteComfyPlaceholders(wf, values);

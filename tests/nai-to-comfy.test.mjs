@@ -2,7 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { naiToComfyEmphasis } from "../.test-build/nai-to-comfy.mjs";
-import { buildComfyPlaceholderValues } from "../.test-build/comfy-client.mjs";
+import {
+  buildComfyPlaceholderValues,
+  buildComfyWorkflowFromTemplate,
+  imageGenTokens,
+  substituteComfyPlaceholders,
+} from "../.test-build/comfy-client.mjs";
+
+test("imageGenTokens skips NAI keys when backend is comfy", () => {
+  assert.deepEqual(imageGenTokens("comfy", []), [""]);
+  assert.deepEqual(imageGenTokens("comfy", ["sk-a", "sk-b"]), [""]);
+  assert.deepEqual(imageGenTokens("nai", ["", "sk-a", "sk-a", "sk-b"]), ["sk-a", "sk-b"]);
+  assert.deepEqual(imageGenTokens("nai", []), []);
+});
 
 test("naiToComfyEmphasis maps N::tag:: to (tag:N)", () => {
   assert.equal(naiToComfyEmphasis("2::hard::"), "(hard:2)");
@@ -65,4 +77,26 @@ test("buildComfyPlaceholderValues passes through a ref filename", () => {
   });
   assert.equal(values.ref, "inlay-ref.webp");
   assert.equal(values.pos, "1girl");
+});
+
+test("substituteComfyPlaceholders fills {{risu_prompt}} and {{risu_neg}}", () => {
+  const wf = {
+    62: { class_type: "x", inputs: { text: "{{risu_neg}}" } },
+    63: { class_type: "x", inputs: { text: "{{risu_prompt}}" } },
+  };
+  substituteComfyPlaceholders(wf, { pos: "1girl, smile", neg: "lowres" });
+  assert.equal(wf[63].inputs.text, "1girl, smile");
+  assert.equal(wf[62].inputs.text, "lowres");
+});
+
+test("buildComfyWorkflowFromTemplate accepts {{risu_prompt}} instead of [[pos]]", () => {
+  const wf = buildComfyWorkflowFromTemplate(
+    JSON.stringify({
+      1: { class_type: "CLIPTextEncode", inputs: { text: "{{risu_prompt}}" } },
+      2: { class_type: "CLIPTextEncode", inputs: { text: "{{risu_neg}}" } },
+    }),
+    { pos: "cowboy shot", neg: "worst quality" },
+  );
+  assert.equal(wf[1].inputs.text, "cowboy shot");
+  assert.equal(wf[2].inputs.text, "worst quality");
 });

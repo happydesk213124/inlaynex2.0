@@ -17,6 +17,23 @@ import {
 
 import { composeCharacterCaptionTags } from "../.test-build/character-tags.mjs";
 
+test("ensureCostumes drops later costumes with the same attire and accessories", () => {
+  const { costumes, active_costume } = ensureCostumes({
+    active_costume: 2,
+    costumes: [
+      { name: "default", note: "old", attire: "maid outfit, apron", accessories: "feather duster" },
+      { name: "school", note: "other", attire: "school uniform", accessories: "" },
+      { name: "default01", note: "dup", attire: "apron, maid outfit", accessories: "feather duster" },
+      { name: "default012", note: "dup2", attire: "maid outfit, apron", accessories: "feather duster" },
+    ],
+  });
+  assert.equal(costumes.length, 2);
+  assert.equal(costumes[0].name, "default");
+  assert.equal(costumes[0].note, "old");
+  assert.equal(costumes[1].name, "school");
+  assert.equal(active_costume, 0);
+});
+
 test("ensureCostumes seeds default from attire", () => {
   const { costumes, active_costume } = ensureCostumes({
     attire: "school uniform",

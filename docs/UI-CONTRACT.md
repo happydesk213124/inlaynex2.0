@@ -29,6 +29,8 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 | `debug` / `clearDebug` | `() => any` | Not read by the UI |
 | `openTagStudio` | `(card) => Promise<void>` | Shot-tag 도화지. Overlay only — `openCardTagEdit` owns `showContainer` / `hideContainer` like the old modal |
 | `closeTagStudio` | `() => void` | Dismiss the overlay. `closeCardTagEdit` calls this so the container pair still closes |
+| `openCharacterCommandEdit` | `(opts) => void` | Additive. Character-form LLM 명령수정 overlay |
+| `openImagePeek` | `(src) => void` | Additive. Centered image overlay; does not close parent modals |
 
 > **Image URLs must be `data:image/...`.** The UI passes them through DOMPurify,
 > which strips `blob:`. SafeElement `setAttribute` only allows `x-*` names, so
@@ -100,7 +102,7 @@ so out-of-order responses are discarded client-side. The backend just answers.
 `GET /v1/prompts/export` → `{ version, prompts: { [key]: text } }` ·
 `POST /v1/prompts/import` `{ json | prompts }` ·
 `POST /v1/prompts/reset-defaults` `{ keep_author_note?: true }` (default keeps
-`author_note`, resets every other pack key to the shipped default).
+`author_note`, `asset_author_note`, `global_author_note`; resets every other pack key).
 
 The frozen UI prompts tab has pack-level toolbar buttons (reset defaults except
 author note, export/import all JSON) and per-prompt JSON export/import beside
@@ -358,6 +360,8 @@ block below. Secondary source selects include 「태깅 LLM 따라가기」
 the active tab's resolved profile in `POST /v1/models/test`.
 NAI 「연결 테스트」 saves `{ nai }` (including `api_keys_v5` / `api_keys_v4`) then
 `POST /v1/nai/test` with the same draft so a just-typed key is stored before Anlas.
+Comfy and a non-official `request_url` persist and return `ok` without `/system_stats`
+or Anlas (공식 `image.novelai.net/ai/generate-image` only probes Anlas).
 
 `curation.mode` (`off` | `two_stage` | `embed_snap`) lives on the **큐레이팅**
 settings tab (asserted vendor patch). **Pipelines are locked to `off`:** load /
@@ -393,7 +397,8 @@ LLM-picked. Off, or `mode !== "two_stage"`, behaves exactly as before.
 | `POST /v1/curation/embed/test` | embedding connection smoke test |
 | `POST /v1/curation/settings` | `{mode?, strict_ids?, embedding?}` |
 
-Keys: `author_note, tagger, format, prefill, preprocess, preset_1, lore_inject,
+Keys: `author_note` (main tagger), `asset_author_note`, `global_author_note` (main + asset looks + comic LLM),
+`tagger, format, prefill, preprocess, preset_1, lore_inject,
 char_inject, appearance_inject, asset_tags_inject, autotag, curation_refine, curation_embed_hint`.
 
 ### Jobs
@@ -447,7 +452,7 @@ prefers that over `content_hash`; hash and the Dice≥60% rebind remain fallback
 | `POST /v1/characters` | 6 body shapes: bulk save, single `character`, unified patch (`root_session_ids`), move-to-global, delete (`root_delete[]`), create |
 | `POST /v1/characters/global-toggles` | `{character_id, disabled_globals[]}` |
 | `POST /v1/characters/unify` | `{target_session_id, source_session_ids[], include_target}` |
-| `POST /v1/characters/triggered` | `{message, session_id, character_id, unified_session_id?, source_session_ids[]}` → `{ characters[] }` — same roster + alias match as the main tagger's "Characters in this message" |
+| `POST /v1/characters/triggered` | `{message, session_id, character_id, unified_session_id?, source_session_ids[]}` → `{ characters[] }` — same roster + alias match as the main tagger's "Characters in this message". Picker thumb = 예제샷, else 참고이미지 |
 | `GET /v1/characters/ref?character_id=&scope=` | `{ configured, preview_url, scope }` — `scope` is `global`/`__global__` or the chat session id (`session` + `session_id` also works) |
 | `GET /v1/characters/import-picker?kind=persona|session&character_id=` | `{ items[{kind,id,name,preview,keys[],text,badge,has_image}], lore_empty }`. Lore `badge` = activation keys; CharInfo `badge` = `charinfo`. Picker filters live on name/keys/text; select-all applies to visible rows only. Checkboxes start unchecked. |
 | `POST /v1/characters/import-fill` | `{scope, session_id, character_id, parallel, xnai, picks[{kind,id}]}` → `{filled, failed[], vision_to_text}` timeout 160s. Lore and persona/CharInfo meta looks are chunked 8 per LLM call; `parallel` fires up to 10 chunks at once. Lore: asset meta + `char_looks`; if matching assets have no meta, one best-ranked file (default/normal/profile/smil*) via autotag; else lore body + `char_looks`. Persona/CharInfo with NAI meta: same looks messages + `mergeRosterFromTagged`. No meta + image → autotag then roster merge; else description + `char_looks`. `xnai` (popup toggle, default off) adds `lb-xnai.lb.extra` as an author's-note system turn on the lore-text path only — never on asset-meta or autotag. A name-matched asset file (meta or not) is also stored as that character's reference image when the slot is empty. |
@@ -455,12 +460,18 @@ prefers that over `content_hash`; hash and the Dice≥60% rebind remain fallback
 | `POST /v1/characters/ref` | `{character_id, scope, session_id?, image_b64}` or `{character_id, scope, copy_from, copy_from_scope?}` or `{character_id, scope, clear:true}` — bytes as-is |
 | `POST /v1/characters/ref/clear` | `{character_id, scope, session_id?}` |
 | `/v1/appearance/:sessionId` · `POST` | legacy alias |
+| `GET/PUT /v1/session-author-note` | `{session_id, prefix, suffix, preset_id, text}` — per-chat note (`text` is prefix+suffix; a legacy string body becomes `prefix`). After `global_author_note` and the lane note (`author_note` / `asset_author_note` / comic tab). Session wins. |
+| `GET/PUT /v1/session-author-note-presets` | `{items[{id,name,prefix,suffix}]}` |
+| `GET/PUT /v1/character-command-presets` | `{items[{id,name,cmd,cmd_post?}]}` — live list is `card.command_presets`; `inx_char_command_presets` still merges |
+| `POST /v1/characters/preview-shot` | style preset + form tags → `{preview_url,image_b64}` (no auto vibe/ref; no `1girl, smile,` look-plate tail) |
+| `GET/POST /v1/characters/example-shot` | shared 예제샷 (`example_hash`, not `ref_hash`). POST `{image_b64}` stores, `{generate:true}` builds then stores, `{clear:true}` or `POST .../clear` removes. `예제샷참고이미지로` copies that shot to `POST /v1/characters/ref` (not studio `/v1/nai/vibe`) |
+| `POST /v1/characters/:id/command-rewrite` | `{instruction, character}` → `{character}` form deltas only |
 
 Record: `id, name, original, aliases[], surname, given_name, surname_variants[],
 given_name_variants[], appearance, attire, accessories, costumes[], active_costume,
 attire_locked, accessories_locked, priority, gender (`girl`|`boy`|`other`|``),
 hair_color, hair_style, eye_color, height, age, penis_size,
-`ref_configured?`, `ref_preview_url?`.
+`ref_configured?`, `ref_preview_url?`, `example_hash?`, `example_configured?`, `example_preview_url?`.
 `attire` = clothes + permanent jewelry; `accessories` = weapons/props only.
 `costumes[]` = named wardrobe sets (`name`, `note?`, `attire`, `accessories`);
 index **0** is the generation default when a shot has no `costume` pick.

@@ -42,13 +42,30 @@ interface RisuLlmHost {
   }): Promise<unknown>;
 }
 
+export interface CallLlmOptions {
+  signal?: AbortSignal;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    const err = new Error('Aborted');
+    err.name = 'AbortError';
+    throw err;
+  }
+}
+
 /** Runs one tagging request, routing to Risu's own model when the source is main/aux. */
-export async function callLlm(llm: LlmSettings, messages: LlmMessage[]): Promise<string> {
+export async function callLlm(
+  llm: LlmSettings,
+  messages: LlmMessage[],
+  opts: CallLlmOptions = {},
+): Promise<string> {
+  throwIfAborted(opts.signal);
   const source = normalizeLlmSource(llm.source);
   if (source === 'main' || source === 'aux') {
     // Do NOT pass the custom Model field as staticModel — that overrides Risu's
     // configured main/aux model with a leftover OpenRouter/etc id and skips the real request.
-    return callLlmViaRisu(llm, messages, source);
+    return callLlmViaRisu(llm, messages, source, '', opts.signal);
   }
   const provider = normalizeLlmProvider(llm.provider);
   const model = cleanText(llm.model);
@@ -74,6 +91,8 @@ export async function callLlm(llm: LlmSettings, messages: LlmMessage[]): Promise
   }
   const timeoutMs = Number(llm.timeout_seconds ?? 180) * 1000;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const onUserAbort = () => controller?.abort?.();
+  opts.signal?.addEventListener('abort', onUserAbort);
   const timer = setTimeout(() => {
     dbg('llm.abort', { message: `timeout ${timeoutMs}ms`, model, provider }, 'warn');
     controller?.abort?.();
@@ -150,6 +169,7 @@ export async function callLlm(llm: LlmSettings, messages: LlmMessage[]): Promise
     span.fail(err, { model, provider });
     throw err;
   } finally {
+    opts.signal?.removeEventListener('abort', onUserAbort);
     clearTimeout(timer);
   }
 }
@@ -160,6 +180,7 @@ export async function callLlmViaRisu(
   messages: LlmMessage[],
   source: string,
   staticModel = '',
+  signal?: AbortSignal,
 ): Promise<string> {
   const api = risuHost() as RisuLlmHost | undefined;
   if (!api || typeof api.runLLMModel !== 'function') {
@@ -180,10 +201,22 @@ export async function callLlmViaRisu(
     static_model: staticOverride,
   });
   // Not `withTimeout()`: the timeout message is part of what the parity harness diffs.
+  throwIfAborted(signal);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`Risu LLM timeout ${timeoutMs}ms (${mode})`)), timeoutMs);
   });
+  const aborted = signal
+    ? new Promise<never>((_, reject) => {
+      const fail = () => {
+        const err = new Error('Aborted');
+        err.name = 'AbortError';
+        reject(err);
+      };
+      if (signal.aborted) fail();
+      else signal.addEventListener('abort', fail, { once: true });
+    })
+    : null;
   try {
     const response = await Promise.race([
       api.runLLMModel({
@@ -193,6 +226,7 @@ export async function callLlmViaRisu(
         messages,
       }),
       timeout,
+      ...(aborted ? [aborted] : []),
     ]);
     const text = cleanText(await llmResponseToText(response));
     if (!text) throw new Error(`Risu LLM(${mode}) 응답이 비어 있습니다.`);

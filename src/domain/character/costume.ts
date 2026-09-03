@@ -6,7 +6,7 @@
  */
 
 import type { CharacterCostume, CharacterRecord } from '../../core/types.ts';
-import { cleanText } from '../../core/util/text.ts';
+import { cleanText, splitTagTokens } from '../../core/util/text.ts';
 
 export type CostumeInput = Partial<CharacterCostume> & Record<string, unknown>;
 
@@ -50,7 +50,35 @@ export function ensureCostumes(
   let active = Number(rec?.active_costume);
   if (!Number.isFinite(active)) active = 0;
   active = Math.max(0, Math.min(costumes.length - 1, Math.floor(active)));
-  return { costumes, active_costume: active };
+  return dedupeIdenticalCostumeTags(costumes, active);
+}
+
+/** Same attire+accessories token set (order/case ignored). Keep the first (oldest) row. */
+export function dedupeIdenticalCostumeTags(
+  costumes: CharacterCostume[],
+  active: number,
+): { costumes: CharacterCostume[]; active_costume: number } {
+  if (costumes.length < 2) {
+    return { costumes, active_costume: Math.max(0, Math.min(costumes.length - 1, active)) };
+  }
+  const wearKey = costumeWearKey(costumes[active] || costumes[0]!);
+  const out: CharacterCostume[] = [];
+  const seen = new Set<string>();
+  for (const row of costumes) {
+    const key = costumeWearKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  let next = out.findIndex((row) => costumeWearKey(row) === wearKey);
+  if (next < 0) next = 0;
+  return { costumes: out, active_costume: next };
+}
+
+function costumeWearKey(row: CharacterCostume): string {
+  const norm = (value: string) =>
+    splitTagTokens(value).map((t) => t.toLowerCase()).sort().join('\0');
+  return `${norm(row.attire)}\n${norm(row.accessories)}`;
 }
 
 /** Promote current wear to index 0; previous default shifts to index 1. */
@@ -364,7 +392,7 @@ export function mergeCostumeLists(
     indexByName.set(k || `idx${out.length}`, out.length);
     out.push(next);
   }
-  return out;
+  return dedupeIdenticalCostumeTags(out, 0).costumes;
 }
 
 /** Sync active slot from attire/accessories textareas; keep other slots. */

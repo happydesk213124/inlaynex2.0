@@ -440,7 +440,7 @@ export async function setCharRefImage(
   scope: unknown,
   characterId: string,
   bytes: ArrayBuffer,
-  opts: { overwrite?: boolean } = {},
+  opts: { overwrite?: boolean; quality?: number } = {},
 ): Promise<ApiResult> {
   const id = cleanText(characterId, 200);
   const sc = normalizeCharRefScope(scope);
@@ -463,7 +463,7 @@ export async function setCharRefImage(
       };
     }
   }
-  const stored = await putCharRefAsset(bytes);
+  const stored = await putCharRefAsset(bytes, opts.quality != null ? { quality: opts.quality } : undefined);
   await writeRosterRefHash(sc, id, stored.hash);
   const preview = pngToDataUrl(stored.bytes);
   setCharRefPreviewUrl(sc, id, preview);

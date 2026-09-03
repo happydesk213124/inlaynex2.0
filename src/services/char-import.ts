@@ -8,7 +8,8 @@ import { dbg } from '../core/debug';
 import { hostHas, risuHost } from '../core/host';
 import { GLOBAL_SCOPE } from '../core/constants';
 import type { ApiResult, JobRequest, LoreEntry } from '../core/types';
-import { asU8, bytesToBase64Async } from '../core/util/bytes';
+import { asU8, bytesToBase64Async, u8ToArrayBuffer } from '../core/util/bytes';
+import { PRESET_LOOK_WEBP_QUALITY } from '../core/util/char-ref-size';
 import { parseJsonLoose } from '../core/util/object';
 import { cleanText, parseAliasList, stripCbs } from '../core/util/text';
 import { resolveCharacter } from '../domain/character/roster';
@@ -43,7 +44,7 @@ import {
   upsertCharacter,
 } from './characters';
 import { fetchHostLorebookEntries, getLorefilterPayload } from './lorefilter';
-import { seedCharRefsFromLooks } from './nai-assets';
+import { seedCharRefsFromLooks, setCharRefImage } from './nai-assets';
 import { getPrompt } from './settings';
 import { buildCharacterLooksMessages } from './tagger';
 
@@ -228,6 +229,33 @@ async function saveLooks(
     assetLooks: true,
     originalHints: hints,
   });
+}
+
+/** Persona / CharInfo face → empty 참고이미지 (module webp @ 0.9, never overwrite). */
+async function seedImportFaceRefs(scope: string, rows: ResolvedRow[]): Promise<void> {
+  const faces = rows.filter((r) => (
+    (r.pick.kind === 'persona' || r.pick.kind === 'charinfo')
+    && r.name
+    && r.bytes?.byteLength
+  ));
+  if (!faces.length) return;
+  const list = await listCharacters(scope);
+  for (const r of faces) {
+    const hit = resolveCharacter(r.name, list)
+      || r.aliases.map((a) => resolveCharacter(a, list)).find(Boolean);
+    if (!hit) continue;
+    try {
+      await setCharRefImage(hit.scope || scope, hit.id, u8ToArrayBuffer(r.bytes!), {
+        overwrite: false,
+        quality: PRESET_LOOK_WEBP_QUALITY,
+      });
+    } catch (err) {
+      dbg('char_ref.seed.import.face.fail', {
+        name: r.name,
+        message: String((err as Error)?.message || err),
+      }, 'warn');
+    }
+  }
 }
 
 async function foldPickAliases(scope: string, rows: ResolvedRow[]): Promise<void> {
@@ -715,6 +743,7 @@ export async function runImportFill(body: Record<string, unknown>): Promise<ApiR
 
   const leftover = await stillMissing(writeScope, characterId, work);
   const filled = work.length - leftover.length;
+  await seedImportFaceRefs(writeScope, resolved);
   await seedCharRefsFromLooks(await listCharacters(writeScope)).catch((err) => {
     dbg('char_ref.seed.import.fail', { message: String((err as Error)?.message || err) }, 'warn');
   });

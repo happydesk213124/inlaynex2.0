@@ -207,6 +207,9 @@ test('testNai persists posted nai keys and checks every stored token', () => {
   const body = source.slice(start, end);
   assert.match(body, /allUniqueNaiTokens/);
   assert.match(body, /updateSettings/);
+  assert.match(body, /naiConnectionProbeKind/);
+  assert.match(body, /연결 테스트 생략/);
+  assert.match(body, /Anlas 생략/);
 });
 
 test('Oe() collect writes per-family NAI sampler and steps', () => {
@@ -1575,7 +1578,12 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.doesNotMatch(picker, /enabledGlobalsForCharacter\(\)/);
   assert.match(picker, /const duplicateNames = new Set/);
   assert.match(picker, /picked\.scope === "__global__" \? "글로벌" : "채팅"/);
-  assert.match(picker, /button\.textContent = duplicateNames\.has\(String\(picked\.name\)\)/);
+  assert.match(picker, /label\.textContent = duplicateNames\.has\(String\(picked\.name\)\)/);
+  assert.match(picker, /\/v1\/characters\/example-shot/);
+  assert.match(picker, /picked\.example_preview_url \|\| picked\.ref_preview_url/);
+  assert.match(picker, /\/v1\/characters\/ref\?/);
+  assert.match(picker, /data-mcp-note-prefix/);
+  assert.match(picker, /data-mcp-note-suffix/);
   assert.doesNotMatch(picker, /\.map\(\(character, index\) => \(\{ \.\.\.character, index \}\)\)/);
   assert.doesNotMatch(picker, /t\.hostDoc/);
   assert.match(picker, /if \(typeof k\.showContainer != "function"\) throw new Error\("fullscreen container unavailable"\)/);
@@ -1884,4 +1892,19 @@ test('from-image filter, look attach, and NAI badge are wired in source', () => 
   const diag = read('src', 'services', 'diagnostics.ts');
   assert.match(diag, /model_family/);
   assert.match(diag, /filterTags/);
+});
+
+test('tagger costume how-to forbids copying name[index] into a new name', () => {
+  const how = read('src', 'services', 'tagger.ts');
+  assert.match(how, /Never copy "default\[0\]" into a name field/);
+  assert.match(how, /characters\[\]\.costume MUST be a string/);
+  const tagger = read('prompts', 'tagger.txt');
+  assert.match(tagger, /wear = string only/);
+  assert.doesNotMatch(tagger, /pair the character with a wardrobe set/);
+});
+
+test('예제샷 참고이미지로 writes character ref, not studio vibe', () => {
+  const src = read('src', 'char-command', 'example-shot.ts');
+  assert.match(src, /\/v1\/characters\/ref/);
+  assert.doesNotMatch(src, /\/v1\/nai\/vibe/);
 });

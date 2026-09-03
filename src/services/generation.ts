@@ -738,10 +738,26 @@ export async function generateFromNaiReplay(req: T2iRequest): Promise<GeneratedI
   const nai = getConfig().nai;
   const model = cleanText(req.model);
   if (!model) throw new Error('이미지 메타에 모델이 없습니다.');
+  if (!req.seed) req.seed = Math.floor(Math.random() * 4294967295) || 1;
+  if (imageBackendKind(nai) === 'comfy') {
+    const [bytes, seed] = await generateViaComfy(
+      {
+        ...nai,
+        width: req.width,
+        height: req.height,
+        seed: req.seed,
+        steps: req.steps,
+        sampler: req.sampler,
+      },
+      req.prompt,
+      req.negative_prompt,
+      req.characters || [],
+    );
+    return { bytes, seed };
+  }
   const family = isNaiV5(model) ? 'v5' : 'v4';
   const token = tokensForFamily(nai, family)[0] || cleanText(nai.api_key);
   if (!token) throw new Error('NAI api_key가 설정되지 않았습니다.');
-  if (!req.seed) req.seed = Math.floor(Math.random() * 4294967295) || 1;
   const apiUrl = cleanText(nai.request_url) || API_URL;
   const result = await generateT2i(token, req, apiUrl, { timeoutMs: 90000 });
   return { bytes: result.raw_bytes, seed: req.seed || 0 };

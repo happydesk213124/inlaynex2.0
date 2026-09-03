@@ -1322,6 +1322,18 @@ test("a complete listing replaces the gallery cache outright", () => {
   assert.deepEqual(got.cards.map((c) => c.id), ["b", "a"]);
 });
 
+test("a refetch keeps in-memory image_url on the same card ids", () => {
+  const prev = [
+    { id: "b", created_at: 20, image_url: "data:image/webp;base64,QQ" },
+    { id: "a", created_at: 10, image_url: "data:image/webp;base64,AA" },
+  ];
+  const next = [{ id: "b", created_at: 20 }, { id: "a", created_at: 10 }];
+  const got = mergeSessionGallery({ prev, next, total: 2 });
+  assert.equal(got.replaced, true);
+  assert.equal(got.cards.find((c) => c.id === "b")?.image_url, "data:image/webp;base64,QQ");
+  assert.equal(got.cards.find((c) => c.id === "a")?.image_url, "data:image/webp;base64,AA");
+});
+
 test("a windowed listing keeps cards older than the window edge", () => {
   // Session has 5 cards, window returned the newest 2 (edge at 40).
   const prev = [

@@ -15,6 +15,7 @@ import { naiSamplerForFamily, naiStepsForFamily } from '../domain/nai/samplers';
 import { findPresetById, modelForFamily, normalizeNaiFamily, type NaiFamily } from '../domain/nai/routing';
 import { joinPresetLookPrompt } from '../domain/style-presets/look-prompt';
 import { resolveGenerationCfgParams } from '../domain/style-preset-overrides';
+import { generateViaComfy, imageBackendKind } from '../providers/comfy/client';
 import { generateT2i } from '../providers/nai/client';
 import { modelToNaia, type T2iRequest } from '../providers/nai/payload';
 import { getCharRefAssetBytes, putCharRefAsset } from './char-ref-module';
@@ -86,7 +87,7 @@ export async function generatePresetLook(body: Record<string, unknown>): Promise
   const cfg = getConfig();
   const nai = cfg.nai;
   const token = tokensForFamily(nai, family)[0] || '';
-  if (!token) throw new Error('NAI API 키가 설정되지 않았습니다.');
+  if (imageBackendKind(nai) !== 'comfy' && !token) throw new Error('NAI API 키가 설정되지 않았습니다.');
   const familyNai = {
     ...nai,
     steps: naiStepsForFamily(nai, family),
@@ -115,6 +116,15 @@ export async function generatePresetLook(body: Record<string, unknown>): Promise
     var_plus: false,
     characters: [],
   };
+  if (imageBackendKind(nai) === 'comfy') {
+    const [bytes] = await generateViaComfy(
+      { ...nai, width: req.width, height: req.height, seed: req.seed, steps: req.steps, sampler: req.sampler },
+      req.prompt,
+      negative,
+      [],
+    );
+    return storeLookBytes(id, bytes);
+  }
   const apiUrl = cleanText(nai.request_url) || API_URL;
   const result = await generateT2i(token, req, apiUrl, { timeoutMs: 180000 });
   return storeLookBytes(id, result.raw_bytes);

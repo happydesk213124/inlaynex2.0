@@ -13,6 +13,7 @@
  */
 
 import { API_URL } from '../core/constants';
+import { naiConnectionProbeKind } from '../domain/nai/connection-probe';
 import { dbg, dbgSpan, debugSnapshot, setJobContext } from '../core/debug';
 import { hostHas } from '../core/host';
 import type { ApiResult } from '../core/types';
@@ -26,14 +27,7 @@ import {
   styleFieldsFromNaiMetadata,
 } from '../domain/nai-meta/index.ts';
 import { naiFamilyOfModel } from '../domain/nai/routing';
-import {
-  buildComfyPlaceholderValues,
-  buildComfyWorkflowFromTemplate,
-  comfyBaseUrl,
-  comfyConfigured,
-  fetchJsonCompat,
-  imageBackendKind,
-} from '../providers/comfy/client';
+import { comfyBaseUrl, imageBackendKind } from '../providers/comfy/client';
 import { callLlm } from '../providers/llm/client';
 import { normalizeLlmProvider } from '../providers/llm/providers';
 import { llmConfigured, normalizeLlmSource } from '../providers/llm/transform';
@@ -43,12 +37,6 @@ import { allUniqueNaiTokens, maskNaiToken } from '../domain/nai/keys';
 import { getConfig } from './context';
 import { saveConfig, updateSettings } from './settings';
 import { runVisionAutotagLook } from './vision-autotag';
-
-/** The fields of ComfyUI's `/system_stats` the connection test reports back. */
-interface ComfySystemStats {
-  devices?: Array<{ name?: string }>;
-  system?: { os?: string };
-}
 
 /**
  * The abbreviated debug block the success paths return. `core/debug` owns the
@@ -109,52 +97,37 @@ export async function testLlm(llmOverride: unknown): Promise<ApiResult> {
 }
 
 /**
- * Checks the configured image backend without spending Anlas or queueing a job.
- * A NovelAI key that cannot read its own Anlas balance still reports `ok: true`:
- * the balance endpoint is flaky and blocked by some proxies, and refusing to
- * generate on that basis would be wrong.
+ * Persists the posted NAI/Comfy draft, then probes only official NovelAI Anlas.
+ * Comfy and non-`image.novelai.net` generate URLs skip the live probe so a
+ * 서브챈/미러 key or a local workflow can be saved without a passing test.
+ * Official NovelAI: a key that cannot read Anlas still reports `ok: true`.
  */
 export async function testNai(naiOverride: unknown = null): Promise<ApiResult> {
   if (naiOverride && typeof naiOverride === 'object' && !Array.isArray(naiOverride)) {
     await updateSettings({ nai: naiOverride as Record<string, unknown> });
   }
   const nai = getConfig().nai;
-  if (imageBackendKind(nai) === 'comfy') {
-    try {
-      if (!comfyConfigured(nai)) {
-        return { ok: false, message: 'ComfyUI 워크플로 JSON이 없습니다.', debug: debugSnapshot() };
-      }
-      // Validate placeholders without submitting a job.
-      const values = buildComfyPlaceholderValues({
-        main: 'test',
-        neg: 'test',
-        captions: [{ name: '', prompt: 'char1' }, { name: '', prompt: 'char2' }],
-        nai,
-        seed: 1,
-      });
-      const wf = buildComfyWorkflowFromTemplate(nai.comfy_workflow_json, values);
-      const baseUrl = comfyBaseUrl(nai);
-      const { status, data } = await fetchJsonCompat<ComfySystemStats>(`${baseUrl}/system_stats`, { method: 'GET' });
-      if (status >= 400) {
-        return {
-          ok: false,
-          message: `ComfyUI 연결 실패 (HTTP ${status}) · ${baseUrl}`,
-          debug: debugSnapshot(),
-        };
-      }
-      const device = data?.devices?.[0]?.name || data?.system?.os || 'ok';
-      return {
-        ok: true,
-        message: `ComfyUI ok · ${baseUrl} · nodes=${Object.keys(wf).length} · ${device}`,
-        debug: debugTail(),
-      };
-    } catch (exc) {
-      dbg('comfy.test', { message: String((exc as Error)?.message || exc) }, 'error');
-      return { ok: false, message: String((exc as Error)?.message || exc), debug: debugSnapshot() };
-    }
+  const probe = naiConnectionProbeKind({
+    backend: imageBackendKind(nai),
+    request_url: nai.request_url,
+  });
+  if (probe === 'comfy-skip') {
+    return {
+      ok: true,
+      message: `ComfyUI 저장됨 · ${comfyBaseUrl(nai)} · 연결 테스트 생략`,
+      debug: debugTail(),
+    };
   }
   const tokens = allUniqueNaiTokens(nai);
   if (!tokens.length) return { ok: false, message: 'NAI api_key missing', debug: debugSnapshot() };
+  if (probe === 'mirror-skip') {
+    const url = cleanText(nai.request_url) || '(custom)';
+    return {
+      ok: true,
+      message: `NAI 미러 URL 저장됨 · Anlas 생략 · ${url}`,
+      debug: debugTail(),
+    };
+  }
   try {
     const parts: string[] = [];
     let firstAnlas: unknown = null;

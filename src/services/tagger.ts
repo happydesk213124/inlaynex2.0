@@ -41,6 +41,8 @@ import { resolveShotAspect } from '../domain/nai-meta/aspect';
 import { normalizeComicGenRatio } from '../domain/comic/params';
 import { hostHas, risuHost } from '../core/host';
 import { mergeTaggerCharUserFields, pickSelectedPersona } from '../domain/tagging/char-user-info';
+import { authorNoteSystemContent } from '../domain/tagging/session-note';
+import { sessionAuthorNoteLlmContent } from './session-author-note';
 import { normalizeComicAspect } from '../domain/comic/aspect';
 import { numberMessageLinesForTagger, repairLazyShotLines } from '../domain/tagging/shot-line';
 import { collectAssetNaiTags, setLastAssetWeightMap, type AssetLookPreview } from './asset-tags';
@@ -264,6 +266,21 @@ function collectLorePayload(
   return loreParts.join('\n\n');
 }
 
+async function pushAuthorNoteTurns(
+  messages: LlmMessage[],
+  sessionId: unknown,
+  lane?: { label: string; text: unknown },
+): Promise<void> {
+  const globalNote = authorNoteSystemContent("Global Author's Note", await getPrompt('global_author_note'));
+  if (globalNote) messages.push({ role: 'system', content: globalNote });
+  if (lane) {
+    const laneNote = authorNoteSystemContent(lane.label, lane.text);
+    if (laneNote) messages.push({ role: 'system', content: laneNote });
+  }
+  const sessMsg = await sessionAuthorNoteLlmContent(sessionId);
+  if (sessMsg) messages.push({ role: 'system', content: sessMsg });
+}
+
 function pushReferenceUser(messages: LlmMessage[], title: string, body: string): void {
   const text = cleanText(body, 200000);
   if (!text) return;
@@ -293,7 +310,7 @@ function incompleteTargetsForLooks(
 /**
  * Looks-only pre-pass: asset tags (+ optional images).
  * No chat message, no filled-roster dump, no story lore, no lb-xnai pack.
- * Optional asset_author_note sits in the instruction prefix (not after the fill turn).
+ * global_author_note, then asset_author_note, then the session note (session wins).
  */
 export async function buildCharacterLooksMessages(
   request: TaggerArgs,
@@ -308,15 +325,10 @@ export async function buildCharacterLooksMessages(
   if (assetHowTo) {
     messages[0].content = `${messages[0].content}\n\n${assetHowTo}`;
   }
-  const assetAuthorNote = cleanText(await getPrompt('asset_author_note'), 8000);
-  if (assetAuthorNote) {
-    messages.push({
-      role: 'system',
-      content:
-        `# Priority: Asset Author's Note\n${assetAuthorNote}\n`
-        + '> These are instructions explicitly given by the user. If in conflict with previous instructions, this section MUST take precedence.',
-    });
-  }
+  await pushAuthorNoteTurns(messages, sessionId, {
+    label: "Asset Author's Note",
+    text: await getPrompt('asset_author_note'),
+  });
 
   const assistant = cleanText(request.assistant_text, 20000);
   const sourceSessionIds = Array.isArray(request.source_session_ids)
@@ -423,12 +435,10 @@ function appearancePayload(
 function costumeHowTo(): string {
   return [
     '## Costumes (enabled)',
-    'Registered lines list costumes as name[index] plus a short note and clothes tags.',
-    'NEW outfit (not already in that catalog): pair the character with a wardrobe set, same idea as new_characters.',
-    'new_costumes: [{ "name": "<exact char name>", "costumes": [{ "name", "note", "attire", "accessories" }] }].',
-    'Or put {name,attire,accessories} on that shot characters[].costume / new_characters[].costumes.',
-    'The pair is registered AND worn on shots that omit costume. Still set characters[].costume to the new name when you can.',
-    'Catalog already has the outfit: set characters[].costume to that name, index, or name[index]. Do not omit when clothes changed.',
+    'Catalog lines are display only: default[0] means name "default", index 0. Never copy "default[0]" into a name field.',
+    'Wear an EXISTING catalog outfit: characters[].costume MUST be a string — the bare name ("default"), the index (0), or "default[0]". Not an object. Same clothes as a catalog row = existing. Do not register again.',
+    'Register ONLY a truly new outfit that is not in the catalog. New name = short id with no digits glued on (maid, swimsuit). Never default0 / maid1 / name[index].',
+    'new_costumes: [{ "name": "<exact char name>", "costumes": [{ "name", "note", "attire", "accessories" }] }]. Then wear with the string name.',
     'Omit / empty costume only when this shot keeps the same set as the previous shot.',
     'attire = detailed clothes (colors, top/bottom/skirt/dress…). accessories = weapons/held props for that set.',
   ].join('\n');
@@ -497,15 +507,10 @@ export async function buildTaggerMessages(
     messages.push({ role: 'system', content: curationMsg });
   }
 
-  const authorNote = cleanText(await getPrompt('author_note'), 8000);
-  if (authorNote) {
-    messages.push({
-      role: 'system',
-      content:
-        `# Priority: Author's Note\n${authorNote}\n`
-        + '> These are instructions explicitly given by the user. If in conflict with previous instructions, this section MUST take precedence.',
-    });
-  }
+  await pushAuthorNoteTurns(messages, sessionId, {
+    label: "Author's Note",
+    text: await getPrompt('author_note'),
+  });
 
   if (card.char_info && cleanText(request.character_description)) {
     messages.push({

@@ -197,7 +197,7 @@ export async function runScenario(N, handles) {
   await rec('prompts.keys', () =>
     (promptList?.prompts ?? [])
       .map((p) => p.key)
-      .filter((k) => !String(k).startsWith('curation_') && k !== 'command_reroll' && k !== 'lorefilter_scan'),
+      .filter((k) => !String(k).startsWith('curation_') && k !== 'command_reroll' && k !== 'command_char_edit' && k !== 'lorefilter_scan'),
   );
   await rec('lorefilter.get_empty', () => get('/v1/characters/lorefilter?character_id=char_parity'));
   await rec('lorefilter.set', () => post('/v1/characters/lorefilter', {
@@ -435,6 +435,45 @@ export async function runScenario(N, handles) {
     };
   });
   // Restore default tagger JSON so later jobs are unaffected.
+  handles.setLlmReply?.(DEFAULT_LLM_REPLY);
+
+  // 2.0-only session author's note + character command rewrite.
+  await rec('session_note.put', () => put('/v1/session-author-note', {
+    session_id: 'sess_main',
+    text: 'parity session note',
+  }));
+  await rec('session_note.get', () => get('/v1/session-author-note?session_id=sess_main'));
+  await rec('session_note.split_put', () => put('/v1/session-author-note', {
+    session_id: 'sess_main',
+    prefix: 'pre-note',
+    suffix: 'post-note',
+  }));
+  await rec('session_note.split_get', () => get('/v1/session-author-note?session_id=sess_main'));
+  await rec('char_example.get', () => get('/v1/characters/example-shot?character_id=char_parity&scope=sess_main'));
+  await rec('char_cmd_presets.put', () => put('/v1/character-command-presets', {
+    items: [{ id: 'p1', name: '더 밝게', text: 'add smile' }],
+  }));
+  await rec('char_cmd_presets.get', () => get('/v1/character-command-presets'));
+  handles.setLlmReply?.(JSON.stringify({
+    appearance: { add: ['mole'], remove: [] },
+    new_costumes: [{ name: 'swimsuit', attire: { add: ['bikini'] } }],
+  }));
+  await rec('chars.command_rewrite', async () => {
+    const res = await post('/v1/characters/char_parity/command-rewrite', {
+      instruction: 'add smile',
+      character: {
+        id: 'char_parity',
+        name: '아리아',
+        appearance: 'girl, black hair',
+        costumes: [{ name: 'default', note: '', attire: 'dress', accessories: '' }],
+      },
+    });
+    return {
+      ok: res?.ok ?? null,
+      mole: String(res?.character?.appearance || '').includes('mole'),
+      costumes: Array.isArray(res?.character?.costumes) ? res.character.costumes.length : 0,
+    };
+  });
   handles.setLlmReply?.(DEFAULT_LLM_REPLY);
   await rec('cards.gallery_after_tags', () => get('/v1/gallery?session_id=sess_main&limit=40'));
   // 2.0-only: studio commit writes tags (and optional canvas bytes) on the same card id.

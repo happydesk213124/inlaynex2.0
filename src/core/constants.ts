@@ -8,18 +8,18 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.5.25';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.5.31';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
  * Only bump it when a prompt change is mandatory for correctness.
  */
-export const PROMPT_PACK = '2026-08-29-v27-first-tagger-aspect';
+export const PROMPT_PACK = '2026-09-03-v28-costume-name-not-index';
 
 export const PROMPT_KEYS = [
-  'author_note', 'asset_author_note', 'tagger', 'format', 'prefill', 'preprocess',
+  'author_note', 'asset_author_note', 'global_author_note', 'tagger', 'format', 'prefill', 'preprocess',
   'preset_1', 'lore_inject', 'char_inject', 'appearance_inject', 'asset_tags_inject', 'char_looks', 'autotag',
-  'curation_refine', 'curation_embed_hint', 'command_reroll', 'lorefilter_scan',
+  'curation_refine', 'curation_embed_hint', 'command_reroll', 'command_char_edit', 'lorefilter_scan',
   'comic',
 ] as const;
 
@@ -51,6 +51,13 @@ export const CARD_PACK_KEY = (sessionId: string): string =>
  * without opening a single pack.
  */
 export const ROOM_INDEX_KEY = 'inx_nxrooms';
+/** Per-Risu-session author's note (not `author_note` / `global_author_note`). */
+export const SESSION_AUTHOR_NOTE_KEY = (sessionId: string): string =>
+  `inx_session_author_note_${String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)}`;
+/** LLM 명령수정 phrase presets (legacy device row; live list is card.command_presets). */
+export const CHAR_COMMAND_PRESETS_KEY = 'inx_char_command_presets';
+/** Reusable session-author-note phrases (not the per-session current text). */
+export const SESSION_AUTHOR_NOTE_PRESETS_KEY = 'inx_session_author_note_presets';
 export const IMAGE_KEY = (id: string): string => `inx_nximg_${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 export const REF_IMAGE_KEY = 'inx_nxref_image';
 export const VIBE_IMAGE_KEY = 'inx_nxvibe_image';
@@ -171,6 +178,19 @@ export const LEGACY_REF_IMAGE_KEY = 'nxref_image';
 
 // --- external endpoints ---
 export const API_URL = 'https://image.novelai.net/ai/generate-image';
+
+/** Empty / default URL is official NAI. Mirrors (Square1, 서브챈) are not. */
+export function isOfficialNaiGenerateUrl(url: string | null | undefined): boolean {
+  const raw = String(url || '').trim();
+  if (!raw) return true;
+  try {
+    const parsed = new URL(raw);
+    return parsed.hostname.toLowerCase() === 'image.novelai.net'
+      && /\/ai\/generate-image\/?$/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
 export const ENCODE_URL = 'https://image.novelai.net/ai/encode-vibe';
 /** July 2026: NovelAI moved /user/* off api.novelai.net (old host returns HTTP 400). */
 export const ANLAS_URL = 'https://image.novelai.net/user/subscription';

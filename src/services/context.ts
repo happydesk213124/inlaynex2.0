@@ -181,6 +181,22 @@ export function clearAllCharRefPreviewUrls(): void {
   charRefPreviewUrls.clear();
 }
 
+const examplePreviewUrls = new Map<string, string>();
+
+export function getExamplePreviewUrl(scope: unknown, characterId: string): string {
+  const id = String(characterId || '');
+  if (!id) return '';
+  return examplePreviewUrls.get(charRefPreviewMapKey(scope, id)) || '';
+}
+
+export function setExamplePreviewUrl(scope: unknown, characterId: string, url: string): void {
+  const id = String(characterId || '');
+  if (!id) return;
+  const key = charRefPreviewMapKey(scope, id);
+  if (url) examplePreviewUrls.set(key, url);
+  else examplePreviewUrls.delete(key);
+}
+
 /** Test seam: returns the module to its post-import state. */
 export function resetContext(): void {
   config = deepcopy(DEFAULT_CONFIG);
@@ -193,4 +209,5 @@ export function resetContext(): void {
   presetVibePreviewUrls.clear();
   presetLookPreviewUrls.clear();
   charRefPreviewUrls.clear();
+  examplePreviewUrls.clear();
 }

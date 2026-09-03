@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.25';
+const PLUGIN_VERSION = '2.5.31';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -98,19 +98,23 @@ const VENDOR_PROMPT_TAB_HTML_NEEDLE = `    } else if (t.uiTab === "prompts") {
 const VENDOR_PROMPT_TAB_HTML_PATCH = `    } else if (t.uiTab === "prompts") {
       const promptMeta = {
         author_note: {
-          title: "작가의 노트 (사용자 프롬프트 지침)",
-          hint: "비워두면 무시됩니다. 태깅 LLM 요청 맨 끝에 최우선 지침으로 들어갑니다.",
+          title: "메인 태거 작가의 노트",
+          hint: "비워두면 무시됩니다. 메인 태거만. 전역·세션 노트와 같이 들어가고, 세션이 이깁니다.",
         },
         asset_author_note: {
           title: "에셋태그 작가의 노트",
-          hint: "비워두면 무시됩니다. 에셋태그(외형 수집) LLM 요청 맨 끝에 최우선 지침으로 들어갑니다.",
+          hint: "비워두면 무시됩니다. 에셋태그(외형 수집) LLM만.",
+        },
+        global_author_note: {
+          title: "전역 작가의 노트",
+          hint: "비워두면 무시됩니다. 메인 태거·에셋태거·만화 LLM에 같이 들어갑니다. 세션 노트가 이깁니다.",
         },
       };
       const promptCards = (t.prompts || []).map((d) => {
         const meta = promptMeta[d.key] || null;
         const title = meta?.title || d.key;
         const hint = meta?.hint ? \`<div class="muted" style="margin:4px 0 8px">\${h(meta.hint)}</div>\` : "";
-        const notePh = d.key === "author_note" || d.key === "asset_author_note";
+        const notePh = d.key === "author_note" || d.key === "asset_author_note" || d.key === "global_author_note";
         return \`
           <div class="card">
             <strong>\${h(title)}</strong>\${d.key !== title ? \`<div class="muted" style="font-size:11px;margin-top:2px">\${h(d.key)}</div>\` : ""}
@@ -127,7 +131,7 @@ const VENDOR_PROMPT_TAB_HTML_PATCH = `    } else if (t.uiTab === "prompts") {
       }).join("");
       u = \`
         <div class="prompt-toolbar">
-          <div><strong>프롬프트</strong><div class="muted">작가의 노트·에셋태그 작가의 노트만 남기고 나머지를 기본값으로 돌리거나, 전체/개별 JSON으로 백업할 수 있습니다.</div></div>
+          <div><strong>프롬프트</strong><div class="muted">메인/에셋/전역 작가의 노트만 남기고 나머지를 기본값으로 돌리거나, 전체/개별 JSON으로 백업할 수 있습니다.</div></div>
           <div class="toolbar-actions" style="flex-wrap:wrap;gap:8px">
             <button id="nx-prompts-reset-defaults" class="secondary">기본값</button>
             <button id="nx-prompts-export" class="secondary">EXPORT</button>
@@ -246,7 +250,7 @@ const VENDOR_PROMPT_TAB_EVENTS_PATCH = `    }), document.querySelectorAll("[data
         }
       });
     }), document.getElementById("nx-prompts-reset-defaults")?.addEventListener("click", async () => {
-      if (!globalThis.confirm?.("작가의 노트와 에셋태그 작가의 노트를 제외한 모든 프롬프트를 기본값으로 복원할까요?")) return;
+      if (!globalThis.confirm?.("메인·에셋·전역 작가의 노트를 제외한 모든 프롬프트를 기본값으로 복원할까요?")) return;
       try {
         await K("/v1/prompts/reset-defaults", { method: "POST", body: { keep_author_note: true } });
         t.promptDrafts = {};
@@ -772,6 +776,47 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.31</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>전역 작가의 노트 칸을 에셋태그 노트 아래에 둡니다. 메인 태거 노트는 메인만</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.30</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>세션 작가의 노트가 메인 태거·에셋태거·만화 LLM에 들어가고, 전역 작가의 노트보다 이깁니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.29</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>NAI 요청 URL이 공식 주소가 아니면 연결 테스트 없이 키만 저장</li>
+            <li>Comfy는 연결 테스트 없이 저장</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.28</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>세션 노트를 선행/후행으로 나누고 이름+선택 프리셋을 둡니다</li>
+            <li>명령수정이 스튜디오와 같은 명령/후행·card.command_presets를 씁니다</li>
+            <li>캐릭터 예제샷을 피커·태그수정·명령수정·설정 탭이 공유합니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.27</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>메시지 캐릭터 피커에 이 세션 작가 노트를 넣고, 태거에 이세션 명령어로 후행합니다</li>
+            <li>탐색 크게보기에서 수정 스튜디오를 엽니다</li>
+            <li>캐릭터 명령수정·헤더 참고이미지 등록/생성</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.26</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>설정 창을 닫아도 마지막 스티키 샷이 다시 로드되지 않습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.25</strong>
@@ -1453,9 +1498,7 @@ const VENDOR_NAI_TEST_PATCH =
         const backend = s.backend || n.backend || "nai";
         const hasDraftKeys = !!(w(s.api_key) || (s.api_keys_v5 && s.api_keys_v5.length) || (s.api_keys_v4 && s.api_keys_v4.length));
         const hasStoredKeys = !!(n.api_key_configured || n.api_keys_v5_configured || n.api_keys_v4_configured);
-        if (backend === "comfy") {
-          if (!w(s.comfy_workflow_json) && !w(n.comfy_workflow_json)) throw new Error("ComfyUI 워크플로 JSON이 없습니다.");
-        } else if (!hasDraftKeys && !hasStoredKeys) {
+        if (backend !== "comfy" && !hasDraftKeys && !hasStoredKeys) {
           throw new Error("Novel AI API key가 없습니다.");
         }
         await flushSettingsSave(), await pe({ nai: s });
@@ -4786,6 +4829,126 @@ const VENDOR_EXPLORER_LB_CSS_NEEDLE =
 const VENDOR_EXPLORER_LB_CSS_PATCH =
   `.explorer-lightbox{position:fixed;inset:0;z-index:10000;`;
 
+const VENDOR_EXPLORER_LB_EDIT_HTML_NEEDLE =
+  `          <button type="button" id="nx-lb-close">닫기</button>`;
+const VENDOR_EXPLORER_LB_EDIT_HTML_PATCH =
+  `          <button type="button" id="nx-lb-edit" class="secondary">수정</button>
+          <button type="button" id="nx-lb-close">닫기</button>`;
+
+const VENDOR_EXPLORER_LB_EDIT_BIND_NEEDLE =
+  `      document.getElementById("nx-lb-close")?.addEventListener("click", closeExplorerLightbox);`;
+const VENDOR_EXPLORER_LB_EDIT_BIND_PATCH =
+  `      document.getElementById("nx-lb-close")?.addEventListener("click", closeExplorerLightbox);
+      document.getElementById("nx-lb-edit")?.addEventListener("click", () => {
+        const list = typeof Ze == "function" ? Ze().items : [];
+        const card = list[Math.max(0, t.explorer.lbIndex || 0)];
+        const qel = document.getElementById("nx-explorer-q");
+        const hash = String(card?.content_hash || "").trim();
+        if (qel && hash) {
+          qel.value = hash;
+          qel.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        if (typeof closeExplorerLightbox == "function") closeExplorerLightbox();
+        if (card) globalThis.__INLAY_NATIVE__?.openTagStudio?.(card);
+      });`;
+
+const CHAR_EDIT_HEAD_TOOLS_HTML =
+  `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto"><button type="button" data-ce-command title="LLM 명령수정" style="cursor:pointer;border:0;background:rgba(124,108,255,.22);color:#d7deea;padding:6px 8px;border-radius:8px;font:650 11px Segoe UI,sans-serif">명령수정</button><button type="button" data-ce-ex-vibe title="예제샷을 캐릭터 참고이미지로" style="cursor:pointer;border:0;background:rgba(124,108,255,.22);color:#d7deea;padding:6px 8px;border-radius:8px;font:650 11px Segoe UI,sans-serif;white-space:nowrap">예제샷참고이미지로</button><div data-ce-ex-slot title="예제샷" style="width:42px;height:42px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);flex-shrink:0;cursor:pointer"></div><button type="button" data-ce-ex-upload style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e8eef8;padding:5px 7px;border-radius:8px;font:650 11px Segoe UI,sans-serif">등록</button><button type="button" data-ce-ex-gen style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e8eef8;padding:5px 7px;border-radius:8px;font:650 11px Segoe UI,sans-serif">생성</button><button type="button" data-ce-x style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:6px 10px;border-radius:8px">✕</button></div>`;
+
+const VENDOR_CHAR_EDIT_X_NEEDLE =
+  `'<button type="button" data-ce-x style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:6px 10px;border-radius:8px">✕</button>',`;
+const VENDOR_CHAR_EDIT_X_PATCH =
+  `'${CHAR_EDIT_HEAD_TOOLS_HTML}',`;
+
+const VENDOR_CHAR_EDIT_STUB_X_NEEDLE =
+  `불러오는 중…</div></div><button type="button" data-ce-x style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:6px 10px;border-radius:8px">✕</button>`;
+const VENDOR_CHAR_EDIT_STUB_X_PATCH =
+  `불러오는 중…</div></div>${CHAR_EDIT_HEAD_TOOLS_HTML}`;
+
+const VENDOR_MSG_PICKER_NOTE_HTML_NEEDLE =
+  `<div data-mcp-list style="padding:12px;display:grid;gap:8px;overflow:auto"></div></div></div>';`;
+const VENDOR_MSG_PICKER_NOTE_HTML_PATCH =
+  `<div data-mcp-list style="padding:12px;display:grid;gap:8px;overflow:auto"></div><div data-mcp-note style="padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,.08);display:grid;gap:8px;flex-shrink:0"><div style="font-weight:650;font-size:12px;color:#d7deea">이 세션 작가의 노트</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><div style="display:flex;align-items:stretch;min-width:160px;flex:1"><input data-mcp-note-name placeholder="프리셋 이름" style="flex:1;min-width:0;box-sizing:border-box;border-radius:10px 0 0 10px;border:1px solid rgba(255,255,255,.14);border-right:0;background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px Segoe UI,sans-serif"><div style="position:relative;width:36px;flex:0 0 36px"><div aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14);border-left:0;border-radius:0 10px 10px 0;background:#0b0f18;color:#9aa6b8;pointer-events:none">▾</div><select data-mcp-note-preset style="position:absolute;inset:0;opacity:0;width:100%;cursor:pointer"></select></div></div><button type="button" data-mcp-note-preset-save style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e8eef8;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-preset-del style="cursor:pointer;border:0;background:rgba(248,113,113,.18);color:#fecaca;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">삭제</button></div><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">선행<textarea data-mcp-note-prefix rows="2" placeholder="이 채팅 선행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">후행<textarea data-mcp-note-suffix rows="2" placeholder="이 채팅 후행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" data-mcp-note-save style="cursor:pointer;border:0;background:rgba(124,108,255,.28);color:#e8eef8;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-fold style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">닫기</button></div></div></div></div>';`;
+
+const VENDOR_MSG_PICKER_NOTE_BIND_NEEDLE =
+  `    root.querySelector("[data-mcp-x]")?.addEventListener("click", () => void closePicker());`;
+const VENDOR_MSG_PICKER_NOTE_BIND_PATCH =
+  `    root.querySelector("[data-mcp-x]")?.addEventListener("click", () => void closePicker());
+    {
+      const noteBox = root.querySelector("[data-mcp-note]");
+      const pre = root.querySelector("[data-mcp-note-prefix]");
+      const suf = root.querySelector("[data-mcp-note-suffix]");
+      const nameEl = root.querySelector("[data-mcp-note-name]");
+      const sel = root.querySelector("[data-mcp-note-preset]");
+      const sid = String(t.lastScope?.sessionId || "");
+      let notePresets = [];
+      const paintNoteSel = () => {
+        const cur = sel?.value || "";
+        if (sel) {
+          sel.innerHTML = "<option value=\\"\\">(직접 입력)</option>" + notePresets.map((p) => "<option value=\\"" + p.id + "\\">" + p.name + "</option>").join("");
+          if (cur && notePresets.some((p) => p.id === cur)) sel.value = cur;
+        }
+      };
+      const applyNotePreset = (id) => {
+        const hit = notePresets.find((p) => p.id === id);
+        if (!hit) return;
+        if (nameEl) nameEl.value = hit.name || "";
+        if (pre) pre.value = hit.prefix || "";
+        if (suf) suf.value = hit.suffix || "";
+      };
+      if (sid && typeof K == "function") {
+        K("/v1/session-author-note?session_id=" + encodeURIComponent(sid)).then((r) => {
+          if (pre && r) pre.value = String(r.prefix != null ? r.prefix : (r.text || ""));
+          if (suf && r) suf.value = String(r.suffix || "");
+          if (sel && r?.preset_id) sel.value = String(r.preset_id);
+        }).catch(() => {});
+        K("/v1/session-author-note-presets").then((r) => {
+          notePresets = Array.isArray(r?.items) ? r.items : [];
+          paintNoteSel();
+        }).catch(() => {});
+      }
+      sel?.addEventListener("change", () => { if (sel.value) applyNotePreset(sel.value); });
+      root.querySelector("[data-mcp-note-preset-save]")?.addEventListener("click", async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        const name = String(nameEl?.value || "").trim();
+        if (!name || typeof K != "function") return;
+        const id = notePresets.find((p) => p.id === sel?.value)?.id || ("n_" + Date.now().toString(36));
+        const next = notePresets.filter((p) => p.id !== id);
+        next.push({ id, name, prefix: pre?.value || "", suffix: suf?.value || "" });
+        try {
+          const res = await K("/v1/session-author-note-presets", { method: "PUT", body: { items: next } });
+          notePresets = Array.isArray(res?.items) ? res.items : next;
+          paintNoteSel();
+          if (sel) sel.value = id;
+        } catch {}
+      });
+      root.querySelector("[data-mcp-note-preset-del]")?.addEventListener("click", async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        const id = sel?.value;
+        if (!id || typeof K != "function") return;
+        const next = notePresets.filter((p) => p.id !== id);
+        try {
+          const res = await K("/v1/session-author-note-presets", { method: "PUT", body: { items: next } });
+          notePresets = Array.isArray(res?.items) ? res.items : next;
+          paintNoteSel();
+          if (pre) pre.value = "";
+          if (suf) suf.value = "";
+          if (nameEl) nameEl.value = "";
+        } catch {}
+      });
+      root.querySelector("[data-mcp-note-save]")?.addEventListener("click", async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        if (!sid || typeof K != "function") return;
+        try {
+          await K("/v1/session-author-note", { method: "PUT", body: { session_id: sid, prefix: pre?.value || "", suffix: suf?.value || "", preset_id: sel?.value || "" } });
+        } catch {}
+      });
+      root.querySelector("[data-mcp-note-fold]")?.addEventListener("click", (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        if (noteBox) noteBox.style.display = "none";
+      });
+    }`;
+
 const VENDOR_EXPLORER_LB_OPEN_NEEDLE =
   `  function openExplorerLightbox(id) {
     const { items } = Ze();
@@ -6344,7 +6507,11 @@ const VENDOR_SETTINGS_CLOSE_STICKY_PATCH = `    document.getElementById("nx-clos
         }
         try { await restoreFloatingViewerAfterModal(); } catch {}
         try { await blockHostChrome(!1); } catch {}
-        try { await it(); } catch {}
+        // it() refetches gallery + remounts. Active sticky is the only thumb
+        // rewritten, so the last shot always "reloads" after settings.
+        if (!t.galleryUi?.root || !t.overlayUi?.root) {
+          try { await it(); } catch {}
+        }
         try {
           typeof nxHostToast == "function" && await nxHostToast("뷰어 복구됨", { ms: 1500 });
         } catch {
@@ -6418,7 +6585,9 @@ const VENDOR_SETTINGS_WATCH_STICKY_PATCH = `        t.uiOpen = !1, t._hostReaper
           }
           try { await restoreFloatingViewerAfterModal(); } catch {}
           try { await blockHostChrome(!1); } catch {}
-          try { await it(); } catch {}
+          if (!t.galleryUi?.root || !t.overlayUi?.root) {
+            try { await it(); } catch {}
+          }
         }).catch(() => {});
         y("info", "settings.closed", "host ui restore");`;
 
@@ -6797,6 +6966,15 @@ const VENDOR_CHAR_REF_SCOPE_ATTR_NEEDLE =
 const VENDOR_CHAR_REF_SCOPE_ATTR_PATCH =
   `data-char-scope="\${h(n)}" data-char-id="\${c}" data-char-ref-scope="\${h(r.scope || (n === "global" ? "__global__" : ""))}"`;
 
+/** Fold header left: 예제샷, else 참고이미지. Not the name input row. */
+const VENDOR_CHAR_CARD_SUMMARY_NEEDLE =
+  `          <summary style="cursor:pointer;font-weight:700;display:flex;align-items:center;gap:8px;list-style:none;flex-wrap:wrap">
+            <span style="flex:1;min-width:120px">\${h(r.name || "(이름 없음)")}`;
+const VENDOR_CHAR_CARD_SUMMARY_PATCH =
+  `          <summary style="cursor:pointer;font-weight:700;display:flex;align-items:center;gap:8px;list-style:none;flex-wrap:wrap">
+            <span data-char-head-shot style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);flex-shrink:0">\${(r.example_preview_url || r.ref_preview_url) ? \`<img src="\${h(r.example_preview_url || r.ref_preview_url)}" alt="" style="width:100%;height:100%;object-fit:cover">\` : ""}</span>
+            <span style="flex:1;min-width:120px">\${h(r.name || "(이름 없음)")}`;
+
 /** Character settings tab: name / original / gender / priority on one row. */
 const VENDOR_CHAR_TAB_IDENTITY_HTML_NEEDLE =
   `            <label><span>이름</span><input data-char-name value="\${h(r.name || "")}"></label>
@@ -6810,11 +6988,21 @@ const VENDOR_CHAR_TAB_GENDER_HTML_NEEDLE =
             <div class="autotag-status muted\${l ? " pending" : ""}" data-autotag-status>`;
 const VENDOR_CHAR_TAB_GENDER_HTML_PATCH =
   `            <div class="wide" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px">
+              <button type="button" class="secondary" data-char-command title="LLM 명령수정">명령수정</button>
               <button type="button" class="secondary" data-char-ref title="클릭: 붙여넣기 대상 · 더블클릭: 파일 (너비 400, webp 80%)">참고이미지</button>
               <button type="button" class="secondary" data-char-ref-clear title="참고이미지 제거">제거</button>
               <button type="button" class="secondary" data-char-ref-refresh title="모듈에서 다시 읽기">새로고침</button>
+              <button type="button" class="secondary" data-char-ref-gen>생성</button>
               <div data-char-ref-preview style="width:42px;height:42px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);flex-shrink:0">\${r.ref_preview_url ? \`<img src="\${h(r.ref_preview_url)}" alt="" style="width:100%;height:100%;object-fit:cover">\` : ""}</div>
               <span class="muted" style="font-size:11px" data-char-ref-status>\${r.ref_configured ? "설정됨" : "없음"}</span>
+            </div>
+            <div class="wide" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px">
+              <span class="muted" style="font-size:11px;font-weight:650">예제샷</span>
+              <div data-char-ex-preview title="클릭: 크게보기" style="width:42px;height:42px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);flex-shrink:0;cursor:pointer">\${r.example_preview_url ? \`<img src="\${h(r.example_preview_url)}" alt="" style="width:100%;height:100%;object-fit:cover">\` : ""}</div>
+              <button type="button" class="secondary" data-char-ex-vibe>참고이미지로</button>
+              <button type="button" class="secondary" data-char-ex-upload>등록</button>
+              <button type="button" class="secondary" data-char-ex-clear>삭제</button>
+              <button type="button" class="secondary" data-char-ex-gen>생성</button>
             </div>
             <div class="autotag-status muted\${l ? " pending" : ""}" data-autotag-status>`;
 
@@ -6979,7 +7167,21 @@ const VENDOR_CHAR_EDIT_CLEAR_LOOKS_PATCH =
   `    }), i.querySelector("[data-ce-x]")?.addEventListener("click", (f) => {
       f.preventDefault(), f.stopPropagation(), U().catch(() => {
       });
-    }), i.querySelector("[data-ce-clear-looks]")?.addEventListener("click", (f) => {
+    }), i.querySelector("[data-ce-command]")?.addEventListener("click", (f) => {
+      f.preventDefault(), f.stopPropagation();
+      globalThis.__INLAY_NATIVE__?.openCharacterCommandEdit?.({ formRoot: i, prefix: "ce", sessionId: t.lastScope?.sessionId || "", seed: n });
+    }), (() => {
+      try {
+        globalThis.__INLAY_NATIVE__?.bindCharacterExampleShot?.(i, {
+          characterId: () => String(n.id || e.id || ""),
+          scope: () => String(n.scope || t.lastScope?.sessionId || ""),
+          sessionId: () => String(t.lastScope?.sessionId || ""),
+          character: () => n,
+          prefix: "ce"
+        });
+        globalThis.__INLAY_NATIVE__?.paintExampleSlot?.(i, n.example_preview_url || "");
+      } catch {}
+    })(), i.querySelector("[data-ce-clear-looks]")?.addEventListener("click", (f) => {
       f.preventDefault(), f.stopPropagation();
       if (!confirm("외형 칸을 비울까요?")) return;
       if (p) p.value = "";
@@ -7635,7 +7837,30 @@ const VENDOR_CHAR_REF_TAB_EVT_PATCH =
         return v || sid();
       };
       const refLists = (uiScope) => uiScope === "global" ? [t.charactersGlobal] : uiScope === "session" ? [t.charactersSession] : [t.charactersSession, t.charactersGlobal];
-      document.querySelectorAll("[data-char-ref]").forEach((a) => {
+      document.querySelectorAll("[data-char-command]").forEach((a) => {
+        a.addEventListener("click", (i) => {
+          i.preventDefault(), i.stopPropagation();
+          const card = a.closest("[data-char-scope]");
+          if (!card) return;
+          globalThis.__INLAY_NATIVE__?.openCharacterCommandEdit?.({ formRoot: card, prefix: "char", sessionId: sid(), seed: {} });
+        });
+      }), document.querySelectorAll("[data-char-scope]").forEach((card) => {
+        try {
+          globalThis.__INLAY_NATIVE__?.bindCharacterExampleShot?.(card, {
+            characterId: () => String(card.getAttribute("data-char-id") || ""),
+            scope: () => asRefScope(card),
+            sessionId: sid,
+            prefix: "char",
+            fallbackUrl: () => String(card.querySelector("[data-char-ref-preview] img")?.src || "")
+          });
+        } catch {}
+      }), document.querySelectorAll("[data-char-ref-preview]").forEach((a) => {
+        a.addEventListener("click", (i) => {
+          i.preventDefault(), i.stopPropagation();
+          const img = a.querySelector("img");
+          if (img?.src) globalThis.__INLAY_NATIVE__?.openImagePeek?.(img.src);
+        });
+      }), document.querySelectorAll("[data-char-ref]").forEach((a) => {
       const stop = (i) => {
         i.preventDefault(), i.stopPropagation();
       };
@@ -7752,6 +7977,37 @@ const VENDOR_CHAR_REF_TAB_EVT_PATCH =
           }
         } catch {
           if (st) st.textContent = "실패";
+        }
+      });
+    }), document.querySelectorAll("[data-char-ref-gen]").forEach((a) => {
+      const stop = (i) => {
+        i.preventDefault(), i.stopPropagation();
+      };
+      a.addEventListener("pointerdown", stop), a.addEventListener("mousedown", stop), a.addEventListener("click", async (i) => {
+        stop(i);
+        const card = a.closest("[data-char-scope]");
+        if (!card) return;
+        const id = card.getAttribute("data-char-id") || "";
+        if (!id) return;
+        const prev = card.querySelector("[data-char-ref-preview]");
+        const st = card.querySelector("[data-char-ref-status]");
+        globalThis.__INLAY_NATIVE__?.setGenSpin?.([a, prev], !0);
+        if (st) st.textContent = "생성중…";
+        try {
+          const character = globalThis.__INLAY_NATIVE__?.readCharacterFromForm?.(card, "char", { id }) || { id };
+          const shot = await K("/v1/characters/preview-shot", { method: "POST", body: { character } }, 18e4);
+          const b64 = String(shot?.image_b64 || "");
+          if (!b64) throw new Error("empty");
+          const res = await K("/v1/characters/ref", {
+            method: "POST",
+            body: { character_id: id, scope: asRefScope(card), session_id: sid(), image_b64: b64 }
+          }, 6e4);
+          if (prev) prev.innerHTML = res?.preview_url ? \`<img src="\${res.preview_url}" alt="" style="width:100%;height:100%;object-fit:cover">\` : "";
+          if (st) st.textContent = res?.configured ? "설정됨" : "없음";
+        } catch {
+          if (st) st.textContent = "실패";
+        } finally {
+          globalThis.__INLAY_NATIVE__?.setGenSpin?.([a, prev], !1);
         }
       });
     }), t._charRefPasteBound || (t._charRefPasteBound = !0, window.addEventListener("paste", async (a) => {
@@ -11120,7 +11376,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const root = document.createElement("div");
     root.id = "nx-msg-char-picker";
     root.setAttribute("data-mcp-root", "1");
-    root.innerHTML = '<div data-mcp-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box"><div data-mcp-card style="width:min(440px,100%);max-height:min(86vh,720px);background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);border-radius:16px;box-shadow:0 28px 80px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08)"><div><div style="font-weight:700;font-size:15px;color:#e8eef8">트리거된 캐릭터</div><div style="margin-top:3px;color:#9aa6b8;font-size:11px">태그를 수정할 캐릭터를 선택하세요</div></div><button type="button" data-mcp-x style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:6px 10px;border-radius:8px">✕</button></div><div data-mcp-list style="padding:12px;display:grid;gap:8px;overflow:auto"></div></div></div>';
+    root.innerHTML = '<div data-mcp-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box"><div data-mcp-card style="width:min(440px,100%);max-height:min(86vh,720px);background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);border-radius:16px;box-shadow:0 28px 80px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08)"><div><div style="font-weight:700;font-size:15px;color:#e8eef8">트리거된 캐릭터</div><div style="margin-top:3px;color:#9aa6b8;font-size:11px">태그를 수정할 캐릭터를 선택하세요</div></div><button type="button" data-mcp-x style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:6px 10px;border-radius:8px">✕</button></div><div data-mcp-list style="padding:12px;display:grid;gap:8px;overflow:auto"></div><div data-mcp-note style="padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,.08);display:grid;gap:8px;flex-shrink:0"><div style="font-weight:650;font-size:12px;color:#d7deea">이 세션 작가의 노트</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><div style="display:flex;align-items:stretch;min-width:160px;flex:1"><input data-mcp-note-name placeholder="프리셋 이름" style="flex:1;min-width:0;box-sizing:border-box;border-radius:10px 0 0 10px;border:1px solid rgba(255,255,255,.14);border-right:0;background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px Segoe UI,sans-serif"><div style="position:relative;width:36px;flex:0 0 36px"><div aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14);border-left:0;border-radius:0 10px 10px 0;background:#0b0f18;color:#9aa6b8;pointer-events:none">▾</div><select data-mcp-note-preset style="position:absolute;inset:0;opacity:0;width:100%;cursor:pointer"></select></div></div><button type="button" data-mcp-note-preset-save style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e8eef8;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-preset-del style="cursor:pointer;border:0;background:rgba(248,113,113,.18);color:#fecaca;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">삭제</button></div><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">선행<textarea data-mcp-note-prefix rows="2" placeholder="이 채팅 선행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">후행<textarea data-mcp-note-suffix rows="2" placeholder="이 채팅 후행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" data-mcp-note-save style="cursor:pointer;border:0;background:rgba(124,108,255,.28);color:#e8eef8;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-fold style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">닫기</button></div></div></div></div>';
     const backdrop = root.querySelector("[data-mcp-backdrop]");
     const list = root.querySelector("[data-mcp-list]");
     let closed = !1;
@@ -11176,11 +11432,34 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const button = document.createElement("button");
       button.type = "button";
       button.setAttribute("data-mcp-character", String(picked.id || picked.name));
-      button.style.cssText = "cursor:pointer;width:100%;border:1px solid rgba(151,139,255,.3);background:rgba(124,108,255,.12);color:#e8eef8;padding:11px 12px;border-radius:11px;text-align:left;font:700 13px/1.35 Segoe UI,sans-serif";
+      button.style.cssText = "cursor:pointer;width:100%;border:1px solid rgba(151,139,255,.3);background:rgba(124,108,255,.12);color:#e8eef8;padding:8px 10px;border-radius:11px;text-align:left;font:700 13px/1.35 Segoe UI,sans-serif;display:flex;align-items:center;gap:8px";
       const scopeLabel = picked.scope === "__global__" ? "글로벌" : "채팅";
-      button.textContent = duplicateNames.has(String(picked.name))
+      const thumb = document.createElement("span");
+      thumb.style.cssText = "width:36px;height:36px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);flex-shrink:0";
+      const label = document.createElement("span");
+      label.textContent = duplicateNames.has(String(picked.name))
         ? String(picked.name) + " · " + scopeLabel
         : String(picked.name);
+      button.append(thumb, label);
+      const paintEx = (url) => {
+        thumb.innerHTML = url ? '<img src="' + url + '" alt="" style="width:100%;height:100%;object-fit:cover">' : "";
+      };
+      paintEx(String(picked.example_preview_url || picked.ref_preview_url || ""));
+      if (picked.id && typeof K == "function" && !picked.example_preview_url) {
+        const qid = encodeURIComponent(String(picked.id));
+        const qsc = encodeURIComponent(String(picked.scope || scope?.sessionId || ""));
+        const q = "character_id=" + qid + "&scope=" + qsc + "&session_id=" + encodeURIComponent(String(scope?.sessionId || ""));
+        K("/v1/characters/example-shot?" + q).catch(() => null).then((r) => {
+          if (r?.preview_url) {
+            paintEx(String(r.preview_url));
+            return null;
+          }
+          if (picked.ref_preview_url) return null;
+          return K("/v1/characters/ref?" + q);
+        }).then((r) => {
+          if (r?.preview_url) paintEx(String(r.preview_url));
+        }).catch(() => {});
+      }
       button.addEventListener("click", async (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
@@ -11203,6 +11482,80 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       if (ev.target === backdrop) void closePicker();
     });
     root.querySelector("[data-mcp-x]")?.addEventListener("click", () => void closePicker());
+    {
+      const noteBox = root.querySelector("[data-mcp-note]");
+      const pre = root.querySelector("[data-mcp-note-prefix]");
+      const suf = root.querySelector("[data-mcp-note-suffix]");
+      const nameEl = root.querySelector("[data-mcp-note-name]");
+      const sel = root.querySelector("[data-mcp-note-preset]");
+      const sid = String(t.lastScope?.sessionId || "");
+      let notePresets = [];
+      const paintNoteSel = () => {
+        const cur = sel?.value || "";
+        if (sel) {
+          sel.innerHTML = "<option value=\\"\\">(직접 입력)</option>" + notePresets.map((p) => "<option value=\\"" + p.id + "\\">" + p.name + "</option>").join("");
+          if (cur && notePresets.some((p) => p.id === cur)) sel.value = cur;
+        }
+      };
+      const applyNotePreset = (id) => {
+        const hit = notePresets.find((p) => p.id === id);
+        if (!hit) return;
+        if (nameEl) nameEl.value = hit.name || "";
+        if (pre) pre.value = hit.prefix || "";
+        if (suf) suf.value = hit.suffix || "";
+      };
+      if (sid && typeof K == "function") {
+        K("/v1/session-author-note?session_id=" + encodeURIComponent(sid)).then((r) => {
+          if (pre && r) pre.value = String(r.prefix != null ? r.prefix : (r.text || ""));
+          if (suf && r) suf.value = String(r.suffix || "");
+          if (sel && r?.preset_id) sel.value = String(r.preset_id);
+        }).catch(() => {});
+        K("/v1/session-author-note-presets").then((r) => {
+          notePresets = Array.isArray(r?.items) ? r.items : [];
+          paintNoteSel();
+        }).catch(() => {});
+      }
+      sel?.addEventListener("change", () => { if (sel.value) applyNotePreset(sel.value); });
+      root.querySelector("[data-mcp-note-preset-save]")?.addEventListener("click", async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        const name = String(nameEl?.value || "").trim();
+        if (!name || typeof K != "function") return;
+        const id = notePresets.find((p) => p.id === sel?.value)?.id || ("n_" + Date.now().toString(36));
+        const next = notePresets.filter((p) => p.id !== id);
+        next.push({ id, name, prefix: pre?.value || "", suffix: suf?.value || "" });
+        try {
+          const res = await K("/v1/session-author-note-presets", { method: "PUT", body: { items: next } });
+          notePresets = Array.isArray(res?.items) ? res.items : next;
+          paintNoteSel();
+          if (sel) sel.value = id;
+        } catch {}
+      });
+      root.querySelector("[data-mcp-note-preset-del]")?.addEventListener("click", async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        const id = sel?.value;
+        if (!id || typeof K != "function") return;
+        const next = notePresets.filter((p) => p.id !== id);
+        try {
+          const res = await K("/v1/session-author-note-presets", { method: "PUT", body: { items: next } });
+          notePresets = Array.isArray(res?.items) ? res.items : next;
+          paintNoteSel();
+          if (pre) pre.value = "";
+          if (suf) suf.value = "";
+          if (nameEl) nameEl.value = "";
+        } catch {}
+      });
+      root.querySelector("[data-mcp-note-save]")?.addEventListener("click", async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        if (!sid || typeof K != "function") return;
+        try {
+          await K("/v1/session-author-note", { method: "PUT", body: { session_id: sid, prefix: pre?.value || "", suffix: suf?.value || "", preset_id: sel?.value || "" } });
+        } catch {}
+      });
+      root.querySelector("[data-mcp-note-fold]")?.addEventListener("click", (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        if (noteBox) noteBox.style.display = "none";
+      });
+    }
     document.addEventListener("keydown", onKeyDown);
     document.body.appendChild(root);
     t.msgCharPickerUi = { root, close: closePicker, openedContainer };
@@ -13065,8 +13418,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.25",
-    body: "NAI 키 하나면 4/5 둘 다 쓰고, 이미지 프리셋 로드가 참고컷까지 붙입니다."
+    title: "2.5.31",
+    body: "전역 작가의 노트 칸. 메인 태거 노트는 메인만."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -14345,7 +14698,6 @@ const VENDOR_RISU_SETTINGS_HIDE_VIEWER_PATCH =
       else if (g.panel) await g.panel.setStyleAttribute(Ft(g.geo || se, !!g.minimized));
     } catch {
     }
-    if (t.overlayUi) t.overlayUi._lastThumbPct = null, t.overlayUi._v2LayoutKey = null;
     try { await Ht(); } catch {}
   }
   async function hideFloatingViewerForRisuSettings() {
@@ -16216,7 +16568,6 @@ const VENDOR_HIDE_MODAL_CANCEL_EXPAND_PATCH =
     const g = t.galleryUi;
     if (g?.drag) g.drag.expandOnTap = !1;
     if (g?._actionsLpTimer) clearTimeout(g._actionsLpTimer), g._actionsLpTimer = null;
-    if (t.overlayUi) t.overlayUi._lastThumbPct = null, t.overlayUi._v2LayoutKey = null;
     try { await Ht(); } catch {}
     if (!g?.panel) return;
     try {
@@ -16249,10 +16600,10 @@ const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
  * LLM, which is far harder to notice than a broken build.
  */
 const PROMPT_KEYS = [
-  'author_note', 'asset_author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
+  'author_note', 'asset_author_note', 'global_author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
   'char_inject', 'preprocess', 'prefill', 'preset_1', 'autotag',
   'curation_refine', 'curation_embed_hint', 'asset_tags_inject', 'char_looks',
-  'command_reroll', 'lorefilter_scan', 'comic',
+  'command_reroll', 'command_char_edit', 'lorefilter_scan', 'comic',
 ] as const;
 
 /**
@@ -16334,6 +16685,9 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_EXPLORER_LONGPRESS_NEEDLE, 'explorer longpress ctx');
   assertOnce(raw, VENDOR_EXPLORER_LB_CSS_NEEDLE, 'explorer lightbox z-index');
   assertOnce(raw, VENDOR_EXPLORER_LB_OPEN_NEEDLE, 'explorer lightbox open');
+  assertOnce(raw, VENDOR_EXPLORER_LB_EDIT_HTML_NEEDLE, 'explorer lightbox edit btn');
+  assertOnce(raw, VENDOR_EXPLORER_LB_EDIT_BIND_NEEDLE, 'explorer lightbox edit bind');
+  assertOnce(raw, VENDOR_CHAR_EDIT_X_NEEDLE, 'char edit header x tools');
   assertOnce(raw, VENDOR_EXPLORER_SAVE_ONE_NEEDLE, 'explorer save-one download');
   assertOnce(raw, VENDOR_EXPLORER_CTX_SAVE_NEEDLE, 'explorer ctx save');
   assertOnce(raw, VENDOR_EXPLORER_CTX_DISMISS_NEEDLE, 'explorer ctx dismiss');
@@ -16533,6 +16887,7 @@ const loadVendorUi = (): string => {
     [VENDOR_CHAR_EDIT_GENDER_REF_NEEDLE, 'char edit gender ref'],
     [VENDOR_CHAR_EDIT_GENDER_AUTOTAG_NEEDLE, 'char edit gender autotag'],
     [VENDOR_CHAR_EDIT_GENDER_SAVE_NEEDLE, 'char edit gender save'],
+    [VENDOR_CHAR_CARD_SUMMARY_NEEDLE, 'char card fold summary thumb'],
     [VENDOR_CHAR_TAB_IDENTITY_HTML_NEEDLE, 'char tab identity row'],
     [VENDOR_CHAR_TAB_GENDER_HTML_NEEDLE, 'char tab gender html'],
     [VENDOR_CHAR_TAB_GENDER_READ_NEEDLE, 'char tab gender read'],
@@ -16937,6 +17292,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHAR_EDIT_GENDER_REF_NEEDLE, VENDOR_CHAR_EDIT_GENDER_REF_PATCH)
     .replace(VENDOR_CHAR_EDIT_GENDER_AUTOTAG_NEEDLE, VENDOR_CHAR_EDIT_GENDER_AUTOTAG_PATCH)
     .replace(VENDOR_CHAR_EDIT_GENDER_SAVE_NEEDLE, VENDOR_CHAR_EDIT_GENDER_SAVE_PATCH)
+    .replace(VENDOR_CHAR_CARD_SUMMARY_NEEDLE, VENDOR_CHAR_CARD_SUMMARY_PATCH)
     .replace(VENDOR_CHAR_TAB_IDENTITY_HTML_NEEDLE, VENDOR_CHAR_TAB_IDENTITY_HTML_PATCH)
     .replace(VENDOR_CHAR_TAB_GENDER_HTML_NEEDLE, VENDOR_CHAR_TAB_GENDER_HTML_PATCH)
     .replace(VENDOR_CHAR_TAB_GENDER_READ_NEEDLE, VENDOR_CHAR_TAB_GENDER_READ_PATCH)
@@ -17145,6 +17501,12 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_EXPLORER_LONGPRESS_NEEDLE, VENDOR_EXPLORER_LONGPRESS_PATCH)
     .replace(VENDOR_EXPLORER_LB_CSS_NEEDLE, VENDOR_EXPLORER_LB_CSS_PATCH)
     .replace(VENDOR_EXPLORER_LB_OPEN_NEEDLE, VENDOR_EXPLORER_LB_OPEN_PATCH)
+    .replace(VENDOR_EXPLORER_LB_EDIT_HTML_NEEDLE, VENDOR_EXPLORER_LB_EDIT_HTML_PATCH)
+    .replace(VENDOR_EXPLORER_LB_EDIT_BIND_NEEDLE, VENDOR_EXPLORER_LB_EDIT_BIND_PATCH)
+    .replace(VENDOR_CHAR_EDIT_X_NEEDLE, VENDOR_CHAR_EDIT_X_PATCH)
+    .replace(VENDOR_CHAR_EDIT_STUB_X_NEEDLE, VENDOR_CHAR_EDIT_STUB_X_PATCH)
+    .replace(VENDOR_MSG_PICKER_NOTE_HTML_NEEDLE, VENDOR_MSG_PICKER_NOTE_HTML_PATCH)
+    .replace(VENDOR_MSG_PICKER_NOTE_BIND_NEEDLE, VENDOR_MSG_PICKER_NOTE_BIND_PATCH)
     .replace(VENDOR_EXPLORER_SAVE_ONE_NEEDLE, VENDOR_EXPLORER_SAVE_ONE_PATCH)
     .replace(VENDOR_EXPLORER_CTX_SAVE_NEEDLE, VENDOR_EXPLORER_CTX_SAVE_PATCH)
     .replace(VENDOR_EXPLORER_CTX_DISMISS_NEEDLE, VENDOR_EXPLORER_CTX_DISMISS_PATCH)
@@ -17655,6 +18017,9 @@ const loadVendorUi = (): string => {
       if (!body) throw new Error('[build] viewer restore toast pair missing');
       if (body.includes('refreshSelectedInlineImages')) {
         throw new Error('[build] settings close must not restamp inline shots');
+      }
+      if (!body.includes('if (!t.galleryUi?.root || !t.overlayUi?.root)')) {
+        throw new Error('[build] settings close must not remount the viewer when already mounted');
       }
     }
     if (!out.includes('async function nxRemoveInlineFramesByKey(') || !out.includes('t._inlineNeedStamp = !0')) {

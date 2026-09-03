@@ -64,7 +64,7 @@ import { normalizeEyeColorSlot, normalizeHairColorSlot } from '../domain/charact
 import { restoreAssetTagWeights } from '../domain/nai-meta/prompt-tags.ts';
 import { idbDelete, idbGet, idbGetAll, idbPut } from '../storage/stores';
 import { getLastAssetWeightMap } from './asset-tags';
-import { getCharRefPreviewUrl, getConfig } from './context';
+import { getCharRefPreviewUrl, getConfig, getExamplePreviewUrl } from './context';
 import { seedCharRefsFromLooks } from './nai-assets';
 
 export interface ReplaceOptions {
@@ -192,6 +192,12 @@ export async function listCharacters(scope: string): Promise<CharacterRecord[]> 
       if (hash) rec.ref_hash = hash;
       rec.ref_configured = Boolean(hash);
       rec.ref_preview_url = hash ? getCharRefPreviewUrl(refScope, cid) : '';
+      const ex = sanitizeHash(row.example_hash);
+      if (ex) {
+        rec.example_hash = ex;
+        rec.example_configured = true;
+        rec.example_preview_url = getExamplePreviewUrl(refScope, cid);
+      }
     }
     out.push(rec);
   }
@@ -502,6 +508,9 @@ export async function upsertCharacter(scope: string, raw: unknown): Promise<Char
     ref_hash: hasOwn(raw, 'ref_hash')
       ? sanitizeHash((raw as Record<string, unknown>).ref_hash)
       : sanitizeHash(sameRow?.ref_hash || dup?.ref_hash || rec.ref_hash),
+    example_hash: hasOwn(raw, 'example_hash')
+      ? sanitizeHash((raw as Record<string, unknown>).example_hash)
+      : sanitizeHash(sameRow?.example_hash || rec.example_hash),
     updated_at: now,
   });
   rec.appearance = appearance;

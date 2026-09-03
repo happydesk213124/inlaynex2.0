@@ -130,6 +130,8 @@ main.ts                     entry: builds the bridge, publishes globals
 | Anything the UI reads off `globalThis` | `src/bridge/ui-globals.ts` |
 | The bridge object itself (`fetch`, `ready`) | `src/bridge/native.ts` |
 | Shot-tag 도화지 (갤러리 「샷 태그 수정」) | `src/tag-studio/` — peel/assemble in `peel.ts`/`model.ts`, overlay in `mount.ts` |
+| 캐릭터 LLM 명령수정 / 헤더 참고 | `src/char-command/` — `mount.ts`, `src/domain/character/command-edit.ts` |
+| 이 세션 작가 노트 | `src/services/session-author-note.ts`, tagger inject in `src/services/tagger.ts` |
 | Reaching the Risu host API | `src/core/host.ts` — the only place that touches `globalThis.risuai` |
 
 ---
@@ -166,6 +168,9 @@ On top of it we keep five logical row stores plus per-image blobs.
 | `inx_nxstore_jobs` | job rows (newest 3 + any still running; see `src/domain/jobs/retention.ts`) |
 | `inx_nxstore_images` | image metadata (**not** bytes); may include `location.asset_path`. No `assistant_preview` — newest 20 card metas keep that for stream rematch (`src/domain/gallery/preview-retention.ts`) |
 | `inx_nximg_<id>` | leftover 1.x / old-fallback bytes, base64 (read-only; new shots never write this) |
+| `inx_session_author_note_<sessionId>` | per-chat author's note (`{prefix,suffix,preset_id}`; not the global `author_note` prompt) |
+| `inx_session_author_note_presets` | reusable session-note phrases |
+| `inx_char_command_presets` | LLM 명령수정 phrase presets (legacy device row; live list is `card.command_presets`) |
 
 **Keys are frozen.** Renaming one silently orphans every existing user's data.
 The same is true of `//@name inlay-nexus-native` in `vite.config.ts` — Risu

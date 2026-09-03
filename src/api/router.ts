@@ -38,6 +38,11 @@ import * as charImport from '../services/char-import';
 import * as settings from '../services/settings';
 import * as curation from '../services/curation';
 import * as storageMigrate from '../services/storage-migrate';
+import * as sessionAuthorNote from '../services/session-author-note';
+import * as charCommandPresets from '../services/char-command-presets';
+import * as charCommand from '../services/char-command';
+import * as characterPreview from '../services/character-preview';
+import * as characterExample from '../services/character-example';
 import { authorized, parseQuery, q, qAll, type Headers, type Query } from './http';
 
 export interface RouteResult {
@@ -203,6 +208,28 @@ const GET_ROUTES: readonly Route[] = [
     handler: async ({ query }) => {
       const cid = cleanText(q(query, 'character_id') || q(query, 'id'), 200);
       return ok(await lorefilter.getLorefilterPayload({ character_id: cid }));
+    },
+  },
+  {
+    match: exact('/v1/session-author-note'),
+    handler: async ({ query }) => ok(await sessionAuthorNote.getSessionAuthorNote(q(query, 'session_id') || q(query, 'sessionId'))),
+  },
+  {
+    match: exact('/v1/character-command-presets'),
+    handler: async () => ok(await charCommandPresets.listCommandPresets()),
+  },
+  {
+    match: exact('/v1/session-author-note-presets'),
+    handler: async () => ok(await sessionAuthorNote.listSessionAuthorNotePresets()),
+  },
+  {
+    match: exact('/v1/characters/example-shot'),
+    handler: async ({ query }) => {
+      const cid = cleanText(q(query, 'character_id') || q(query, 'id'), 200);
+      if (!cid) throw new Error('character_id required');
+      const scope = refScopeFrom(query);
+      if (!scope) throw new Error('scope required');
+      return ok(await characterExample.getCharacterExample(scope, cid));
     },
   },
   {
@@ -430,6 +457,56 @@ const WRITE_ROUTES: readonly Route[] = [
       ),
   },
   {
+    match: exact('/v1/session-author-note'),
+    handler: async ({ body }) =>
+      ok(await sessionAuthorNote.setSessionAuthorNote(body.session_id || body.sessionId, body)),
+  },
+  {
+    match: exact('/v1/session-author-note-presets'),
+    handler: async ({ body }) => ok(await sessionAuthorNote.saveSessionAuthorNotePresets(body.items ?? body)),
+  },
+  {
+    match: exact('/v1/character-command-presets'),
+    handler: async ({ body }) => ok(await charCommandPresets.saveCommandPresets(body.items ?? body)),
+  },
+  {
+    match: exact('/v1/characters/preview-shot'),
+    handler: async ({ body }) => ok(await characterPreview.generateCharacterPreview(body)),
+  },
+  {
+    match: exact('/v1/characters/example-shot'),
+    handler: async ({ body }) => {
+      const cid = cleanText(body.character_id || body.characterId || body.id || '', 200);
+      const scope = refScopeFrom(body);
+      if (body.clear) {
+        if (!cid) throw new Error('character_id required');
+        if (!scope) throw new Error('scope required');
+        return ok(await characterExample.clearCharacterExample(scope, cid));
+      }
+      const rawB64 = uploadBase64(body);
+      if (body.generate || !cleanText(rawB64)) {
+        return ok(await characterExample.generateCharacterExample(body));
+      }
+      if (!cid) throw new Error('character_id required');
+      if (!scope) throw new Error('scope required');
+      return ok(await characterExample.setCharacterExample(scope, cid, u8ToArrayBuffer(base64ToBytes(rawB64))));
+    },
+  },
+  {
+    match: exact('/v1/characters/example-shot/clear'),
+    handler: async ({ body }) => {
+      const cid = cleanText(body?.character_id || body?.characterId || body?.id || '', 200);
+      if (!cid) throw new Error('character_id required');
+      const scope = refScopeFrom(body);
+      if (!scope) throw new Error('scope required');
+      return ok(await characterExample.clearCharacterExample(scope, cid));
+    },
+  },
+  {
+    match: wrapped('/v1/characters/', '/command-rewrite'),
+    handler: async ({ param, body }) => ok(await charCommand.commandRewriteCharacter(param.replace(/^\//, ''), body)),
+  },
+  {
     match: exact('/v1/characters/import-fill'),
     handler: async ({ body }) => ok(await charImport.runImportFill(body)),
   },
@@ -505,6 +582,7 @@ const WRITE_ROUTES: readonly Route[] = [
       return ok(
         await naiAssets.setCharRefImage(scope, cid, u8ToArrayBuffer(base64ToBytes(rawB64)), {
           overwrite: body.overwrite !== false,
+          quality: Number(body.quality) > 0 && Number(body.quality) <= 1 ? Number(body.quality) : undefined,
         }),
       );
     },

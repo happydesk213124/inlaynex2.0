@@ -54,6 +54,29 @@ test("BlobUrlCache uses byteLen for budget and revokes blob URLs on drop", () =>
   }
 });
 
+test("BlobUrlCache pins at most pinCap ids so a wide pin set cannot defeat the budget", () => {
+  const cache = new BlobUrlCache(30, 2);
+  for (const id of ["a", "b", "c", "d"]) cache.set(id, id.repeat(10));
+  // Callers pass focus-first order; only the head of the list gets protection.
+  cache.pin(["b", "c", "d"]);
+  assert.deepEqual(cache.pinnedIds(), ["b", "c"]);
+  cache.set("e", "e".repeat(10));
+  assert.ok(cache.get("b"));
+  assert.ok(cache.get("c"));
+  assert.equal(cache.get("d"), undefined, "the id past the cap must stay evictable");
+  assert.deepEqual(cache.stats(), { entries: 3, bytes: 30, budget: 30, pinned: 2, pin_cap: 2 });
+});
+
+test("BlobUrlCache retainOnly keeps every retained id even past the pin cap", () => {
+  const cache = new BlobUrlCache(1000, 1);
+  for (const id of ["a", "b", "c"]) cache.set(id, id.repeat(10));
+  cache.retainOnly(["b", "c"]);
+  assert.equal(cache.get("a"), undefined);
+  assert.ok(cache.get("b"));
+  assert.ok(cache.get("c"), "retained ids beyond the pin cap are kept, just not pinned");
+  assert.deepEqual(cache.pinnedIds(), ["b"]);
+});
+
 test("BlobUrlCache retainOnly drops unpinned immediately", () => {
   const cache = new BlobUrlCache(1000);
   cache.set("a", "a".repeat(10));

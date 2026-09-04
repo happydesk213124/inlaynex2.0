@@ -1653,6 +1653,23 @@ export function blobUrlCount(): number {
   return blobUrlCache.size;
 }
 
+/**
+ * Resident image memory in this realm, for the debug snapshot. Integers only —
+ * it is read from a timer and must never walk pixels.
+ */
+export function imageCacheStats(): Record<string, unknown> {
+  let hydratedRows = 0;
+  for (const row of memStores.images.values()) if (row.png) hydratedRows += 1;
+  return {
+    data_urls: blobUrlCache.stats(),
+    explorer_thumbs: explorerThumbCache.stats(),
+    png_cache_bytes: pngCacheBytes,
+    png_cache_budget: PNG_CACHE_BUDGET,
+    png_hydrated_rows: hydratedRows,
+    png_hydrating: hydrating.size,
+  };
+}
+
 /** Loads the PNG for an id, hydrating from storage if necessary. */
 export async function imagePng(id: string): Promise<ArrayBuffer | null> {
   const row = await idbGet('images', String(id));

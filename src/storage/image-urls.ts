@@ -19,11 +19,70 @@ import { encodeWebpQuality } from '../core/util/image';
 import { dropBlobUrl, getBlobUrl, idbGet, idbPut, pinBlobUrls, retainBlobUrls, setBlobUrl } from './stores';
 import { notifyImageUrl, subscribeImageUrl as subscribeUrl, type ImageUrlListener } from './image-url-subs';
 
+/**
+ * Encodes in flight, by id.
+ *
+ * `stores.hydrating` already dedupes the storage read, but not the encode: the
+ * viewer arrow asks for its main image directly (`ensureImageUrl`) while
+ * `warmVisibleImages` queues the same id, and each caller ran its own
+ * FileReader pass. Two multi-MB strings for one id, the loser garbage the
+ * moment the winner landed in the cache — on a phone mid-generation that is
+ * the peak that tips the tab over.
+ */
+const encoding = new Map<string, Promise<string>>();
+let encodeCount = 0;
+let encodeJoins = 0;
+
+export interface ImageUrlStats {
+  /** Encodes actually run since boot (or the last reset). */
+  encodes: number;
+  /** Callers that found an encode already in flight and waited on it instead. */
+  encode_joins: number;
+  encode_inflight: number;
+  warm_queue: number;
+  warm_active: number;
+  warm_waiters: number;
+  warm_focus: number;
+}
+
+/** Cheap integer counters for the debug snapshot; safe to call from a timer. */
+export function imageUrlStats(): ImageUrlStats {
+  return {
+    encodes: encodeCount,
+    encode_joins: encodeJoins,
+    encode_inflight: encoding.size,
+    warm_queue: warmQueue.length,
+    warm_active: warmActive,
+    warm_waiters: warmWaiters.size,
+    warm_focus: warmFocus?.size ?? 0,
+  };
+}
+
+/** Tests only — the counters are module state and outlive `resetStores()`. */
+export function resetImageUrlStats(): void {
+  encodeCount = 0;
+  encodeJoins = 0;
+}
+
 /** Resolves an id to a display URL (`data:image`), reusing the cache. Returns '' when absent. */
-export async function ensureBlobUrl(id: string): Promise<string> {
-  if (!id) return '';
+export function ensureBlobUrl(id: string): Promise<string> {
+  if (!id) return Promise.resolve('');
   const cached = getBlobUrl(id);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return Promise.resolve(cached);
+  const inflight = encoding.get(id);
+  if (inflight) {
+    encodeJoins += 1;
+    return inflight;
+  }
+  const task = encodeDataUrl(id).finally(() => {
+    encoding.delete(id);
+  });
+  encoding.set(id, task);
+  return task;
+}
+
+async function encodeDataUrl(id: string): Promise<string> {
+  encodeCount += 1;
   const span = dbgSpan('image.data_url');
   const rec = await idbGet('images', id);
   if (!rec?.png) {

@@ -50,6 +50,72 @@ let focusStage = 'boot';
 let countsProvider: (() => Record<string, number>) | null = null;
 export const setDebugCounts = (fn: () => Record<string, number>): void => { countsProvider = fn; };
 
+/** Resident-memory figures (caches, encode queue); same injection reason as counts. */
+let memoryProvider: (() => Record<string, unknown>) | null = null;
+export const setDebugMemory = (fn: () => Record<string, unknown>): void => { memoryProvider = fn; };
+
+// ── boot identity ────────────────────────────────────────────────────────────
+//
+// A fresh id per module evaluation. If the id in a user's debug dump changes
+// right after they clicked the settings button, the plugin iframe was reloaded
+// (the host re-parented it) rather than our shell failing to paint — two very
+// different bugs that both look like a blank full-screen layer.
+//
+// Clock-derived on purpose: a `Math.random()` draw here would shift every uuid
+// the parity host mints afterwards and diff every storage key against 1.x.
+const BOOT_AT = Date.now();
+const BOOT_ID = `${BOOT_AT.toString(36)}-${Math.floor(((globalThis as { performance?: { now?: () => number } }).performance?.now?.() ?? 0) * 1000).toString(36)}`;
+let prevBootGapMs: number | null = null;
+/** Set once at boot from the persisted previous boot time. */
+export const setPrevBootGap = (ms: number | null): void => { prevBootGapMs = ms; };
+export const bootId = (): string => BOOT_ID;
+
+// ── main-thread stall monitor ────────────────────────────────────────────────
+//
+// The plugin iframe shares the host's main thread, so timer drift here measures
+// host freezes too — including ones caused by our own SafeDOM traffic. Only
+// integers are kept; the ring of recent stalls is bounded.
+const STALL_TICK_MS = 250;
+const STALL_MIN_MS = 200;
+const STALL_RING = 24;
+interface Stall { t: number; ms: number; heap: number | null }
+const stalls: Stall[] = [];
+let stallCount = 0;
+let stallMaxMs = 0;
+let stallTotalMs = 0;
+let stallTimer: ReturnType<typeof setInterval> | null = null;
+
+const usedHeap = (): number | null => {
+  try {
+    const perf = (globalThis as { performance?: { memory?: { usedJSHeapSize?: number } } }).performance;
+    const n = perf?.memory?.usedJSHeapSize;
+    return typeof n === 'number' ? n : null;
+  } catch { return null; }
+};
+
+export function startStallMonitor(): void {
+  if (stallTimer || typeof setInterval !== 'function') return;
+  let last = Date.now();
+  stallTimer = setInterval(() => {
+    const now = Date.now();
+    const drift = now - last - STALL_TICK_MS;
+    last = now;
+    if (drift < STALL_MIN_MS) return;
+    stallCount += 1;
+    stallTotalMs += drift;
+    if (drift > stallMaxMs) stallMaxMs = drift;
+    stalls.push({ t: now, ms: drift, heap: usedHeap() });
+    while (stalls.length > STALL_RING) stalls.shift();
+  }, STALL_TICK_MS);
+  // Node hosts (unit tests, parity) must still be able to exit.
+  (stallTimer as unknown as { unref?: () => void }).unref?.();
+}
+
+export function stopStallMonitor(): void {
+  if (stallTimer) clearInterval(stallTimer);
+  stallTimer = null;
+}
+
 export const setJobContext = (jobId: string): void => { jobCtx = jobId; };
 export const getJobContext = (): string => jobCtx;
 export const getFocusStage = (): string => focusStage;
@@ -162,6 +228,15 @@ export function debugSnapshot(): Record<string, unknown> {
       document_hidden: hidden,
     },
     counts: { events: events.length, ...(countsProvider?.() ?? {}) },
+    boot: { id: BOOT_ID, at: BOOT_AT, uptime_ms: Date.now() - BOOT_AT, prev_boot_gap_ms: prevBootGapMs },
+    mem: { js_heap_used: usedHeap(), ...(memoryProvider?.() ?? {}) },
+    main_thread: {
+      monitoring: stallTimer != null,
+      stalls: stallCount,
+      stall_max_ms: stallMaxMs,
+      stall_total_ms: stallTotalMs,
+      recent_stalls: stalls.slice(-STALL_RING),
+    },
     by_stage: byStage,
     errors: events.filter((e) => e.level === 'error').slice(-20),
     events: recent,

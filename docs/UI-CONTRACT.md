@@ -17,8 +17,8 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 | `resolveImageUrl` | `(cardOrId) => string` | Synchronous cache hit, else `""` |
 | `ensureImageUrl` | `(id) => Promise<string>` | Loads and caches |
 | `subscribeImageUrl` | `(ids: string[], cb: (id, url) => void) => () => void` | Fires per id as it becomes displayable; replays ids already cached. Caller **must** run the returned unsubscribe |
-| `warmImages` | `(ids: string[]) => Promise<string[]>` | Prefetch. Queues onto the one shared encoder rather than encoding in parallel itself, so `prioritizeWarmFocus` / `pinImageUrls` genuinely decide who goes first. Resolves once every id has a URL **or has been given up on** — a missing image and an id evicted by `retainImageUrls` both settle |
-| `pinImageUrls` | `(ids: string[]) => void` | Pin sticky-window ids against data-URL LRU eviction; prioritizes their warm queue |
+| `warmImages` | `(ids: string[]) => Promise<string[]>` | Prefetch. Queues onto the one shared encoder rather than encoding in parallel itself, so `prioritizeWarmFocus` / `pinImageUrls` genuinely decide who goes first. Resolves once every id has a URL **or has been given up on** — a missing image and an id evicted by `retainImageUrls` both settle. `ensureImageUrl` for an id already encoding joins that encode rather than starting a second one |
+| `pinImageUrls` | `(ids: string[]) => void` | Pin sticky-window ids against data-URL LRU eviction; prioritizes their warm queue. Only the first `BLOB_URL_PIN_CAP` (24) ids are protected — callers pass focus-first, and `nearbyMessageImageIds` never returns more than that |
 | `warmProgress` | `() => { pending, active, done, total, pct, busy }` | Full background warm wave (viewer status) |
 | `warmFocusProgress` | `() => { pending, active, done, total, pct, busy }` | Selection-focus warm only — mint progress toast |
 | `prioritizeWarmFocus` | `(ids: string[]) => void` | Move these ids to the front of the encode queue and scope `warmFocusProgress` to them. Priority only — nothing else is parked |
@@ -37,9 +37,17 @@ The UI's fetch wrapper is `K(path, init, timeoutMs)`; it throws
 > `setAttribute('src', blobUrl)` throws and cannot recover. Returning a `blob:`
 > URL renders the broken-image icon on every surface.
 >
-> Explorer thumbs: `/v1/gallery/explore` attaches URLs with `cachedOnly`, so the
-> grid paints from `resolveImageUrl` and fills in via `warmImages` /
-> `onWarmProgress`. While the explorer panel is open, warm progress must still
+> **Listing rows carry no `image_url`.** `/v1/gallery`, `/v1/gallery/explore`
+> and job-result cards omit the key (2.5.33). The UI resolves a display URL from
+> the sync cache (`resolveImageUrl`) at paint time and warms only its visible
+> window; the cache is the single owner of every data URL. Copying one onto a
+> row (`card.image_url = …`) is a build-time error because `t.gallery` rows live
+> for the session, so the copy outlived its eviction and the 64MB budget bounded
+> nothing. Single-card responses (`/v1/cards/:id`, reroll, studio-commit) still
+> carry `image_url` for the modal that asked.
+>
+> Explorer thumbs: the grid paints from `resolveImageUrl` and fills in via
+> `warmImages` / `onWarmProgress`. While the explorer panel is open, warm progress must still
 > reapply `src` on `.explorer-card img` (build patch); otherwise freshly generated
 > cards stay on the broken-image icon until a full panel remount.
 >
@@ -218,7 +226,14 @@ names carry a 글로벌/채팅 suffix. The chosen row opens the existing charact
 editor.
 On listener rebind, stale action bars from the previous plugin instance are
 removed before new listeners attach. The preset chip opens the settings shell
-(`At()`) on `style_presets`.
+(`At()`) on `style_presets`. `At()` paints after `showContainer`; if `#nx-shell`
+never lands after retries, it `hideContainer`s unless another modal owns the iframe.
+The close watchdog (`armSettingsCloseWatch`, 4×500ms without `#nx-shell`) is
+armed only once the shell has painted — armed earlier it raced the host
+roundtrips before `P()` and closed a settings shell that had not opened yet. The
+character catalog (`ia()` → `getDatabase`) is not awaited outright: with a
+catalog from a previous open the shell paints immediately, otherwise it waits at
+most 600ms; a catalog that lands later re-paints once, never over a focused field.
 New chat / first open / reply waits 1s then selects the bubble nearest the
 current pointer (`provisional`, no auto-gen). A real click in that window
 cancels the timer. Listener binding also requests an immediate repaint on an
@@ -438,9 +453,11 @@ lore_trigger_keys[], character_description, persona_description, force`.
 | `/v1/images/:id`, `/v1/images/:id.json` | raw bytes / placement sidecar |
 
 Card fields the UI reads: `id, content_hash, host_message_id, session_id, message_index, paragraph,
-shot_index, y_percent, anchor_percent, read_percent, created_at, image_url,
+shot_index, y_percent, anchor_percent, read_percent, created_at,
 main_prompt, negative_prompt, assistant_preview, text, characters[],
-character_name, chat_name, folder_key`.
+character_name, chat_name, folder_key`. Display URLs come from
+`resolveImageUrl(card)`, never from a field on the row (see the image-URL note
+above).
 `host_message_id` is Risu's per-message id when the host exposes one. Link
 prefers that over `content_hash`; hash and the Dice≥60% rebind remain fallbacks.
 `chatId` is the chat, not a turn, and is never stored here.

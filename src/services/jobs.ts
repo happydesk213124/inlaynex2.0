@@ -67,7 +67,7 @@ import { pickNextReadyShot } from '../domain/comic/schedule';
 import { characterHasAppearance, characterMaxLimit, applyWearContinuityToShots, applyCostumeContinuityToShots, applyCreatedCostumesToShots, collectCostumePairs, createdCostumeWearByName, ensureCostumes } from '../domain/character/tags';
 import { slimCardCharacters } from '../domain/gallery/slim-cast';
 import { dedupeShotCharacters, matchCharactersInText, resolveCharacter } from '../domain/character/roster';
-import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
+import { publishImage, resolveImageUrl } from '../storage/image-urls';
 import { flushPersist, idbGet, idbPut } from '../storage/stores';
 import { getConfig, jobEpochByKey, jobRunMeta, requestMessageRerollStop } from './context';
 import { mergeRosterFromTagged, persistChatWearStates, rosterForSession } from './characters';
@@ -609,9 +609,9 @@ export async function getJob(jobId: string): Promise<ApiResult> {
     }
   }
   noteLastGeneratingPoll(jobId, row.state, result);
-  // Cache only. Encoding here is what left the toast on generating N/N
-  // after the last shot had already attached — the done poll never returned.
-  if (result) await attachImageUrls(result, { cachedOnly: true, warmMissing: false });
+  // Result cards carry no display URL (see gallery.ts). Encoding here is what
+  // once left the toast on generating N/N; attaching from cache was retention
+  // the UI's own `resolveImageUrl` lookup makes redundant.
   return {
     ok: true,
     job_id: row.id,
@@ -1314,7 +1314,6 @@ async function runJob(jobId: string): Promise<void> {
           main_prompt: main,
           negative_prompt: neg,
           characters: slimCardCharacters(meta.characters || []),
-          image_url: resolveImageUrl(cardId),
           seed,
           storage: 'indexeddb',
           png_bytes: raw?.byteLength || 0,

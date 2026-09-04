@@ -1255,11 +1255,10 @@ test('setJob done waits until getJob has seen generating shot_done=N', () => {
   const getTo = source.indexOf('// ── the run loop');
   const getJob = source.slice(getFrom, getTo);
   assert.match(getJob, /noteLastGeneratingPoll\(/);
-  assert.match(getJob, /attachImageUrls\(result,\s*\{\s*cachedOnly:\s*true/);
-  assert.ok(
-    getJob.indexOf('noteLastGeneratingPoll') < getJob.indexOf('attachImageUrls'),
-    'latch must fire before encode so the poll is not starved',
-  );
+  // The poll path used to attach cached URLs after the latch; now it touches no
+  // display URL at all (rows carry none), which is the stronger form of the
+  // same guarantee: nothing on this path can starve the poll with an encode.
+  assert.doesNotMatch(getJob, /attachImageUrls\(|ensureBlobUrl\(|resolveImageUrl\(/);
   const from = source.indexOf('if (shotSaveFailed) throw shotSaveFailed');
   const to = source.indexOf("jobSpan.end({ message: 'done'");
   const tail = source.slice(from, to);
@@ -1907,4 +1906,103 @@ test('예제샷 참고이미지로 writes character ref, not studio vibe', () =>
   const src = read('src', 'char-command', 'example-shot.ts');
   assert.match(src, /\/v1\/characters\/ref/);
   assert.doesNotMatch(src, /\/v1\/nai\/vibe/);
+});
+
+test('settings At() retries paint then hideContainer if nx-shell never lands', () => {
+  const vite = read('vite.config.ts');
+  assert.match(vite, /VENDOR_SETTINGS_PAINT_RETRY_NEEDLE/);
+  assert.match(vite, /\[VENDOR_SETTINGS_PAINT_RETRY_NEEDLE, 'settings At paint retry then hideContainer'\]/);
+  assert.match(vite, /\.replace\(VENDOR_SETTINGS_PAINT_RETRY_NEEDLE, VENDOR_SETTINGS_PAINT_RETRY_PATCH\)/);
+  const patch = vite.slice(
+    vite.indexOf('const VENDOR_SETTINGS_PAINT_RETRY_PATCH'),
+    vite.indexOf('const VENDOR_HIDE_INSPECT_BIND_NEEDLE'),
+  );
+  assert.match(patch, /getElementById\("nx-shell"\)/);
+  assert.match(patch, /attempt < 3/);
+  assert.match(patch, /hideContainer/);
+  assert.match(patch, /!t\.charEditUi && !t\.cardTagUi && !t\.charCreateUi/);
+});
+
+test('settings At() arms the close watchdog only after #nx-shell painted', () => {
+  // The watchdog counts 500ms ticks without #nx-shell and closes at four. Armed
+  // before xe()/getDatabase/showContainer it raced them: a slow host flipped
+  // uiOpen=false before P() ever ran, leaving an empty fullscreen iframe.
+  const vite = read('vite.config.ts');
+  const hidePanel = vite.slice(
+    vite.indexOf('const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH'),
+    vite.indexOf('/** At() clears body then paints.'),
+  );
+  assert.doesNotMatch(hidePanel, /^\s*armSettingsCloseWatch\(\);/m, 'watchdog must not be armed before paint');
+  const retry = vite.slice(
+    vite.indexOf('const VENDOR_SETTINGS_PAINT_RETRY_PATCH'),
+    vite.indexOf('const VENDOR_VIEWER_ENSURE_NO_COPY_NEEDLE'),
+  );
+  const armAt = retry.indexOf('armSettingsCloseWatch()');
+  assert.ok(armAt > 0, 'watchdog is armed in the paint-retry block');
+  assert.ok(retry.indexOf('painted = !!document.getElementById("nx-shell")') < armAt, 'armed after the shell landed');
+  assert.match(retry, /if \(painted\) \{\s*armSettingsCloseWatch\(\);/);
+});
+
+test('settings At() paints without waiting on a slow character catalog', () => {
+  const vite = read('vite.config.ts');
+  const hidePanel = vite.slice(
+    vite.indexOf('const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH'),
+    vite.indexOf('/** At() clears body then paints.'),
+  );
+  // ia() is started, never awaited outright: at most a 600ms race, and only when
+  // there is no catalog from a previous open to paint with.
+  assert.doesNotMatch(hidePanel, /await ia\(\)/);
+  assert.match(hidePanel, /const catalogP = ia\(\)/);
+  assert.match(hidePanel, /Promise\.race\(\[catalogP, new Promise\(\(ok\) => setTimeout\(ok, 600\)\)\]\)/);
+  assert.match(hidePanel, /if \(!Array\.isArray\(t\.charCatalog\) \|\| !t\.charCatalog\.length\)/);
+  const retry = vite.slice(
+    vite.indexOf('const VENDOR_SETTINGS_PAINT_RETRY_PATCH'),
+    vite.indexOf('const VENDOR_VIEWER_ENSURE_NO_COPY_NEEDLE'),
+  );
+  // A late catalog re-paints once, and never over a field the user is typing in.
+  assert.match(retry, /catalog\.state\.changed/);
+  assert.match(retry, /tag === "input" \|\| tag === "textarea" \|\| tag === "select"/);
+});
+
+test('blockHostChrome(true) hides overlay roots in parallel', () => {
+  const vite = read('vite.config.ts');
+  assert.match(vite, /\[VENDOR_BLOCK_HOST_HIDE_PARALLEL_NEEDLE, 'blockHostChrome hide roots in parallel'\]/);
+  assert.match(vite, /\.replace\(VENDOR_BLOCK_HOST_HIDE_PARALLEL_NEEDLE, VENDOR_BLOCK_HOST_HIDE_PARALLEL_PATCH\)/);
+  const patch = vite.slice(
+    vite.indexOf('const VENDOR_BLOCK_HOST_HIDE_PARALLEL_PATCH'),
+    vite.indexOf('/** Expose inspect close on t'),
+  );
+  assert.match(patch, /await Promise\.all\(/);
+  assert.doesNotMatch(patch, /for \(const ui of/);
+});
+
+test('UI never copies a data URL onto a gallery row', () => {
+  // t.gallery rows live for the session; a data URL parked on one outlives its
+  // eviction from the backend cache and the memory budget bounds nothing.
+  const vite = read('vite.config.ts');
+  assert.match(vite, /\[VENDOR_VIEWER_ENSURE_NO_COPY_NEEDLE, 'viewer ensureCardImage no image_url copy'\]/);
+  assert.match(vite, /\.replace\(VENDOR_VIEWER_ENSURE_NO_COPY_NEEDLE, VENDOR_VIEWER_ENSURE_NO_COPY_PATCH\)/);
+  const ieFn = vite.slice(vite.indexOf('const VENDOR_IE_FN_PATCH'), vite.indexOf('const VENDOR_IE_READY_FB_NEEDLE'));
+  assert.doesNotMatch(ieFn, /card\.image_url = src/);
+  const ensure = vite.slice(
+    vite.indexOf('const VENDOR_VIEWER_ENSURE_NO_COPY_PATCH'),
+    vite.indexOf('const VENDOR_BLOCK_HOST_HIDE_PARALLEL_NEEDLE'),
+  );
+  assert.doesNotMatch(ensure, /Q\.image_url = url/);
+  const dist = read('dist/inlaynexus2.0.js');
+  const writes = dist.match(/\b(?:card|Q)\.image_url = /g) || [];
+  assert.deepEqual(writes, [], `dist still copies data URLs onto cards: ${writes.length}`);
+});
+
+test('viewer thumb strip never walks getChildren()', () => {
+  // The in-place restyle was dead (SafeElement throws on data-* reads) and each
+  // arrow press leaked N+1 host-side handles pinning detached data-URL <img>s.
+  const vite = read('vite.config.ts');
+  assert.match(vite, /assertOnce\(out, VENDOR_THUMBS_QUICK_DEAD_NEEDLE, 'dead paintThumbsQuick in-place path'\)/);
+  assert.match(vite, /thumb strip still walks getChildren\(\)/);
+  const dist = read('dist/inlaynexus2.0.js');
+  assert.ok(!dist.includes('await thumbsPaintEl().getChildren()'), 'dist thumb strip still calls getChildren()');
+  const quick = dist.slice(dist.indexOf('paintThumbsQuick = async (idx) => {'), dist.indexOf('softAfterSelect = async (gen) => {'));
+  assert.ok(quick.length > 0 && quick.length < 600, `paintThumbsQuick should be a thin repaint, got ${quick.length} chars`);
+  assert.match(quick, /await paintThumbsChrome\(/);
 });

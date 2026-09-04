@@ -1,8 +1,8 @@
 /**
  * Checks that listing a gallery does not block on decoding images.
  *
- * Both listings pass `cachedOnly: true`, so a cold gallery is supposed to answer
- * from the index alone and let the background warmer fill URLs in afterwards.
+ * Neither listing touches the display-URL cache, so a cold gallery is supposed to
+ * answer from the index alone and let the UI's own visible-window warm fill in.
  * That guarantee is easy to lose by accident, because the row holding a card's
  * placement metadata is the same row holding its pixels: any metadata read that
  * goes through `idbGet('images', id)` hydrates the image, once per card, inside
@@ -12,9 +12,12 @@
  * The parity harness cannot see this. Its scenario has three 70-byte images, and
  * the cost is a read pattern rather than a behavioural difference.
  *
- * On a cold cache the check is exact: `cachedOnly` cannot produce a single URL, so
- * every `image_url` must come back empty while every `png_bytes` must be correct.
- * A populated URL means something encoded synchronously.
+ * On a cold cache the check is exact: rows carry no `image_url` at all (the UI
+ * resolves display URLs from the sync cache at paint time), so every row must
+ * lack the key while every `png_bytes` must be correct. A row that grew the key
+ * back means someone re-attached display URLs to a listing — which is retention,
+ * not convenience: the UI keeps those row objects for the session, so a data URL
+ * on the row outlives its eviction from the cache.
  *
  * One route per process, because the data-URL cache and the warm queue are module
  * state. Listing a gallery enqueues warming for every card it returned, so a
@@ -27,7 +30,16 @@
  * the named hashes, and that probe has to stay an index read — one lookup per
  * tail row, not a row build.
  *
- *   node tools/bench-gallery.mjs --route=gallery|explore|window [--count=40]
+ * `--route=arrows` replays what the frozen viewer does on every ←/→ press —
+ * `ensureImageUrl` for the main image, `warmImages` over the visible window,
+ * `pinImageUrls` over the sticky neighbourhood — across a sweep of the strip and
+ * checks the work stays proportional to the window, not the strip: one encode
+ * per id ever (concurrent callers join the in-flight encode), no more than
+ * `VIEWER_WARM_WINDOW_MAX` decodes per step, and a pin set that cannot outgrow
+ * `BLOB_URL_PIN_CAP`. Parity cannot see any of this; it compares the URLs that
+ * come back, not how many times they were built.
+ *
+ *   node tools/bench-gallery.mjs --route=gallery|explore|window|arrows [--count=40]
  */
 import path from 'node:path';
 import vm from 'node:vm';
@@ -42,12 +54,12 @@ const arg = (name, fallback) => {
 const ROUTE = arg('route', 'gallery');
 const SESSION = 'bench_session';
 
-if (ROUTE !== 'gallery' && ROUTE !== 'explore' && ROUTE !== 'window') {
-  console.error(`[bench] unknown --route=${ROUTE} (expected "gallery", "explore" or "window")`);
+if (ROUTE !== 'gallery' && ROUTE !== 'explore' && ROUTE !== 'window' && ROUTE !== 'arrows') {
+  console.error(`[bench] unknown --route=${ROUTE} (expected "gallery", "explore", "window" or "arrows")`);
   process.exit(1);
 }
 
-const COUNT = Number(arg('count', ROUTE === 'window' ? 400 : 40));
+const COUNT = Number(arg('count', ROUTE === 'window' ? 400 : ROUTE === 'arrows' ? 60 : 40));
 /** Window mode: ask for this many newest rows plus one hash from deep in the tail. */
 const WINDOW = 120;
 // Cards are seeded oldest-first, so a low index is deep below the window edge.
@@ -138,6 +150,87 @@ const pngReads = () => {
 
 const failures = [];
 
+if (ROUTE === 'arrows') {
+  await benchArrows();
+  finish();
+}
+
+async function benchArrows() {
+  const VC = globalThis.__INLAY_VIEWER_CORE__;
+  if (!VC?.visibleGalleryImageIds || !VC?.nearbyMessageImageIds) {
+    failures.push('__INLAY_VIEWER_CORE__ is missing the window helpers the viewer calls');
+    return;
+  }
+  const WINDOW_MAX = Number(VC.VIEWER_WARM_WINDOW_MAX);
+  const PIN_MAX = Number(N.debug()?.mem?.data_urls?.pin_cap);
+  if (!Number.isFinite(WINDOW_MAX) || !Number.isFinite(PIN_MAX)) {
+    failures.push(`caps not exported (window ${WINDOW_MAX}, pin ${PIN_MAX})`);
+    return;
+  }
+  const listing = await N.fetch(`/v1/gallery?session_id=${SESSION}&limit=${COUNT}`, { method: 'GET' });
+  // Oldest first, like the viewer's message strip.
+  const items = [...(listing?.items ?? [])].sort((a, b) => a.message_index - b.message_index);
+  if (items.length !== COUNT) {
+    failures.push(`listing returned ${items.length} of ${COUNT} cards`);
+    return;
+  }
+
+  // Sweep right, then back left: the second half re-visits warm ids and must
+  // cost nothing. The strip length is what the frozen viewer passes as maxCount.
+  const steps = [...items.keys(), ...[...items.keys()].reverse()];
+  let maxDecodesPerStep = 0;
+  let maxPinned = 0;
+  let maxWindow = 0;
+  const touched = new Set();
+  for (const idx of steps) {
+    const before = pngReads();
+    const card = items[idx];
+    const windowIds = VC.visibleGalleryImageIds(items, idx, 1, Math.max(8, items.length));
+    const nearIds = VC.nearbyMessageImageIds(items, { messageIndex: card.message_index, sessionId: SESSION }, 2, [card.id]);
+    maxWindow = Math.max(maxWindow, windowIds.length);
+    for (const id of windowIds) touched.add(id);
+    for (const id of nearIds) touched.add(id);
+    // Same instant, like the viewer: main ensure races the window warm.
+    N.pinImageUrls(nearIds);
+    await Promise.all([N.ensureImageUrl(card.id), N.warmImages(windowIds), N.warmImages(nearIds)]);
+    maxDecodesPerStep = Math.max(maxDecodesPerStep, pngReads() - before);
+    maxPinned = Math.max(maxPinned, Number(N.debug()?.mem?.data_urls?.pinned ?? 0));
+  }
+
+  const mem = N.debug()?.mem ?? {};
+  const enc = mem.encode ?? {};
+  console.log(`[bench] ${COUNT} images, ${steps.length} arrow steps`);
+  console.log(`[bench] ${enc.encodes} encode(s) for ${touched.size} distinct id(s), ${enc.encode_joins} join(s)`);
+  console.log(`[bench] max ${maxDecodesPerStep} decode(s) per step (cap ${WINDOW_MAX}), max window ${maxWindow}`);
+  console.log(`[bench] max ${maxPinned} pinned (cap ${PIN_MAX}), ${mem.data_urls?.entries} data URL(s) resident`);
+
+  if (enc.encodes > touched.size) {
+    failures.push(`${enc.encodes} encode(s) for ${touched.size} id(s) — an id was encoded twice`);
+  }
+  if (!(enc.encode_joins > 0)) {
+    failures.push('no caller ever joined an in-flight encode — ensureImageUrl and warmImages are encoding independently');
+  }
+  if (maxWindow > WINDOW_MAX) failures.push(`warm window reached ${maxWindow}, cap is ${WINDOW_MAX}`);
+  if (maxDecodesPerStep > WINDOW_MAX + 1) {
+    failures.push(`${maxDecodesPerStep} decode(s) in one arrow step — the step is warming past the window`);
+  }
+  if (maxPinned > PIN_MAX) failures.push(`${maxPinned} pinned ids, cap is ${PIN_MAX} — pins can defeat the budget again`);
+  if (Number(enc.encode_inflight) !== 0) failures.push(`${enc.encode_inflight} encode(s) still in flight after the sweep`);
+  const total = pngReads();
+  if (total > COUNT) failures.push(`${total} PNG read(s) for ${COUNT} images — pixels were re-hydrated`);
+}
+
+function finish() {
+  if (failures.length) {
+    for (const f of failures) console.error(`[bench] FAIL: ${f}`);
+    process.exit(1);
+  }
+  console.log(ROUTE === 'arrows'
+    ? '[bench] ok — arrow browsing costs one encode per id and stays inside the window'
+    : '[bench] ok — a cold gallery lists without blocking on any image decode');
+  process.exit(0);
+}
+
 const url = ROUTE === 'gallery'
   ? `/v1/gallery?session_id=${SESSION}&limit=${COUNT}`
   : ROUTE === 'window'
@@ -159,13 +252,14 @@ const WANT_ROWS = ROUTE === 'window' ? WINDOW + 1 : COUNT;
 //  - The session index: `cardsForSession` reads one card row per card in the
 //    session, whatever the window. The explorer reads all cards in one pass and
 //    pays none of this.
-//  - Per assembled row: its image index row plus the two `resolveImageUrl` cache
-//    probes (one inline in the row, one from `attachImageUrls`).
+//  - Per assembled row: its image index row. (It used to be three: this plus two
+//    `resolveImageUrl` cache probes that attached a display URL to the row.
+//    Rows no longer carry one, so a second lookup per row is a regression.)
 //  - Window mode only: one index read per tail row while looking for the named
 //    hashes. That probe is the allowance for asking by hash; assembling a row
 //    down there instead would blow straight past it.
 const SESSION_INDEX_READS = ROUTE === 'explore' ? 0 : COUNT;
-const PER_ROW_READS = 3;
+const PER_ROW_READS = 1;
 
 const mapGet = Map.prototype.get;
 let idLookups = 0;
@@ -181,6 +275,9 @@ Map.prototype.get = mapGet;
 
 const items = res?.items ?? [];
 const eagerUrls = items.filter((c) => c.image_url).length;
+// Not just empty: absent. A row that carries the key at all is a row someone
+// will start filling again, and the UI keeps these objects for the session.
+const urlKeyed = items.filter((c) => c && 'image_url' in c).length;
 const bytesOk = items.filter((c) => Number(c.png_bytes) === PNG_1X1.length).length;
 
 console.log(`[bench] ${COUNT} images, cold cache, ${url}`);
@@ -197,8 +294,9 @@ if (ROUTE === 'window') {
     failures.push(`named hash ${TAIL_HASH} did not ship — a shot below the window edge cannot attach`);
   }
 }
-// `cachedOnly` means a cold listing cannot have encoded anything.
+// A cold listing cannot have encoded anything, and no listing carries display URLs.
 if (eagerUrls > 0) failures.push(`encoded ${eagerUrls} image(s) synchronously on a cold cache`);
+if (urlKeyed > 0) failures.push(`${urlKeyed} row(s) carry an image_url key — listings must leave display URLs to resolveImageUrl`);
 // The decisive number. Warming runs at concurrency 2 and may land a few decodes
 // while the response is still being assembled, but it must not scale with the
 // gallery: anything near `COUNT` means the response itself is hydrating per row.
@@ -215,21 +313,10 @@ if (idLookups > budget) {
     + ' — a listing row is reading the same index row more than once',
   );
 }
-if (ROUTE === 'window') {
-  // What the old session-ceiling request cost. The window has to come in under it.
-  const fullAssembly = COUNT + PER_ROW_READS * COUNT;
-  if (idLookups >= fullAssembly) {
-    failures.push(
-      `${idLookups} lookup(s) is what a full ${COUNT}-card assembly costs (${fullAssembly})`
-      + ' — the window is not narrowing the work',
-    );
-  }
-  console.log(`[bench] window ${idLookups} vs full assembly ${fullAssembly}`);
-}
+// Window mode used to also compare against a full session assembly, back when a
+// built row cost three lookups and a tail probe one. At one lookup each the two
+// are indistinguishable by this metric, so that comparison would only ever pass
+// by luck. The exact budget above already pins a probe to a single index read,
+// and `returned N of WANT_ROWS` pins the number of rows actually built.
 
-if (failures.length) {
-  for (const f of failures) console.error(`[bench] FAIL: ${f}`);
-  process.exit(1);
-}
-console.log('[bench] ok — a cold gallery lists without blocking on any image decode');
-process.exit(0);
+finish();

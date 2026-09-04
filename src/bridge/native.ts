@@ -11,16 +11,16 @@
  * allow a genuine retry instead of replaying the same failure forever.
  */
 
-import { VERSION } from '../core/constants';
-import { clearDebug, dbg, debugSnapshot, setDebugCounts } from '../core/debug';
+import { BOOT_STAMP_KEY, VERSION } from '../core/constants';
+import { bootId, clearDebug, dbg, debugSnapshot, setDebugCounts, setDebugMemory, setPrevBootGap, startStallMonitor } from '../core/debug';
 import { errorBody, isFetchError, makeFetchError } from '../core/errors';
 import { hostHas } from '../core/host';
 import { routeFetch } from '../api/router';
-import { getDeviceStore } from '../storage/device-store';
-import { ensureBlobUrl, pngToDataUrl, resolveImageUrl, subscribeImageUrl, warmImages, warmProgress, warmFocusProgress, onWarmProgress, pinImageUrls, retainImageUrls, dropImageUrl, prioritizeWarmFocus, clearWarmFocus } from '../storage/image-urls';
+import { getDeviceStore, psGet, psSet } from '../storage/device-store';
+import { ensureBlobUrl, imageUrlStats, pngToDataUrl, resolveImageUrl, subscribeImageUrl, warmImages, warmProgress, warmFocusProgress, onWarmProgress, pinImageUrls, retainImageUrls, dropImageUrl, prioritizeWarmFocus, clearWarmFocus } from '../storage/image-urls';
 import { dropExplorerThumbUrl, ensureExplorerThumbUrl, pinExplorerThumbs, resolveExplorerThumbUrl, retainExplorerThumbs, warmExplorerThumbs } from '../storage/explorer-thumbs';
 import { loadSettingsFromStorage } from '../storage/settings-store';
-import { blobUrlCount, idbGet, isStorageMigrated, knownCharRefHashCount, openDb, storeSize } from '../storage/stores';
+import { blobUrlCount, idbGet, imageCacheStats, isStorageMigrated, knownCharRefHashCount, openDb, storeSize } from '../storage/stores';
 import { setKnownCharRefCount } from '../services/char-ref-module';
 import {
   getRefPreviewUrl,
@@ -57,6 +57,7 @@ async function boot(): Promise<void> {
     throw err;
   });
   dbg('boot.storage', { message: store.kind });
+  await stampBoot();
 
   setConfig(await loadSettingsFromStorage());
   await seedPrompts();
@@ -81,6 +82,24 @@ async function boot(): Promise<void> {
     has_nativeFetch: hostHas('nativeFetch'),
     has_idb: hostHas('getLocalPluginStorage'),
   });
+}
+
+/**
+ * Records this boot against the previous one. A gap of a few seconds means the
+ * plugin iframe was reloaded under us — which, right after a settings click, is
+ * the host re-parenting the iframe rather than our shell failing to paint.
+ */
+async function stampBoot(): Promise<void> {
+  const now = Date.now();
+  try {
+    const prev = Number(await psGet(BOOT_STAMP_KEY));
+    const gap = Number.isFinite(prev) && prev > 0 ? now - prev : null;
+    setPrevBootGap(gap);
+    dbg('boot.stamp', { message: bootId(), prev_boot_gap_ms: gap, background: true }, gap != null && gap < 30_000 ? 'warn' : 'info');
+    await psSet(BOOT_STAMP_KEY, now);
+  } catch {
+    /* a diagnostic must never fail boot */
+  }
 }
 
 export async function ready(): Promise<boolean> {
@@ -132,6 +151,8 @@ export function installNativeBridge(): void {
     jobs: storeSize('jobs'),
     blob_urls: blobUrlCount(),
   }));
+  setDebugMemory(() => ({ ...imageCacheStats(), encode: imageUrlStats() }));
+  startStallMonitor();
 
   // Same reason: the reference-image module must be able to tell "no assets
   // stored" from "the host did not load them", and only the roster knows.

@@ -130,7 +130,9 @@ import {
   shouldScanInlineLeftovers,
   shouldSelectMessageByTextDrag,
   visibleGalleryImageIds,
+  VIEWER_WARM_WINDOW_MAX,
   nearbyMessageImageIds,
+  NEARBY_IMAGE_MAX,
   isNearbyDomIndex,
   nearbyDomIndexWindow,
   resolveIndexProgress,
@@ -1806,6 +1808,29 @@ test("visibleGalleryImageIds returns nearby unique ids", () => {
 test("visibleGalleryImageIds caps eager loads at maxCount 8", () => {
   const items = Array.from({ length: 12 }, (_, i) => ({ id: `i${i}` }));
   assert.equal(visibleGalleryImageIds(items, 5, 10, 8).length, 8);
+});
+
+test("visibleGalleryImageIds never warms more than VIEWER_WARM_WINDOW_MAX even when asked for the whole strip", () => {
+  // The frozen viewer passes maxCount = max(8, strip length) on every arrow
+  // press, so a reroll-heavy message used to warm its entire strip per step.
+  const items = Array.from({ length: 40 }, (_, i) => ({ id: `i${i}` }));
+  const ids = visibleGalleryImageIds(items, 20, 1, Math.max(8, items.length));
+  assert.equal(ids.length, VIEWER_WARM_WINDOW_MAX);
+  assert.ok(ids.includes("i20"));
+  assert.ok(ids.includes("i15") && ids.includes("i25"), "window stays centered on the focus");
+  assert.ok(!ids.includes("i0") && !ids.includes("i39"));
+});
+
+test("nearbyMessageImageIds drops the farthest neighbours first past NEARBY_IMAGE_MAX", () => {
+  const cards = [];
+  for (let mi = 0; mi < 5; mi += 1) {
+    for (let k = 0; k < 10; k += 1) cards.push({ id: `m${mi}-${k}`, session_id: "s", message_index: mi });
+  }
+  const ids = nearbyMessageImageIds(cards, { messageIndex: 2, sessionId: "s" }, 2, ["m2-3"]);
+  assert.equal(ids.length, NEARBY_IMAGE_MAX);
+  for (let k = 0; k < 10; k += 1) assert.ok(ids.includes(`m2-${k}`), "every shot of the focus message stays");
+  assert.ok(ids.every((id) => !id.startsWith("m0-") && !id.startsWith("m4-")), "±2 falls off before ±1");
+  assert.equal(ids[0], "m2-3", "explicit ids (current sticky markers) keep the head of the list");
 });
 
 test("visibleGalleryImageIds pins current-message prefix when focus is on the right strip", () => {

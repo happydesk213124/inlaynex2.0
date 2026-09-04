@@ -173,6 +173,10 @@ const normalize = (root) => {
             .filter((k) => k !== 'inx_nximg_*' && !String(k).startsWith('inx_nximg_'))
             // 2.5.27 session note + command presets — no 1.x keys.
             .filter((k) => !String(k).startsWith('inx_session_author_note_') && k !== 'inx_char_command_presets')
+            // 2.5.33 boot stamp: a diagnostic written once per boot so the debug
+            // dump can tell "iframe reloaded" from "shell failed to paint". No
+            // 1.x key, and nothing reads it for behaviour.
+            .filter((k) => k !== 'inx_boot_at')
             .map((k) => (GALLERY_INDEX.test(String(k)) ? '<GALLERY_INDEX>' : k)),
         )].sort().map((v) => walk(v, key));
       }
@@ -229,6 +233,13 @@ const normalize = (root) => {
         // 2.0 always persists the first-tagger canvas (portrait when omitted).
         // 1.x left the field off the card row. Scenario asserts the new value.
         if (isCardShape && k === 'aspect') continue;
+        // 2.5.33 listing rows (gallery / explore / job result cards) carry no
+        // `image_url`. The UI resolves display URLs from the sync cache at paint
+        // time; a copy on the row kept every evicted data URL alive for the
+        // session. 1.x still attached it. Scenario asserts the new shape on
+        // `gallery.rows_carry_no_display_url` / `gallery.explore_rows_carry_no_display_url`
+        // and the scheme on `gallery.display_url_scheme` via `resolveImageUrl`.
+        if (isCardShape && k === 'image_url') continue;
         if ((isCardShape || isStoredCardMeta) && k === 'characters' && Array.isArray(node.characters)) {
           // 2.0 persists shot staging (action/expression/…) on the card; 1.x
           // left those on the baked prompt only. Name is the comparable identity.
@@ -243,6 +254,11 @@ const normalize = (root) => {
           continue;
         }
         if (isGenCaption && (k === 'id' || k === 'scope')) continue;
+        // 2.5.33 debug snapshot sections with no 1.x equivalent: boot identity,
+        // resident image-cache memory and the main-thread stall monitor. They
+        // are diagnostics — counters and a clock — not behaviour; the unit test
+        // on `debug` asserts their shape and that the monitor actually fires.
+        if (key === 'debug' && (k === 'boot' || k === 'mem' || k === 'main_thread')) continue;
         // 2.0 curation tab settings have no 1.x equivalent. Drop from wire compare;
         // unit tests + scenario assert the new behaviour. composition_curation is
         // legacy→migrated false and would otherwise spam absent→false diffs.
@@ -501,7 +517,19 @@ const NEW_ONLY_STEPS = new Map([
     'gallery.display_url_scheme',
     (v) => (v === 'data'
       ? null
-      : `2.x gallery image_url must be a data:image URL — SafeDOM strips blob: and cannot setAttribute src, got ${JSON.stringify(v)}`),
+      : `2.x display URLs must be data:image — SafeDOM strips blob: and cannot setAttribute src, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'gallery.rows_carry_no_display_url',
+    (v) => (v?.rows >= 1 && v?.keyed === 0
+      ? null
+      : `2.5.33 gallery rows must not carry image_url (UI resolves at paint time), got ${JSON.stringify(v)}`),
+  ],
+  [
+    'gallery.explore_rows_carry_no_display_url',
+    (v) => (v?.rows >= 1 && v?.keyed === 0
+      ? null
+      : `2.5.33 explorer rows must not carry image_url (UI resolves at paint time), got ${JSON.stringify(v)}`),
   ],
   [
     'gallery.card_aspect',

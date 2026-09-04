@@ -8,7 +8,7 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.5.31';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.5.33';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
@@ -59,6 +59,8 @@ export const CHAR_COMMAND_PRESETS_KEY = 'inx_char_command_presets';
 /** Reusable session-author-note phrases (not the per-session current text). */
 export const SESSION_AUTHOR_NOTE_PRESETS_KEY = 'inx_session_author_note_presets';
 export const IMAGE_KEY = (id: string): string => `inx_nximg_${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+/** Wall-clock of the previous boot — a diagnostic stamp, never read for behaviour. */
+export const BOOT_STAMP_KEY = 'inx_boot_at';
 export const REF_IMAGE_KEY = 'inx_nxref_image';
 export const VIBE_IMAGE_KEY = 'inx_nxvibe_image';
 export const VIBE_DATA_KEY = 'inx_nxvibe_data';

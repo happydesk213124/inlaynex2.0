@@ -18,13 +18,40 @@ function revokeDisplayUrl(url: string): void {
   }
 }
 
+export interface BlobUrlCacheStats {
+  entries: number;
+  bytes: number;
+  budget: number;
+  pinned: number;
+  pin_cap: number;
+}
+
 export class BlobUrlCache {
   private readonly urls = new Map<string, string>();
   private readonly costs = new Map<string, number>();
   private readonly pinned = new Set<string>();
   private bytes = 0;
 
-  constructor(private readonly budgetChars: number) {}
+  /**
+   * `pinCap` bounds how many ids `pin()` protects. Pinned entries sit outside
+   * the budget, so without a cap a wide enough pin set (a reroll-heavy message
+   * and its ±2 neighbours) quietly turns the 64MB limit into no limit at all.
+   * Callers pass ids focus-first, so truncating the tail keeps what matters.
+   */
+  constructor(
+    private readonly budgetChars: number,
+    private readonly pinCap: number = Number.POSITIVE_INFINITY,
+  ) {}
+
+  stats(): BlobUrlCacheStats {
+    return {
+      entries: this.urls.size,
+      bytes: this.bytes,
+      budget: this.budgetChars,
+      pinned: this.pinned.size,
+      pin_cap: this.pinCap,
+    };
+  }
 
   get size(): number {
     return this.urls.size;
@@ -71,10 +98,14 @@ export class BlobUrlCache {
     this.pinned.delete(key);
   }
 
-  /** Replace the protected id set. Pinned entries are never evicted for budget. */
+  /**
+   * Replace the protected id set (first `pinCap` ids only). Pinned entries are
+   * never evicted for budget.
+   */
   pin(ids: Iterable<unknown>): void {
     this.pinned.clear();
     for (const raw of ids) {
+      if (this.pinned.size >= this.pinCap) break;
       const key = String(raw || '');
       if (!key) continue;
       this.pinned.add(key);
@@ -93,9 +124,16 @@ export class BlobUrlCache {
    * not stay resident and re-lag the next visit.
    */
   retainOnly(ids: Iterable<unknown>): void {
-    this.pin(ids);
+    // Keep the whole set; only its head is pinned. The explorer's visible window
+    // is wider than the pin cap, and it must not lose thumbs it just asked for.
+    const keep = new Set<string>();
+    for (const raw of ids) {
+      const key = String(raw || '');
+      if (key) keep.add(key);
+    }
+    this.pin(keep);
     for (const id of [...this.urls.keys()]) {
-      if (this.pinned.has(id)) continue;
+      if (keep.has(id)) continue;
       const url = this.urls.get(id);
       if (url !== undefined) revokeDisplayUrl(url);
       this.urls.delete(id);
@@ -137,7 +175,14 @@ export class BlobUrlCache {
  */
 export const BLOB_URL_BUDGET_CHARS = 64 * 1024 * 1024;
 
-export const blobUrlCache = new BlobUrlCache(BLOB_URL_BUDGET_CHARS);
+/**
+ * Sticky pins the focus message ±2 (every shot of each), inline focus pins the
+ * selection's cards. Two dozen full-size data URLs is already ~30–70MB of
+ * strings; past that the pin is protecting browsing history, not the screen.
+ */
+export const BLOB_URL_PIN_CAP = 24;
+
+export const blobUrlCache = new BlobUrlCache(BLOB_URL_BUDGET_CHARS, BLOB_URL_PIN_CAP);
 
 /** Explorer grid only — object URLs, never data URLs. */
 export const explorerThumbCache = new BlobUrlCache(BLOB_URL_BUDGET_CHARS);

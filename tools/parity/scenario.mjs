@@ -350,9 +350,15 @@ export async function runScenario(N, handles) {
     };
   });
   const cardId = gallery?.items?.[0]?.id;
-  await rec('gallery.first_card_is_data_url', () => String(gallery?.items?.[0]?.image_url ?? '').slice(0, 22));
+  // Rows carry no display URL at all; the UI asks `resolveImageUrl` at paint
+  // time. The key being absent (not merely empty) is the assertion — an empty
+  // string is what a row someone started re-attaching to looks like on a miss.
+  await rec('gallery.rows_carry_no_display_url', () => ({
+    rows: gallery?.items?.length ?? 0,
+    keyed: (gallery?.items || []).filter((r) => r && 'image_url' in r).length,
+  }));
   await rec('gallery.display_url_scheme', () => {
-    const u = String(gallery?.items?.[0]?.image_url ?? '');
+    const u = String(N.resolveImageUrl?.(cardId) ?? '');
     if (/^blob:/i.test(u)) return 'blob';
     if (/^data:image\//i.test(u)) return 'data';
     return 'other';
@@ -387,7 +393,11 @@ export async function runScenario(N, handles) {
       unknown_hash_rows: other?.items?.length ?? -1,
     };
   });
-  await rec('gallery.explore', () => get('/v1/gallery/explore?limit=200'));
+  const explore = await rec('gallery.explore', () => get('/v1/gallery/explore?limit=200'));
+  await rec('gallery.explore_rows_carry_no_display_url', () => ({
+    rows: explore?.items?.length ?? 0,
+    keyed: (explore?.items || []).filter((r) => r && 'image_url' in r).length,
+  }));
   await rec('gallery.favorites_empty', () => get('/v1/gallery/favorites'));
   await rec('gallery.favorites_set', () => post('/v1/gallery/favorites', { ids: cardId ? [cardId] : [] }));
   await rec('gallery.favorites_after_set', () => get('/v1/gallery/favorites'));

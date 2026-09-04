@@ -97,6 +97,54 @@ Parity cannot catch this class of bug. It diffs responses, so work spent
 producing an identical response is invisible to it, and its scenario carries
 three 70-byte images.
 
+### 2b. One owner for display URLs (2.5.33)
+
+Display URLs are multi-megabyte `data:image` strings, and there were four ways
+for one image to be resident more than once:
+
+- **Concurrent encodes.** The viewer arrow asked for its main image through
+  `ensureImageUrl` while `warmVisibleImages` queued the same id, and each ran its
+  own FileReader pass. `ensureBlobUrl` now keeps an in-flight map and late
+  callers join the running encode (`imageUrlStats().encode_joins`).
+- **Copies on the rows.** Listings attached `image_url` to every row, and the
+  frozen UI copied `ensureImageUrl` results onto `card.image_url`. `t.gallery`
+  rows live for the session, so every string the LRU evicted stayed alive on a
+  row and the 64MB budget bounded nothing. Rows carry no `image_url` now; the
+  UI's `Ie()` resolves from the cache on every paint. Parity asserts the absent
+  key (`gallery.rows_carry_no_display_url`) and the build fails on a
+  `card.image_url =` write.
+- **Unbounded pins.** `pinImageUrls` protected the whole sticky neighbourhood
+  from eviction, so a reroll-heavy message ±2 pinned more than the budget.
+  `BlobUrlCache` caps the pinned set at `BLOB_URL_PIN_CAP` (24, focus-first) and
+  `nearbyMessageImageIds` never returns more than that, nearest message first.
+- **Whole-strip warms.** The viewer passed `max(8, strip.length)` as the warm
+  window, so each arrow press re-queued the entire strip. `visibleGalleryImageIds`
+  clamps to `VIEWER_WARM_WINDOW_MAX` (12) whatever the caller asks.
+
+`npm run bench -- --route=arrows` replays a 120-step arrow sweep and fails if an
+id is encoded twice, if no caller ever joins an in-flight encode, if a step warms
+past the window, or if the pinned set exceeds the cap.
+
+### 2c. SafeDOM handles are never released — so stop minting them
+
+Every SafeElement the host hands back (`getChildren().at(i)`, `querySelectorAll`)
+is registered in a strong `Map` on the Risu side until the plugin calls
+`.release()`, which the frozen UI never does. The viewer's `paintThumbsQuick`
+walked `getChildren()` on every arrow press to restyle thumbs in place — a path
+that was dead by construction, because SafeElement throws on
+`getAttribute("data-…")` (only `x-*` is readable), so every child hit
+`continue` and the full repaint ran anyway. Per press that was one
+`getChildren()` + N `at(i)` + N throwing `getAttribute` roundtrips, and N+1
+leaked handles each pinning a detached `<img>` whose `src` was a data URL. The
+build now replaces that function with the repaint alone and fails if the strip
+ever calls `getChildren()` again.
+
+The scroll tracker (`getCachedMsgEls`, one `querySelectorAll` per 450ms while
+scrolling) has the same leak on live chat elements. It is **not** released yet:
+its handles flow into `_nearbyMsgDomCache` and the selection state, and a
+released handle throws on its next use. Measure first — `debug().main_thread`
+now samples main-thread stalls — then decide.
+
 ### 3. Session index for cards
 
 Per-session card lookups were full scans of every card in every session. A
@@ -157,3 +205,18 @@ are expected rather than regressions:
 comment explaining why the value is not comparable. The stage comparison is a
 *subset* check — every stage 1.x logged must still be logged — so it stays
 meaningful rather than vacuous.
+
+Since 2.5.33 the snapshot (`__INLAY_NATIVE__.debug()`) also carries three
+sections a user dump can be read against, none of them behaviour:
+
+- `boot` — a clock-derived id per module evaluation plus `prev_boot_gap_ms` from
+  the persisted `inx_boot_at` stamp. An id that changes right after the settings
+  button was pressed, or a gap of a few seconds, means the plugin iframe was
+  reloaded — a different bug from a shell that failed to paint.
+- `mem` — `js_heap_used` where the browser exposes it, the data-URL cache
+  (`entries / bytes / budget / pinned / pin_cap`), explorer thumbs, PNG cache
+  bytes and hydrated rows, and the encoder (`encodes / encode_joins /
+  encode_inflight / warm_queue / warm_active`).
+- `main_thread` — a 250ms timer that records ticks arriving ≥200ms late:
+  `stalls`, `stall_max_ms`, `stall_total_ms` and the last 24 with heap size.
+  The iframe shares the host's main thread, so this sees host freezes too.

@@ -115,6 +115,7 @@ const MODULES = {
   'comic-aspect': 'src/domain/comic/aspect.ts',
   'tagger-char-user': 'src/domain/tagging/char-user-info.ts',
   'job-retention': 'src/domain/jobs/retention.ts',
+  debug: 'src/core/debug.ts',
 };
 
 await rm(outdir, { recursive: true, force: true });

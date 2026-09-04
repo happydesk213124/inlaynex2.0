@@ -2734,6 +2734,16 @@ export function clampThumbScrollOffset(offset: number, contentWidth: number, vie
   return Math.max(0, Math.min(max, raw));
 }
 
+/**
+ * Hard ceiling on one eager warm window, whatever `maxCount` the caller asks for.
+ *
+ * The frozen viewer passes `max(8, strip.length)` on every arrow press, which
+ * on a reroll-heavy message meant the whole strip re-queued per step — dozens
+ * of multi-MB encodes racing the main image. Twelve covers the visible strip
+ * plus one page of lookahead either side.
+ */
+export const VIEWER_WARM_WINDOW_MAX = 12;
+
 /** Nearby gallery card ids for eager data-URL encoding (visible window, capped). */
 export function visibleGalleryImageIds(
   items: Array<{ id?: string } | null | undefined> | null | undefined,
@@ -2745,7 +2755,7 @@ export function visibleGalleryImageIds(
   const list = Array.isArray(items) ? items : [];
   if (!list.length) return [];
   const idx = Math.max(0, Math.min(finiteNumber(index, 0), list.length - 1));
-  const cap = Math.max(1, Math.min(list.length, finiteNumber(maxCount, 8) || 8));
+  const cap = Math.max(1, Math.min(list.length, finiteNumber(maxCount, 8) || 8, VIEWER_WARM_WINDOW_MAX));
   // Prefer a centered window of up to maxCount; radius is a minimum span hint.
   const minSpan = Math.min(cap, 1 + 2 * Math.max(0, finiteNumber(radius, 1)));
   const span = Math.max(minSpan, cap);
@@ -2800,25 +2810,39 @@ export function nearbyMessageImageIds(
   const seen = new Set<string>();
   const ids: string[] = [];
   const add = (id: unknown) => {
+    if (ids.length >= NEARBY_IMAGE_MAX) return;
     const key = String(id || '');
     if (!key || seen.has(key)) return;
     seen.add(key);
     ids.push(key);
   };
   for (const id of extraIds || []) add(id);
+  // Nearest message first, so the cap trims ±2 before it ever touches the
+  // focus message. Gallery order is kept within one distance band.
+  const candidates: Array<{ id: string; dist: number }> = [];
   for (const card of list) {
     if (!card?.id) continue;
     if (sessionId && card.session_id && String(card.session_id) !== sessionId) continue;
     if (chatId && card.chat_id && String(card.chat_id) !== chatId) continue;
     const mi = finiteNumber(card.message_index, Number.NaN);
     if (Number.isFinite(focusIdx) && Number.isFinite(mi)) {
-      if (Math.abs(mi - focusIdx) <= r) add(card.id);
+      const dist = Math.abs(mi - focusIdx);
+      if (dist <= r) candidates.push({ id: String(card.id), dist });
       continue;
     }
-    if (focusHash && String(card.content_hash || '') === focusHash) add(card.id);
+    if (focusHash && String(card.content_hash || '') === focusHash) candidates.push({ id: String(card.id), dist: 0 });
   }
+  candidates.sort((a, b) => a.dist - b.dist);
+  for (const c of candidates) add(c.id);
   return ids;
 }
+
+/**
+ * Ceiling on the sticky pin/warm set. It is what `pinImageUrls` protects from
+ * eviction, so it is also the one number that decides whether the 64MB budget
+ * means anything — see `BLOB_URL_PIN_CAP`, which this must not exceed.
+ */
+export const NEARBY_IMAGE_MAX = 24;
 
 /** True when two DOM message indices are within ±radius (optimistic nearby reuse). */
 export function isNearbyDomIndex(prev: unknown, next: unknown, radius = 2): boolean {

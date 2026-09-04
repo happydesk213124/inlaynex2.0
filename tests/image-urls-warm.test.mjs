@@ -4,8 +4,11 @@ import assert from 'node:assert/strict';
 import { IMAGE_KEY } from '../.test-build/char-ref-keys.mjs';
 import { bytesToBase64Async } from '../.test-build/bytes-util.mjs';
 import {
+  ensureBlobUrl,
   enqueueWarm,
+  imageUrlStats,
   prioritizeWarmFocus,
+  resetImageUrlStats,
   resetStores,
   retainImageUrls,
   subscribeImageUrl,
@@ -71,6 +74,7 @@ async function seed(host, ids) {
 
 afterEach(() => {
   resetStores();
+  resetImageUrlStats();
   delete globalThis.risuai;
 });
 
@@ -149,6 +153,26 @@ test('prioritizeWarmFocus jumps the backlog of an in-flight bulk warm', async ()
   // It cannot be first — the queue was already pumping when focus arrived — but
   // it must jump the ids still waiting rather than land at the end.
   assert.ok(at < bulk.length, `focus landed at ${at} of ${order.length}`);
+});
+
+test('concurrent ensureBlobUrl calls for one id encode once', async () => {
+  // The viewer arrow path asks for the main image directly (ensureImageUrl) while
+  // warmVisibleImages queues the same id. The queue dedupes itself, but a direct
+  // call used to start its own FileReader encode — two multi-MB strings for one
+  // id, one of which is garbage the moment the other lands in the cache.
+  resetStores();
+  const host = installHost();
+  await seed(host, ['same']);
+  host.slowReads = true;
+
+  const urls = await Promise.all([ensureBlobUrl('same'), ensureBlobUrl('same'), warmImages(['same'])]);
+
+  assert.equal(urls[0], urls[1]);
+  assert.equal(urls[2][0], urls[0]);
+  const stats = imageUrlStats();
+  assert.equal(stats.encodes, 1, `encoded ${stats.encodes} times for one id`);
+  assert.equal(stats.encode_joins, 2, 'the two late callers must join the in-flight encode');
+  assert.equal(stats.encode_inflight, 0);
 });
 
 test('enqueueWarm and warmImages share one queue', async () => {

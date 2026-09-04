@@ -24,7 +24,7 @@ import { errorBody } from '../core/errors';
 import type { ApiResult, CardRow } from '../core/types';
 import { asU8, base64ToBytes, bytesToBase64, u8ToArrayBuffer } from '../core/util/bytes';
 import { ASSISTANT_PREVIEW_LIMIT, cleanText, toInt, toOptionalFloat, uuid } from '../core/util/text';
-import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
+import { publishImage } from '../storage/image-urls';
 import {
   cardsForSession,
   ensureRoom,
@@ -85,7 +85,6 @@ type ExploreRow = {
   assistant_preview: string;
   main_prompt: string;
   characters: unknown[];
-  image_url: string;
   seed: number | null;
   created_at: number | undefined;
   storage: string;
@@ -127,7 +126,6 @@ type GalleryRow = {
   main_prompt: string;
   negative_prompt: string;
   characters: unknown[];
-  image_url: string;
   seed: number | null;
   created_at: number | undefined;
   storage: string;
@@ -268,7 +266,6 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
       ),
       main_prompt: row.main_prompt,
       characters: JSON.parse(row.characters_json || '[]'),
-      image_url: resolveImageUrl(row.id),
       // `seed` is not declared on CardRow, so it arrives as an open-bag value;
       // 1.x emitted it verbatim and the manifest builder wants that number.
       seed: row.seed as number | null,
@@ -285,6 +282,11 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
     `${a.character_name || ''}`.localeCompare(`${b.character_name || ''}`, undefined, { sensitivity: 'base' })
     || `${a.chat_name || ''}`.localeCompare(`${b.chat_name || ''}`, undefined, { sensitivity: 'base' }),
   );
+  // No `image_url` on rows, and no warming here. The UI resolves display URLs
+  // from the sync cache (`resolveImageUrl`) at paint time and warms only its
+  // visible window. A copy on the row was pure retention: the UI keeps these
+  // objects for the session, so every data URL the cache later evicted stayed
+  // alive on the card anyway and the 64MB budget bounded nothing.
   const payload: ExplorePayload = {
     ok: true,
     folders: folderList,
@@ -293,9 +295,6 @@ async function exploreCards(limit: number): Promise<ExplorePayload> {
     storage: 'indexeddb',
     storage_api: 'getLocalPluginStorage',
   };
-  // Do not enqueueWarm every miss — explorer warms the visible window only.
-  // Refresh used to queue hundreds of base64 encodes and freeze Chrome.
-  await attachImageUrls(payload, { cachedOnly: true, warmMissing: false });
   return payload;
 }
 
@@ -425,7 +424,6 @@ export async function gallery(
       main_prompt: row.main_prompt,
       negative_prompt: row.negative_prompt,
       characters: JSON.parse(row.characters_json || '[]'),
-      image_url: resolveImageUrl(row.id),
       seed: row.seed as number | null,
       created_at: row.created_at,
       storage: 'indexeddb',
@@ -448,8 +446,7 @@ export async function gallery(
     window_oldest_at: windowOldestAt,
     storage: 'indexeddb',
   };
-  // Same as explorer: do not enqueue every miss. UI `ce()` warms the visible strip.
-  await attachImageUrls(payload, { cachedOnly: true, warmMissing: false });
+  // Same as explorer: rows carry no display URL; UI `ce()` warms the visible strip.
   return payload;
 }
 

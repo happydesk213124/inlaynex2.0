@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.31';
+const PLUGIN_VERSION = '2.5.33';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -776,6 +776,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.32</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>설정 창이 안 그려지면 세 번 다시 그리고, 그래도 없으면 풀스크린을 닫습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.31</strong>
@@ -6392,7 +6398,11 @@ const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH = `      const hide = "position:fixed;
       }
     } catch {
     }
-    armSettingsCloseWatch();
+    // The close watchdog is armed after the first paint (see the paint-retry
+    // block). Armed here it raced xe()/getDatabase/showContainer: more than ~2s
+    // of host roundtrips with no #nx-shell yet flipped uiOpen=false, P() then
+    // bailed on an already-fullscreen empty iframe, and the button had to be
+    // pressed a second time.
     try {
       await xe();
     } catch {
@@ -6403,10 +6413,22 @@ const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH = `      const hide = "position:fixed;
     } catch {
     }
     t.charEditUi = null;
-    try {
-      await ia();
-    } catch {
+    // The character catalog (getDatabase over postMessage, every character with
+    // every chat) is the slow call on this path. Paint with the last catalog
+    // when there is one, otherwise wait at most 600ms for the first; a catalog
+    // that lands late re-paints once, and only while no field has focus.
+    const catalogBefore = JSON.stringify(t.charCatalog || []);
+    const catalogState = { settled: !1, changed: !1 };
+    const catalogP = ia().then(() => {
+      catalogState.changed = JSON.stringify(t.charCatalog || []) !== catalogBefore;
+    }).catch(() => {
+    }).then(() => {
+      catalogState.settled = !0;
+    });
+    if (!Array.isArray(t.charCatalog) || !t.charCatalog.length) {
+      await Promise.race([catalogP, new Promise((ok) => setTimeout(ok, 600))]);
     }
+    t._settingsCatalog = { state: catalogState, p: catalogP };
     typeof k.showContainer == "function" && await k.showContainer("fullscreen");
     // xe() must not restore viewer while settings stay open; hide after shell is visible.
     if (t.overlayUi) t.overlayUi._stickyEditorOpen = !0;
@@ -6415,6 +6437,88 @@ const VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH = `      const hide = "position:fixed;
       Ht().catch(() => {});
       if (typeof t.hideStickyInspect == "function") t.hideStickyInspect().catch(() => {});
     });`;
+
+/** At() clears body then paints. If P() fails (it swallows), the fullscreen stays empty. */
+const VENDOR_SETTINGS_PAINT_RETRY_NEEDLE = `    try {
+      window.focus?.();
+      document.body?.focus?.();
+    } catch {
+    }
+    await P(), t._debugTabTimer && clearInterval(t._debugTabTimer), t._debugTabTimer = null;
+  }`;
+const VENDOR_SETTINGS_PAINT_RETRY_PATCH = `    try {
+      window.focus?.();
+      document.body?.focus?.();
+    } catch {
+    }
+    let painted = !1;
+    const catalog = t._settingsCatalog || null;
+    t._settingsCatalog = null;
+    const paintedWithCatalog = !!catalog?.state.settled;
+    for (let attempt = 0; attempt < 3 && !painted; attempt++) {
+      try {
+        await P();
+      } catch {
+      }
+      painted = !!document.getElementById("nx-shell");
+      if (!painted && attempt < 2) await new Promise((ok) => setTimeout(ok, 80 + attempt * 80));
+    }
+    t._debugTabTimer && clearInterval(t._debugTabTimer), t._debugTabTimer = null;
+    if (painted) {
+      armSettingsCloseWatch();
+      if (catalog && !paintedWithCatalog) catalog.p.then(() => {
+        if (!catalog.state.changed || !t.uiOpen || t._uiRendering) return;
+        const ae = document.activeElement, tag = String(ae?.tagName || "").toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select" || ae?.isContentEditable) return;
+        P().catch(() => {
+        });
+      });
+    }
+    if (!painted) {
+      t.uiOpen = !1;
+      if (t.overlayUi) t.overlayUi._stickyEditorOpen = !1;
+      t._hostReaper && (clearInterval(t._hostReaper), t._hostReaper = null);
+      t._settingsWatch && (clearInterval(t._settingsWatch), t._settingsWatch = null);
+      try {
+        await blockHostChrome(!1);
+      } catch {
+      }
+      if (!t.charEditUi && !t.cardTagUi && !t.charCreateUi && typeof k.hideContainer == "function") {
+        try {
+          await k.hideContainer();
+        } catch {
+        }
+      }
+      try {
+        await it();
+        await he();
+        Ce();
+      } catch {
+      }
+    }
+  }`;
+
+/**
+ * Viewer ensureCardImage: same retention as ensureStickyCardImage — the
+ * multi-MB data URL was copied onto the gallery row and kept for the session.
+ * The cache is the only owner now; Ie() resolves from it on every paint.
+ */
+const VENDOR_VIEWER_ENSURE_NO_COPY_NEEDLE = `        if (typeof N?.ensureImageUrl == "function") {
+          const url = await N.ensureImageUrl(Q.id);
+          if (url) Q.image_url = url;
+        }`;
+const VENDOR_VIEWER_ENSURE_NO_COPY_PATCH = `        if (typeof N?.ensureImageUrl == "function") await N.ensureImageUrl(Q.id);`;
+
+/**
+ * blockHostChrome(true): the seven overlay-root hides are one postMessage
+ * roundtrip each and ran in series — the first hops of every settings open.
+ * They are independent style writes; fire them together.
+ */
+const VENDOR_BLOCK_HOST_HIDE_PARALLEL_NEEDLE = `        for (const ui of [t.galleryUi?.root, t.overlayUi?.root, t.debugUi?.root, t.galleryUi?.panel, t.overlayUi?.layer, t.overlayUi?.pinned, t.overlayUi?.preview]) {
+          if (ui && typeof ui.setStyleAttribute == "function") await ui.setStyleAttribute(hide);
+        }`;
+const VENDOR_BLOCK_HOST_HIDE_PARALLEL_PATCH = `        await Promise.all([t.galleryUi?.root, t.overlayUi?.root, t.debugUi?.root, t.galleryUi?.panel, t.overlayUi?.layer, t.overlayUi?.pinned, t.overlayUi?.preview].map((ui) => ui && typeof ui.setStyleAttribute == "function" ? ui.setStyleAttribute(hide).catch(() => {
+        }) : null));`;
 
 /** Expose inspect close on t so At() can force-dismiss the enlarge sheet. */
 const VENDOR_HIDE_INSPECT_BIND_NEEDLE = `    }, hideInspect = async () => {
@@ -9062,8 +9166,10 @@ const VENDOR_IE_FN_PATCH =
       const N = globalThis.__INLAY_NATIVE__;
       let src = typeof N?.resolveImageUrl == "function" ? N.resolveImageUrl(card) || "" : "";
       if (!nxReadyImg(src) && typeof N?.ensureImageUrl == "function") {
+        // Not copied onto the card: t.gallery rows live for the session, so a
+        // data URL parked here outlived its eviction from the backend cache and
+        // the memory budget bounded nothing. Ie() re-resolves from the cache.
         src = await N.ensureImageUrl(card.id) || "";
-        if (src) card.image_url = src;
       }
       if (nxReadyImg(src)) return src;
     } catch {
@@ -13418,8 +13524,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.31",
-    body: "전역 작가의 노트 칸. 메인 태거 노트는 메인만."
+    title: "2.5.32",
+    body: "설정이 안 그려지면 다시 그리고, 그래도 없으면 풀스크린을 닫습니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -16081,6 +16187,69 @@ const VENDOR_THUMBS_DEAD_FILL_NEEDLE = `fillThumbSrcs = async (items, idx) => {
     }, `;
 const VENDOR_THUMBS_DEAD_FILL_PATCH = '';
 
+/**
+ * paintThumbsQuick's in-place path is unreachable by construction, for the same
+ * reason fillThumbSrcs was: SafeElement throws on getAttribute("data-…") (only
+ * `x-` attributes are readable), so every child hit `continue`, `touched`
+ * stayed 0 and paintThumbsChrome ran anyway. What the detour cost per arrow
+ * press was one getChildren() + N at(i) + N throwing getAttribute roundtrips —
+ * and N+1 host-side SafeElement handles that nothing ever released, each
+ * pinning a detached <img> whose src is a multi-MB data URL. Go straight to
+ * the repaint.
+ *
+ * Written against the post-chain text (thumbsPaintEl() form).
+ */
+const VENDOR_THUMBS_QUICK_DEAD_NEEDLE = `    }, paintThumbsQuick = async (idx) => {
+      // Style-only selection move: keep existing <img> nodes + \`|\` separator, just retarget outline/opacity.
+      try {
+        const items = Array.isArray(d.items) && d.items.length ? d.items : U();
+        const kids = typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(await thumbsPaintEl().getChildren()) : [];
+        if (!kids?.length) {
+          await paintThumbsChrome(items, idx);
+          return;
+        }
+        const VC = globalThis.__INLAY_VIEWER_CORE__;
+        const splitAt = typeof VC?.galleryStripSplitAt == "function" ? VC.galleryStripSplitAt(d.selectedCount || selectedCountOf(items) || 0, items.length) : (d.selectedCount > 0 && d.selectedCount < items.length ? d.selectedCount : 0);
+        let touched = 0;
+        for (let W = 0; W < kids.length; W += 1) {
+          const el = kids[W];
+          if (!el) continue;
+          let galIdx = -1;
+          try {
+            if (typeof el.getAttribute == "function") {
+              const split = await el.getAttribute("data-nx-split");
+              if (split != null && split !== "") continue;
+              const raw = await el.getAttribute("data-gal-idx");
+              if (raw != null && raw !== "" && Number.isFinite(Number(raw))) galIdx = Number(raw);
+              else if (typeof VC?.galleryIndexFromChildIndex == "function") galIdx = VC.galleryIndexFromChildIndex(W, splitAt || d.selectedCount || 0, items.length);
+              else galIdx = W;
+            }
+          } catch {
+            continue;
+          }
+          if (galIdx < 0 || galIdx >= items.length) continue;
+          const on = galIdx === idx, split = splitAt > 0 && galIdx === splitAt, style = thumbShellStyle(on, split);
+          try {
+            if (typeof el.setStyleAttribute == "function") await el.setStyleAttribute(style);
+            else if (typeof el.setAttribute == "function") await el.setAttribute("style", style);
+          } catch {
+          }
+          touched += 1;
+        }
+        if (touched < Math.min(items.length, 1)) await paintThumbsChrome(items, idx);
+      } catch {
+        await paintThumbsChrome(Array.isArray(d.items) && d.items.length ? d.items : U(), idx);
+      }
+    }, softAfterSelect = async (gen) => {`;
+const VENDOR_THUMBS_QUICK_DEAD_PATCH = `    }, paintThumbsQuick = async (idx) => {
+      // One setInnerHTML. No getChildren(): SafeElement handles are never
+      // released by this UI, and reading data-* off them throws anyway.
+      try {
+        await paintThumbsChrome(Array.isArray(d.items) && d.items.length ? d.items : U(), idx);
+      } catch {
+      }
+    }, softAfterSelect = async (gen) => {`;
+
 const VENDOR_THUMBS_STRIP_NONBLOCK_NEEDLE = `      const warmIds = new Set(VC?.visibleGalleryImageIds ? VC.visibleGalleryImageIds(list, idx, 1, 12) : list.slice(Math.max(0, idx - 3), idx + 5).map((c) => String(c?.id || "")).filter(Boolean));
       for (const id of warmIds) {
         const card = list.find((c) => String(c?.id || "") === id);
@@ -16842,6 +17011,9 @@ const loadVendorUi = (): string => {
     [VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, 'char save close before POST'],
     [VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, 'settings open sticky hide'],
     [VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, 'settings At hide panel + rehide'],
+    [VENDOR_SETTINGS_PAINT_RETRY_NEEDLE, 'settings At paint retry then hideContainer'],
+    [VENDOR_BLOCK_HOST_HIDE_PARALLEL_NEEDLE, 'blockHostChrome hide roots in parallel'],
+    [VENDOR_VIEWER_ENSURE_NO_COPY_NEEDLE, 'viewer ensureCardImage no image_url copy'],
     [VENDOR_HIDE_INSPECT_BIND_NEEDLE, 'hideInspect bind on t'],
     [VENDOR_SHOW_INSPECT_ABORT_NEEDLE, 'showStickyInspect abort start'],
     [VENDOR_SHOW_INSPECT_COMMIT_NEEDLE, 'showStickyInspect abort commit'],
@@ -17259,6 +17431,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHAR_SAVE_CLOSE_FIRST_NEEDLE, VENDOR_CHAR_SAVE_CLOSE_FIRST_PATCH)
     .replace(VENDOR_SETTINGS_OPEN_STICKY_NEEDLE, VENDOR_SETTINGS_OPEN_STICKY_PATCH)
     .replace(VENDOR_SETTINGS_AT_HIDE_PANEL_NEEDLE, VENDOR_SETTINGS_AT_HIDE_PANEL_PATCH)
+    .replace(VENDOR_SETTINGS_PAINT_RETRY_NEEDLE, VENDOR_SETTINGS_PAINT_RETRY_PATCH)
+    .replace(VENDOR_BLOCK_HOST_HIDE_PARALLEL_NEEDLE, VENDOR_BLOCK_HOST_HIDE_PARALLEL_PATCH)
+    .replace(VENDOR_VIEWER_ENSURE_NO_COPY_NEEDLE, VENDOR_VIEWER_ENSURE_NO_COPY_PATCH)
     .replace(VENDOR_HIDE_INSPECT_BIND_NEEDLE, VENDOR_HIDE_INSPECT_BIND_PATCH)
     .replace(VENDOR_SHOW_INSPECT_ABORT_NEEDLE, VENDOR_SHOW_INSPECT_ABORT_PATCH)
     .replace(VENDOR_SHOW_INSPECT_COMMIT_NEEDLE, VENDOR_SHOW_INSPECT_COMMIT_PATCH)
@@ -17530,6 +17705,11 @@ const loadVendorUi = (): string => {
     out = out.replace(VENDOR_THUMBS_WARM_REPAINT_NEEDLE, VENDOR_THUMBS_WARM_REPAINT_PATCH);
     if (out.includes('fillThumbSrcs')) {
       throw new Error('[build] fillThumbSrcs survived — a dead setAttribute("src") fill is still shipping');
+    }
+    assertOnce(out, VENDOR_THUMBS_QUICK_DEAD_NEEDLE, 'dead paintThumbsQuick in-place path');
+    out = out.replace(VENDOR_THUMBS_QUICK_DEAD_NEEDLE, VENDOR_THUMBS_QUICK_DEAD_PATCH);
+    if (out.includes('await thumbsPaintEl().getChildren()')) {
+      throw new Error('[build] thumb strip still walks getChildren() — SafeElement handles leak per arrow press');
     }
     // The one-shot self-only attach is what made shots/chips wait for a click.
     if (out.includes('_inlineSelfOnly')) {

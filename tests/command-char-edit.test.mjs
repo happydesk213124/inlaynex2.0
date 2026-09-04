@@ -143,6 +143,33 @@ test("applyCharacterCommandDeltas removes named costumes but keeps one", () => {
   assert.equal(last.costumes[0].name, "default");
 });
 
+test("applyCharacterCommandDeltas overwrites name/id/original/gender only when LLM sends them", () => {
+  const rec = {
+    id: "keep-id",
+    name: "Keep Name",
+    original: "Keep Original",
+    gender: "girl",
+    appearance: "girl",
+    costumes: [{ name: "default", note: "", attire: "", accessories: "" }],
+  };
+  const omitted = applyCharacterCommandDeltas(rec, { appearance: { add: ["mole"] } });
+  assert.equal(omitted.id, "keep-id");
+  assert.equal(omitted.name, "Keep Name");
+  assert.equal(omitted.original, "Keep Original");
+  assert.equal(omitted.gender, "girl");
+
+  const overwritten = applyCharacterCommandDeltas(rec, {
+    name: "New Name",
+    id: "new-id",
+    original: "New Original",
+    gender: "boy",
+  });
+  assert.equal(overwritten.id, "new-id");
+  assert.equal(overwritten.name, "New Name");
+  assert.equal(overwritten.original, "New Original");
+  assert.equal(overwritten.gender, "boy");
+});
+
 test("formatCommandDeltaLog lists appearance and costume add/remove", () => {
   const log = formatCommandDeltaLog({
     appearance: { add: ["mole"], remove: ["black hair"] },
@@ -157,5 +184,9 @@ test("formatCommandDeltaLog lists appearance and costume add/remove", () => {
   assert.match(log, /새 코스튬 {2}swimsuit/);
   assert.match(log, /bikini/);
   assert.match(log, /코스튬 삭제 {2}school/);
+  assert.match(
+    formatCommandDeltaLog({ name: "A", id: "b", original: "C", gender: "여자" }),
+    /이름\s+→ A[\s\S]*id\s+→ b[\s\S]*original\s+→ C[\s\S]*성별\s+→ girl/,
+  );
   assert.equal(formatCommandDeltaLog({}), "");
 });

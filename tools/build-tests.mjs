@@ -22,6 +22,7 @@ const outdir = path.join(root, '.test-build');
 /** 1.x module name → where that logic lives in 2.0. */
 const MODULES = {
   'viewer-core': 'src/ui-contract/viewer-core.ts',
+  'object-util': 'src/core/util/object.ts',
   'explorer-selection': 'src/ui-contract/explorer-selection.ts',
   'gallery-zip': 'src/ui-contract/gallery-zip.ts',
   'unlink-match': 'src/domain/gallery/unlink-match.ts',
@@ -32,6 +33,8 @@ const MODULES = {
   'lore-assemble': 'src/domain/lore/assemble.ts',
   'lore-lorefilter': 'src/domain/lore/lorefilter.ts',
   'llm-providers': 'src/providers/llm/providers.ts',
+  'llm-transform': 'src/providers/llm/transform.ts',
+  'llm-client': 'src/providers/llm/client.ts',
   'llm-roles': 'src/domain/llm/roles.ts',
   'settings-schema': 'src/config/schema.ts',
   'reroll-setup': 'src/domain/prompt/reroll-setup.ts',

@@ -6,6 +6,7 @@ import type { CharacterCostume, CharacterRecord } from '../../core/types.ts';
 import { cleanText } from '../../core/util/text.ts';
 import { applyTagDelta, type TagDelta } from '../prompt/command-rewrite.ts';
 import { dedupeIdenticalCostumeTags, ensureCostumes, normalizeCostume, resolveCostumeIndex } from './costume.ts';
+import { normalizeGender } from './identity.ts';
 
 function isDelta(value: unknown): value is TagDelta {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -44,6 +45,10 @@ export function applyCharacterCommandDeltas(
 ): CharacterRecord {
   const base = { ...(rec || {}) } as CharacterRecord;
   const delta = asRecord(parsed) || {};
+  if ('name' in delta) base.name = cleanText(delta.name, 200);
+  if ('id' in delta) base.id = cleanText(delta.id, 80);
+  if ('original' in delta) base.original = cleanText(delta.original, 400);
+  if ('gender' in delta) base.gender = normalizeGender(delta.gender);
   if (isDelta(delta.appearance) || delta.appearance != null && delta.appearance !== '') {
     base.appearance = applyMaybeDelta(base.appearance, delta.appearance, 4000);
   }
@@ -161,6 +166,10 @@ export function formatCommandDeltaLog(parsed: unknown): string {
   const delta = asRecord(parsed);
   if (!delta) return '';
   const lines: string[] = [];
+  if ('name' in delta) lines.push(`이름  → ${cleanText(delta.name, 200)}`);
+  if ('id' in delta) lines.push(`id  → ${cleanText(delta.id, 80)}`);
+  if ('original' in delta) lines.push(`original  → ${cleanText(delta.original, 400)}`);
+  if ('gender' in delta) lines.push(`성별  → ${normalizeGender(delta.gender)}`);
   lines.push(...formatDeltaLines('외형', delta.appearance));
   lines.push(...formatDeltaLines('머리색', delta.hair_color));
   lines.push(...formatDeltaLines('머리', delta.hair_style));

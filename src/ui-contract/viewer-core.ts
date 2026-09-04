@@ -1050,6 +1050,8 @@ export function isInlineSkipBody(value: unknown): boolean {
 
 /** Tag/regen/stop/char/preset chips — real body only; LBDATA does not count. */
 export const MSG_ACTION_MIN_BODY_CHARS = 20;
+/** Top bar only. Bottom bar still uses MSG_ACTION_MIN_BODY_CHARS. */
+export const MSG_ACTION_TOP_MIN_BODY_CHARS = 600;
 
 /**
  * Message-action chips sit on character turns with a real body.
@@ -1061,6 +1063,24 @@ export function shouldMountMsgActions(opts: {
 } = {}): boolean {
   if (messageBodyCharCount(opts.text) < MSG_ACTION_MIN_BODY_CHARS) return false;
   return normalizeMessageRole(opts.role) === 'char';
+}
+
+/**
+ * Which chip rows to paint. Bottom follows host count (first+last paragraph).
+ * Top is withheld until the real body is long enough that a header row
+ * does not sit on a short bubble.
+ */
+export function msgActionWantedEnds(opts: {
+  hostCount?: unknown;
+  text?: unknown;
+} = {}): Array<'top' | 'bot'> {
+  const hosts = Math.max(0, Math.floor(finiteNumber(opts.hostCount, 0)));
+  const chars = messageBodyCharCount(opts.text);
+  if (hosts < 1 || chars < MSG_ACTION_MIN_BODY_CHARS) return [];
+  const ends: Array<'top' | 'bot'> = [];
+  if (chars >= MSG_ACTION_TOP_MIN_BODY_CHARS) ends.push('top');
+  if (hosts > 1) ends.push('bot');
+  return ends;
 }
 
 /**
@@ -3408,9 +3428,11 @@ export function stripInlayInlineHtml(html: unknown): string {
  * One top bar and, when the bubble has two hosts, one bottom bar.
  * Document-order indexes to keep; extras are duplicates from overlapping paints.
  */
-export function keepMsgActionBarIndexes(ends: readonly unknown[], wantBottom: boolean): number[] {
+export function keepMsgActionBarIndexes(ends: readonly unknown[], wantBottom: boolean, wantTop = true): number[] {
   const list = Array.isArray(ends) ? ends.map((e) => String(e ?? '')) : [];
-  const want = new Set(wantBottom ? ['top', 'bot'] : ['top']);
+  const want = new Set<string>();
+  if (wantTop) want.add('top');
+  if (wantBottom) want.add('bot');
   const kept: number[] = [];
   const seen = new Set<string>();
   for (let i = 0; i < list.length; i += 1) {

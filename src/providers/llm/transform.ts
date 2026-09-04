@@ -178,15 +178,112 @@ export function extractAnthropicText(payload: AnthropicPayload | null | undefine
   return out;
 }
 
-/** Drains a text/byte/chunk-object stream into one string. */
-export async function readStreamToText(stream: unknown): Promise<string> {
+/** How a bounded stream read ended; `done` is the only one the stream itself signalled. */
+type StreamEnd = 'done' | 'idle' | 'deadline';
+
+export interface StreamReadOptions {
+  /**
+   * Once some text has arrived, a gap this long with no further chunk ends the
+   * read with what we have. Off when unset.
+   */
+  idleMs?: number;
+  /** Absolute wall-clock deadline; a read still pending at this point throws. Off when unset. */
+  deadlineAt?: number;
+  /** Diagnostics sink for the non-`done` endings; keeps this module free of the debug ring. */
+  note?: (stage: string, detail: Record<string, unknown>) => void;
+}
+
+interface ReadOutcome {
+  end: StreamEnd;
+  packet?: { done?: boolean; value?: unknown };
+}
+
+/**
+ * One `reader.read()` raced against the idle gap and the deadline.
+ *
+ * Both timers are cleared however the race settles, and a `read()` that loses
+ * the race is left to settle on its own — the stream is cancelled right after,
+ * so its eventual rejection is expected and swallowed.
+ */
+function readOnce(
+  reader: { read(): Promise<{ done?: boolean; value?: unknown }> },
+  idleMs: number,
+  deadlineAt: number,
+): Promise<ReadOutcome> {
+  return new Promise<ReadOutcome>((resolve, reject) => {
+    let settled = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const finish = (out: ReadOutcome | null, err?: unknown): void => {
+      if (settled) return;
+      settled = true;
+      for (const t of timers) clearTimeout(t);
+      if (err) reject(err);
+      else resolve(out as ReadOutcome);
+    };
+    if (idleMs > 0) timers.push(setTimeout(() => finish({ end: 'idle' }), idleMs));
+    if (deadlineAt > 0) {
+      const left = deadlineAt - Date.now();
+      if (left <= 0) {
+        finish({ end: 'deadline' });
+        return;
+      }
+      timers.push(setTimeout(() => finish({ end: 'deadline' }), left));
+    }
+    reader.read().then(
+      (packet) => finish({ end: 'done', packet }),
+      (err: unknown) => (settled ? undefined : finish(null, err)),
+    );
+  });
+}
+
+/**
+ * Drains a text/byte/chunk-object stream into one string.
+ *
+ * Risu hands `runLLMModel` output back as a stream whenever the configured model
+ * is a provider plugin, and that stream is proxied across the plugin sandbox.
+ * When the upstream refuses or errors mid-reply the text arrives but the close
+ * never does — so a plain `read()` loop waits forever, and the job above it stays
+ * in `tagging` with no error for the UI to unlock on. The idle gap ends such a
+ * read with the text received; the deadline bounds a stream that never says
+ * anything at all.
+ */
+export async function readStreamToText(stream: unknown, opts: StreamReadOptions = {}): Promise<string> {
   if (!isStreamLike(stream)) return '';
-  const reader = stream.getReader();
+  const reader = stream.getReader() as {
+    read(): Promise<{ done?: boolean; value?: unknown }>;
+    cancel?(): Promise<unknown> | unknown;
+  };
   const decoder = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null;
+  const idleMs = Number(opts.idleMs) > 0 ? Number(opts.idleMs) : 0;
+  const deadlineAt = Number(opts.deadlineAt) > 0 ? Number(opts.deadlineAt) : 0;
+  const startedAt = Date.now();
   let lastObjText = '';
   let byteText = '';
+  const cancelQuietly = (): void => {
+    try {
+      const p = reader.cancel?.();
+      if (p && typeof (p as Promise<unknown>).catch === 'function') (p as Promise<unknown>).catch(() => {});
+    } catch { /* already closed */ }
+  };
   for (;;) {
-    const { done, value } = await reader.read();
+    const haveText = Boolean(lastObjText || byteText);
+    const outcome = await readOnce(reader, haveText ? idleMs : 0, deadlineAt);
+    if (outcome.end === 'idle') {
+      cancelQuietly();
+      opts.note?.('llm.stream.idle', {
+        message: `${idleMs}ms idle, no close — using text so far`,
+        ms: Date.now() - startedAt,
+        bytes: (lastObjText || byteText).length,
+      });
+      break;
+    }
+    if (outcome.end === 'deadline') {
+      cancelQuietly();
+      const got = (lastObjText || byteText).length;
+      opts.note?.('llm.stream.deadline', { message: `deadline · ${got} chars received`, ms: Date.now() - startedAt, bytes: got });
+      throw new Error(`LLM 스트림 응답 시간 초과 (${Math.round((Date.now() - startedAt) / 1000)}s, 수신 ${got}자)`);
+    }
+    const { done, value } = outcome.packet || {};
     if (done) break;
     if (typeof value === 'string') {
       lastObjText = value;
@@ -225,10 +322,10 @@ interface LlmResponseLike {
  * Normalize Risu runLLMModel / OpenAI-like responses to plain text.
  * Risu returns { type: 'success'|'fail'|'streaming', result } — not raw chat completion.
  */
-export async function llmResponseToText(response: unknown): Promise<string> {
+export async function llmResponseToText(response: unknown, read: StreamReadOptions = {}): Promise<string> {
   if (typeof response === 'string') return response;
   if (isStreamLike(response)) {
-    return readStreamToText(response);
+    return readStreamToText(response, read);
   }
   if (response == null) return '';
   if (typeof response === 'number' || typeof response === 'boolean') return String(response);
@@ -241,13 +338,13 @@ export async function llmResponseToText(response: unknown): Promise<string> {
     }
     if (risuType === 'streaming' || risuType === 'stream') {
       const stream = res.result ?? res.data ?? res.stream;
-      const streamed = await readStreamToText(stream);
+      const streamed = await readStreamToText(stream, read);
       if (streamed.trim()) return streamed;
     }
     if (risuType === 'success' || risuType === 'ok') {
       const ok = res.result ?? res.data ?? res.content;
       if (typeof ok === 'string') return ok;
-      if (isStreamLike(ok)) return readStreamToText(ok);
+      if (isStreamLike(ok)) return readStreamToText(ok, read);
     }
 
     const preferred: unknown[] = [
@@ -269,7 +366,7 @@ export async function llmResponseToText(response: unknown): Promise<string> {
         if (joined.trim()) return joined;
       }
       if (isStreamLike(part)) {
-        const streamed = await readStreamToText(part);
+        const streamed = await readStreamToText(part, read);
         if (streamed.trim()) return streamed;
       }
     }

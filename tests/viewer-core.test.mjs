@@ -116,6 +116,8 @@ import {
   shouldOverlayInlinePhoto,
   shouldMountMsgActions,
   MSG_ACTION_MIN_BODY_CHARS,
+  MSG_ACTION_TOP_MIN_BODY_CHARS,
+  msgActionWantedEnds,
   desiredInlinePlacements,
   runBoundedPool,
   canSkipInlineInject,
@@ -262,6 +264,9 @@ test("keepMsgActionBarIndexes keeps one top and one bottom", () => {
   assert.deepEqual(keepMsgActionBarIndexes(["top", "top", "top"], false), [0]);
   assert.deepEqual(keepMsgActionBarIndexes(["bot", "top"], true), [0, 1]);
   assert.deepEqual(keepMsgActionBarIndexes([], true), []);
+  assert.deepEqual(keepMsgActionBarIndexes(["top", "bot"], true, false), [1]);
+  assert.deepEqual(keepMsgActionBarIndexes(["top", "bot"], false, true), [0]);
+  assert.deepEqual(keepMsgActionBarIndexes(["top", "bot"], false, false), []);
 });
 
 test("isInlayPaintHost skips our chip rows and shot wraps", () => {
@@ -1210,6 +1215,23 @@ test("shouldMountMsgActions is char-only and needs 20 real body chars", () => {
     role: "char",
     text: `[LBDATA START]\n${"위키".repeat(40)}\n[LBDATA END]\n짧음`,
   }), false);
+});
+
+test("msgActionWantedEnds puts the top bar only on 600+ real body chars", () => {
+  const body20 = "가나다라마바사아자차카타파하아야어여로와";
+  const bodyJustUnder = "가".repeat(MSG_ACTION_TOP_MIN_BODY_CHARS - 1);
+  const bodyAt = "가".repeat(MSG_ACTION_TOP_MIN_BODY_CHARS);
+  assert.equal(body20.replace(/\s+/g, "").length, MSG_ACTION_MIN_BODY_CHARS);
+  assert.deepEqual(msgActionWantedEnds({ hostCount: 2, text: body20 }), ["bot"]);
+  assert.deepEqual(msgActionWantedEnds({ hostCount: 2, text: bodyJustUnder }), ["bot"]);
+  assert.deepEqual(msgActionWantedEnds({ hostCount: 2, text: bodyAt }), ["top", "bot"]);
+  assert.deepEqual(msgActionWantedEnds({ hostCount: 1, text: body20 }), []);
+  assert.deepEqual(msgActionWantedEnds({ hostCount: 1, text: bodyAt }), ["top"]);
+  assert.deepEqual(msgActionWantedEnds({ hostCount: 2, text: "짧음" }), []);
+  assert.deepEqual(msgActionWantedEnds({
+    hostCount: 2,
+    text: `[LBDATA START]\n${"위키".repeat(200)}\n[LBDATA END]\n${body20}`,
+  }), ["bot"]);
 });
 
 test("inlineRoleDisposition holds an unresolved role instead of treating it as user", () => {

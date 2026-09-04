@@ -210,13 +210,20 @@ migrates to `compat`. Same neighbor rule as `inline_chat_images`.
 Chips still use SafeDOM `H()` (not `insertAdjacentHTML`, not
 bubble-root `prepend`). They mount only when the bubble role normalizes
 to `char` and the LBDATA-stripped body is at least 20 non-whitespace
-characters (`shouldMountMsgActions`). User / unresolved / short bodies
+characters (`shouldMountMsgActions`). The top bar needs 600
+(`msgActionWantedEnds`); the bottom bar still uses 20 and only when the
+bubble has two hosts. User / unresolved / short bodies
 drop existing bars. Chip rows and shot wraps are skipped when
 collecting hosts (`isInlayPaintHost`). Each bubble keeps at most one
 top bar and one bottom bar (`x-inlay-msg-end`); overlapping paints
 drop extras. If a header vanishes after `legacy`, use
 `POST /v1/chat/restore-chrome`. The route stays, but 2.5 dropped its dashboard
 button in favour of 2.4 데이터 이전 (see Storage migration).
+Chip labels are `태그`, `재생성`, `🟥`, `👨‍👩‍👧‍👦`, `📚`, `🔃`. Kinds stay
+`tag` / `regen` / `stop` / `char` / `preset` / `refresh`.
+The sixth chip is `refresh` (`🔃`). It abandons inline frames on that DOM
+bubble and restamps from linked cards / pending spinners. It does not unlink
+hashes and does not start a tagger job.
 The character chip POSTs the selected DOM message to
 `/v1/characters/triggered` with the same session / unified / source ids as
 `/v1/jobs/create`. That route uses the tagger roster (`rosterForSession` +
@@ -422,7 +429,7 @@ char_inject, appearance_inject, asset_tags_inject, autotag, curation_refine, cur
 | `POST /v1/jobs/create` | → `{ job_id }` (**202**) or `{ busy: true }` / `{ error: { code: "busy" } }` |
 | `POST /v1/jobs/retarget-hash` | While a job runs: if same char/chat/msg/role and text Dice≥60% vs job-start preview, set **save** `content_hash` (lock key unchanged) + rebind published siblings |
 | `POST /v1/jobs/busy-message` | `{session_id, character_id, chat_id, message_index, role}` → `{ busy, job_id? }` — active job for that turn (hash ignored); UI skips Ka |
-| `POST /v1/jobs/stop` | `{session_id?}` → `{ stopped, job_ids, reroll_stop }` — soft-stop active jobs **and** message reroll batches (keep published / finished shots; do not abort in-flight LLM/NAI; remaining shots/rerolls skip). UI may clear busy immediately. |
+| `POST /v1/jobs/stop` | `{session_id?}` → `{ stopped, job_ids, reroll_stop }` — soft-stop active jobs **and** message reroll batches (keep published / finished shots; do not abort in-flight LLM/NAI; remaining shots/rerolls skip). UI may clear busy immediately. A job that reaches `error` (tagger JSON after the optional one retry, or any other fail) keeps that state; the poll shows `실패했습니다` (or `progress.message`) then drops `jobProgress` and the in-flight lock after 1s without calling this route. The second tagger JSON miss after `llm_json_retry` throws `실패했습니다`. |
 | `/v1/jobs/:id` | `{ ok, state, error?, progress? }`, state ∈ `queued\|tagging\|generating\|done\|cancelled\|error` |
 
 Auto-gen (`Ka`): after soft rebind/retarget, skip `Be` when (1) `busy-message` is true, or (2) gallery already has cards for the same char/chat/msg/role (hash may differ). Generate only when neither applies.

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.33';
+const PLUGIN_VERSION = '2.5.34';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -11751,6 +11751,18 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       } catch (err) { y("error", "regen.tag.fail", err?.message || err); }
       return;
     }
+    if (kind0 === "refresh") {
+      try {
+        const stampKey = nxInlineStampKey(A);
+        t._inlineNeedStamp = !0;
+        t._inlineNeedStampKey = stampKey;
+        if (els[idx]) await nxRemoveInlineFrames(els[idx]);
+        if (stampKey) await nxRemoveInlineFramesByKey(t.hostDoc, ye(stampKey));
+        await refreshSelectedInlineImages(!0, { onlySel: !0 });
+        y("info", "msg.refresh", "msg-actions");
+      } catch (err) { y("error", "msg.refresh.fail", err?.message || err); }
+      return;
+    }
     if (kind0 === "regen") {
       if (!A?.text) return;
       const live = linkedCards(A);
@@ -11867,13 +11879,16 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     const doc = t.hostDoc;
     if (!doc || typeof H != "function") return;
-    const wantSig = "tag|regen|stop|char|preset";
+    const wantSig = "tag|regen|stop|char|preset|refresh";
     const msgIdx = Number.isInteger(Number(msgIndex)) && Number(msgIndex) >= 0 ? Number(msgIndex) : -1;
     // The host scan below costs ~4 bridge round-trips per paragraph and it runs
     // before we ever learn the bars are already right. Two bars carrying the
     // wanted signature, both ends and this slot can only be a finished paint.
     const earlyBars = await readBars();
-    if (earlyBars.length === 2) {
+    const wantTopEarly = typeof VCAct?.msgActionWantedEnds == "function"
+      ? VCAct.msgActionWantedEnds({ hostCount: 2, text: opts?.text }).includes("top")
+      : !0;
+    if (earlyBars.length === 2 && wantTopEarly) {
       const probed = await Promise.all(earlyBars.map(async (bar) => {
         try {
           if (typeof bar?.getAttribute != "function") return null;
@@ -11911,8 +11926,19 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       await removeBars(await readBars());
       return;
     }
-    const targets = hosts.length === 1 ? [hosts[0]] : [hosts[0], hosts[hosts.length - 1]];
-    const wantBottom = targets.length > 1;
+    const wantedEnds = typeof VCAct?.msgActionWantedEnds == "function"
+      ? VCAct.msgActionWantedEnds({ hostCount: hosts.length, text: opts?.text })
+      : (hosts.length > 1 ? ["top", "bot"] : ["top"]);
+    const wantTop = Array.isArray(wantedEnds) && wantedEnds.includes("top");
+    const wantBottom = Array.isArray(wantedEnds) && wantedEnds.includes("bot");
+    if (!wantTop && !wantBottom) {
+      await removeBars(await readBars());
+      return;
+    }
+    const targets = [];
+    const paintEnds = [];
+    if (wantTop) targets.push(hosts[0]), paintEnds.push("top");
+    if (wantBottom) targets.push(hosts[hosts.length - 1]), paintEnds.push("bot");
     const pruneBars = async () => {
       const bars = await readBars();
       const ends = [];
@@ -11927,11 +11953,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       const VC = globalThis.__INLAY_VIEWER_CORE__;
       const keepIdx = typeof VC?.keepMsgActionBarIndexes == "function"
-        ? VC.keepMsgActionBarIndexes(ends, wantBottom)
+        ? VC.keepMsgActionBarIndexes(ends, wantBottom, wantTop)
         : (() => {
           const out = [];
           const seenEnds = new Set();
-          const want = wantBottom ? ["top", "bot"] : ["top"];
+          const want = [];
+          if (wantTop) want.push("top");
+          if (wantBottom) want.push("bot");
           for (let i = 0; i < ends.length; i += 1) {
             const end = ends[i] === "bot" ? "bot" : ends[i] === "top" ? "top" : "";
             if (!end || !want.includes(end) || seenEnds.has(end)) continue;
@@ -11972,20 +12000,20 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
       if (end) haveEnds.add(end);
     }
-    const wantCount = wantBottom ? 2 : 1;
-    const haveAll = wantBottom ? haveEnds.has("top") && haveEnds.has("bot") : (haveEnds.has("top") || existing.length === 1);
+    const wantCount = (wantTop ? 1 : 0) + (wantBottom ? 1 : 0);
+    const haveAll = (!wantTop || haveEnds.has("top")) && (!wantBottom || haveEnds.has("bot"));
     if (existing.length === wantCount && !knownDifferent && haveAll) return;
     await removeBars(existing);
     const chipBase = "cursor:pointer;background:rgba(124,108,255,.16);color:#e8eef8;padding:7px 14px;border-radius:10px;font:700 14px Segoe UI,sans-serif;pointer-events:auto;user-select:none;line-height:1.2";
     const chipCss = (kind) => kind === "char" || kind === "preset"
       ? chipBase + ";border:1px solid rgba(196,181,253,.45)"
-      : kind === "tag"
+      : kind === "tag" || kind === "refresh"
       ? chipBase + ";border:1px solid rgba(63,140,120,.42)"
       : kind === "stop"
       ? chipBase + ";border:1px solid rgba(176,92,92,.40)"
       : chipBase + ";border:1px solid rgba(167,139,250,.48)";
-    const chipKinds = ["tag", "regen", "stop", "char", "preset"];
-    const chipLabels = { tag: "태그", regen: "재생성", stop: "중단", char: "캐릭터", preset: "프리셋" };
+    const chipKinds = ["tag", "regen", "stop", "char", "preset", "refresh"];
+    const chipLabels = { tag: "태그", regen: "재생성", stop: "🟥", char: "👨‍👩‍👧‍👦", preset: "📚", refresh: "🔃" };
     const chipsHtml = chipKinds.map((kind) =>
       '<span style="' + chipCss(kind) + '">' + chipLabels[kind] + "</span>"
     ).join("");
@@ -12031,12 +12059,11 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       return null;
     };
     const seen = new Set();
-    const ends = wantBottom ? ["top", "bot"] : ["top"];
     for (let i = 0; i < targets.length; i += 1) {
       const host = targets[i];
       if (!host || seen.has(host)) continue;
       seen.add(host);
-      await prependBar(host, ends[i] || "top");
+      await prependBar(host, paintEnds[i] || "top");
     }
     await pruneBars();
   }
@@ -12282,6 +12309,36 @@ const VENDOR_POLL_JOB_GUARD_PATCH =
         const a = await K(\`/v1/jobs/\${n}\`, { method: "GET" }, 15e3);
         if (t._pollJobId !== n) return;
         if (!a?.ok) return;`;
+
+/** Show the fail toast, then drop UI lock/toast. Do not POST /v1/jobs/stop. */
+const VENDOR_JOB_ERROR_UNLOCK =
+  `setTimeout(() => {
+            if (String(t.jobProgress?.jobId || "") !== String(n || "")) return;
+            o && t.jobsInFlight.delete(o);
+            t.jobProgress = null;
+            Se().catch(() => {
+            });
+          }, 1e3)`;
+
+const VENDOR_JOB_ERROR_UNLOCK_OPEN_NEEDLE =
+  `          }, await Se());
+          return;
+        }
+        const i = Number(r.shot_done ?? 0), s = !!(a.state && a.state !== t.lastJobState), c = i !== Number(t._lastShotDone ?? -1);`;
+const VENDOR_JOB_ERROR_UNLOCK_OPEN_PATCH =
+  `          }, await Se(), ${VENDOR_JOB_ERROR_UNLOCK});
+          return;
+        }
+        const i = Number(r.shot_done ?? 0), s = !!(a.state && a.state !== t.lastJobState), c = i !== Number(t._lastShotDone ?? -1);`;
+
+const VENDOR_JOB_ERROR_UNLOCK_CHAT_NEEDLE =
+  `        }, await Se(), y("error", "job.error", a.error || "failed"), await onSelectionChanged("chrome"));`;
+const VENDOR_JOB_ERROR_UNLOCK_CHAT_PATCH =
+  `        }, await Se(), y("error", "job.error", a.error || "failed"), await onSelectionChanged("chrome"), ${VENDOR_JOB_ERROR_UNLOCK});`;
+
+const VENDOR_JOB_ERROR_MSG_NEEDLE = `message: z(a.error || "실패", 120),`;
+const VENDOR_JOB_ERROR_MSG_PATCH =
+  `message: r.message || z(String(a.error || "").split("\\n")[0] || "실패했습니다", 120),`;
 
 /** New generate must drop the previous job's poll before create returns. */
 const VENDOR_JOB_CLAIM_POLL_NEEDLE =
@@ -17159,6 +17216,8 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_POLL_NEEDLE, 'inline poll pending'],
     [VENDOR_INLINE_POLL_REFRESH_NEEDLE, 'inline poll refresh'],
     [VENDOR_POLL_JOB_GUARD_NEEDLE, 'poll ignore stale job ticks'],
+    [VENDOR_JOB_ERROR_UNLOCK_OPEN_NEEDLE, 'job error unlock while settings open'],
+    [VENDOR_JOB_ERROR_UNLOCK_CHAT_NEEDLE, 'job error unlock in chat'],
     [VENDOR_JOB_CLAIM_POLL_NEEDLE, 'job claim drops previous poll'],
     [VENDOR_JOB_DONE_IT_NEEDLE, 'job done skip remount if roots'],
     [VENDOR_JOB_DONE_FULL_NEEDLE, 'job done skip full viewer remount'],
@@ -17565,6 +17624,9 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_POLL_NEEDLE, VENDOR_INLINE_POLL_PATCH)
     .replace(VENDOR_INLINE_POLL_REFRESH_NEEDLE, VENDOR_INLINE_POLL_REFRESH_PATCH)
     .replace(VENDOR_POLL_JOB_GUARD_NEEDLE, VENDOR_POLL_JOB_GUARD_PATCH)
+    .replace(VENDOR_JOB_ERROR_UNLOCK_OPEN_NEEDLE, VENDOR_JOB_ERROR_UNLOCK_OPEN_PATCH)
+    .replace(VENDOR_JOB_ERROR_UNLOCK_CHAT_NEEDLE, VENDOR_JOB_ERROR_UNLOCK_CHAT_PATCH)
+    .replaceAll(VENDOR_JOB_ERROR_MSG_NEEDLE, VENDOR_JOB_ERROR_MSG_PATCH)
     .replace(VENDOR_JOB_CLAIM_POLL_NEEDLE, VENDOR_JOB_CLAIM_POLL_PATCH)
     .replace(VENDOR_JOB_DONE_IT_NEEDLE, VENDOR_JOB_DONE_IT_PATCH)
     .replace(VENDOR_JOB_DONE_FULL_NEEDLE, VENDOR_JOB_DONE_FULL_PATCH)
@@ -18173,8 +18235,22 @@ const loadVendorUi = (): string => {
       }
       const from = out.indexOf('async function injectChatMsgActions(msgEl, cards, msgIndex, opts) {');
       if (!out.includes('VCAct.shouldMountMsgActions({ role: opts?.role, text: opts?.text })')
-        || !out.includes('if (!on || !allowChips)')) {
+        || !out.includes('if (!on || !allowChips)')
+        || !out.includes('VCAct.msgActionWantedEnds({ hostCount: hosts.length, text: opts?.text })')) {
         throw new Error('[build] msg-action chips must gate on shouldMountMsgActions before paint');
+      }
+      if (!out.includes('const wantSig = "tag|regen|stop|char|preset|refresh"')
+        || !out.includes('if (kind0 === "refresh")')
+        || !out.includes('refreshSelectedInlineImages(!0, { onlySel: !0 })')) {
+        throw new Error('[build] msg-action refresh chip missing');
+      }
+      {
+        const from = out.indexOf('if (kind0 === "refresh")');
+        const to = out.indexOf('if (kind0 === "regen")', from);
+        const refresh = from >= 0 && to > from ? out.slice(from, to) : '';
+        if (!refresh.includes('nxRemoveInlineFrames(els[idx])') || refresh.includes('await Be(')) {
+          throw new Error('[build] refresh chip must restamp without Be()');
+        }
       }
       const early = out.indexOf('const earlyBars = await readBars();', from);
       const scan = out.indexOf('const scan = await nxScanBubbleHosts(msgEl);', from);
@@ -18234,6 +18310,20 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('if (t._pollJobId !== n) return;')) {
       throw new Error('[build] poll ticks must ignore a job that is no longer current');
+    }
+    {
+      const unlocks = out.split('}, 1e3)').length - 1;
+      if (unlocks < 2 || !out.includes('String(t.jobProgress?.jobId || "") !== String(n || "")')) {
+        throw new Error('[build] job error must drop the toast lock after 1s without /v1/jobs/stop');
+      }
+      const errChat = out.indexOf('y("error", "job.error"');
+      const stopNear = out.indexOf('K("/v1/jobs/stop"', errChat);
+      if (errChat >= 0 && stopNear >= 0 && stopNear - errChat < 400) {
+        throw new Error('[build] job error must not POST /v1/jobs/stop');
+      }
+      if (!out.includes('r.message || z(String(a.error || "").split("\\n")[0] || "실패했습니다", 120)')) {
+        throw new Error('[build] job error toast must show 실패했습니다 then unlock');
+      }
     }
     if (!out.includes('t._lastShotDone = -1, t._pollJobId = ""')) {
       throw new Error('[build] claiming a job must invalidate the previous poll');

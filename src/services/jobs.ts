@@ -38,7 +38,7 @@ import {
 } from '../core/debug';
 import type { ApiResult, JobRequest, JobState, TaggedShot, TaggerResult } from '../core/types';
 import { cleanText, stripCbs, toInt, uuid } from '../core/util/text';
-import { parseJsonLoose } from '../core/util/object';
+import { parseJsonLoose, parseTaggerJsonAfterRetry } from '../core/util/object';
 import {
   forceFinishNaiBody,
   getNaiBodyBytesExpected,
@@ -880,7 +880,7 @@ async function runJob(jobId: string): Promise<void> {
       );
       taggedRaw = await callLlm(resolveLlmRole(getConfig(), 'main'), messages);
       if (await cancelJobIfStale(jobId, 'superseded after json retry')) return;
-      tagged = parseJsonLoose(taggedRaw) as TaggerResult;
+      tagged = parseTaggerJsonAfterRetry(taggedRaw) as TaggerResult;
     }
     let shots = flattenShots(tagged, request.assistant_text);
     dbg('job.tagger.done', { shots: shots.length, raw_len: String(taggedRaw || '').length });

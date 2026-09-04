@@ -19,11 +19,48 @@ import {
   llmResponseToText,
   normalizeLlmSource,
   openaiMessagesToAnthropic,
+  readStreamToText,
   type AnthropicMessage,
   type AnthropicPayload,
   type ChatCompletionPayload,
   type LlmMessage,
+  type StreamReadOptions,
 } from './transform.ts';
+
+/**
+ * Gap after which a stream that has already delivered text is treated as finished.
+ *
+ * Long enough that a model pausing under load is not cut mid-reply; short enough
+ * that a refusal whose stream never closes (the observed Risu provider-plugin
+ * behaviour) fails the job in seconds rather than holding the tagging lock until
+ * the user presses stop. Only counts once some text has arrived, so a slow first
+ * token is governed by the call timeout, not by this.
+ */
+const LLM_STREAM_IDLE_MS = 15_000;
+
+/** Bounded-read options for one call: idle gap plus the call's own wall-clock deadline. */
+function streamReadOptions(deadlineAt: number, lane: string): StreamReadOptions {
+  return {
+    idleMs: LLM_STREAM_IDLE_MS,
+    deadlineAt,
+    note: (stage, detail) => dbg(stage, { ...detail, lane }, 'warn'),
+  };
+}
+
+/** Rejects at `deadlineAt`; raced against steps whose own cancellation cannot be trusted. */
+function deadlinePromise(deadlineAt: number, label: string): { promise: Promise<never>; clear: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(label)),
+      Math.max(0, deadlineAt - Date.now()),
+    );
+  });
+  // A deadline that wins the race is consumed there; one that loses must not
+  // surface later as an unhandled rejection.
+  promise.catch(() => {});
+  return { promise, clear: () => { if (timer !== undefined) clearTimeout(timer); } };
+}
 
 interface AnthropicRequestBody {
   model: string;
@@ -90,6 +127,7 @@ export async function callLlm(
     throw new Error('Vertex AI: project_id가 있는 Service Account JSON이 필요합니다. (OpenAI-compatible endpoint 구성용)');
   }
   const timeoutMs = Number(llm.timeout_seconds ?? 180) * 1000;
+  const deadlineAt = Date.now() + timeoutMs;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const onUserAbort = () => controller?.abort?.();
   opts.signal?.addEventListener('abort', onUserAbort);
@@ -97,6 +135,10 @@ export async function callLlm(
     dbg('llm.abort', { message: `timeout ${timeoutMs}ms`, model, provider }, 'warn');
     controller?.abort?.();
   }, timeoutMs);
+  // The abort above only reaches a real `Response`. Through Risu's `nativeFetch`
+  // the response is proxied and `.json()` can outlive the signal, so every await
+  // below is also raced against the same wall clock.
+  const deadline = deadlinePromise(deadlineAt, `LLM 응답 시간 초과 (${Math.round(timeoutMs / 1000)}s)`);
   const span = dbgSpan('llm.call');
   dbg('llm.call.start', {
     message: model,
@@ -117,7 +159,7 @@ export async function callLlm(
         messages: converted.messages,
       };
       if (converted.system) body.system = converted.system;
-      resp = await networkFetch(endpoint, {
+      resp = await Promise.race([networkFetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -126,7 +168,7 @@ export async function callLlm(
         },
         body: JSON.stringify(body),
         signal: controller?.signal,
-      });
+      }), deadline.promise]);
     } else {
       const body = applyReasoningToBody({
         model,
@@ -142,20 +184,15 @@ export async function callLlm(
         headers['HTTP-Referer'] = 'https://risuai.xyz';
         headers['X-Title'] = 'Inlay Nexus';
       }
-      resp = await networkFetch(endpoint, {
+      resp = await Promise.race([networkFetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
         signal: controller?.signal,
-      });
+      }), deadline.promise]);
     }
     const status = Number(resp?.status || 0);
-    let payload: unknown;
-    try {
-      payload = await (resp as { json(): Promise<unknown> }).json();
-    } catch {
-      payload = {};
-    }
+    const payload = await readJsonBody(resp, deadline.promise, streamReadOptions(deadlineAt, `${provider}:${model}`));
     if (status >= 400) {
       span.fail(new Error(`HTTP ${status}`), { status, body: JSON.stringify(payload).slice(0, 200), provider });
       throw new Error(`LLM HTTP ${status}: ${JSON.stringify(payload).slice(0, 500)}`);
@@ -171,6 +208,47 @@ export async function callLlm(
   } finally {
     opts.signal?.removeEventListener('abort', onUserAbort);
     clearTimeout(timer);
+    deadline.clear();
+  }
+}
+
+/**
+ * The JSON body of an LLM HTTP response, read in a way that always ends.
+ *
+ * A body stream is drained with the idle gap and deadline so a connection the
+ * upstream leaves open cannot park the job; `.json()` is the fallback for
+ * response shapes without a readable body, raced against the same deadline. An
+ * unparseable body becomes `{}` exactly as before — the caller reports "no
+ * choices" / HTTP status, which is the message users already know.
+ */
+export async function readJsonBody(
+  resp: FetchLikeResponse,
+  deadline: Promise<never>,
+  read: StreamReadOptions,
+): Promise<unknown> {
+  const body = resp?.body as { getReader?: unknown } | null | undefined;
+  if (body && typeof body.getReader === 'function') {
+    let text = '';
+    try {
+      text = await readStreamToText(body, read);
+    } catch (err) {
+      // Deadline with nothing received: surface it. Anything else falls back to `{}`.
+      if (/시간 초과/.test(String((err as Error)?.message || ''))) throw err;
+      return {};
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {};
+    }
+  }
+  const json = (resp as { json?: () => Promise<unknown> })?.json;
+  if (typeof json !== 'function') return {};
+  try {
+    return await Promise.race([json.call(resp), deadline]);
+  } catch (err) {
+    if (/시간 초과/.test(String((err as Error)?.message || ''))) throw err;
+    return {};
   }
 }
 
@@ -202,10 +280,13 @@ export async function callLlmViaRisu(
   });
   // Not `withTimeout()`: the timeout message is part of what the parity harness diffs.
   throwIfAborted(signal);
+  const deadlineAt = Date.now() + timeoutMs;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`Risu LLM timeout ${timeoutMs}ms (${mode})`)), timeoutMs);
   });
+  // Consumed by whichever race it wins; must not surface if it loses both.
+  timeout.catch(() => {});
   const aborted = signal
     ? new Promise<never>((_, reject) => {
       const fail = () => {
@@ -217,6 +298,7 @@ export async function callLlmViaRisu(
       else signal.addEventListener('abort', fail, { once: true });
     })
     : null;
+  aborted?.catch(() => {});
   try {
     const response = await Promise.race([
       api.runLLMModel({
@@ -228,7 +310,14 @@ export async function callLlmViaRisu(
       timeout,
       ...(aborted ? [aborted] : []),
     ]);
-    const text = cleanText(await llmResponseToText(response));
+    // `runLLMModel` resolves the moment a provider plugin hands Risu a stream, so
+    // the race above has not yet covered the reply itself. Reading stays under the
+    // same deadline, and a stream that stops closing ends on the idle gap.
+    const text = cleanText(await Promise.race([
+      llmResponseToText(response, streamReadOptions(deadlineAt, `risu:${mode}`)),
+      timeout,
+      ...(aborted ? [aborted] : []),
+    ]));
     if (!text) throw new Error(`Risu LLM(${mode}) 응답이 비어 있습니다.`);
     span.end({ message: `risu:${mode}`, bytes: text.length });
     return text;

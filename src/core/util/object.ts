@@ -59,3 +59,14 @@ export function parseJsonLoose(text: unknown): unknown {
     }
   }
 }
+
+/** Second tagger parse after llm_json_retry. Same miss → a short terminal error. */
+export const TAGGER_JSON_RETRY_FAIL_MESSAGE = '실패했습니다';
+
+export function parseTaggerJsonAfterRetry(text: unknown): unknown {
+  try {
+    return parseJsonLoose(text);
+  } catch {
+    throw new Error(TAGGER_JSON_RETRY_FAIL_MESSAGE);
+  }
+}

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.34';
+const PLUGIN_VERSION = '2.5.35';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -782,6 +782,26 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.35</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>대시보드에 역바(역할 고정)·태칼(태그 끼워넣기) 토글. 켜면 모든 LLM 호출에 적용합니다</li>
+            <li>접힘 표시 방식과 메시지 선택 동작을 PC에서 같은 줄에 둡니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.34</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>LLM 스트림이 닫히지 않으면 태깅에 멈추지 않고 작업이 실패합니다</li>
+            <li>선택된 글 위치(글자 앞/뒤)를 대시보드에서 고릅니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.33</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>뷰어 이미지 메모리를 묶고, 설정 흰 화면 레이스를 고치고, 메모리/멈춤 진단을 둡니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.32</strong>
@@ -13608,8 +13628,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.32",
-    body: "설정이 안 그려지면 다시 그리고, 그래도 없으면 풀스크린을 닫습니다."
+    title: "2.5.35",
+    body: "역바·태칼 토글, 접힘 표시와 메시지 선택을 PC에서 같은 줄에 둡니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

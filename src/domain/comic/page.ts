@@ -157,3 +157,24 @@ function attachPage(shot: TaggedShot, page: ComicPage): void {
   shot.comic_page = { ...page, aspect };
   shot.characters = page.slots.map(comicSlotToCharacter);
 }
+
+/** Nested `comic_page` only — never treat shot.characters as slots. */
+export function readComicPageFromShot(shot: unknown): ComicPage | null {
+  if (!shot || typeof shot !== 'object' || Array.isArray(shot)) return null;
+  const nested = (shot as Record<string, unknown>).comic_page;
+  if (!nested || typeof nested !== 'object' || Array.isArray(nested)) return null;
+  return parseComicPages({ pages: [nested] })[0] || null;
+}
+
+export function attachInlineComicPages(shots: TaggedShot[]): Set<number> {
+  const assigned = new Set<number>();
+  for (let i = 0; i < shots.length; i += 1) {
+    const shot = shots[i];
+    if (!shot || normalizeShotKind(shot.kind) !== 'comic') continue;
+    const page = readComicPageFromShot(shot);
+    if (!page) continue;
+    attachPage(shot, page);
+    assigned.add(i);
+  }
+  return assigned;
+}

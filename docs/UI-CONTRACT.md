@@ -147,8 +147,11 @@ identical to today. On lets the tagger emit `kind: comic` with `line` (start /
 pin, same as illustration) and `comic_line_end` (inclusive prose end). Slots
 are people/text boxes, not panels. Comic generation ignores
 `card.character_max` and keeps up to 6 slots (NAI caption ceiling).
-`card.comic_llm_batch` is `once` | `per_shot`
-(default `once`). `card.comic_schedule` is `overlap` | `wait_taggers` (default
+`card.comic_llm_batch` is `once` | `per_shot` | `with_main`
+(default `once`). `with_main` asks the first tagger for nested `comic_page`
+(same layout JSON: koma/coords/layout/slots). Missing pages still call the
+comic LLM. `once` / `per_shot` keep a separate comic LLM and do not ask the
+main tagger for panel layout. `card.comic_schedule` is `overlap` | `wait_taggers` (default
 `overlap`). `card.comic_gen_ratio` is 0–100 (default `50`): share of this
 message's shots that may be `kind: comic`. Extra comic shots become
 illustration. `card.comic_max_pages` is kept for old saves (0 pages →

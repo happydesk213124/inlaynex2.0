@@ -321,7 +321,7 @@ const VENDOR_NATURAL_BASE_CT_PATCH =
       nai5_speech: document.getElementById("nx-nai5-speech") ? ee("nx-nai5-speech") : !!e.nai5_speech,
       auto_aspect: document.getElementById("nx-auto-aspect") ? ee("nx-auto-aspect") : !!e.auto_aspect,
       comic_gen: document.getElementById("nx-comic-gen") ? (N("nx-comic-gen") === "on" ? "on" : "off") : (e.comic_gen === "on" || e.comic_gen === !0 ? "on" : "off"),
-      comic_llm_batch: document.getElementById("nx-comic-llm-batch") ? (N("nx-comic-llm-batch") === "per_shot" ? "per_shot" : "once") : (e.comic_llm_batch === "per_shot" ? "per_shot" : "once"),
+      comic_llm_batch: document.getElementById("nx-comic-llm-batch") ? (N("nx-comic-llm-batch") === "per_shot" ? "per_shot" : N("nx-comic-llm-batch") === "with_main" ? "with_main" : "once") : (e.comic_llm_batch === "per_shot" ? "per_shot" : e.comic_llm_batch === "with_main" ? "with_main" : "once"),
       comic_schedule: document.getElementById("nx-comic-schedule") ? (N("nx-comic-schedule") === "wait_taggers" ? "wait_taggers" : "overlap") : (e.comic_schedule === "wait_taggers" ? "wait_taggers" : "overlap"),
       comic_max_pages: e.comic_max_pages ?? 2,
       comic_gen_ratio: document.getElementById("nx-comic-gen-ratio") ? (() => { const r = N("nx-comic-gen-ratio"); if (r === "" || r == null) return 50; const n = Number(r); return Number.isFinite(n) ? n : 50; })() : (e.comic_gen_ratio ?? 50),
@@ -371,7 +371,7 @@ const VENDOR_NATURAL_BASE_HELP_PATCH =
   "nx-nai5-first": { title: "LLM한테 NAI V4, V5 선택권주기", body: "켜면 샷마다 simple은 V4, dynamic은 V5로 나눕니다. LLM이 복잡도를 고른 대로 모델이 갈립니다. 꺼 두면 모델 탭에서 고른 모델로 전 샷을 뽑습니다." },
   "nx-nai5-only": { title: "무조건 NAI V5한테만 요청하기", body: "켜면 모든 샷을 V5로만 뽑습니다. 모델 탭에서 V4를 고르거나 왼쪽 선택권을 켜도 V5가 이깁니다." },
   "nx-comic-gen": { title: "만화 생성", body: "켜면 태거가 연속 대사·액션을 만화 페이지로 고를 수 있습니다. 끄면 지금과 같습니다." },
-  "nx-comic-batch": { title: "만화 LLM", body: "메시지 1회는 그 메시지의 만화 페이지를 한 JSON으로 받습니다. 샷마다는 페이지마다 따로 부릅니다." },
+  "nx-comic-batch": { title: "만화 LLM", body: "메시지 1회는 만화 페이지를 한 JSON으로 따로 받습니다. 샷마다는 페이지마다 따로 부릅니다. 메인태거에 한번에 요청은 만화 샷 아래 comic_page를 메인 태거가 같이 냅니다. 빠지면 그때만 만화 LLM을 부릅니다." },
   "nx-comic-schedule": { title: "생성 순서", body: "겹쳐 생성은 삽화를 먼저 보내고 만화 LLM은 옆에서 돌립니다. 태거 전부 완료 후는 만화 태그가 끝난 뒤 번호 순으로만 보냅니다." },
   "nx-comic-ratio": { title: "만화 생성 비율", body: "이번 메시지에서 만화로 고를 수 있는 샷 비율입니다. 0이면 만화를 고르지 않습니다. 남는 만화 후보는 삽화가 됩니다." },
   "nx-comic-coords": { title: "위치", body: "LLM이 알아서: 페이지마다 position 또는 AI choice. Position: 좌표 필수, 하나라도 없으면 AI choice. AI choice: 좌표를 보내지 않습니다." },
@@ -2957,7 +2957,7 @@ const VENDOR_CARD_TAB_SPLIT_CLOSE_PATCH = `            <input id="nx-preset-file
     } else if (t.uiTab === "comic_gen") {
       const i = t.backendSettings?.card || {};
       const comicOn = i.comic_gen === "on" || i.comic_gen === !0;
-      const comicBatch = i.comic_llm_batch === "per_shot" ? "per_shot" : "once";
+      const comicBatch = i.comic_llm_batch === "per_shot" ? "per_shot" : i.comic_llm_batch === "with_main" ? "with_main" : "once";
       const comicSched = i.comic_schedule === "wait_taggers" ? "wait_taggers" : "overlap";
       const comicCoords = i.comic_coords === "ai_choice" || i.comic_coords === "position" ? i.comic_coords : "llm";
       const comicAspect = i.comic_aspect === "landscape" || i.comic_aspect === "portrait" || i.comic_aspect === "square" ? i.comic_aspect : "llm";
@@ -2977,6 +2977,7 @@ const VENDOR_CARD_TAB_SPLIT_CLOSE_PATCH = `            <input id="nx-preset-file
               <select id="nx-comic-llm-batch">
                 <option value="once" \${comicBatch === "once" ? "selected" : ""}>메시지 1회</option>
                 <option value="per_shot" \${comicBatch === "per_shot" ? "selected" : ""}>샷마다</option>
+                <option value="with_main" \${comicBatch === "with_main" ? "selected" : ""}>메인태거에 한번에 요청</option>
               </select>
             </label>
             <label data-nx-help-id="nx-comic-schedule"><span>생성 순서</span>

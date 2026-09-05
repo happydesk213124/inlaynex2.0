@@ -13,10 +13,10 @@ import {
 import { pickNextReadyShot } from "../.test-build/comic-schedule.mjs";
 import { comicPairsUsable, resolveComicUseCoords } from "../.test-build/comic-coords.mjs";
 import { formatComicNowWearingBlock, resolveComicSlotCostume } from "../.test-build/comic-costume.mjs";
-import { assignComicPagesToShots, comicSlotLimit, parseComicPages, takeComicGenerationSlots } from "../.test-build/comic-page.mjs";
+import { assignComicPagesToShots, attachInlineComicPages, comicSlotLimit, parseComicPages, takeComicGenerationSlots } from "../.test-build/comic-page.mjs";
 import { stripComicKomaFromUc, stripComicPageStyleTags, stripComicStyleWords } from "../.test-build/comic-tags.mjs";
 import { comicSpeechCaption, composeComicSlotCaption } from "../.test-build/comic-caption.mjs";
-import { resolveComicNaiParams } from "../.test-build/comic-params.mjs";
+import { comicLlmWithMain, normalizeComicLlmBatch, resolveComicNaiParams } from "../.test-build/comic-params.mjs";
 import { COMIC_FULL_MESSAGE_REF, comicProseBlockForLlm } from "../.test-build/comic-llm-prose.mjs";
 import { applyComicAspect, normalizeComicAspect } from "../.test-build/comic-aspect.mjs";
 
@@ -154,6 +154,51 @@ test("formatComicNowWearingBlock tells the LLM the live costume and accessory on
   assert.match(off, /now_wearing: default/);
   assert.match(off, /wear_state: nude/);
   assert.match(off, /accessories: off/);
+});
+
+test("normalizeComicLlmBatch accepts with_main", () => {
+  assert.equal(normalizeComicLlmBatch("once"), "once");
+  assert.equal(normalizeComicLlmBatch("per_shot"), "per_shot");
+  assert.equal(normalizeComicLlmBatch("with_main"), "with_main");
+  assert.equal(normalizeComicLlmBatch("with-main"), "with_main");
+  assert.equal(comicLlmWithMain("with_main"), true);
+  assert.equal(comicLlmWithMain("once"), false);
+});
+
+test("attachInlineComicPages reads nested comic_page and keeps extra slots", () => {
+  const shots = [{
+    kind: "comic",
+    aspect: "portrait",
+    characters: [{ name: "테아" }, { name: "카엘" }],
+    comic_page: {
+      koma: 3,
+      layout: "1::C1 stamp. C2 strip. C3 splash.::",
+      slots: [
+        { name: "테아", action: "C1", costume: "coat", text: "" },
+        { name: "카엘", action: "C2 left", costume: "shirt" },
+        { name: "테아", action: "C2 right", costume: "coat", text: "멈춰!" },
+        { name: "테아", action: "C3", costume: "coat", text: "꺼져!" },
+        { name: "카엘", action: "C3 slab", costume: "shirt" },
+      ],
+    },
+  }];
+  const assigned = attachInlineComicPages(shots);
+  assert.deepEqual([...assigned], [0]);
+  assert.equal(shots[0].characters.length, 5);
+  assert.equal(shots[0].comic_page.slots.length, 5);
+});
+
+test("attachInlineComicPages ignores shot-root layout so characters stay the cast", () => {
+  const shots = [{
+    kind: "comic",
+    layout: "1::do not use.::",
+    koma: 3,
+    characters: [{ name: "테아", action: "cast only" }],
+  }];
+  const assigned = attachInlineComicPages(shots);
+  assert.equal(assigned.size, 0);
+  assert.equal(shots[0].characters.length, 1);
+  assert.equal(shots[0].characters[0].action, "cast only");
 });
 
 test("comic generation slots ignore card character_max and stop at 6", () => {

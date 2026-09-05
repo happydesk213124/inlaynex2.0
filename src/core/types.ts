@@ -188,8 +188,8 @@ export interface CardSettings {
   comic_gen?: 'off' | 'on' | boolean;
   /** Tone / world for the comic LLM. Not an artist stack. */
   comic_author_note?: string;
-  /** one JSON for all comic shots vs one call per comic shot. */
-  comic_llm_batch?: 'once' | 'per_shot';
+  /** one JSON for all comic shots, one call per shot, or page JSON on the main tagger. */
+  comic_llm_batch?: 'once' | 'per_shot' | 'with_main';
   /** illustration NAI while comic LLM runs, or wait for both taggers. */
   comic_schedule?: 'overlap' | 'wait_taggers';
   /** Legacy page cap. Kept so old saves are not orphaned. */

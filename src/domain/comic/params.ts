@@ -44,9 +44,15 @@ export function resolveComicNaiParams(
   };
 }
 
-export function normalizeComicLlmBatch(raw: unknown): 'once' | 'per_shot' {
-  const s = cleanText(raw, 40).toLowerCase();
-  return s === 'per_shot' || s === 'each' || s === 'per-shot' ? 'per_shot' : 'once';
+export function normalizeComicLlmBatch(raw: unknown): 'once' | 'per_shot' | 'with_main' {
+  const s = cleanText(raw, 40).toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'per_shot' || s === 'each') return 'per_shot';
+  if (s === 'with_main' || s === 'main' || s === 'inline') return 'with_main';
+  return 'once';
+}
+
+export function comicLlmWithMain(raw: unknown): boolean {
+  return normalizeComicLlmBatch(raw) === 'with_main';
 }
 
 export function normalizeComicSchedule(raw: unknown): 'overlap' | 'wait_taggers' {

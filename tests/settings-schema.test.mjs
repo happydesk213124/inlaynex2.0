@@ -227,6 +227,7 @@ test("comic tab defaults off and migrates enums", () => {
   });
   assert.equal(on.card.comic_gen, "on");
   assert.equal(on.card.comic_llm_batch, "per_shot");
+  assert.equal(migrateSettings({ card: { comic_llm_batch: "with-main" } }).card.comic_llm_batch, "with_main");
   assert.equal(on.card.comic_schedule, "wait_taggers");
   assert.equal(on.card.comic_max_pages, 9);
   assert.equal(on.card.comic_gen_ratio, 50);

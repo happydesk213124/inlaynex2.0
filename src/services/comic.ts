@@ -13,7 +13,7 @@ import {
 } from '../domain/comic/costume.ts';
 import { comicProseBlockForLlm } from '../domain/comic/llm-prose.ts';
 import { normalizeComicLlmBatch } from '../domain/comic/params.ts';
-import { assignComicPagesToShots, parseComicPages, type ComicPage } from '../domain/comic/page.ts';
+import { assignComicPagesToShots, attachInlineComicPages, parseComicPages, type ComicPage } from '../domain/comic/page.ts';
 import { resolveShotAspect } from '../domain/nai-meta/aspect.ts';
 import { callLlm } from './llm-call.ts';
 import { getConfig } from './context.ts';
@@ -80,11 +80,14 @@ export async function fillComicPagesForShots(args: {
   const card = getConfig().card || {};
   const note = cleanText(card.comic_author_note, 8000);
   const batch = normalizeComicLlmBatch(card.comic_llm_batch);
+  const already = batch === 'with_main' ? attachInlineComicPages(shots) : new Set<number>();
   const comicIdx: number[] = [];
   for (let i = 0; i < shots.length; i += 1) {
-    if (String(shots[i]?.kind || '').toLowerCase() === 'comic') comicIdx.push(i);
+    if (String(shots[i]?.kind || '').toLowerCase() !== 'comic') continue;
+    if (already.has(i)) continue;
+    comicIdx.push(i);
   }
-  if (!comicIdx.length) return new Set();
+  if (!comicIdx.length) return already;
 
   const packOne = (i: number): string => {
     const shot = shots[i]!;
@@ -119,5 +122,7 @@ export async function fillComicPagesForShots(args: {
       sessionId,
     );
   }
-  return assignComicPagesToShots(shots, pages);
+  const assigned = assignComicPagesToShots(shots, pages);
+  for (const i of already) assigned.add(i);
+  return assigned;
 }

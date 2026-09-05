@@ -37,8 +37,9 @@ import {
 import { isCharacterImageExtraLore } from '../domain/lore/extra';
 import type { LlmContentPart, LlmMessage } from '../providers/llm/transform';
 import { applyComicKindGuard, comicGenOn } from '../domain/comic/kind';
+import { attachInlineComicPages } from '../domain/comic/page';
 import { resolveShotAspect } from '../domain/nai-meta/aspect';
-import { normalizeComicGenRatio } from '../domain/comic/params';
+import { comicLlmWithMain, normalizeComicGenRatio } from '../domain/comic/params';
 import { hostHas, risuHost } from '../core/host';
 import { mergeTaggerCharUserFields, pickSelectedPersona } from '../domain/tagging/char-user-info';
 import { authorNoteSystemContent } from '../domain/tagging/session-note';
@@ -484,6 +485,8 @@ export async function buildTaggerMessages(
     'ASPECT (required on every shot, including comic): set `aspect` to exactly one of `portrait` (832×1216 vertical), `square` (1024×1024), or `landscape` (1216×832 horizontal). Pick from the scene framing — tall full-body / standing → portrait; equal crop / face close-up square → square; wide group / side-by-side / scenic → landscape. Comic shots use this same canvas; the comic layout pass must copy it. Omit or unknown → portrait.',
   ].filter(Boolean).join('\n');
 
+  const withMain = comicGenOn(card) && comicLlmWithMain(card.comic_llm_batch);
+  const comicPack = withMain ? stripCbs(await getPrompt('comic')).trim() : '';
   const messages: LlmMessage[] = [{
     role: 'system',
     content: [
@@ -496,7 +499,8 @@ export async function buildTaggerMessages(
         : '',
       cardFlagOn(card.nai_use_coords, true) ? naiCoordsHowTo() : '',
       cardFlagOn(card.nai5_speech, false) ? naiSpeechHowTo() : '',
-      comicGenOn(card) ? comicKindHowTo(card.comic_gen_ratio, card.comic_aspect) : '',
+      comicGenOn(card) ? comicKindHowTo(card.comic_gen_ratio, card.comic_aspect, withMain) : '',
+      comicPack,
       assetHow,
       placement,
     ].filter(Boolean).join('\n\n'),
@@ -511,6 +515,16 @@ export async function buildTaggerMessages(
     label: "Author's Note",
     text: await getPrompt('author_note'),
   });
+
+  if (withMain) {
+    const comicNote = cleanText(card.comic_author_note, 8000);
+    if (comicNote) {
+      messages.push({
+        role: 'system',
+        content: `# Priority: Comic author's note\n${comicNote}\nIf this conflicts with earlier rules, follow this note (except never emit comic/manga/hatching/thick outlines). Put the page on comic_page, not on the shot root.`,
+      });
+    }
+  }
 
   if (card.char_info && cleanText(request.character_description)) {
     messages.push({
@@ -612,10 +626,11 @@ export function flattenShots(tagged: unknown, messageText?: unknown): TaggedShot
   // Models often emit line=1,2,3 as shot order; remap from y_percent when that pattern appears.
   const repaired = repairLazyShotLines(shots, messageText ?? '');
   applyComicKindGuard(repaired, comicGenOn(getConfig().card));
+  if (comicLlmWithMain(getConfig().card?.comic_llm_batch)) attachInlineComicPages(repaired);
   return repaired;
 }
 
-function comicKindHowTo(ratioPct: unknown, comicAspect?: unknown): string {
+function comicKindHowTo(ratioPct: unknown, comicAspect?: unknown, withMain = false): string {
   const share = normalizeComicGenRatio(ratioPct);
   const aspectMode = normalizeComicAspect(comicAspect);
   const aspectLock =
@@ -635,7 +650,15 @@ function comicKindHowTo(ratioPct: unknown, comicAspect?: unknown): string {
     'For a comic shot: `line` is the start (image sits immediately above that line, same as illustration). Also set `comic_line_end` to the last prose line this page covers. The next illustration must pick a line after `comic_line_end`.',
     'Do not infer a comic range from neighboring shot `line` values.',
     'Ignore `<img>`, `┣ observation/insight/foreshadow ┫`, `<RP-Guide>`, `<AOS>`, HTML comments, and Upcoming lines — they are not scenes.',
-    'Comic shots still list `characters[].name` for who appears. Do not write panel layout here.',
+    withMain
+      ? [
+        'Comic shots still list `characters[].name` for who appears (this list follows CHARACTER CAP).',
+        'When kind is comic, also emit `comic_page` on THAT shot. Do not put koma/layout/slots on the shot root.',
+        '`comic_page` is the same object as the comic layout JSON: `koma`, `coords` (`position` or `ai_choice`), `layout` (one `1:: ::` token, periods only, no dialogue), and `slots` (max 6).',
+        '`comic_page.slots` is one entry per cut appearance. The same person in two cuts is two slots. Slots ignore CHARACTER CAP.',
+        'Each slot: name, action, costume, bubble (`speech`|`thought`|`narration`), text, center_x, center_y.',
+      ].join(' ')
+      : 'Comic shots still list `characters[].name` for who appears. Do not write panel layout here.',
     aspectLock,
   ].filter(Boolean).join(' ');
 }

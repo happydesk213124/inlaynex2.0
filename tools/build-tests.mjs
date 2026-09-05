@@ -22,6 +22,7 @@ const outdir = path.join(root, '.test-build');
 /** 1.x module name → where that logic lives in 2.0. */
 const MODULES = {
   'viewer-core': 'src/ui-contract/viewer-core.ts',
+  'inline-chat': 'src/domain/inline-chat.ts',
   'object-util': 'src/core/util/object.ts',
   'explorer-selection': 'src/ui-contract/explorer-selection.ts',
   'gallery-zip': 'src/ui-contract/gallery-zip.ts',

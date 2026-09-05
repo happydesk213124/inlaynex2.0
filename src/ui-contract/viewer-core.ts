@@ -9,6 +9,7 @@
 export { matchCharactersInText } from '../domain/character/roster';
 import { normalizeShotKind } from '../domain/comic/kind';
 import { resolveShotAspect } from '../domain/nai-meta/aspect';
+import { normalizeInlineChatTextSide } from '../domain/inline-chat';
 import {
   inlineMsgActionsLegacy,
   inlineMsgActionsOn,
@@ -40,6 +41,8 @@ export {
   inlineMsgActionsOn,
   normalizeInlineMsgActions,
 };
+export { normalizeInlineChatTextSide };
+export type { InlineChatTextSide } from '../domain/inline-chat';
 export {
   IMAGE_DOUBLE_TAP_SLOP_PX,
   IMAGE_DOUBLE_TAP_WINDOW_MS,
@@ -3845,6 +3848,8 @@ export interface InlineInjectOptions {
   maxWidthPx?: number;
   /** Dashboard scale % for bubble illustrations (100 = default 78%/70vh caps). */
   scalePct?: number;
+  /** Insert the frame before the line's first character, or after its last. */
+  textSide?: unknown;
 }
 
 /** Clamp bubble-illustration scale; default 100, range 25–200. */
@@ -3980,6 +3985,73 @@ function decodeHtmlEntity(entity: string): string | null {
  * `…<div marker/>…<b>line</b>` instead of `…<b><div marker/>…line</b>`.
  * Stops at text, entities, br, or closing tags.
  */
+function advanceHtmlIndexPastMappedChar(html: string, htmlIndex: number, ch: string): number {
+  const i = Math.max(0, Math.min(html.length, Math.floor(htmlIndex)));
+  if (i >= html.length) return html.length;
+  if (html[i] === '&') {
+    const semi = html.indexOf(';', i);
+    return semi > i && semi - i < 16 ? semi + 1 : i + 1;
+  }
+  const width = ch.length > 0 ? ch.length : 1;
+  return Math.min(html.length, i + width);
+}
+
+/**
+ * After the line text, skip inline closing tags so we get
+ * `…<b>line</b><div marker/>` instead of `…<b>line<div marker/></b>`.
+ * Stops at text, br, block close (`</p>`), or any non-close tag.
+ */
+function nudgeInsertAfterCloseTags(html: string, htmlIndex: number): number {
+  let i = Math.max(0, Math.min(html.length, Math.floor(htmlIndex)));
+  while (i < html.length) {
+    let j = i;
+    while (j < html.length && /[ \t\r\n]/.test(html[j]!)) j += 1;
+    if (j >= html.length || html[j] !== '<') break;
+    const close = html.indexOf('>', j);
+    if (close < 0) break;
+    const tag = html.slice(j, close + 1);
+    if (BR_RE.test(tag) || BLOCK_CLOSE_RE.test(tag) || !/^<\/[a-zA-Z][^>]*>$/.test(tag)) break;
+    i = close + 1;
+  }
+  return i;
+}
+
+/** Exclusive plain-text end of 1-based line N (trailing spaces dropped). */
+export function findPlainLineEndOffset(plain: unknown, line: unknown): number | null {
+  const start = findPlainLineStartOffset(plain, line);
+  if (start == null) return null;
+  const text = String(plain ?? '').replace(/\r\n/g, '\n');
+  let i = start;
+  while (i < text.length && text[i] !== '\n') i += 1;
+  while (i > start && text[i - 1] === ' ') i -= 1;
+  return i;
+}
+
+function htmlIndexForLineInsert(
+  html: string,
+  mapped: MappedChar[],
+  plain: string,
+  line: number,
+  side: 'before' | 'after',
+): number | null {
+  if (side === 'before') {
+    const offset = findPlainLineStartOffset(plain, line);
+    if (offset == null || offset < 0 || offset >= mapped.length) return null;
+    return nudgeInsertBeforeOpenTags(html, mapped[offset]!.htmlIndex);
+  }
+  const end = findPlainLineEndOffset(plain, line);
+  if (end == null) return null;
+  let htmlIndex: number;
+  if (end < mapped.length) htmlIndex = mapped[end]!.htmlIndex;
+  else if (mapped.length) {
+    const last = mapped[mapped.length - 1]!;
+    htmlIndex = advanceHtmlIndexPastMappedChar(html, last.htmlIndex, last.ch);
+  } else {
+    htmlIndex = html.length;
+  }
+  return nudgeInsertAfterCloseTags(html, htmlIndex);
+}
+
 function nudgeInsertBeforeOpenTags(html: string, htmlIndex: number): number {
   let i = Math.max(0, Math.min(html.length, Math.floor(htmlIndex)));
   while (i > 0) {
@@ -4288,12 +4360,12 @@ export function injectInlineImagesIntoHtml(
   const maxWidthPx = opts?.maxWidthPx;
   void maxWidthPx;
   const scalePct = opts?.scalePct ?? 100;
+  const textSide = normalizeInlineChatTextSide(opts?.textSide);
   /** htmlIndex → marker HTML (one shot per line). */
   const atIndex = new Map<number, string>();
   for (const [line, shot] of byLine) {
-    const offset = findPlainLineStartOffset(plain, line);
-    if (offset == null || offset < 0 || offset >= mapped.length) continue;
-    const htmlIndex = nudgeInsertBeforeOpenTags(cleaned, mapped[offset]!.htmlIndex);
+    const htmlIndex = htmlIndexForLineInsert(cleaned, mapped, plain, line, textSide);
+    if (htmlIndex == null) continue;
     if (atIndex.has(htmlIndex)) continue;
     atIndex.set(htmlIndex, markerBlockHtml(shot, scalePct));
   }

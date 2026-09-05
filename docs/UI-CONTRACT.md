@@ -167,6 +167,9 @@ fields when those controls are absent (`Ct()` + `assertOnce`).
 
 Dashboard also has `card.toast_anchor` (`tl` | `bl` | `tr` | `br` | `tc`,
 default `tc`) for progress / selection / host / attach toasts, and
+`card.inline_chat_text_side` (`before` | `after`, default `before`) puts the
+inline spinner/photo before the matched line text or after it. Already-mounted
+frames stay put; the next inject or refresh uses the new side.
 `card.inline_chat_dom_radius` (integer 3–20, default `4`) controls how many
 eligible bubbles on each side are prefetched and retained for inline frames.
 Settings → 디버그 → **스크롤** lists `scroll.*` events for the chat scroll

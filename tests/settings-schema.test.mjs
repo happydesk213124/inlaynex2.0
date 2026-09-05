@@ -173,6 +173,13 @@ test("inline_msg_actions migrates checkbox and aliases", () => {
   assert.equal(migrateSettings({ card: { inline_msg_actions: "2.4.9" } }).card.inline_msg_actions, "compat");
 });
 
+test("inline_chat_text_side defaults to before and accepts after", () => {
+  assert.equal(migrateSettings({ card: {} }).card.inline_chat_text_side, "before");
+  assert.equal(migrateSettings({ card: { inline_chat_text_side: "after" } }).card.inline_chat_text_side, "after");
+  assert.equal(migrateSettings({ card: { inline_chat_text_side: "end" } }).card.inline_chat_text_side, "after");
+  assert.equal(migrateSettings({ card: { inline_chat_text_side: "nope" } }).card.inline_chat_text_side, "before");
+});
+
 test("inline_chat_dom_radius defaults to 4 and clamps to 3–20", () => {
   assert.equal(migrateSettings({ card: {} }).card.inline_chat_dom_radius, 4);
   assert.equal(migrateSettings({ card: { inline_chat_dom_radius: 2 } }).card.inline_chat_dom_radius, 3);

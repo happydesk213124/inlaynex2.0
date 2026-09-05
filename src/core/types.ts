@@ -223,6 +223,8 @@ export interface CardSettings {
   inline_msg_actions?: 'off' | 'legacy' | 'compat' | boolean;
   /** Insert shot images into chat bubbles at LLM `line`. */
   inline_chat_images?: boolean;
+  /** Spinner/photo before the line text, or after it. */
+  inline_chat_text_side?: 'before' | 'after';
   /** Eligible message bubbles retained on each side of the selection. */
   inline_chat_dom_radius?: number;
   /** Screen corner for progress / selection / host / attach toasts. */

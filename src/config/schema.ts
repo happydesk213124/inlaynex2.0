@@ -8,6 +8,7 @@ import { normalizeComicCoordsMode } from '../domain/comic/coords.ts';
 import { comicGenOn } from '../domain/comic/kind.ts';
 import { normalizeComicAspect } from '../domain/comic/aspect.ts';
 import { normalizeComicGenRatio, normalizeComicLlmBatch, normalizeComicMaxPages, normalizeComicSchedule } from '../domain/comic/params.ts';
+import { normalizeInlineChatTextSide } from '../domain/inline-chat.ts';
 import { normalizeInlineMsgActions } from '../domain/inline-msg-actions.ts';
 import { normalizeImagePressInspect, normalizeToastAnchor } from '../domain/toast-press.ts';
 
@@ -287,6 +288,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   card.inline_previews = overlayOn;
   if (card.inline_chat_images == null) card.inline_chat_images = false;
   else card.inline_chat_images = card.inline_chat_images === true || card.inline_chat_images === 'true' || card.inline_chat_images === 1 || card.inline_chat_images === '1';
+  card.inline_chat_text_side = normalizeInlineChatTextSide(card.inline_chat_text_side);
   card.inline_msg_actions = normalizeInlineMsgActions(card.inline_msg_actions);
   {
     const raw = Number(card.inline_chat_scale_pct);

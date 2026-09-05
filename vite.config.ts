@@ -9026,6 +9026,7 @@ const VENDOR_INLINE_HELP_NEEDLE =
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
     "nx-inline-chat": { title: "이미지 채팅에", body: "선택 기준에서 설정한 탐색 숫자만큼 위·아래의 char 말풍선을 유지합니다. 유저·라이트보드(본문 30자 이하)는 건너뜁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
+    "nx-inline-text-side": { title: "선택된글 위치", body: "줄에 맞는 문단 안에서 스피너·삽화를 글 앞 또는 글 뒤에 둡니다. 이미 꽂힌 프레임은 그대로이고, 새로 넣거나 새로고침할 때 적용됩니다." },
     "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "사용안함 / 편의성(오류율 있음 · 2.4.7, 칩을 본문 위에 붙임) / 호환성(2.4.9, 본문 문단에만 붙임). 헤더가 비면 채팅 카드 복구를 쓰세요. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
     "nx-inline-chat-scale": { title: "이미지 채팅 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
     "nx-inline-dom-radius": { title: "스피너 캐릭터 개수", body: "선택한 메시지 기준으로 위·아래에서 유지할 캐릭터 말풍선 수입니다. 기본 4, 범위 3–20입니다. 유저와 본문 30자 이하 메시지는 세지 않고 건너뜁니다. 사진은 위·아래 가장 가까운 캐릭터 1개씩입니다." },
@@ -9040,6 +9041,12 @@ const VENDOR_INLINE_TOGGLE_NEEDLE =
 const VENDOR_INLINE_TOGGLE_PATCH =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>
             <label class="toggle-row" data-nx-help-id="nx-inline-chat"><input type="checkbox" id="nx-inline-chat" \${i.inline_chat_images ? "checked" : ""}><span>이미지 채팅에</span></label>
+            <label data-nx-help-id="nx-inline-text-side"><span>선택된글 위치</span>
+              <select id="nx-inline-text-side">
+                <option value="before" \${!i.inline_chat_text_side || i.inline_chat_text_side === "before" ? "selected" : ""}>글자 앞</option>
+                <option value="after" \${i.inline_chat_text_side === "after" ? "selected" : ""}>글자 뒤</option>
+              </select>
+            </label>
             <label data-nx-help-id="nx-inline-msg-actions"><span>메시지 안에 생성 버튼</span>
               <select id="nx-inline-msg-actions">
                 <option value="off" \${(i.inline_msg_actions || "off") === "off" ? "selected" : ""}>사용안함</option>
@@ -9079,6 +9086,7 @@ const VENDOR_INLINE_SAVE_NEEDLE =
 const VENDOR_INLINE_SAVE_PATCH =
   `      overlay_markers: ee("nx-overlay"),
       inline_chat_images: ee("nx-inline-chat"),
+      inline_chat_text_side: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeInlineChatTextSide == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeInlineChatTextSide(N("nx-inline-text-side")) : (String(N("nx-inline-text-side") || "before") === "after" ? "after" : "before")),
       inline_msg_actions: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeInlineMsgActions == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeInlineMsgActions(N("nx-inline-msg-actions")) : String(N("nx-inline-msg-actions") || "off")),
       inline_chat_scale_pct: Math.max(25, Math.min(200, Math.round(Ne(N("nx-inline-chat-scale"), 100)) || 100)),
       inline_chat_dom_radius: Math.max(3, Math.min(20, Math.round(Ne(N("nx-inline-dom-radius"), 4)) || 4)),
@@ -10941,7 +10949,14 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           if (wrap) {
             const mounted = await nxRunInlineOwnerMutation(ownerClaim, async (isCurrent) => {
               if (!isCurrent()) return !1;
-              await host.prepend(wrap);
+              const atEnd = typeof VC.normalizeInlineChatTextSide == "function"
+                ? VC.normalizeInlineChatTextSide(t.backendSettings?.card?.inline_chat_text_side) === "after"
+                : String(t.backendSettings?.card?.inline_chat_text_side || "") === "after";
+              // SafeDOM hosts expose prepend/appendChild. Native ParentNode.append
+              // often exists too but rejects a SafeElement wrap, so after-side
+              // mounts would throw and the shot vanished.
+              if (atEnd && typeof host.appendChild == "function") await host.appendChild(wrap);
+              else await host.prepend(wrap);
               return isCurrent();
             });
             if (!mounted) return !1;
@@ -10965,7 +10980,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
             if (id) shotNodes.set(id, wrap);
             const marks = hostMarks.get(hostIdx);
             const mark = { node: wrap, id, slot, pending: !nxReadyImg(shot.src), ready: nxReadyImg(shot.src), layoutVersion: String(VC.INLINE_FRAME_LAYOUT_VERSION || "") };
-            if (Array.isArray(marks)) marks.unshift(mark);
+            if (Array.isArray(marks)) {
+              const atEnd = typeof VC.normalizeInlineChatTextSide == "function"
+                ? VC.normalizeInlineChatTextSide(t.backendSettings?.card?.inline_chat_text_side) === "after"
+                : String(t.backendSettings?.card?.inline_chat_text_side || "") === "after";
+              if (atEnd) marks.push(mark);
+              else marks.unshift(mark);
+            }
             if (slot) frameBySlot.set(slot, mark);
             if (id) frameById.set(id, mark);
             if (wantPhotos && shot.src && !shot.pending) await patchShotSrc(wrap, shot.src, id);
@@ -18105,6 +18126,9 @@ const loadVendorUi = (): string => {
       }
       if (!body.includes('await host.prepend(wrap)') || !body.includes('await syncFrameMeta(wrap, shot)')) {
         throw new Error('[build] prependShot must restamp identity after mount');
+      }
+      if (!body.includes('typeof host.appendChild == "function"') || !body.includes('normalizeInlineChatTextSide')) {
+        throw new Error('[build] prependShot must appendChild when text side is after');
       }
       if (body.indexOf('await host.prepend(wrap)') > body.indexOf('await syncFrameMeta(wrap, shot)')) {
         throw new Error('[build] prependShot must stamp after the wrapper is in the bubble');

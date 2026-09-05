@@ -126,6 +126,7 @@
     "floating_viewer": true,
     "overlay_markers": true,
     "inline_chat_images": false,
+    "inline_chat_text_side": "before",
     "inline_msg_actions": "off",
     "inline_chat_scale_pct": 100,
     "inline_chat_dom_radius": 4,

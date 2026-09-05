@@ -269,6 +269,7 @@
     "floating_viewer": false,
     "overlay_markers": false,
     "inline_chat_images": true,
+    "inline_chat_text_side": "before",
     "inline_msg_actions": "legacy",
     "inline_chat_scale_pct": 100,
     "inline_chat_dom_radius": 4,

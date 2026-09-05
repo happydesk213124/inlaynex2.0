@@ -33,7 +33,9 @@ import {
   clampShotLine,
   htmlToPlainLn,
   findPlainLineStartOffset,
+  findPlainLineEndOffset,
   injectInlineImagesIntoHtml,
+  normalizeInlineChatTextSide,
   markerBlockHtml,
   lineTextOccurrence,
   findElementIndexForLine,
@@ -363,6 +365,27 @@ test("injectInlineImagesIntoHtml keeps formatting and uses line numbers", () => 
   // duplicate plain "커피를 마셨다" still gets line-3 marker (not string search of first)
   const stripped = stripInlayInlineHtml(out);
   assert.equal(htmlToPlainLn(stripped), htmlToPlainLn(rich));
+});
+
+test("normalizeInlineChatTextSide defaults to before", () => {
+  assert.equal(normalizeInlineChatTextSide(undefined), "before");
+  assert.equal(normalizeInlineChatTextSide("after"), "after");
+  assert.equal(normalizeInlineChatTextSide("end"), "after");
+  assert.equal(normalizeInlineChatTextSide("nope"), "before");
+});
+
+test("injectInlineImagesIntoHtml can sit after the line text", () => {
+  const src = "data:image/png;base64,abc";
+  assert.equal(findPlainLineEndOffset("a\nb\nc", 2), 3);
+  const wrapped = `<p><b>안녕</b>하세요</p>`;
+  const afterOne = injectInlineImagesIntoHtml(wrapped, [{ line: 1, src, shotIndex: 0, cardId: "c1" }], { textSide: "after" });
+  assert.match(afterOne, /하세요<div[\s\S]*data-inlay-inline-shot="c1"/);
+  assert.match(afterOne, /<b>안녕<\/b>하세요/);
+  assert.doesNotMatch(afterOne, /<p><div/);
+  const two = "첫째<br>둘째";
+  const afterTwo = injectInlineImagesIntoHtml(two, [{ line: 2, src, shotIndex: 1, cardId: "c2" }], { textSide: "after" });
+  assert.match(afterTwo, /둘째<div[\s\S]*data-inlay-inline-shot="c2"/);
+  assert.equal(htmlToPlainLn(stripInlayInlineHtml(afterTwo)), htmlToPlainLn(two));
 });
 
 test("inlinePlaceholderSrc is a still ring, not a spinning SVG", () => {

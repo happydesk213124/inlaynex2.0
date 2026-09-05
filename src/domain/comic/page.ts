@@ -3,6 +3,7 @@
  */
 import type { ShotCharacter, TaggedShot } from '../../core/types.ts';
 import { cleanText } from '../../core/util/text.ts';
+import { parseWearState, type WearState } from '../character/wear-state.ts';
 import { readNaiCoord } from '../nai/coords.ts';
 import { normalizeComicPageCoords } from './coords.ts';
 import { resolveShotAspect } from '../nai-meta/aspect.ts';
@@ -23,6 +24,7 @@ export interface ComicSlot {
   name: string;
   action: string;
   costume: string;
+  wear_state?: WearState;
   bubble: string;
   text: string;
   center_x: number | null;
@@ -32,6 +34,7 @@ export interface ComicSlot {
 export interface ComicPage {
   shot_index: number | null;
   koma: number;
+  location: string;
   aspect: string;
   coords: 'position' | 'ai_choice' | '';
   layout: string;
@@ -44,12 +47,14 @@ function readSlot(raw: unknown): ComicSlot | null {
   const name = cleanText(row.name, 200);
   const action = cleanText(row.action, 800);
   const costume = cleanText(row.costume ?? row.outfit, 4000);
+  const wear_state = parseWearState(row.wear_state ?? row.nude) || undefined;
   const bubble = cleanText(row.bubble ?? row.balloon, 40).toLowerCase() || 'speech';
   const text = cleanText(row.text ?? row.speech ?? row.dialogue, 400);
   return {
     name,
     action,
     costume,
+    ...(wear_state ? { wear_state } : {}),
     bubble,
     text,
     center_x: readNaiCoord(row.center_x),
@@ -87,6 +92,7 @@ export function parseComicPages(raw: unknown): ComicPage[] {
     pages.push({
       shot_index: Number.isFinite(idx) ? idx : null,
       koma,
+      location: cleanText(row.location, 800),
       aspect: cleanText(row.aspect, 40) || 'portrait',
       coords: normalizeComicPageCoords(row.coords ?? row.use_coords),
       layout: cleanText(row.layout ?? row.base ?? row.main, 2000),
@@ -102,12 +108,41 @@ export function comicSlotToCharacter(slot: ComicSlot): ShotCharacter {
     name: slot.name,
     action: slot.action,
     costume: slot.costume,
+    ...(slot.wear_state ? { wear_state: slot.wear_state } : {}),
     speech,
     speech_lang: speech ? 'korean' : '',
     center_x: slot.center_x ?? undefined,
     center_y: slot.center_y ?? undefined,
     bubble: slot.bubble,
   };
+}
+
+function seedWearByName(chars: readonly ShotCharacter[] | null | undefined): Map<string, WearState> {
+  const running = new Map<string, WearState>();
+  for (const ch of chars || []) {
+    const name = cleanText(ch?.name, 200);
+    const wear = parseWearState(ch?.wear_state) || parseWearState(ch?.nude);
+    if (name && wear) running.set(name.toLowerCase(), wear);
+  }
+  return running;
+}
+
+/** Slot wear wins; omitted copies the last state for that name (cast or earlier slot). */
+function slotsWithInheritedWear(
+  prevChars: readonly ShotCharacter[] | null | undefined,
+  slots: readonly ComicSlot[],
+): ComicSlot[] {
+  const running = seedWearByName(prevChars);
+  return slots.map((slot) => {
+    const key = cleanText(slot.name, 200).toLowerCase();
+    const parsed = parseWearState(slot.wear_state);
+    if (parsed) {
+      if (key) running.set(key, parsed);
+      return { ...slot, wear_state: parsed };
+    }
+    const prev = key ? running.get(key) : undefined;
+    return prev ? { ...slot, wear_state: prev } : slot;
+  });
 }
 
 function comicShotIndexes(shots: readonly TaggedShot[]): number[] {
@@ -154,8 +189,10 @@ export function assignComicPagesToShots(shots: TaggedShot[], pages: readonly Com
 function attachPage(shot: TaggedShot, page: ComicPage): void {
   const aspect = resolveShotAspect(shot.aspect);
   shot.aspect = aspect;
-  shot.comic_page = { ...page, aspect };
-  shot.characters = page.slots.map(comicSlotToCharacter);
+  const slots = slotsWithInheritedWear(shot.characters, page.slots);
+  shot.comic_page = { ...page, aspect, slots };
+  shot.characters = slots.map(comicSlotToCharacter);
+  if (page.location) shot.location = page.location;
 }
 
 /** Nested `comic_page` only — never treat shot.characters as slots. */

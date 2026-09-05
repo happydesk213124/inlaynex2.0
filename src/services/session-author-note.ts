@@ -72,9 +72,23 @@ export async function setSessionAuthorNote(
     ? cleanText(rec.suffix, 8000)
     : '';
   const preset_id = cleanText(rec.preset_id || rec.presetId, 80);
-  const next = { prefix, suffix, preset_id };
+  const prev = parseSessionAuthorNote(await psGet(sessionKey(id)));
+  const location = rec.location != null || rec.location_tags != null
+    ? cleanText(rec.location ?? rec.location_tags, 800)
+    : prev.location;
+  const next = { prefix, suffix, preset_id, location };
   await psSet(sessionKey(id), next);
   return { ok: true, session_id: id, ...next, text: joinSessionAuthorNote(prefix, suffix) };
+}
+
+/** Keep prefix/suffix; write the running place tags after a job. */
+export async function persistSessionLocation(sessionId: unknown, location: unknown): Promise<void> {
+  const id = cleanText(sessionId, 200);
+  if (!id) return;
+  const prev = parseSessionAuthorNote(await psGet(sessionKey(id)));
+  const nextLoc = cleanText(location, 800);
+  if (prev.location === nextLoc) return;
+  await psSet(sessionKey(id), { ...prev, location: nextLoc });
 }
 
 export async function listSessionAuthorNotePresets(): Promise<ApiResult> {

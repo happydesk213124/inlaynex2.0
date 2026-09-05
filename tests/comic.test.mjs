@@ -289,6 +289,35 @@ test("comicSpeechCaption builds a bubble tag", () => {
   );
 });
 
+test("parseComicPages reads slot wear_state", () => {
+  const pages = parseComicPages({
+    pages: [{
+      koma: 1,
+      layout: "1::cut.::",
+      slots: [{ name: "테아", action: "stand", costume: "coat", wear_state: "bottomless" }],
+    }],
+  });
+  assert.equal(pages[0].slots[0].wear_state, "bottomless");
+});
+
+test("attachInlineComicPages inherits cast wear_state onto omitted slots", () => {
+  const shots = [{
+    kind: "comic",
+    characters: [{ name: "테아", wear_state: "nude" }],
+    comic_page: {
+      koma: 2,
+      layout: "1::a. b.::",
+      slots: [
+        { name: "테아", action: "C1", costume: "coat" },
+        { name: "테아", action: "C2", costume: "coat", wear_state: "bottomless" },
+      ],
+    },
+  }];
+  attachInlineComicPages(shots);
+  assert.equal(shots[0].characters[0].wear_state, "nude");
+  assert.equal(shots[0].characters[1].wear_state, "bottomless");
+});
+
 test("composeComicSlotCaption keeps looks, costume, action, and korean text", () => {
   const caption = composeComicSlotCaption(
     {
@@ -309,6 +338,28 @@ test("composeComicSlotCaption keeps looks, costume, action, and korean text", ()
   assert.match(caption, /navy dress/);
   assert.match(caption, /walking/);
   assert.match(caption, /speechbubble, korean text:아\.\.\.\. 힘들다\.\.\./);
+});
+
+test("composeComicSlotCaption applies wear_state like illustration", () => {
+  const caption = composeComicSlotCaption(
+    {
+      name: "히나",
+      appearance: "blonde hair",
+      gender: "girl",
+      costumes: [{ name: "maid", attire: "navy dress", accessories: "" }],
+      active_costume: 0,
+      wear_state: "clothed",
+    },
+    {
+      name: "히나",
+      action: "standing",
+      costume: "maid",
+      wear_state: "bottomless",
+    },
+  );
+  assert.match(caption, /0\.6::navy dress::/);
+  assert.match(caption, /bottomless/);
+  assert.match(caption, /pussy/);
 });
 
 test("normalizeComicAspect defaults to llm", () => {

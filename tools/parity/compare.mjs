@@ -614,6 +614,18 @@ const NEW_ONLY_STEPS = new Map([
       : `session-author-note split GET must return prefix/suffix, got ${JSON.stringify(v)}`),
   ],
   [
+    'session_note.location_put',
+    (v) => (v?.ok === true && v?.location === 'tatami, indoor' && v?.prefix === 'pre-note'
+      ? null
+      : `session-author-note location PUT must keep prefix and set location, got ${JSON.stringify(v)}`),
+  ],
+  [
+    'session_note.location_get',
+    (v) => (v?.ok === true && v?.location === 'tatami, indoor' && v?.suffix === 'post-note'
+      ? null
+      : `session-author-note location GET must return location, got ${JSON.stringify(v)}`),
+  ],
+  [
     'char_example.get',
     (v) => (v?.ok === true && v?.configured === false && !v?.example_hash
       ? null

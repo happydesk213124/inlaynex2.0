@@ -461,6 +461,13 @@ export async function runScenario(N, handles) {
     suffix: 'post-note',
   }));
   await rec('session_note.split_get', () => get('/v1/session-author-note?session_id=sess_main'));
+  await rec('session_note.location_put', () => put('/v1/session-author-note', {
+    session_id: 'sess_main',
+    prefix: 'pre-note',
+    suffix: 'post-note',
+    location: 'tatami, indoor',
+  }));
+  await rec('session_note.location_get', () => get('/v1/session-author-note?session_id=sess_main'));
   await rec('char_example.get', () => get('/v1/characters/example-shot?character_id=char_parity&scope=sess_main'));
   await rec('char_cmd_presets.put', () => put('/v1/character-command-presets', {
     items: [{ id: 'p1', name: '더 밝게', text: 'add smile' }],

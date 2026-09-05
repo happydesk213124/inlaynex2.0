@@ -96,6 +96,7 @@ test("parseSessionAuthorNote migrates a string to prefix", () => {
     prefix: "legacy note",
     suffix: "",
     preset_id: "",
+    location: "",
   });
   assert.equal(joinSessionAuthorNote("pre", "post"), "pre\npost");
 });

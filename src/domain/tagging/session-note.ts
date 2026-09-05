@@ -1,17 +1,23 @@
 import { cleanText } from '../../core/util/text.ts';
 
-export function parseSessionAuthorNote(raw: unknown): { prefix: string; suffix: string; preset_id: string } {
+export function parseSessionAuthorNote(raw: unknown): {
+  prefix: string;
+  suffix: string;
+  preset_id: string;
+  location: string;
+} {
   if (typeof raw === 'string') {
-    return { prefix: cleanText(raw, 8000), suffix: '', preset_id: '' };
+    return { prefix: cleanText(raw, 8000), suffix: '', preset_id: '', location: '' };
   }
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     const rec = raw as Record<string, unknown>;
     const prefix = cleanText(rec.prefix ?? rec.text ?? '', 8000);
     const suffix = cleanText(rec.suffix ?? rec.post ?? '', 8000);
     const preset_id = cleanText(rec.preset_id ?? rec.presetId ?? '', 80);
-    return { prefix, suffix, preset_id };
+    const location = cleanText(rec.location ?? rec.location_tags ?? '', 800);
+    return { prefix, suffix, preset_id, location };
   }
-  return { prefix: '', suffix: '', preset_id: '' };
+  return { prefix: '', suffix: '', preset_id: '', location: '' };
 }
 
 /** Shared / per-lane user note. Empty body is omitted. */

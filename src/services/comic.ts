@@ -98,6 +98,7 @@ export async function fillComicPagesForShots(args: {
       `line: ${shot.line ?? ''}–${shot.comic_line_end ?? shot.line ?? ''}`,
       `aspect: ${resolveShotAspect(shot.aspect)} (locked by the first tagger — copy this, do not change it)`,
       `cast: ${names.join(', ') || '(none)'}`,
+      `prev_location: ${cleanText(shot.location, 800) || '(none)'}`,
       rosterBlock(names, roster, shot.characters || []),
       `## prose\n${prose || '(empty)'}`,
     ].join('\n');

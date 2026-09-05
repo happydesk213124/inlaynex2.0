@@ -71,6 +71,8 @@ import { publishImage, resolveImageUrl } from '../storage/image-urls';
 import { flushPersist, idbGet, idbPut } from '../storage/stores';
 import { getConfig, jobEpochByKey, jobRunMeta, requestMessageRerollStop } from './context';
 import { mergeRosterFromTagged, persistChatWearStates, rosterForSession } from './characters';
+import { applyLocationContinuityToShots } from '../domain/tagging/location';
+import { getSessionAuthorNote, persistSessionLocation } from './session-author-note';
 import { shotKeepsComicSlots } from '../domain/comic/page';
 import { fillComicPagesForShots } from './comic';
 import { buildComicGenerationForShot, buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage, isComicShot, readImageLocation } from './generation';
@@ -962,6 +964,12 @@ async function runJob(jobId: string): Promise<void> {
       const { costumes, active_costume } = ensureCostumes(rec);
       return costumes[active_costume]?.name ?? active_costume;
     });
+    let sessionLocation = '';
+    try {
+      sessionLocation = cleanText((await getSessionAuthorNote(sessionId) as { location?: unknown }).location, 800);
+    } catch { /* no session note yet */ }
+    sessionLocation = applyLocationContinuityToShots(shots, sessionLocation);
+    await persistSessionLocation(sessionId, sessionLocation);
 
     const ready = new Set<number>();
     const done = new Set<number>();
@@ -994,6 +1002,10 @@ async function runJob(jobId: string): Promise<void> {
           assistantText: request.assistant_text,
           sessionId,
         });
+        const comicWear = applyWearContinuityToShots(shots, (name) => resolveCharacter(name, roster)?.wear_state);
+        await persistChatWearStates(sessionId, roster, comicWear);
+        sessionLocation = applyLocationContinuityToShots(shots, sessionLocation);
+        await persistSessionLocation(sessionId, sessionLocation);
         for (const idx of assigned) ready.add(idx);
         dbg('job.comic.done', { assigned: assigned.size, comics: shots.filter((s) => isComicShot(s)).length });
       } catch (err) {

@@ -566,6 +566,8 @@ export interface TaggedShot {
   camera?: string;
   situation?: string;
   place?: string;
+  /** Session place tags (Danbooru). Omit to inherit. Last token indoor|outdoor. */
+  location?: string;
   /**
    * Optional focus cast indexes (1-based / charN / list). Empty or invalid → no focus.
    * Generation puts `2::out of frame::` on non-focus character captions.

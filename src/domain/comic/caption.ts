@@ -44,6 +44,8 @@ export function composeComicSlotCaption(
     costume: '_comic',
     appearance: slot.appearance,
     sex: slot.sex,
+    wear_state: slot.wear_state,
+    nude: slot.nude,
   });
   const speech = comicSpeechCaption(slot.bubble, slot.speech || slot.text);
   // Dialogue commas must survive; joinTags would split `korean text:안돼, 가지마`.

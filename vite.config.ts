@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.36';
+const PLUGIN_VERSION = '2.5.39';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -782,6 +782,24 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.39</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>세션 장소 태그(location)를 이어 갑니다. 프리셋 뒤에 붙고, 만화는 koma 아래 location을 씁니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.38</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>옷·악세사리를 wear_state에 따라 약하게 감쌉니다. completely는 옷·악세사리를 빼습니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.37</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>만화 슬롯도 삽화와 같은 wear_state(nude, bottomless 등)를 읽고 캡션에 넣습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.36</strong>
@@ -4909,7 +4927,7 @@ const VENDOR_CHAR_EDIT_STUB_X_PATCH =
 const VENDOR_MSG_PICKER_NOTE_HTML_NEEDLE =
   `<div data-mcp-list style="padding:12px;display:grid;gap:8px;overflow:auto"></div></div></div>';`;
 const VENDOR_MSG_PICKER_NOTE_HTML_PATCH =
-  `<div data-mcp-list style="padding:12px;display:grid;gap:8px;overflow:auto"></div><div data-mcp-note style="padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,.08);display:grid;gap:8px;flex-shrink:0"><div style="font-weight:650;font-size:12px;color:#d7deea">이 세션 작가의 노트</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><div style="display:flex;align-items:stretch;min-width:160px;flex:1"><input data-mcp-note-name placeholder="프리셋 이름" style="flex:1;min-width:0;box-sizing:border-box;border-radius:10px 0 0 10px;border:1px solid rgba(255,255,255,.14);border-right:0;background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px Segoe UI,sans-serif"><div style="position:relative;width:36px;flex:0 0 36px"><div aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14);border-left:0;border-radius:0 10px 10px 0;background:#0b0f18;color:#9aa6b8;pointer-events:none">▾</div><select data-mcp-note-preset style="position:absolute;inset:0;opacity:0;width:100%;cursor:pointer"></select></div></div><button type="button" data-mcp-note-preset-save style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e8eef8;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-preset-del style="cursor:pointer;border:0;background:rgba(248,113,113,.18);color:#fecaca;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">삭제</button></div><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">선행<textarea data-mcp-note-prefix rows="2" placeholder="이 채팅 선행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">후행<textarea data-mcp-note-suffix rows="2" placeholder="이 채팅 후행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" data-mcp-note-save style="cursor:pointer;border:0;background:rgba(124,108,255,.28);color:#e8eef8;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-fold style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">닫기</button></div></div></div></div>';`;
+  `<div data-mcp-list style="padding:12px;display:grid;gap:8px;overflow:auto"></div><div data-mcp-note style="padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,.08);display:grid;gap:8px;flex-shrink:0"><div style="font-weight:650;font-size:12px;color:#d7deea">이 세션 작가의 노트</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><div style="display:flex;align-items:stretch;min-width:160px;flex:1"><input data-mcp-note-name placeholder="프리셋 이름" style="flex:1;min-width:0;box-sizing:border-box;border-radius:10px 0 0 10px;border:1px solid rgba(255,255,255,.14);border-right:0;background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px Segoe UI,sans-serif"><div style="position:relative;width:36px;flex:0 0 36px"><div aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14);border-left:0;border-radius:0 10px 10px 0;background:#0b0f18;color:#9aa6b8;pointer-events:none">▾</div><select data-mcp-note-preset style="position:absolute;inset:0;opacity:0;width:100%;cursor:pointer"></select></div></div><button type="button" data-mcp-note-preset-save style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e8eef8;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-preset-del style="cursor:pointer;border:0;background:rgba(248,113,113,.18);color:#fecaca;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">삭제</button></div><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">선행<textarea data-mcp-note-prefix rows="2" placeholder="이 채팅 선행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">후행<textarea data-mcp-note-suffix rows="2" placeholder="이 채팅 후행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">현재 세션 장소 태그<textarea data-mcp-note-location rows="2" placeholder="wooden hallway, lantern, indoor" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" data-mcp-note-save style="cursor:pointer;border:0;background:rgba(124,108,255,.28);color:#e8eef8;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-fold style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">닫기</button></div></div></div></div>';`;
 
 const VENDOR_MSG_PICKER_NOTE_BIND_NEEDLE =
   `    root.querySelector("[data-mcp-x]")?.addEventListener("click", () => void closePicker());`;
@@ -4919,6 +4937,7 @@ const VENDOR_MSG_PICKER_NOTE_BIND_PATCH =
       const noteBox = root.querySelector("[data-mcp-note]");
       const pre = root.querySelector("[data-mcp-note-prefix]");
       const suf = root.querySelector("[data-mcp-note-suffix]");
+      const loc = root.querySelector("[data-mcp-note-location]");
       const nameEl = root.querySelector("[data-mcp-note-name]");
       const sel = root.querySelector("[data-mcp-note-preset]");
       const sid = String(t.lastScope?.sessionId || "");
@@ -4941,6 +4960,7 @@ const VENDOR_MSG_PICKER_NOTE_BIND_PATCH =
         K("/v1/session-author-note?session_id=" + encodeURIComponent(sid)).then((r) => {
           if (pre && r) pre.value = String(r.prefix != null ? r.prefix : (r.text || ""));
           if (suf && r) suf.value = String(r.suffix || "");
+          if (loc && r) loc.value = String(r.location || "");
           if (sel && r?.preset_id) sel.value = String(r.preset_id);
         }).catch(() => {});
         K("/v1/session-author-note-presets").then((r) => {
@@ -4981,7 +5001,7 @@ const VENDOR_MSG_PICKER_NOTE_BIND_PATCH =
         ev.preventDefault(); ev.stopPropagation();
         if (!sid || typeof K != "function") return;
         try {
-          await K("/v1/session-author-note", { method: "PUT", body: { session_id: sid, prefix: pre?.value || "", suffix: suf?.value || "", preset_id: sel?.value || "" } });
+          await K("/v1/session-author-note", { method: "PUT", body: { session_id: sid, prefix: pre?.value || "", suffix: suf?.value || "", location: loc?.value || "", preset_id: sel?.value || "" } });
         } catch {}
       });
       root.querySelector("[data-mcp-note-fold]")?.addEventListener("click", (ev) => {
@@ -11538,7 +11558,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const root = document.createElement("div");
     root.id = "nx-msg-char-picker";
     root.setAttribute("data-mcp-root", "1");
-    root.innerHTML = '<div data-mcp-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box"><div data-mcp-card style="width:min(440px,100%);max-height:min(86vh,720px);background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);border-radius:16px;box-shadow:0 28px 80px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08)"><div><div style="font-weight:700;font-size:15px;color:#e8eef8">트리거된 캐릭터</div><div style="margin-top:3px;color:#9aa6b8;font-size:11px">태그를 수정할 캐릭터를 선택하세요</div></div><button type="button" data-mcp-x style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:6px 10px;border-radius:8px">✕</button></div><div data-mcp-list style="padding:12px;display:grid;gap:8px;overflow:auto"></div><div data-mcp-note style="padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,.08);display:grid;gap:8px;flex-shrink:0"><div style="font-weight:650;font-size:12px;color:#d7deea">이 세션 작가의 노트</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><div style="display:flex;align-items:stretch;min-width:160px;flex:1"><input data-mcp-note-name placeholder="프리셋 이름" style="flex:1;min-width:0;box-sizing:border-box;border-radius:10px 0 0 10px;border:1px solid rgba(255,255,255,.14);border-right:0;background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px Segoe UI,sans-serif"><div style="position:relative;width:36px;flex:0 0 36px"><div aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14);border-left:0;border-radius:0 10px 10px 0;background:#0b0f18;color:#9aa6b8;pointer-events:none">▾</div><select data-mcp-note-preset style="position:absolute;inset:0;opacity:0;width:100%;cursor:pointer"></select></div></div><button type="button" data-mcp-note-preset-save style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e8eef8;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-preset-del style="cursor:pointer;border:0;background:rgba(248,113,113,.18);color:#fecaca;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">삭제</button></div><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">선행<textarea data-mcp-note-prefix rows="2" placeholder="이 채팅 선행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">후행<textarea data-mcp-note-suffix rows="2" placeholder="이 채팅 후행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" data-mcp-note-save style="cursor:pointer;border:0;background:rgba(124,108,255,.28);color:#e8eef8;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-fold style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">닫기</button></div></div></div></div>';
+    root.innerHTML = '<div data-mcp-backdrop style="position:fixed;inset:0;z-index:100000;background:rgba(4,8,16,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box"><div data-mcp-card style="width:min(440px,100%);max-height:min(86vh,720px);background:linear-gradient(165deg,#1a1f2e,#0c1018);border:1px solid rgba(151,139,255,.4);border-radius:16px;box-shadow:0 28px 80px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08)"><div><div style="font-weight:700;font-size:15px;color:#e8eef8">트리거된 캐릭터</div><div style="margin-top:3px;color:#9aa6b8;font-size:11px">태그를 수정할 캐릭터를 선택하세요</div></div><button type="button" data-mcp-x style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:6px 10px;border-radius:8px">✕</button></div><div data-mcp-list style="padding:12px;display:grid;gap:8px;overflow:auto"></div><div data-mcp-note style="padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,.08);display:grid;gap:8px;flex-shrink:0"><div style="font-weight:650;font-size:12px;color:#d7deea">이 세션 작가의 노트</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><div style="display:flex;align-items:stretch;min-width:160px;flex:1"><input data-mcp-note-name placeholder="프리셋 이름" style="flex:1;min-width:0;box-sizing:border-box;border-radius:10px 0 0 10px;border:1px solid rgba(255,255,255,.14);border-right:0;background:#0b0f18;color:#e8eef8;padding:7px 8px;font:13px Segoe UI,sans-serif"><div style="position:relative;width:36px;flex:0 0 36px"><div aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14);border-left:0;border-radius:0 10px 10px 0;background:#0b0f18;color:#9aa6b8;pointer-events:none">▾</div><select data-mcp-note-preset style="position:absolute;inset:0;opacity:0;width:100%;cursor:pointer"></select></div></div><button type="button" data-mcp-note-preset-save style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e8eef8;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-preset-del style="cursor:pointer;border:0;background:rgba(248,113,113,.18);color:#fecaca;padding:7px 10px;border-radius:8px;font:650 12px Segoe UI,sans-serif">삭제</button></div><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">선행<textarea data-mcp-note-prefix rows="2" placeholder="이 채팅 선행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">후행<textarea data-mcp-note-suffix rows="2" placeholder="이 채팅 후행" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><label style="display:grid;gap:4px;color:#9aa6b8;font-size:11px;font-weight:650">현재 세션 장소 태그<textarea data-mcp-note-location rows="2" placeholder="wooden hallway, lantern, indoor" style="width:100%;box-sizing:border-box;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0b0f18;color:#e8eef8;padding:8px 10px;font:13px/1.4 Segoe UI,sans-serif;resize:vertical;min-height:52px"></textarea></label><div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" data-mcp-note-save style="cursor:pointer;border:0;background:rgba(124,108,255,.28);color:#e8eef8;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">저장</button><button type="button" data-mcp-note-fold style="cursor:pointer;border:0;background:rgba(255,255,255,.08);color:#e2e8f0;padding:7px 12px;border-radius:8px;font:650 12px Segoe UI,sans-serif">닫기</button></div></div></div></div>';
     const backdrop = root.querySelector("[data-mcp-backdrop]");
     const list = root.querySelector("[data-mcp-list]");
     let closed = !1;
@@ -11648,6 +11668,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const noteBox = root.querySelector("[data-mcp-note]");
       const pre = root.querySelector("[data-mcp-note-prefix]");
       const suf = root.querySelector("[data-mcp-note-suffix]");
+      const loc = root.querySelector("[data-mcp-note-location]");
       const nameEl = root.querySelector("[data-mcp-note-name]");
       const sel = root.querySelector("[data-mcp-note-preset]");
       const sid = String(t.lastScope?.sessionId || "");
@@ -11670,6 +11691,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         K("/v1/session-author-note?session_id=" + encodeURIComponent(sid)).then((r) => {
           if (pre && r) pre.value = String(r.prefix != null ? r.prefix : (r.text || ""));
           if (suf && r) suf.value = String(r.suffix || "");
+          if (loc && r) loc.value = String(r.location || "");
           if (sel && r?.preset_id) sel.value = String(r.preset_id);
         }).catch(() => {});
         K("/v1/session-author-note-presets").then((r) => {
@@ -11710,7 +11732,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         ev.preventDefault(); ev.stopPropagation();
         if (!sid || typeof K != "function") return;
         try {
-          await K("/v1/session-author-note", { method: "PUT", body: { session_id: sid, prefix: pre?.value || "", suffix: suf?.value || "", preset_id: sel?.value || "" } });
+          await K("/v1/session-author-note", { method: "PUT", body: { session_id: sid, prefix: pre?.value || "", suffix: suf?.value || "", location: loc?.value || "", preset_id: sel?.value || "" } });
         } catch {}
       });
       root.querySelector("[data-mcp-note-fold]")?.addEventListener("click", (ev) => {
@@ -13664,8 +13686,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.36",
-    body: "만화 슬롯 최대 6, 메인태거에 한번에 요청, 위 바는 말풍선 안에만."
+    title: "2.5.39",
+    body: "세션 location 연속. 프리셋 뒤에 장소 태그. 만화는 koma 아래 location."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

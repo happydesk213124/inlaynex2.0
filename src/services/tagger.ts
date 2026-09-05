@@ -43,7 +43,8 @@ import { comicLlmWithMain, normalizeComicGenRatio } from '../domain/comic/params
 import { hostHas, risuHost } from '../core/host';
 import { mergeTaggerCharUserFields, pickSelectedPersona } from '../domain/tagging/char-user-info';
 import { authorNoteSystemContent } from '../domain/tagging/session-note';
-import { sessionAuthorNoteLlmContent } from './session-author-note';
+import { getSessionAuthorNote, sessionAuthorNoteLlmContent } from './session-author-note';
+import { formatPrevLocationLine } from '../domain/tagging/location';
 import { normalizeComicAspect } from '../domain/comic/aspect';
 import { numberMessageLinesForTagger, repairLazyShotLines } from '../domain/tagging/shot-line';
 import { collectAssetNaiTags, setLastAssetWeightMap, type AssetLookPreview } from './asset-tags';
@@ -503,6 +504,11 @@ export async function buildTaggerMessages(
       comicPack,
       assetHow,
       placement,
+      formatPrevLocationLine(
+        sessionId
+          ? await getSessionAuthorNote(sessionId).then((r) => (r as { location?: unknown }).location).catch(() => '')
+          : '',
+      ),
     ].filter(Boolean).join('\n\n'),
   }];
 
@@ -654,9 +660,9 @@ function comicKindHowTo(ratioPct: unknown, comicAspect?: unknown, withMain = fal
       ? [
         'Comic shots still list `characters[].name` for who appears (this list follows CHARACTER CAP).',
         'When kind is comic, also emit `comic_page` on THAT shot. Do not put koma/layout/slots on the shot root.',
-        '`comic_page` is the same object as the comic layout JSON: `koma`, `coords` (`position` or `ai_choice`), `layout` (one `1:: ::` token, periods only, no dialogue), and `slots` (max 6).',
+        '`comic_page` is the same object as the comic layout JSON: `koma`, `location` (place tags then indoor or outdoor last; omit if unchanged vs prev_location), `coords` (`position` or `ai_choice`), `layout` (one `1:: ::` token, periods only, no dialogue), and `slots` (max 6).',
         '`comic_page.slots` is one entry per cut appearance. The same person in two cuts is two slots. Slots ignore CHARACTER CAP.',
-        'Each slot: name, action, costume, bubble (`speech`|`thought`|`narration`), text, center_x, center_y.',
+        'Each slot: name, action, costume, wear_state (`clothed`|`torn`|`topless`|`bottomless`|`nude`|`completely`, omit when unchanged — same rule as shot characters), bubble (`speech`|`thought`|`narration`), text, center_x, center_y.',
       ].join(' ')
       : 'Comic shots still list `characters[].name` for who appears. Do not write panel layout here.',
     aspectLock,

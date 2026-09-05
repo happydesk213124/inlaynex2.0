@@ -29,6 +29,7 @@ import {
   wearStateFromNudeLevel,
   wearStateNeedsAnatomyAccessories,
   wearTagsForWearState,
+  wrapWearCatalogTags,
 } from './wear-state.ts';
 
 export { normalizeGender } from './identity.ts';
@@ -52,6 +53,7 @@ export {
   parseWearState,
   resolveWearState,
   wearTagsForWearState,
+  wrapWearCatalogTags,
 } from './wear-state.ts';
 export type { WearState } from './wear-state.ts';
 
@@ -624,8 +626,9 @@ export function wearLocked(value: unknown): boolean {
  * Character caption for one shot.
  *
  * Base: appearance + attire (clothes+jewelry). Weapons only when weapon=on.
- * wear_state (or legacy nude 0–3): keep attire tags and append English clothing
- * state + anatomy for that state. Omit on the shot to inherit roster / prior shot.
+ * wear_state (or legacy nude 0–3): wrap attire/accessories by state (or drop
+ * them when completely), then append English clothing state + anatomy.
+ * Omit on the shot to inherit roster / prior shot.
  * Accessories tokens containing penis/nipples/pussy also join while not clothed/torn,
  * even when weapon=off (other props stay gated by weapon).
  *
@@ -698,7 +701,7 @@ export function composeCharacterCaptionTags(
     shot?.expression,
   );
   const bodySlots = joinTags(shot?.gaze, shot?.pose, shot?.left_hand, shot?.right_hand, shot?.action);
-  const weapons = weapon ? accessories : '';
+  const weapons = weapon ? wrapWearCatalogTags(accessories, wearState) : '';
   const nudeAcc = wearStateNeedsAnatomyAccessories(wearState)
     ? nudeAnatomyTagsFromAccessories(accessories)
     : '';

@@ -65,8 +65,21 @@ export function resolveWearState(
 }
 
 /**
- * Keep base attire; append English clothing-state tags + anatomy for that state.
- * topless → nipples only; bottomless → penis (male) or pussy (female).
+ * Down-weight the whole clothes/accessories blob so state tags can win.
+ * clothed = as-is; completely = drop; empty stays empty.
+ */
+export function wrapWearCatalogTags(text: unknown, state: WearState): string {
+  const base = cleanText(text, 4000).replace(/,\s*$/, '');
+  if (!base || state === 'clothed') return base;
+  if (state === 'completely') return '';
+  if (state === 'torn') return `0.8::${base}::`;
+  if (state === 'nude') return `0.3::${base}::`;
+  return `0.6::${base}::`;
+}
+
+/**
+ * Keep base attire (weighted by state); append English clothing-state tags +
+ * anatomy. topless → nipples only; bottomless → penis (male) or pussy (female).
  */
 export function wearTagsForWearState(
   attire: unknown,
@@ -74,7 +87,7 @@ export function wearTagsForWearState(
   gender: 'f' | 'm' | null = null,
   penisSize: unknown = '',
 ): string {
-  const base = cleanText(attire, 4000);
+  const base = wrapWearCatalogTags(attire, state);
   const malePenis = cleanText(penisSize, 40) || 'penis';
   if (state === 'clothed') return base;
   if (state === 'torn') return joinTags(base, '2::torn clothes::');

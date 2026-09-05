@@ -8,13 +8,13 @@
 
 declare const __PLUGIN_VERSION__: string;
 
-export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.5.36';
+export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '2.5.39';
 
 /**
  * Bumping this re-seeds the prompt pack over user edits for FORCE_PROMPT_KEYS.
  * Only bump it when a prompt change is mandatory for correctness.
  */
-export const PROMPT_PACK = '2026-09-04-v29-command-identity-fields';
+export const PROMPT_PACK = '2026-09-06-v31-session-location';
 
 export const PROMPT_KEYS = [
   'author_note', 'asset_author_note', 'global_author_note', 'tagger', 'format', 'prefill', 'prefill_user', 'jailbreak', 'preprocess',

@@ -314,7 +314,8 @@ export async function buildGenerationForShot(args: ShotArgs): Promise<Generation
   }
   // Cut foreign person-count tags from body, then prepend our ONE wrapped block.
   // joinTags must not split N::1girl, 1boy:: (see splitTagTokens).
-  let body = joinTags(stylePos, natural, setup, fixedPos);
+  const location = cleanText(shot.location, 800);
+  let body = joinTags(stylePos, location, natural, setup, fixedPos);
   if (personMode !== 'off') {
     body = stripPersonCountTags(body);
     setup = stripPersonCountTags(setup);
@@ -443,8 +444,10 @@ export async function buildComicGenerationForShot(args: ShotArgs): Promise<Gener
   const lead = cleanText(card.fixed_prompt_prefix, 8000);
   const trail = cleanText(card.fixed_prompt_suffix, 8000);
   // Author note is comic-LLM instruction only (callComicLlm). NAI main uses prefix/suffix.
+  const location = cleanText(page.location || shot.location, 800);
   let body = joinTags(
     stylePos,
+    location,
     `${koma}::${koma}koma::`,
     layout,
   );

@@ -148,8 +148,10 @@ pin, same as illustration) and `comic_line_end` (inclusive prose end). Slots
 are people/text boxes, not panels. Comic generation ignores
 `card.character_max` and keeps up to 6 slots (NAI caption ceiling).
 `card.comic_llm_batch` is `once` | `per_shot` | `with_main`
-(default `once`). `with_main` asks the first tagger for nested `comic_page`
-(same layout JSON: koma/coords/layout/slots). Missing pages still call the
+(default `once`). All three apply slot `wear_state` the same way as
+illustration (`clothed`/`torn`/`topless`/`bottomless`/`nude`/`completely`;
+omit inherits). `with_main` asks the first tagger for nested `comic_page`
+(same layout JSON: koma/location/coords/layout/slots). Missing pages still call the
 comic LLM. `once` / `per_shot` keep a separate comic LLM and do not ask the
 main tagger for panel layout. `card.comic_schedule` is `overlap` | `wait_taggers` (default
 `overlap`). `card.comic_gen_ratio` is 0–100 (default `50`): share of this
@@ -499,7 +501,7 @@ prefers that over `content_hash`; hash and the Dice≥60% rebind remain fallback
 | `POST /v1/characters/ref` | `{character_id, scope, session_id?, image_b64}` or `{character_id, scope, copy_from, copy_from_scope?}` or `{character_id, scope, clear:true}` — bytes as-is |
 | `POST /v1/characters/ref/clear` | `{character_id, scope, session_id?}` |
 | `/v1/appearance/:sessionId` · `POST` | legacy alias |
-| `GET/PUT /v1/session-author-note` | `{session_id, prefix, suffix, preset_id, text}` — per-chat note (`text` is prefix+suffix; a legacy string body becomes `prefix`). After `global_author_note` and the lane note (`author_note` / `asset_author_note` / comic tab). Session wins. |
+| `GET/PUT /v1/session-author-note` | `{session_id, prefix, suffix, preset_id, location, text}` — per-chat note (`text` is prefix+suffix; a legacy string body becomes `prefix`). `location` is the current session place tags (omit on PUT to keep). After `global_author_note` and the lane note (`author_note` / `asset_author_note` / comic tab). Session wins. |
 | `GET/PUT /v1/session-author-note-presets` | `{items[{id,name,prefix,suffix}]}` |
 | `GET/PUT /v1/character-command-presets` | `{items[{id,name,cmd,cmd_post?}]}` — live list is `card.command_presets`; `inx_char_command_presets` still merges |
 | `POST /v1/characters/preview-shot` | style preset + form tags → `{preview_url,image_b64}` (no auto vibe/ref; no `1girl, smile,` look-plate tail) |

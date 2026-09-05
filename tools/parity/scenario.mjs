@@ -147,6 +147,8 @@ export async function runScenario(N, handles) {
       progress_toast: card.progress_toast === true,
       viewer_minimize_mode: String(card.viewer_minimize_mode || 'icon'),
       llm_json_retry: card.llm_json_retry === true,
+      llm_reverse_bar: card.llm_reverse_bar === true,
+      llm_tag_cal: card.llm_tag_cal === true,
       nai5_first: card.nai5_first === true,
       nai5_only: card.nai5_only === true,
       nai4_fallback: card.nai4_fallback === true,

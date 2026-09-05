@@ -521,6 +521,8 @@ const VENDOR_ASSET_NAI_HTML_NEEDLE =
 const VENDOR_ASSET_NAI_HTML_PATCH =
   `            <label class="toggle-row" data-nx-help-id="nx-appearance"><input type="checkbox" id="nx-appearance" \${i.char_appearance !== !1 ? "checked" : ""}><span>CharAppearance 누적</span></label>
             <label class="toggle-row" data-nx-help-id="nx-llm-json-retry"><input type="checkbox" id="nx-llm-json-retry" \${i.llm_json_retry ? "checked" : ""}><span>JSON 오류 시 재시도</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-llm-reverse-bar"><input type="checkbox" id="nx-llm-reverse-bar" \${i.llm_reverse_bar ? "checked" : ""}><span>역바 (역할 고정)</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-llm-tag-cal"><input type="checkbox" id="nx-llm-tag-cal" \${i.llm_tag_cal ? "checked" : ""}><span>태칼 (태그 끼워넣기)</span></label>
           </div>
           <label class="toggle-row" data-nx-help-id="nx-stream-keywords" style="margin-top:12px;grid-column:1/-1"><input type="checkbox" id="nx-stream-keywords-on" \${i.stream_keywords_enabled ? "checked" : ""}><span>스트리밍 키워드</span></label>
           <label data-nx-help-id="nx-stream-keywords" style="display:block;margin-top:6px;grid-column:1/-1">
@@ -537,6 +539,8 @@ const VENDOR_ASSET_NAI_SAVE_NEEDLE =
 const VENDOR_ASSET_NAI_SAVE_PATCH =
   `      char_appearance: ee("nx-appearance"),
       llm_json_retry: ee("nx-llm-json-retry"),
+      llm_reverse_bar: document.getElementById("nx-llm-reverse-bar") ? ee("nx-llm-reverse-bar") : !!e.llm_reverse_bar,
+      llm_tag_cal: document.getElementById("nx-llm-tag-cal") ? ee("nx-llm-tag-cal") : !!e.llm_tag_cal,
       stream_keywords_enabled: ee("nx-stream-keywords-on"),
       stream_keywords: w(N("nx-stream-keywords") || "", 4000),
 `;
@@ -582,6 +586,8 @@ const VENDOR_ASSET_NAI_HELP_PATCH =
     "nx-costume": { title: "코스튬", body: "켜면 메인 태거가 캐릭터별 코스튬 목록을 보고 샷마다 복장을 고릅니다(이름·번호). 꺼도 에셋으로 캐릭을 만들 때는 복장이 코스튬으로 나뉘어 저장됩니다. 샷에 고른 값이 없으면 이전 샷 옷, 없으면 로스터 현재 코스튬을 씁니다." },
     "nx-auto-aspect": { title: "자동 비율 조절", body: "켜면 샷마다 태거가 portrait/square/landscape를 고르고, 생성 크기를 832×1216 / 1024×1024 / 1216×832로 맞춥니다(NovelAI 기본 사이즈). ComfyUI는 워크플로 Empty Latent 등에 [[width]]/[[height]]를 넣어야 반영됩니다. 참조 그림은 LoadImage에 [[ref]]. 끄면 NAI Width/Height 설정을 씁니다." },
     "nx-llm-json-retry": { title: "JSON 오류 시 재시도", body: "메인 태거 응답이 JSON으로 파싱되지 않으면, 오류 내용을 붙여 LLM에 한 번 더 요청합니다. 재시도도 실패하면 작업이 오류로 끝납니다." },
+    "nx-llm-reverse-bar": { title: "역바", body: "켜면 모든 LLM 호출 앞에 역할 고정 문(jailbreak)과, 이미 그 역할을 받아들인 것처럼 보이는 앞말(prefill / prefill_user)을 붙입니다. 문구는 프롬프트 탭에서 고칩니다." },
+    "nx-llm-tag-cal": { title: "태칼", body: "켜면 태그 글자 사이에 %%를 넣으라고 하고, 응답에서 %를 지운 뒤 wfsn을 nsfw로 되돌립니다. 연결 테스트 호출에는 적용하지 않습니다." },
     "nx-stream-keywords": { title: "스트리밍 키워드", body: "토글과 Power가 켜져 있고, 칸에 3글자 이상 단어가 있을 때 AI 답이 나오는 동안 그 단어가 들어가면(대소문자 무시, 부분 일치) 최신 말풍선으로 한 번 생성합니다. 쉼표로 여러 개. 비우거나 토글 OFF면 꺼짐. 「응답 후 자동 생성」·발동과 별개입니다. 이미 생성 중이면 안 돕니다." },
     "nx-fixed-prompt-prefix": { title: "선행 고정 프롬프트", body: "값이 있으면 사람 태그 다음·스타일 프리셋/장면 앞에 항상 붙습니다. 프리셋이 바뀌어도 유지됩니다." },
     "nx-fixed-prompt-suffix": { title: "후행 고정 프롬프트", body: "값이 있으면 장면·큐레이션 뒤·NAI 품질 태그 앞에 항상 붙습니다. JSON으로 내보내/가져오기 할 수 있습니다." },
@@ -7847,6 +7853,13 @@ const VENDOR_CHAR_REF_DASH_HTML_PATCH =
                 <option value="bottom-left" \${i.hover_preview_corner === "bottom-left" ? "selected" : ""}>좌하단</option>
               </select>
             </label>
+            <label data-nx-help-id="nx-inline-msg-actions"><span>메시지 안에 생성 버튼</span>
+              <select id="nx-inline-msg-actions">
+                <option value="off" \${(i.inline_msg_actions || "off") === "off" ? "selected" : ""}>사용안함</option>
+                <option value="legacy" \${i.inline_msg_actions === "legacy" ? "selected" : ""}>편의성 (오류율 있음)</option>
+                <option value="compat" \${i.inline_msg_actions === "compat" ? "selected" : ""}>호환성</option>
+              </select>
+            </label>
             <label data-nx-help-id="nx-char-ref-mode" class="wide"><span>캐릭터 참고이미지</span>
               <select id="nx-char-ref-mode">
                 <option value="off" \${(i.char_ref_mode || "off") === "off" ? "selected" : ""}>끄기</option>
@@ -9027,7 +9040,7 @@ const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
     "nx-inline-chat": { title: "이미지 채팅에", body: "선택 기준에서 설정한 탐색 숫자만큼 위·아래의 char 말풍선을 유지합니다. 유저·라이트보드(본문 30자 이하)는 건너뜁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-inline-text-side": { title: "선택된글 위치", body: "줄에 맞는 문단 안에서 스피너·삽화를 글 앞 또는 글 뒤에 둡니다. 이미 꽂힌 프레임은 그대로이고, 새로 넣거나 새로고침할 때 적용됩니다." },
-    "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "사용안함 / 편의성(오류율 있음 · 2.4.7, 칩을 본문 위에 붙임) / 호환성(2.4.9, 본문 문단에만 붙임). 헤더가 비면 채팅 카드 복구를 쓰세요. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
+    "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "사용안함 / 편의성(오류율 있음, 칩을 본문 위에 붙임) / 호환성(본문 문단에만 붙임). 헤더가 비면 채팅 카드 복구를 쓰세요. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
     "nx-inline-chat-scale": { title: "이미지 채팅 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
     "nx-inline-dom-radius": { title: "스피너 캐릭터 개수", body: "선택한 메시지 기준으로 위·아래에서 유지할 캐릭터 말풍선 수입니다. 기본 4, 범위 3–20입니다. 유저와 본문 30자 이하 메시지는 세지 않고 건너뜁니다. 사진은 위·아래 가장 가까운 캐릭터 1개씩입니다." },
     "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트. 칩·샷을 꽂기 직전에는 조각 불러오는 중 스피너가 같은 자리에 뜹니다." },
@@ -9045,13 +9058,6 @@ const VENDOR_INLINE_TOGGLE_PATCH =
               <select id="nx-inline-text-side">
                 <option value="before" \${!i.inline_chat_text_side || i.inline_chat_text_side === "before" ? "selected" : ""}>글자 앞</option>
                 <option value="after" \${i.inline_chat_text_side === "after" ? "selected" : ""}>글자 뒤</option>
-              </select>
-            </label>
-            <label data-nx-help-id="nx-inline-msg-actions"><span>메시지 안에 생성 버튼</span>
-              <select id="nx-inline-msg-actions">
-                <option value="off" \${(i.inline_msg_actions || "off") === "off" ? "selected" : ""}>사용안함</option>
-                <option value="legacy" \${i.inline_msg_actions === "legacy" ? "selected" : ""}>편의성 (오류율 있음 · 2.4.7)</option>
-                <option value="compat" \${i.inline_msg_actions === "compat" ? "selected" : ""}>호환성 (2.4.9)</option>
               </select>
             </label>
             <label data-nx-help-id="nx-inline-chat-scale"><span>이미지 채팅 배율 (%)</span>
@@ -13613,21 +13619,35 @@ const VENDOR_SELECT_GESTURE_HELP_PATCH =
   `"nx-select-gesture": { title: "메시지 선택 동작", body: "메시지를 고르는 입력 방식입니다. 한 번 클릭 / 두 번 클릭(같은 말풍선 짧게 두 번) / 우클릭 / 길게 누르기. 스크롤·글자 드래그는 이 설정과 무관합니다." },`;
 
 const VENDOR_SELECT_GESTURE_HTML_NEEDLE =
-  `<label data-nx-help-id="nx-select-gesture"><span>메시지 선택 동작</span>
+  `<label data-nx-help-id="nx-minimize-mode"><span>접힘 표시 방식</span>
+              <select id="nx-minimize-mode">
+                <option value="icon" \${(i.viewer_minimize_mode || "icon") === "icon" ? "selected" : ""}>플로팅 아이콘</option>
+                <option value="toolbar" \${i.viewer_minimize_mode === "toolbar" ? "selected" : ""}>상단 툴바 한 줄</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-select-gesture"><span>메시지 선택 동작</span>
               <select id="nx-select-gesture">
                 <option value="single" \${(i.message_select_gesture || "single") === "single" ? "selected" : ""}>한 번 클릭</option>
                 <option value="double" \${i.message_select_gesture === "double" ? "selected" : ""}>두 번 클릭</option>
               </select>
             </label>`;
 const VENDOR_SELECT_GESTURE_HTML_PATCH =
-  `<label data-nx-help-id="nx-select-gesture"><span>메시지 선택 동작</span>
+  `<div class="model-form-pair">
+            <label data-nx-help-id="nx-minimize-mode"><span>접힘 표시 방식</span>
+              <select id="nx-minimize-mode">
+                <option value="icon" \${(i.viewer_minimize_mode || "icon") === "icon" ? "selected" : ""}>플로팅 아이콘</option>
+                <option value="toolbar" \${i.viewer_minimize_mode === "toolbar" ? "selected" : ""}>상단 툴바 한 줄</option>
+              </select>
+            </label>
+            <label data-nx-help-id="nx-select-gesture"><span>메시지 선택 동작</span>
               <select id="nx-select-gesture">
                 <option value="single" \${(i.message_select_gesture || "single") === "single" ? "selected" : ""}>한 번 클릭</option>
                 <option value="double" \${i.message_select_gesture === "double" ? "selected" : ""}>두 번 클릭</option>
                 <option value="context" \${i.message_select_gesture === "context" ? "selected" : ""}>우클릭</option>
                 <option value="longpress" \${i.message_select_gesture === "longpress" ? "selected" : ""}>길게 누르기</option>
               </select>
-            </label>`;
+            </label>
+            </div>`;
 
 const VENDOR_SELECT_GESTURE_SAVE_NEEDLE =
   `message_select_gesture: N("nx-select-gesture") === "double" ? "double" : "single",`;
@@ -16848,7 +16868,7 @@ const PLUGIN_HEADER = `//@name ${PLUGIN_ID}
  */
 const PROMPT_KEYS = [
   'author_note', 'asset_author_note', 'global_author_note', 'tagger', 'format', 'appearance_inject', 'lore_inject',
-  'char_inject', 'preprocess', 'prefill', 'preset_1', 'autotag',
+  'char_inject', 'preprocess', 'prefill', 'prefill_user', 'jailbreak', 'preset_1', 'autotag',
   'curation_refine', 'curation_embed_hint', 'asset_tags_inject', 'char_looks',
   'command_reroll', 'command_char_edit', 'lorefilter_scan', 'comic',
 ] as const;
@@ -18071,8 +18091,11 @@ const loadVendorUi = (): string => {
     if (!out.includes('reconcileInlineShot') || !out.includes('desiredInlinePlacements')) {
       throw new Error('[build] live inject must reconcile desired vs live markers');
     }
-    if (!out.includes('id="nx-inline-msg-actions"') || !out.includes('편의성 (오류율 있음 · 2.4.7)') || !out.includes('호환성 (2.4.9)')) {
+    if (!out.includes('id="nx-inline-msg-actions"') || !out.includes('편의성 (오류율 있음)') || !out.includes('>호환성</option>')) {
       throw new Error('[build] inline msg-actions must be a 3-way select');
+    }
+    if (out.includes('편의성 (오류율 있음 · 2.4.7)') || out.includes('호환성 (2.4.9)')) {
+      throw new Error('[build] inline msg-actions labels must omit 2.4.x version numbers');
     }
     if (out.includes('<input type="checkbox" id="nx-inline-msg-actions"')) {
       throw new Error('[build] inline msg-actions must not be a checkbox');

@@ -59,7 +59,7 @@ import { psGet, psRemove, psSet } from '../storage/device-store';
 import { getConfig, setConfig } from './context';
 import { getPrompt, saveConfig } from './settings';
 import { resolveLlmRole } from '../domain/llm/roles';
-import { callLlm } from '../providers/llm/client';
+import { callLlm } from './llm-call';
 import type { Settings } from '../core/types';
 
 export interface CurationEmbeddingStore {

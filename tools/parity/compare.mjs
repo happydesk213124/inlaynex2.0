@@ -190,7 +190,7 @@ const normalize = (root) => {
           .filter((p) => {
             const k = String(p.key);
             if (k.startsWith('curation_')) return false;
-            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll' || k === 'command_char_edit' || k === 'lorefilter_scan' || k === 'asset_author_note' || k === 'global_author_note' || k === 'comic') return false;
+            if (k === 'asset_tags_inject' || k === 'char_looks' || k === 'command_reroll' || k === 'command_char_edit' || k === 'lorefilter_scan' || k === 'asset_author_note' || k === 'global_author_note' || k === 'comic' || k === 'jailbreak' || k === 'prefill_user') return false;
             return true;
           })
           .map((v) => walk(v, key));
@@ -204,7 +204,7 @@ const normalize = (root) => {
         && node.includes('format')
       ) {
         return node
-          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll' && k !== 'command_char_edit' && k !== 'lorefilter_scan' && k !== 'asset_author_note' && k !== 'global_author_note' && k !== 'comic')
+          .filter((k) => !String(k).startsWith('curation_') && k !== 'asset_tags_inject' && k !== 'char_looks' && k !== 'command_reroll' && k !== 'command_char_edit' && k !== 'lorefilter_scan' && k !== 'asset_author_note' && k !== 'global_author_note' && k !== 'comic' && k !== 'jailbreak' && k !== 'prefill_user')
           .map((v) => walk(v, key));
       }
       return node.map((v) => walk(v, key));
@@ -281,6 +281,8 @@ const normalize = (root) => {
           || k === 'person_tag_solo'
           || k === 'no_humans_when_no_char'
           || k === 'llm_json_retry'
+          || k === 'llm_reverse_bar'
+          || k === 'llm_tag_cal'
           || k === 'focus_character'
           || k === 'focus_weight'
           || k === 'focus_prompt'

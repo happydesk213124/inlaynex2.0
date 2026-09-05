@@ -37,6 +37,7 @@ const MODULES = {
   'llm-transform': 'src/providers/llm/transform.ts',
   'llm-client': 'src/providers/llm/client.ts',
   'llm-roles': 'src/domain/llm/roles.ts',
+  'llm-guardrails': 'src/domain/llm/guardrails.ts',
   'settings-schema': 'src/config/schema.ts',
   'reroll-setup': 'src/domain/prompt/reroll-setup.ts',
   'command-rewrite': 'src/domain/prompt/command-rewrite.ts',

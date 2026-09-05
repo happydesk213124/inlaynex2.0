@@ -14,7 +14,7 @@ import {
   parseLorefilterNameArray,
   type LoreCatalogItem,
 } from '../domain/lore/lorefilter.ts';
-import { callLlm } from '../providers/llm/client.ts';
+import { callLlm } from './llm-call.ts';
 import { idbGet, idbPut } from '../storage/stores.ts';
 import { getPrompt } from './settings.ts';
 import { getConfig } from './context.ts';

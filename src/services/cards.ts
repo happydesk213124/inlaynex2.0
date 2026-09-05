@@ -57,7 +57,7 @@ import { dbg } from '../core/debug';
 import { parseJsonLoose } from '../core/util/object';
 import { attachImageUrls, publishImage, resolveImageUrl } from '../storage/image-urls';
 import { idbGet, idbGetAll, idbPut } from '../storage/stores';
-import { callLlm } from '../providers/llm/client';
+import { callLlm } from './llm-call';
 import type { LlmMessage } from '../providers/llm/transform';
 import { rosterForSession } from './characters';
 import { getConfig, messageBusyKeys, clearMessageRerollStop, isMessageRerollStopRequested } from './context';

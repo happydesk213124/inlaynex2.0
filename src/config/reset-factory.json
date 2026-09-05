@@ -26,6 +26,8 @@
     "asset_nai_tags": "prepass",
     "auto_aspect": true,
     "llm_json_retry": true,
+    "llm_reverse_bar": false,
+    "llm_tag_cal": false,
     "char_info": true,
     "user_info": true,
     "char_appearance": true,

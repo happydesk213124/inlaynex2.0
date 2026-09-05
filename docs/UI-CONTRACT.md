@@ -351,6 +351,13 @@ person-count tags and before NAI quality tags. Card settings → 생성 옵션 s
 2-column pair of textareas, a dedicated save button, plus JSON export/import
 (`{ fixed_prompt_prefix, fixed_prompt_suffix }`).
 
+`card.llm_reverse_bar` and `card.llm_tag_cal` (booleans, default `false`) sit
+next to JSON retry. Reverse-bar prepends `jailbreak` / `prefill` /
+`prefill_user` pack prompts (already-accepted role turns) to every LLM call.
+Tag-cal appends a mid-tag `%%` instruction and strips `%` then restores
+`wfsn`→`nsfw` on the reply. The LLM connection probe uses `plain: true` and
+skips both.
+
 `card.stream_keywords_enabled` (boolean, default `false`) is the dashboard
 toggle for mid-stream keyword gen. `card.stream_keywords` is still the needle
 box (empty = off). Missing toggle on old saves becomes `true` when the box
@@ -423,7 +430,7 @@ LLM-picked. Off, or `mode !== "two_stage"`, behaves exactly as before.
 | `POST /v1/curation/settings` | `{mode?, strict_ids?, embedding?}` |
 
 Keys: `author_note` (main tagger), `asset_author_note`, `global_author_note` (main + asset looks + comic LLM),
-`tagger, format, prefill, preprocess, preset_1, lore_inject,
+`tagger, format, prefill, prefill_user, jailbreak, preprocess, preset_1, lore_inject,
 char_inject, appearance_inject, asset_tags_inject, autotag, curation_refine, curation_embed_hint`.
 
 ### Jobs

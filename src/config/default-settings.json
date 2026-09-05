@@ -26,6 +26,8 @@
     "asset_nai_tags": "off",
     "auto_aspect": false,
     "llm_json_retry": false,
+    "llm_reverse_bar": false,
+    "llm_tag_cal": false,
     "char_info": true,
     "user_info": true,
     "char_appearance": true,

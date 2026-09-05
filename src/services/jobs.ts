@@ -58,7 +58,7 @@ import {
   pickPresetForFamily,
   type ShotNaiRoute,
 } from '../domain/nai/routing';
-import { callLlm } from '../providers/llm/client';
+import { callLlm } from './llm-call';
 import { resolveLlmRole } from '../domain/llm/roles';
 import { comicGenOn, clampComicByRatio } from '../domain/comic/kind';
 import { applyComicAspect } from '../domain/comic/aspect';

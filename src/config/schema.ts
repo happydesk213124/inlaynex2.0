@@ -223,6 +223,18 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
     || card.llm_json_retry === 1
     || card.llm_json_retry === '1'
     || card.llm_json_retry === 'on';
+  card.llm_reverse_bar =
+    card.llm_reverse_bar === true
+    || card.llm_reverse_bar === 'true'
+    || card.llm_reverse_bar === 1
+    || card.llm_reverse_bar === '1'
+    || card.llm_reverse_bar === 'on';
+  card.llm_tag_cal =
+    card.llm_tag_cal === true
+    || card.llm_tag_cal === 'true'
+    || card.llm_tag_cal === 1
+    || card.llm_tag_cal === '1'
+    || card.llm_tag_cal === 'on';
   // natural_base: legacy boolean → "off" | "short" | "detailed" | "supplement"
   card.natural_base = normalizeNaturalBaseMode(card.natural_base);
   // person_tag_solo: one-character shots use `solo` instead of 1girl/1boy

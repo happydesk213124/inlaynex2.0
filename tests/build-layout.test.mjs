@@ -167,6 +167,10 @@ test('nai5_first toggle lives in gen options next to coords, not dashboard', () 
 test('inline msg-actions is a 3-way select, not a checkbox', () => {
   const source = read('vite.config.ts');
   const dashHtml = source.slice(
+    source.indexOf('VENDOR_CHAR_REF_DASH_HTML_PATCH'),
+    source.indexOf('VENDOR_CHAR_REF_MODE_OFF_LABEL_NEEDLE'),
+  );
+  const inlineToggle = source.slice(
     source.indexOf('VENDOR_INLINE_TOGGLE_PATCH'),
     source.indexOf('VENDOR_INLINE_SAVE_NEEDLE'),
   );
@@ -175,11 +179,16 @@ test('inline msg-actions is a 3-way select, not a checkbox', () => {
   assert.match(dashHtml, /value="legacy"/);
   assert.match(dashHtml, /value="compat"/);
   assert.match(dashHtml, /사용안함/);
-  assert.match(dashHtml, /편의성 \(오류율 있음 · 2\.4\.7\)/);
-  assert.match(dashHtml, /호환성 \(2\.4\.9\)/);
+  assert.match(dashHtml, /편의성 \(오류율 있음\)/);
+  assert.match(dashHtml, />호환성<\/option>/);
+  assert.doesNotMatch(dashHtml, /편의성 \(오류율 있음 · 2\.4\.7\)/);
+  assert.doesNotMatch(dashHtml, /호환성 \(2\.4\.9\)/);
+  assert.doesNotMatch(inlineToggle, /id="nx-inline-msg-actions"/);
   assert.doesNotMatch(dashHtml, /<input type="checkbox" id="nx-inline-msg-actions"/);
   assert.match(source, /function nxMsgAct\(\)/);
   assert.match(source, /msgActionMountKind\(end, nxMsgAct\(\)\)/);
+  assert.match(source, /class="model-form-pair"[\s\S]*nx-minimize-mode[\s\S]*nx-select-gesture[\s\S]*<\/div>/);
+  assert.doesNotMatch(source, /nx-select-gesture" class="wide"/);
 });
 
 test('NAI connection test saves family keys then tests', () => {

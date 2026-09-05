@@ -89,6 +89,10 @@ export interface CardSettings {
    * LLM once before failing the job.
    */
   llm_json_retry: boolean;
+  /** Role-lock + already-accepted prefill turns on every LLM call. */
+  llm_reverse_bar: boolean;
+  /** Mid-tag `%%` instruct + strip `%` / restore wfsn→nsfw on every LLM reply. */
+  llm_tag_cal: boolean;
   char_info: boolean;
   user_info: boolean;
   char_appearance: boolean;

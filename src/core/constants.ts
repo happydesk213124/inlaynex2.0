@@ -17,7 +17,7 @@ export const VERSION: string = typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN
 export const PROMPT_PACK = '2026-09-04-v29-command-identity-fields';
 
 export const PROMPT_KEYS = [
-  'author_note', 'asset_author_note', 'global_author_note', 'tagger', 'format', 'prefill', 'preprocess',
+  'author_note', 'asset_author_note', 'global_author_note', 'tagger', 'format', 'prefill', 'prefill_user', 'jailbreak', 'preprocess',
   'preset_1', 'lore_inject', 'char_inject', 'appearance_inject', 'asset_tags_inject', 'char_looks', 'autotag',
   'curation_refine', 'curation_embed_hint', 'command_reroll', 'command_char_edit', 'lorefilter_scan',
   'comic',

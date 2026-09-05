@@ -8,7 +8,7 @@ import type { BytesLike } from '../core/util/bytes';
 import { bytesToBase64Async } from '../core/util/bytes';
 import { prepareAutotagImage } from '../core/util/image';
 import { cleanText, stripCbs } from '../core/util/text';
-import { callLlm } from '../providers/llm/client';
+import { callLlm } from './llm-call';
 import { normalizeLlmSource, type LlmMessage } from '../providers/llm/transform';
 import { resolveLlmRole } from '../domain/llm/roles';
 import { parseAutotagLookJson, type AutotagLook } from '../ui-contract/viewer-core';

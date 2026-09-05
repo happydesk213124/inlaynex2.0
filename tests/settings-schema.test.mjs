@@ -282,6 +282,13 @@ test("comic_aspect migrates to llm|landscape|portrait|square", () => {
   assert.equal(migrateSettings({ card: { comic_aspect: "nope" } }).card.comic_aspect, "llm");
 });
 
+test("llm reverse-bar and tag-cal default off and accept on aliases", () => {
+  assert.equal(migrateSettings({ card: {} }).card.llm_reverse_bar, false);
+  assert.equal(migrateSettings({ card: {} }).card.llm_tag_cal, false);
+  assert.equal(migrateSettings({ card: { llm_reverse_bar: "on" } }).card.llm_reverse_bar, true);
+  assert.equal(migrateSettings({ card: { llm_tag_cal: 1 } }).card.llm_tag_cal, true);
+});
+
 test("overlay_markers is canonical for left-line overlay + inline previews", () => {
   const on = migrateSettings({ card: { overlay_markers: true, inline_previews: false } });
   assert.equal(on.card.overlay_markers, true);

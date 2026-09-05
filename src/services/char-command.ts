@@ -3,7 +3,7 @@ import type { ApiResult, CharacterRecord } from '../core/types';
 import { cleanText, stripCbs } from '../core/util/text';
 import { parseJsonLoose } from '../core/util/object';
 import { applyCharacterCommandDeltas, characterCommandSnapshot } from '../domain/character/command-edit';
-import { callLlm } from '../providers/llm/client';
+import { callLlm } from './llm-call';
 import type { LlmMessage } from '../providers/llm/transform';
 import { getConfig } from './context';
 

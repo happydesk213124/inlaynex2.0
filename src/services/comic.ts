@@ -15,7 +15,7 @@ import { comicProseBlockForLlm } from '../domain/comic/llm-prose.ts';
 import { normalizeComicLlmBatch } from '../domain/comic/params.ts';
 import { assignComicPagesToShots, parseComicPages, type ComicPage } from '../domain/comic/page.ts';
 import { resolveShotAspect } from '../domain/nai-meta/aspect.ts';
-import { callLlm } from '../providers/llm/client.ts';
+import { callLlm } from './llm-call.ts';
 import { getConfig } from './context.ts';
 import { authorNoteSystemContent } from '../domain/tagging/session-note.ts';
 import { sessionAuthorNoteLlmContent } from './session-author-note.ts';

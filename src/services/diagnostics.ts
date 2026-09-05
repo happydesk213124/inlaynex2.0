@@ -28,7 +28,7 @@ import {
 } from '../domain/nai-meta/index.ts';
 import { naiFamilyOfModel } from '../domain/nai/routing';
 import { comfyBaseUrl, imageBackendKind } from '../providers/comfy/client';
-import { callLlm } from '../providers/llm/client';
+import { callLlm } from './llm-call';
 import { normalizeLlmProvider } from '../providers/llm/providers';
 import { llmConfigured, normalizeLlmSource } from '../providers/llm/transform';
 import { generateT2i, getAnlas, getNaiQuotaDetail } from '../providers/nai/client';
@@ -89,7 +89,7 @@ export async function testLlm(llmOverride: unknown): Promise<ApiResult> {
     if ((source === 'main' || source === 'aux') && !hostHas('runLLMModel')) {
       return { ok: false, message: 'RisuAI runLLMModel API를 사용할 수 없습니다.' };
     }
-    const text = await callLlm(cfg, [{ role: 'user', content: 'Reply with exactly: ok' }]);
+    const text = await callLlm(cfg, [{ role: 'user', content: 'Reply with exactly: ok' }], { plain: true });
     return { ok: true, message: `LLM ok (${source}): ${text.slice(0, 120)}` };
   } catch (exc) {
     return { ok: false, message: String((exc as Error)?.message || exc) };

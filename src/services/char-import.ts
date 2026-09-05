@@ -27,7 +27,7 @@ import {
 import { assetMatchTriggers, compactAssetKey, originalTagFromPlains } from '../domain/nai-meta/match';
 import { prepareAutotagImage } from '../core/util/image';
 import type { LlmContentPart, LlmMessage } from '../providers/llm/transform';
-import { callLlm } from '../providers/llm/client';
+import { callLlm } from './llm-call';
 import {
   collectAssetNaiTags,
   collectBestLookAssets,

@@ -2941,7 +2941,7 @@ const VENDOR_CARD_TAB_SPLIT_MID_NEEDLE = `          <div class="notice info" sty
         </div>
         <div class="card model-card">
           <div class="model-head">`;
-const VENDOR_CARD_TAB_SPLIT_MID_PATCH = `          <div class="notice info" style="margin-top:12px">캐릭터 수 제한 N이면 LLM 프롬프트에 반영되며, 생성 시에도 char1~char\${h(i.character_max ?? 6)}까지만 들어갑니다.</div>
+const VENDOR_CARD_TAB_SPLIT_MID_PATCH = `          <div class="notice info" style="margin-top:12px">캐릭터 수 제한 N이면 삽화 LLM/생성에 반영되며 char1~char\${h(i.character_max ?? 6)}까지입니다. 만화 페이지는 이 제한을 받지 않고 슬롯 최대 6개입니다.</div>
           <div class="row" style="margin-top:14px"><button type="button" id="nx-save-gen-options">생성 옵션 저장</button></div>
         </div>\`}\${t.uiTab === "gen_options" ? "" : \`
         <div class="card model-card">
@@ -12075,9 +12075,36 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       if (kind === "parent") {
         try {
           const parent = typeof host.getParent == "function" ? await host.getParent() : (host.parentElement || host.parentNode || null);
+          let insideBubble = !1;
+          if (parent && parent !== msgEl) {
+            try {
+              if (typeof msgEl.contains == "function") {
+                const hit = await msgEl.contains(parent);
+                if (hit === true) insideBubble = !0;
+              }
+            } catch {
+            }
+            if (!insideBubble) {
+              let cur = parent;
+              for (let d = 0; cur && d < 16; d += 1) {
+                let next = null;
+                try {
+                  next = typeof cur.getParent == "function" ? await cur.getParent() : (cur.parentElement || cur.parentNode || null);
+                } catch {
+                  next = null;
+                }
+                if (next === msgEl) {
+                  insideBubble = !0;
+                  break;
+                }
+                if (!next || next === cur) break;
+                cur = next;
+              }
+            }
+          }
           const okParent = typeof VCMount?.canMountMsgActionOnParent == "function"
-            ? VCMount.canMountMsgActionOnParent(parent, msgEl, nxMsgAct())
-            : (nxMsgAct() === "legacy" && parent != null && parent !== msgEl);
+            ? VCMount.canMountMsgActionOnParent(parent, msgEl, nxMsgAct(), insideBubble)
+            : (nxMsgAct() === "legacy" && parent != null && parent !== msgEl && insideBubble);
           if (okParent && parent && typeof parent.prepend == "function") mount = parent;
         } catch {
         }

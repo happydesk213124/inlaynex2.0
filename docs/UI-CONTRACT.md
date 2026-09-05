@@ -145,7 +145,9 @@ Settings nav tab `comic_gen` (만화 생성, next to 생성 옵션) is
 `card.comic_gen` `off` | `on` (default `off`). Off leaves first-tagger + NAI
 identical to today. On lets the tagger emit `kind: comic` with `line` (start /
 pin, same as illustration) and `comic_line_end` (inclusive prose end). Slots
-are people/text boxes, not panels. `card.comic_llm_batch` is `once` | `per_shot`
+are people/text boxes, not panels. Comic generation ignores
+`card.character_max` and keeps up to 6 slots (NAI caption ceiling).
+`card.comic_llm_batch` is `once` | `per_shot`
 (default `once`). `card.comic_schedule` is `overlap` | `wait_taggers` (default
 `overlap`). `card.comic_gen_ratio` is 0–100 (default `50`): share of this
 message's shots that may be `kind: comic`. Extra comic shots become
@@ -206,7 +208,7 @@ land, or 10 seconds, whichever is first. Later message clicks do not raise it.
 Dashboard also has `card.nai4_fallback`
 and `card.inline_msg_actions` as a 3-way select: `off` (사용안함),
 `legacy` (편의성, 오류율 있음 — DIV hosts + top bar on the content
-parent),
+parent only when that parent is inside the bubble),
 `compat` (호환성 — body tags `p`/`li`/`h*`/`blockquote` only, host
 mount). Neither mode removes mounted inline frames. Saved checkbox `true`
 migrates to `compat`. Same neighbor rule as `inline_chat_images`.

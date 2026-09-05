@@ -314,16 +314,21 @@ test("msgActionMountKind paints on the body host unless legacy top", () => {
   assert.equal(msgActionMountKind("bot", "legacy"), "host");
 });
 
-test("canMountMsgActionOnParent is legacy-only and skips the card root", () => {
+test("canMountMsgActionOnParent is legacy-only and stays inside the bubble", () => {
   const bubble = { id: "msg" };
   const content = { id: "box" };
+  const chatRow = { id: "row" };
   assert.equal(canMountMsgActionOnParent(content, bubble), false);
   assert.equal(canMountMsgActionOnParent(bubble, bubble), false);
   assert.equal(canMountMsgActionOnParent(null, bubble), false);
   assert.equal(canMountMsgActionOnParent(content, bubble, "compat"), false);
-  assert.equal(canMountMsgActionOnParent(content, bubble, "legacy"), true);
-  assert.equal(canMountMsgActionOnParent(bubble, bubble, "legacy"), false);
-  assert.equal(canMountMsgActionOnParent(null, bubble, "legacy"), false);
+  assert.equal(canMountMsgActionOnParent(content, bubble, "compat", true), false);
+  assert.equal(canMountMsgActionOnParent(content, bubble, "legacy"), false);
+  assert.equal(canMountMsgActionOnParent(content, bubble, "legacy", false), false);
+  assert.equal(canMountMsgActionOnParent(chatRow, bubble, "legacy", false), false);
+  assert.equal(canMountMsgActionOnParent(content, bubble, "legacy", true), true);
+  assert.equal(canMountMsgActionOnParent(bubble, bubble, "legacy", true), false);
+  assert.equal(canMountMsgActionOnParent(null, bubble, "legacy", true), false);
 });
 
 test("findElementIndexForLine matches text + occurrence order", () => {

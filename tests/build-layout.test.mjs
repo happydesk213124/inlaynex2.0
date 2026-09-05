@@ -1546,7 +1546,7 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(body, /host\.prepend\(wrap\)/);
   assert.match(body, /prependBar/);
   assert.match(body, /msgActionMountKind/);
-  assert.match(body, /canMountMsgActionOnParent/);
+  assert.match(body, /canMountMsgActionOnParent\(parent, msgEl, nxMsgAct\(\), insideBubble\)/);
   // Host eligibility moved into the scan the bars now share with inline shots.
   assert.match(body, /nxScanBubbleHosts\(msgEl\)/);
   assert.match(source, /isInlayPaintHost/);

@@ -8,6 +8,17 @@ import { normalizeComicPageCoords } from './coords.ts';
 import { resolveShotAspect } from '../nai-meta/aspect.ts';
 import { normalizeShotKind } from './kind.ts';
 
+/** NAI V5 caption ceiling. Comic pages ignore `card.character_max`. */
+export const COMIC_SLOT_MAX = 6;
+
+export function comicSlotLimit(): number {
+  return COMIC_SLOT_MAX;
+}
+
+export function takeComicGenerationSlots<T>(slots: readonly T[] | null | undefined): T[] {
+  return (Array.isArray(slots) ? slots.slice() : []).slice(0, COMIC_SLOT_MAX);
+}
+
 export interface ComicSlot {
   name: string;
   action: string;
@@ -66,12 +77,12 @@ export function parseComicPages(raw: unknown): ComicPage[] {
     for (const s of slotsRaw) {
       const slot = readSlot(s);
       if (slot) slots.push(slot);
-      if (slots.length >= 6) break;
+      if (slots.length >= COMIC_SLOT_MAX) break;
     }
     if (!slots.length) continue;
     let koma = Math.floor(Number(row.koma ?? row.panels ?? slots.length));
-    if (!Number.isFinite(koma) || koma < 1) koma = Math.min(6, slots.length);
-    koma = Math.max(1, Math.min(6, koma));
+    if (!Number.isFinite(koma) || koma < 1) koma = Math.min(COMIC_SLOT_MAX, slots.length);
+    koma = Math.max(1, Math.min(COMIC_SLOT_MAX, koma));
     const idx = Math.floor(Number(row.shot_index ?? row.shot ?? row.index));
     pages.push({
       shot_index: Number.isFinite(idx) ? idx : null,

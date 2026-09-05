@@ -3473,14 +3473,16 @@ export function msgActionMountKind(end: unknown, mode: unknown = 'compat'): 'par
   return 'host';
 }
 
-/** Legacy only: parent prepend when parent is not the card root. */
+/** Legacy only: parent prepend when parent is an inner box under the bubble. */
 export function canMountMsgActionOnParent(
   parent: unknown,
   bubbleRoot: unknown,
   mode: unknown = 'compat',
+  insideBubble: unknown = false,
 ): boolean {
   if (!inlineMsgActionsLegacy(mode)) return false;
-  return parent != null && parent !== bubbleRoot;
+  if (parent == null || parent === bubbleRoot) return false;
+  return insideBubble === true;
 }
 
 /** First and last `<p>` indices. Same index when the bubble has only one. */

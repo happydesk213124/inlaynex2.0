@@ -48,7 +48,7 @@ import { resolveComicUseCoords } from '../domain/comic/coords';
 import { normalizeShotKind } from '../domain/comic/kind';
 import { resolveComicNaiParams } from '../domain/comic/params';
 import { stripComicKomaFromUc, stripComicPageStyleTags, stripComicStyleWords } from '../domain/comic/tags';
-import type { ComicPage } from '../domain/comic/page';
+import { takeComicGenerationSlots, type ComicPage } from '../domain/comic/page';
 import { shouldUseNaiCoords, readNaiCoord, type CoordPair } from '../domain/nai/coords';
 import {
   captionWithSpeech,
@@ -415,8 +415,7 @@ export async function buildComicGenerationForShot(args: ShotArgs): Promise<Gener
   const card = getConfig().card;
   const nai = getConfig().nai;
   const page = (shot.comic_page || {}) as Partial<ComicPage>;
-  const charMax = Math.min(6, characterMaxLimit(card));
-  const slots = (Array.isArray(shot.characters) ? shot.characters : []).slice(0, charMax);
+  const slots = takeComicGenerationSlots(Array.isArray(shot.characters) ? shot.characters : []);
   const n = Math.max(1, slots.length);
   const personMode = normalizePersonTagMode(card.person_tag_mode, card.auto_person_tags);
   const person = emphasizePersonTags(

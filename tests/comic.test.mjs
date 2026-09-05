@@ -13,7 +13,7 @@ import {
 import { pickNextReadyShot } from "../.test-build/comic-schedule.mjs";
 import { comicPairsUsable, resolveComicUseCoords } from "../.test-build/comic-coords.mjs";
 import { formatComicNowWearingBlock, resolveComicSlotCostume } from "../.test-build/comic-costume.mjs";
-import { assignComicPagesToShots, parseComicPages } from "../.test-build/comic-page.mjs";
+import { assignComicPagesToShots, comicSlotLimit, parseComicPages, takeComicGenerationSlots } from "../.test-build/comic-page.mjs";
 import { stripComicKomaFromUc, stripComicPageStyleTags, stripComicStyleWords } from "../.test-build/comic-tags.mjs";
 import { comicSpeechCaption, composeComicSlotCaption } from "../.test-build/comic-caption.mjs";
 import { resolveComicNaiParams } from "../.test-build/comic-params.mjs";
@@ -154,6 +154,21 @@ test("formatComicNowWearingBlock tells the LLM the live costume and accessory on
   assert.match(off, /now_wearing: default/);
   assert.match(off, /wear_state: nude/);
   assert.match(off, /accessories: off/);
+});
+
+test("comic generation slots ignore card character_max and stop at 6", () => {
+  assert.equal(comicSlotLimit(), 6);
+  const seven = Array.from({ length: 7 }, (_, i) => ({ name: `p${i}` }));
+  assert.equal(takeComicGenerationSlots(seven).length, 6);
+  assert.equal(takeComicGenerationSlots(seven.slice(0, 5)).length, 5);
+  const pages = parseComicPages({
+    pages: [{
+      koma: 3,
+      layout: "1::wide splash.::",
+      slots: seven.map((row) => ({ name: row.name, action: "stand", costume: "coat" })),
+    }],
+  });
+  assert.equal(pages[0].slots.length, 6);
 });
 
 test("parseComicPages + assign fills unmatched comics in order", () => {

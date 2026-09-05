@@ -166,6 +166,11 @@ export function readComicPageFromShot(shot: unknown): ComicPage | null {
   return parseComicPages({ pages: [nested] })[0] || null;
 }
 
+/** Cast already comes from `comic_page.slots` — do not name-merge or apply character_max. */
+export function shotKeepsComicSlots(shot: unknown): boolean {
+  return readComicPageFromShot(shot) != null;
+}
+
 export function attachInlineComicPages(shots: TaggedShot[]): Set<number> {
   const assigned = new Set<number>();
   for (let i = 0; i < shots.length; i += 1) {

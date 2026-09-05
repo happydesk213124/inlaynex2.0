@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.35';
+const PLUGIN_VERSION = '2.5.36';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -782,6 +782,14 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.36</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>만화 슬롯은 캐릭터 수 제한을 보지 않고 최대 6개입니다. comic_page가 있으면 합치거나 자르지 않습니다</li>
+            <li>만화 LLM에 메인태거에 한번에 요청. 켜면 샷 아래 comic_page를 같이 받고, 없으면 만화 LLM만 부릅니다</li>
+            <li>편의성 위 바는 말풍선 안 상자에만 붙습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.35</strong>
@@ -13656,8 +13664,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.35",
-    body: "역바·태칼 토글, 접힘 표시와 메시지 선택을 PC에서 같은 줄에 둡니다."
+    title: "2.5.36",
+    body: "만화 슬롯 최대 6, 메인태거에 한번에 요청, 위 바는 말풍선 안에만."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

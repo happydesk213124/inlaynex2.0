@@ -13,7 +13,7 @@ import {
 import { pickNextReadyShot } from "../.test-build/comic-schedule.mjs";
 import { comicPairsUsable, resolveComicUseCoords } from "../.test-build/comic-coords.mjs";
 import { formatComicNowWearingBlock, resolveComicSlotCostume } from "../.test-build/comic-costume.mjs";
-import { assignComicPagesToShots, attachInlineComicPages, comicSlotLimit, parseComicPages, takeComicGenerationSlots } from "../.test-build/comic-page.mjs";
+import { assignComicPagesToShots, attachInlineComicPages, comicSlotLimit, parseComicPages, shotKeepsComicSlots, takeComicGenerationSlots } from "../.test-build/comic-page.mjs";
 import { stripComicKomaFromUc, stripComicPageStyleTags, stripComicStyleWords } from "../.test-build/comic-tags.mjs";
 import { comicSpeechCaption, composeComicSlotCaption } from "../.test-build/comic-caption.mjs";
 import { comicLlmWithMain, normalizeComicLlmBatch, resolveComicNaiParams } from "../.test-build/comic-params.mjs";
@@ -186,6 +186,8 @@ test("attachInlineComicPages reads nested comic_page and keeps extra slots", () 
   assert.deepEqual([...assigned], [0]);
   assert.equal(shots[0].characters.length, 5);
   assert.equal(shots[0].comic_page.slots.length, 5);
+  assert.equal(shotKeepsComicSlots(shots[0]), true);
+  assert.equal(shotKeepsComicSlots({ kind: "comic", characters: [{ name: "테아" }] }), false);
 });
 
 test("attachInlineComicPages ignores shot-root layout so characters stay the cast", () => {

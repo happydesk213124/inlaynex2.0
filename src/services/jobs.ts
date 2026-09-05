@@ -71,6 +71,7 @@ import { publishImage, resolveImageUrl } from '../storage/image-urls';
 import { flushPersist, idbGet, idbPut } from '../storage/stores';
 import { getConfig, jobEpochByKey, jobRunMeta, requestMessageRerollStop } from './context';
 import { mergeRosterFromTagged, persistChatWearStates, rosterForSession } from './characters';
+import { shotKeepsComicSlots } from '../domain/comic/page';
 import { fillComicPagesForShots } from './comic';
 import { buildComicGenerationForShot, buildGenerationForShot, buildImageLocation, cardMetaFromLocation, generateImage, isComicShot, readImageLocation } from './generation';
 import { buildCharacterLooksMessages, buildTaggerMessages, collectAssetTagsForTagger, extractTaggerChatContext, flattenShots } from './tagger';
@@ -942,6 +943,7 @@ async function runJob(jobId: string): Promise<void> {
     dbg('job.roster', { roster: roster.length });
     const charMax = characterMaxLimit(card);
     for (const shot of shots) {
+      if (shotKeepsComicSlots(shot)) continue;
       shot.characters = dedupeShotCharacters(shot.characters || [], roster, charMax);
     }
     const wearByName = applyWearContinuityToShots(shots, (name) => resolveCharacter(name, roster)?.wear_state);

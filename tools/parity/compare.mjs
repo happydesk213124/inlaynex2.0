@@ -494,6 +494,8 @@ const INTENTIONAL_DIFF_STEPS = new Set([
   'chars.unified_patch_single',
   'chars.delete_cascade',
   'chars.chat_b_after_delete',
+  // 2.5.55 explorer ZIP: folder dirs + newest-first 000001_ names. 1.x used images/{id}.png.
+  'gallery.export',
   // 2.5.9 reset applies the recommended pack (not 1.x extract) and resets prompts.
   // The sharper check is settings.reset_factory_floor.
   // 2.5.29: Comfy "연결 테스트" only persists; 1.x still hit /system_stats.
@@ -790,6 +792,22 @@ for (const name of oldSteps.keys()) {
   if (INTENTIONAL_DIFF_STEPS.has(name)) {
     if (!oldStep.ok) findings.push({ at: name, old: 'failed', new: '(intentional)', note: 'old step errored' });
     if (!newStep.ok) findings.push({ at: name, old: '(intentional)', new: 'failed', note: 'new step errored' });
+    if (name === 'gallery.export') {
+      const names = Array.isArray(newStep.value?.names) ? newStep.value.names : [];
+      const pngs = names.filter((n) => /\.png$/i.test(String(n)));
+      const numbered = pngs.length >= 1 && pngs.every((n) => /\/\d{6}_.+\.png$/i.test(String(n)));
+      const files = Array.isArray(newStep.value?.manifest?.items)
+        ? newStep.value.manifest.items.map((it) => String(it?.file || ''))
+        : [];
+      if (!numbered || files.some((f) => !/\/\d{6}_/.test(f))) {
+        findings.push({
+          at: name,
+          old: 'images/<id>.png',
+          new: JSON.stringify({ names, files }).slice(0, 240),
+          note: '2.5.55 export must be {folder}/000001_oldname.png newest-first per room',
+        });
+      }
+    }
     if (name === 'comfy.test'
       && (newStep.value?.ok !== true || !String(newStep.value?.message || '').includes('연결 테스트 생략'))) {
       findings.push({

@@ -40,7 +40,7 @@ import {
   roomTallies,
 } from '../storage/stores';
 import type { ZipEntryInput } from '../ui-contract/gallery-zip';
-import { buildGalleryManifest, packGalleryZip, resolveReattach, unpackGalleryZip } from '../ui-contract/gallery-zip';
+import { assignGalleryExportFiles, buildGalleryManifest, lookupZipImage, packGalleryZip, resolveReattach, unpackGalleryZip } from '../ui-contract/gallery-zip';
 import {
   cardMetaFromLocation,
   locationFieldsForCard,
@@ -633,14 +633,17 @@ export async function exportGalleryZip(body: Record<string, unknown> = {}): Prom
     return { ok: false, ...errorBody('card_ids, folder_key, or all required', 'bad_request') };
   }
   if (!items.length) return { ok: false, ...errorBody('no images to export', 'empty') };
-  const manifest = buildGalleryManifest(items);
+  const numbered = assignGalleryExportFiles(items);
+  const manifest = buildGalleryManifest(numbered);
   const files: ZipEntryInput[] = [
     { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) },
   ];
-  for (const item of items) {
-    const png = await getImageBytes(item.id);
+  for (const item of numbered) {
+    const id = String(item.id || '');
+    if (!id) continue;
+    const png = await getImageBytes(id);
     if (!png?.byteLength) continue;
-    files.push({ name: `images/${item.id}.png`, data: asU8(png) });
+    files.push({ name: String(item.file || `images/${id}.png`), data: asU8(png) });
   }
   if (files.length < 2) return { ok: false, ...errorBody('image bytes missing', 'empty') };
   const zip = packGalleryZip(files);
@@ -670,8 +673,7 @@ export async function importGalleryZip(body: Record<string, unknown> = {}): Prom
   const imported: Array<{ id: string; reattach: string; content_hash: string }> = [];
   const report = { exact: 0, candidate: 0, orphan: 0, skipped: 0 };
   for (const item of manifest.items) {
-    const file = String(item.file || `images/${item.id}.png`).replace(/\\/g, '/');
-    const png = images.get(file) || images.get(`images/${item.id}.png`);
+    const png = lookupZipImage(images, item);
     if (!png?.byteLength) {
       report.skipped += 1;
       continue;

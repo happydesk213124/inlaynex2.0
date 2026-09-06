@@ -2083,6 +2083,19 @@ test('UI never copies a data URL onto a gallery row', () => {
   assert.deepEqual(writes, [], `dist still copies data URLs onto cards: ${writes.length}`);
 });
 
+test('missing nai key toasts before the tagger and marks the models tab', () => {
+  const jobs = read('src', 'services', 'jobs.ts');
+  const create = jobs.slice(jobs.indexOf('export async function createJob'), jobs.indexOf('export async function getJob'));
+  assert.match(create, /no_nai_key/);
+  assert.match(create, /naiHasAnyToken/);
+  assert.ok(create.indexOf('naiHasAnyToken') < create.indexOf('idbPut'), 'key check must run before the job is queued');
+  const vite = read('vite.config.ts');
+  assert.match(vite, /nx-tab-alarm/);
+  assert.match(vite, /id="nx-nai-miss"/);
+  assert.match(vite, /nai 키 없음/);
+  assert.match(vite, /NovelAI API 키를 먼저 입력하세요/);
+});
+
 test('viewer thumb strip never walks getChildren()', () => {
   // The in-place restyle was dead (SafeElement throws on data-* reads) and each
   // arrow press leaked N+1 host-side handles pinning detached data-URL <img>s.

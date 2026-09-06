@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.52';
+const PLUGIN_VERSION = '2.5.53';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -719,6 +719,56 @@ const VENDOR_CURATION_TABS_PATCH = `S = {
       "debug"
     ]`;
 
+const VENDOR_MODELS_TAB_ALARM_NEEDLE =
+  `].map((d) => \`<button type="button" class="tab \${t.uiTab === d ? "active" : ""}" data-nx-tab="\${d}">\${S[d]}</button>\`).join("")`;
+const VENDOR_MODELS_TAB_ALARM_PATCH =
+  `].map((d) => {
+      const naiS = t.backendSettings?.nai || {};
+      const imgBk = String(naiS.backend || "nai") === "comfy" ? "comfy" : "nai";
+      const naiOk = imgBk === "comfy" ? !!(naiS.comfy_configured || naiS.comfy_workflow_json) : !!(naiS.api_key_configured || naiS.api_keys_v5_configured || naiS.api_keys_v4_configured);
+      const alarm = d === "models" && imgBk !== "comfy" && !naiOk ? " nx-tab-alarm" : "";
+      return \`<button type="button" class="tab \${t.uiTab === d ? "active" : ""}\${alarm}" data-nx-tab="\${d}">\${S[d]}</button>\`;
+    }).join("")`;
+
+const VENDOR_HEAD_NAI_MISS_NEEDLE =
+  `<div class="head-brand"><h1>Inlay Nexus</h1><div class="muted" id="nx-version-line">v\${He}</div></div>`;
+const VENDOR_HEAD_NAI_MISS_PATCH =
+  `<div class="head-brand"><h1>Inlay Nexus</h1><div class="muted" id="nx-version-line">v\${He}</div><div id="nx-nai-miss" class="nx-nai-miss" hidden>nai 키 없음</div></div>`;
+
+const VENDOR_HEAD_NAI_MISS_SYNC_NEEDLE =
+  `        const d = document.getElementById("nx-version-line");
+        d && (d.textContent = \`v\${He}\`);`;
+const VENDOR_HEAD_NAI_MISS_SYNC_PATCH =
+  `        const d = document.getElementById("nx-version-line");
+        d && (d.textContent = \`v\${He}\`);
+        const naiS0 = t.backendSettings?.nai || {};
+        const imgBk0 = String(naiS0.backend || "nai") === "comfy" ? "comfy" : "nai";
+        const naiOk0 = imgBk0 === "comfy" ? !!(naiS0.comfy_configured || naiS0.comfy_workflow_json) : !!(naiS0.api_key_configured || naiS0.api_keys_v5_configured || naiS0.api_keys_v4_configured);
+        const naiMiss0 = imgBk0 !== "comfy" && !naiOk0;
+        const missEl = document.getElementById("nx-nai-miss");
+        if (missEl) missEl.hidden = !naiMiss0;`;
+
+const VENDOR_TAB_NAI_ALARM_SYNC_NEEDLE =
+  `        I && (I.innerHTML = j), document.querySelectorAll("#nx-tabs [data-nx-tab]").forEach((g) => {
+          g.classList.toggle("active", g.getAttribute("data-nx-tab") === t.uiTab);
+        });`;
+const VENDOR_TAB_NAI_ALARM_SYNC_PATCH =
+  `        I && (I.innerHTML = j), document.querySelectorAll("#nx-tabs [data-nx-tab]").forEach((g) => {
+          g.classList.toggle("active", g.getAttribute("data-nx-tab") === t.uiTab);
+          if (g.getAttribute("data-nx-tab") === "models") g.classList.toggle("nx-tab-alarm", naiMiss0);
+        });`;
+
+const VENDOR_FIRST_PAINT_NAI_MISS_NEEDLE =
+  `        <div id="nx-explorer-tip" class="explorer-tip"></div>\`, wa(), bindHeadHelp(document.getElementById("nx-shell"));`;
+const VENDOR_FIRST_PAINT_NAI_MISS_PATCH =
+  `        <div id="nx-explorer-tip" class="explorer-tip"></div>\`, (() => {
+        const naiS0 = t.backendSettings?.nai || {};
+        const imgBk0 = String(naiS0.backend || "nai") === "comfy" ? "comfy" : "nai";
+        const naiOk0 = imgBk0 === "comfy" ? !!(naiS0.comfy_configured || naiS0.comfy_workflow_json) : !!(naiS0.api_key_configured || naiS0.api_keys_v5_configured || naiS0.api_keys_v4_configured);
+        const missEl = document.getElementById("nx-nai-miss");
+        if (missEl) missEl.hidden = imgBk0 === "comfy" || naiOk0;
+      })(), wa(), bindHeadHelp(document.getElementById("nx-shell"));`;
+
 const VENDOR_CURATION_PANEL_NEEDLE =
   `} else t.uiTab === "explorer" ? u = ma() : t.uiTab === "debug" && (u = \``;
 
@@ -782,6 +832,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.53</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>NAI 키가 없으면 태깅 전에 토스트가 뜨고, 모델 설정 탭이 빨개지며 왼쪽 위에 nai 키 없음이 뜹니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.52</strong>
@@ -7447,6 +7503,42 @@ const VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_PATCH =
   `<button type="button" class="secondary" data-char-clear-looks title="외형 칸 비우기" style="min-height:30px;padding:4px 10px;flex-shrink:0">✕</button>
             <button type="button" class="secondary" data-char-delete style="min-height:30px;padding:4px 10px;flex-shrink:0">삭제</button>`;
 
+/** Job create: toast and stop before lore/LLM when NovelAI key is missing. */
+const VENDOR_BE_NAI_KEY_NEEDLE =
+  `    const a = (t.backendSettings || await le())?.card || {};
+    if (!o && a.power === !1)
+      return y("warn", "job.skip", "power off"), null;`;
+const VENDOR_BE_NAI_KEY_PATCH =
+  `    const settings0 = t.backendSettings || await le() || {};
+    const a = settings0.card || {};
+    if (!o && a.power === !1)
+      return y("warn", "job.skip", "power off"), null;
+    const naiS = settings0.nai || {};
+    const imgBk = String(naiS.backend || "nai") === "comfy" ? "comfy" : "nai";
+    const naiOk = imgBk === "comfy"
+      ? !!(naiS.comfy_configured || naiS.comfy_workflow_json)
+      : !!(naiS.api_key_configured || naiS.api_keys_v5_configured || naiS.api_keys_v4_configured);
+    if (imgBk !== "comfy" && !naiOk) {
+      typeof nxHostToast == "function" && nxHostToast("NovelAI API 키를 먼저 입력하세요. (모델 설정)", { ms: 3600 });
+      y("warn", "job.skip", "no nai key");
+      return null;
+    }`;
+
+const VENDOR_BE_NAI_KEY_RESP_NEEDLE =
+  `      if (b?.busy || b?.error?.code === "busy") {
+        t.jobsInFlight.delete(m);
+        y("info", "job.busy", b?.error?.message || "busy");`;
+const VENDOR_BE_NAI_KEY_RESP_PATCH =
+  `      if (b?.error?.code === "no_nai_key") {
+        t.jobsInFlight.delete(m);
+        typeof nxHostToast == "function" && nxHostToast(b?.error?.message || "NovelAI API 키를 먼저 입력하세요. (모델 설정)", { ms: 3600 });
+        y("warn", "job.skip", "no nai key");
+        return null;
+      }
+      if (b?.busy || b?.error?.code === "busy") {
+        t.jobsInFlight.delete(m);
+        y("info", "job.busy", b?.error?.message || "busy");`;
+
 /** Job create: apply lorefilter whitelist before ca() / trigger keys. */
 const VENDOR_LOREFILTER_BE_NEEDLE =
   `    const loreExtraMode = normalizeLoreExtraMode(a.lore_extra), r = re(a.include_max, 0, 20, 0), i = a.lorebook ? await la() : [], s = a.lorebook ? ca(i, n, 5, loreExtraMode) : [], loreTriggerKeys = a.lorebook ? collectTriggeredLoreKeys(i, n) : [], c = e.character || {};`;
@@ -8625,7 +8717,7 @@ const VENDOR_APPEARANCE_LABEL_SHARED_PATCH = `<span>외형 태그 (옷·무기 �
 const VENDOR_TAB_NOWRAP_NEEDLE =
   `.tab{min-height:38px;padding:8px 17px;border:0;border-radius:10px;background:transparent;color:var(--muted);box-shadow:none}.tab.active{background:var(--accent-soft);color:#dcd7ff}`;
 const VENDOR_TAB_NOWRAP_PATCH =
-  `.tab{min-height:38px;padding:8px 17px;border:0;border-radius:10px;background:transparent;color:var(--muted);box-shadow:none;white-space:nowrap;flex:0 0 auto}.tab.active{background:var(--accent-soft);color:#dcd7ff}`;
+  `.tab{min-height:38px;padding:8px 17px;border:0;border-radius:10px;background:transparent;color:var(--muted);box-shadow:none;white-space:nowrap;flex:0 0 auto}.tab.active{background:var(--accent-soft);color:#dcd7ff}.tab.nx-tab-alarm{color:#fecaca;background:rgba(248,113,113,.2);box-shadow:inset 0 0 0 1px rgba(248,113,113,.65)}.tab.nx-tab-alarm.active{color:#fff;background:rgba(220,38,38,.42)}.nx-nai-miss{display:none;font-size:10px;font-weight:700;color:#fecaca;letter-spacing:.02em;line-height:1.2;margin-top:2px}.nx-nai-miss:not([hidden]){display:block}`;
 
 const VENDOR_TABS_SCROLL_NEEDLE =
   `.tabs{display:flex;gap:7px;margin:20px 0 16px;padding:5px;width:max-content;max-width:100%;overflow:auto;background:rgba(17,23,35,.75);border:1px solid var(--border);border-radius:14px}`;
@@ -14028,8 +14120,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.52",
-    body: "스크롤 붙잡기가 켜져 있으면 첫 스피너가 붙어도 말이 안 밀립니다."
+    title: "2.5.53",
+    body: "NAI 키가 없으면 태깅 전에 알려 주고, 모델 설정 탭이 빨개집니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -17407,6 +17499,11 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_COMFY_MUTED_NEEDLE, 'comfy muted placeholders');
   assertOnce(raw, VENDOR_COMFY_HELP_NEEDLE, 'comfy help width/height');
   assertOnce(raw, VENDOR_CURATION_TABS_NEEDLE, 'curation tabs S/E');
+  assertOnce(raw, VENDOR_MODELS_TAB_ALARM_NEEDLE, 'models tab nai alarm');
+  assertOnce(raw, VENDOR_HEAD_NAI_MISS_NEEDLE, 'head nai missing label');
+  assertOnce(raw, VENDOR_HEAD_NAI_MISS_SYNC_NEEDLE, 'head nai missing sync');
+  assertOnce(raw, VENDOR_TAB_NAI_ALARM_SYNC_NEEDLE, 'models tab nai alarm sync');
+  assertOnce(raw, VENDOR_FIRST_PAINT_NAI_MISS_NEEDLE, 'first paint nai missing label');
   assertOnce(raw, VENDOR_CURATION_PANEL_NEEDLE, 'curation panel insert');
   assertOnce(raw, VENDOR_DEBUG_PANEL_NEEDLE, 'debug panel 로그/태깅');
   assertOnce(raw, VENDOR_DEBUG_EVENTS_NEEDLE, 'debug panel events');
@@ -17604,6 +17701,8 @@ const loadVendorUi = (): string => {
     [VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_NEEDLE, 'char tab clear looks btn'],
     [VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_NEEDLE, 'char tab clear looks evt'],
     [VENDOR_LOREFILTER_BE_NEEDLE, 'lorefilter job Be'],
+    [VENDOR_BE_NAI_KEY_NEEDLE, 'job Be nai key gate'],
+    [VENDOR_BE_NAI_KEY_RESP_NEEDLE, 'job Be nai key response'],
     [VENDOR_LOREFILTER_TAB_VARS_NEEDLE, 'lorefilter tab vars'],
     [VENDOR_LOREFILTER_TAB_INSERT_NEEDLE, 'lorefilter tab insert'],
     [VENDOR_LOREFILTER_TAB_EVT_NEEDLE, 'lorefilter tab evt'],
@@ -17836,6 +17935,11 @@ const loadVendorUi = (): string => {
       .replace(VENDOR_COMFY_MUTED_NEEDLE, VENDOR_COMFY_MUTED_PATCH)
       .replace(VENDOR_COMFY_HELP_NEEDLE, VENDOR_COMFY_HELP_PATCH)
       .replace(VENDOR_CURATION_TABS_NEEDLE, VENDOR_CURATION_TABS_PATCH)
+      .replace(VENDOR_MODELS_TAB_ALARM_NEEDLE, VENDOR_MODELS_TAB_ALARM_PATCH)
+      .replace(VENDOR_HEAD_NAI_MISS_NEEDLE, VENDOR_HEAD_NAI_MISS_PATCH)
+      .replace(VENDOR_HEAD_NAI_MISS_SYNC_NEEDLE, VENDOR_HEAD_NAI_MISS_SYNC_PATCH)
+      .replace(VENDOR_TAB_NAI_ALARM_SYNC_NEEDLE, VENDOR_TAB_NAI_ALARM_SYNC_PATCH)
+      .replace(VENDOR_FIRST_PAINT_NAI_MISS_NEEDLE, VENDOR_FIRST_PAINT_NAI_MISS_PATCH)
       .replace(VENDOR_CURATION_PANEL_NEEDLE, VENDOR_CURATION_PANEL_PATCH)
       .replace(VENDOR_DEBUG_PANEL_NEEDLE, VENDOR_DEBUG_PANEL_PATCH)
       .replace(VENDOR_DEBUG_EVENTS_NEEDLE, VENDOR_DEBUG_EVENTS_PATCH)
@@ -18010,6 +18114,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_NEEDLE, VENDOR_CHAR_TAB_CLEAR_LOOKS_BTN_PATCH)
     .replace(VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_NEEDLE, VENDOR_CHAR_TAB_CLEAR_LOOKS_EVT_PATCH)
     .replace(VENDOR_LOREFILTER_BE_NEEDLE, VENDOR_LOREFILTER_BE_PATCH)
+    .replace(VENDOR_BE_NAI_KEY_NEEDLE, VENDOR_BE_NAI_KEY_PATCH)
+    .replace(VENDOR_BE_NAI_KEY_RESP_NEEDLE, VENDOR_BE_NAI_KEY_RESP_PATCH)
     .replace(VENDOR_LOREFILTER_TAB_VARS_NEEDLE, VENDOR_LOREFILTER_TAB_VARS_PATCH)
     .replace(VENDOR_LOREFILTER_TAB_INSERT_NEEDLE, VENDOR_LOREFILTER_TAB_INSERT_PATCH)
     .replace(VENDOR_LOREFILTER_TAB_EVT_NEEDLE, VENDOR_LOREFILTER_TAB_EVT_PATCH)

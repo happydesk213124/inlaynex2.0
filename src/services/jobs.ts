@@ -47,7 +47,7 @@ import {
   getNaiLastByteAt,
   hasNaiBodyControl,
 } from '../providers/nai/http';
-import { allUniqueNaiTokens, tokensForFamily } from '../domain/nai/keys';
+import { allUniqueNaiTokens, naiHasAnyToken, tokensForFamily } from '../domain/nai/keys';
 import { imageBackendKind, imageGenTokens } from '../providers/comfy/client';
 import { aspectFromCanvas, canvasDimsForShot, resolveShotAspect } from '../domain/nai-meta/aspect';
 import {
@@ -547,6 +547,17 @@ async function setJob(
 export async function createJob(request: IncomingRequest): Promise<ApiResult> {
   const card = getConfig().card || {};
   if (!card.power && !request.force) throw new Error('Power가 OFF 상태입니다.');
+  const nai = getConfig().nai;
+  if (imageBackendKind(nai) !== 'comfy' && !naiHasAnyToken(nai)) {
+    return {
+      ok: false,
+      accepted: false,
+      error: {
+        code: 'no_nai_key',
+        message: 'NovelAI API 키를 먼저 입력하세요. 모델 설정에서 키를 넣어 주세요.',
+      },
+    };
+  }
   const sessionId = cleanText(request.session_id, 200) || `sess_${uuid().replace(/-/g, '').slice(0, 12)}`;
   const payload: JobRequest = { ...request, session_id: sessionId };
   const busy = await busyReplyForRequest(payload, sessionId);

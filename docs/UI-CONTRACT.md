@@ -215,10 +215,11 @@ an attach toast reads `인레이 넥서스 조각 불러오는중..` until chips
 land, or 10 seconds, whichever is first. Later message clicks do not raise it.
 Dashboard also has `card.nai4_fallback`
 and `card.inline_msg_actions` as a 3-way select: `off` (사용안함),
-`legacy` (편의성, 오류율 있음 — DIV hosts + top bar on the content
-parent only when that parent is inside the bubble),
-`compat` (호환성 — body tags `p`/`li`/`h*`/`blockquote` only, host
-mount). Neither mode removes mounted inline frames. Saved checkbox `true`
+`legacy` (편의성, 오류율 있음 — DIV hosts),
+`compat` (호환성 — body tags `p`/`li`/`h*`/`blockquote` as hosts).
+Both modes put the top bar before the first child of the content parent
+and the bottom bar after the last child (`msgActionBarPlace`), when that
+parent is inside the bubble. Neither mode removes mounted inline frames. Saved checkbox `true`
 migrates to `compat`. Same neighbor rule as `inline_chat_images`.
 Chips still use SafeDOM `H()` (not `insertAdjacentHTML`, not
 bubble-root `prepend`). They mount only when the bubble role normalizes

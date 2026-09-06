@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.41';
+const PLUGIN_VERSION = '2.5.44';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -782,6 +782,24 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.44</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>설정 등 다른 UI에서도 마지막 장 100%면 토스트를 생성 완료로 바꿉니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.43</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>메시지 안 칩: 위 바는 본문 상자 맨 앞, 아래 바는 상자 맨 뒤 (문단 안이 아님)</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.42</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>호환성 위 바도 본문 상자(prose) 맨 앞에 붙입니다. 아래 바는 마지막 문단</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.41</strong>
@@ -9111,7 +9129,7 @@ const VENDOR_INLINE_HELP_PATCH =
     "nx-inline-chat": { title: "이미지 채팅에", body: "선택 기준에서 설정한 탐색 숫자만큼 위·아래의 char 말풍선을 유지합니다. 유저·라이트보드(본문 30자 이하)는 건너뜁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
     "nx-scroll-hold": { title: "스크롤 붙잡기", body: "보고 있는 말풍선이 화면에서 같은 자리에 남도록 채팅 칸의 scrollTop만 보정합니다. 맨 아래 최신 말을 보고 있으면 Risu 자동 스크롤을 그대로 둡니다. 창 전체가 아니라 채팅 스크롤만 움직입니다." },
     "nx-inline-text-side": { title: "선택된글 위치", body: "줄에 맞는 문단 안에서 스피너·삽화를 글 앞 또는 글 뒤에 둡니다. 이미 꽂힌 프레임은 그대로이고, 새로 넣거나 새로고침할 때 적용됩니다." },
-    "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "사용안함 / 편의성(오류율 있음, 칩을 본문 위에 붙임) / 호환성(본문 문단에만 붙임). 헤더가 비면 채팅 카드 복구를 쓰세요. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
+    "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "사용안함 / 편의성(오류율 있음, DIV도 호스트로 씀) / 호환성(문단만 호스트). 둘 다 위 바는 본문 상자 맨 앞, 아래 바는 상자 맨 뒤. 헤더가 비면 채팅 카드 복구를 쓰세요. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
     "nx-inline-chat-scale": { title: "이미지 채팅 배율 (%)", body: "말풍선 안 삽화 크기입니다. 100%가 기본(폭 약 78%·높이 상한 70vh)이고, 50%면 약 절반, 150%면 더 크게 보입니다. 말풍선 폭을 넘지 않습니다." },
     "nx-inline-dom-radius": { title: "스피너 캐릭터 개수", body: "선택한 메시지 기준으로 위·아래에서 유지할 캐릭터 말풍선 수입니다. 기본 4, 범위 3–20입니다. 유저와 본문 30자 이하 메시지는 세지 않고 건너뜁니다. 사진은 위·아래 가장 가까운 캐릭터 1개씩입니다." },
     "nx-progress-toast": { title: "진행 토스트", body: "생성/리롤=보라. 인덱싱(민트)=지금 고른 메시지 이미지 준비만(갤러리 전체 워밍은 표시 안 함). 선택 알림은 별도 토스트. 칩·샷을 꽂기 직전에는 조각 불러오는 중 스피너가 같은 자리에 뜹니다." },
@@ -12260,7 +12278,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const VCMount = globalThis.__INLAY_VIEWER_CORE__;
       const kind = typeof VCMount?.msgActionMountKind == "function"
         ? VCMount.msgActionMountKind(end, nxMsgAct())
-        : (nxMsgAct() === "legacy" && end === "top" ? "parent" : "host");
+        : (nxMsgAct() !== "off" && (end === "top" || end === "bot") ? "parent" : "host");
+      const atEnd = typeof VCMount?.msgActionBarPlace == "function"
+        ? VCMount.msgActionBarPlace(end) === "after"
+        : end === "bot";
       let mount = host;
       if (kind === "parent") {
         try {
@@ -12294,12 +12315,13 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           }
           const okParent = typeof VCMount?.canMountMsgActionOnParent == "function"
             ? VCMount.canMountMsgActionOnParent(parent, msgEl, nxMsgAct(), insideBubble)
-            : (nxMsgAct() === "legacy" && parent != null && parent !== msgEl && insideBubble);
-          if (okParent && parent && typeof parent.prepend == "function") mount = parent;
+            : (nxMsgAct() !== "off" && parent != null && parent !== msgEl && insideBubble);
+          if (okParent && parent && (atEnd ? typeof parent.appendChild == "function" : typeof parent.prepend == "function")) mount = parent;
         } catch {
         }
       }
-      if (!mount || typeof mount.prepend != "function") return null;
+      if (!mount) return null;
+      if (atEnd ? typeof mount.appendChild != "function" : typeof mount.prepend != "function") return null;
       try {
         const tmp = await H(doc, "div", { html: barHtml });
         const kids = await unwrapSafe(typeof tmp?.getChildren == "function" ? await tmp.getChildren() : null);
@@ -12315,7 +12337,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         for (let i = 0; i < chipKinds.length; i += 1) {
           await chipNodes[i].setAttribute("x-inlay-msg-chip", chipKinds[i]);
         }
-        if (mount === host) await host.prepend(wrap);
+        // SafeDOM: appendChild, not ParentNode.append (same as inline shots).
+        if (atEnd) await mount.appendChild(wrap);
         else await mount.prepend(wrap);
         return wrap;
       } catch {
@@ -12417,6 +12440,14 @@ const VENDOR_INLINE_PENDING_UI_PATCH =
           t._inlinePendingSessionId = String(e || "");
         }
         if (t.uiOpen) {`;
+
+/** Settings/other shell: same last-shot toast flip as chat (no bubble attach). */
+const VENDOR_UIOPEN_LAST_SHOT_TOAST_NEEDLE =
+  `        if (t.uiOpen) {
+          if (a.state === "done" || a.state === "cancelled") {`;
+const VENDOR_UIOPEN_LAST_SHOT_TOAST_PATCH =
+  `        if (t.uiOpen) {
+          if (a.state === "generating" && Number(r.shot_count || 0) > 0 && Number(r.shot_done ?? 0) >= Number(r.shot_count) || a.state === "done" || a.state === "cancelled") {`;
 
 /** Progressive bubble inline: store pending_inline; force gallery reload on shot_done. */
 const VENDOR_INLINE_POLL_NEEDLE =
@@ -13845,8 +13876,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.41",
-    body: "스크롤 붙잡기: 인라인·태그 직후 채팅 칸만 보정합니다."
+    title: "2.5.44",
+    body: "설정 등 다른 UI에서도 마지막 장 100%면 생성 완료로 바꿉니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -17491,6 +17522,7 @@ const loadVendorUi = (): string => {
     [VENDOR_INLINE_CALL_NEEDLE, 'inline inject call'],
     [VENDOR_INLINE_SAME_NEEDLE, 'inline inject same-select'],
     [VENDOR_INLINE_PENDING_UI_NEEDLE, 'inline pending before ui-open return'],
+    [VENDOR_UIOPEN_LAST_SHOT_TOAST_NEEDLE, 'last-shot toast flip while settings open'],
     [VENDOR_INLINE_POLL_NEEDLE, 'inline poll pending'],
     [VENDOR_INLINE_POLL_REFRESH_NEEDLE, 'inline poll refresh'],
     [VENDOR_POLL_JOB_GUARD_NEEDLE, 'poll ignore stale job ticks'],
@@ -17899,6 +17931,7 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_INLINE_CALL_NEEDLE, VENDOR_INLINE_CALL_PATCH)
     .replace(VENDOR_INLINE_SAME_NEEDLE, VENDOR_INLINE_SAME_PATCH)
     .replace(VENDOR_INLINE_PENDING_UI_NEEDLE, VENDOR_INLINE_PENDING_UI_PATCH)
+    .replace(VENDOR_UIOPEN_LAST_SHOT_TOAST_NEEDLE, VENDOR_UIOPEN_LAST_SHOT_TOAST_PATCH)
     .replace(VENDOR_INLINE_POLL_NEEDLE, VENDOR_INLINE_POLL_PATCH)
     .replace(VENDOR_INLINE_POLL_REFRESH_NEEDLE, VENDOR_INLINE_POLL_REFRESH_PATCH)
     .replace(VENDOR_POLL_JOB_GUARD_NEEDLE, VENDOR_POLL_JOB_GUARD_PATCH)
@@ -18594,7 +18627,10 @@ const loadVendorUi = (): string => {
       throw new Error('[build] shot_done must patch only newly linked cards');
     }
     if (!out.includes('i >= Number(r.shot_count) && a.state === "generating"')) {
-      throw new Error('[build] last inline insert must mark the job toast done');
+        throw new Error('[build] last inline insert must mark the job toast done');
+    }
+    if (!out.includes('a.state === "generating" && Number(r.shot_count || 0) > 0 && Number(r.shot_done ?? 0) >= Number(r.shot_count) || a.state === "done" || a.state === "cancelled"')) {
+        throw new Error('[build] settings-open poll must flip last-shot toast to done');
     }
     if (!out.includes('o && t.jobsInFlight.delete(o)')) {
       throw new Error('[build] last inline insert must release the in-flight lock');
@@ -18645,8 +18681,11 @@ const loadVendorUi = (): string => {
     if (out.includes('await msgEl.prepend(wrap)')) {
       throw new Error('[build] msg-action chips must not prepend onto the bubble root');
     }
-    if (!out.includes('isInlayPaintHost') || !out.includes('canMountMsgActionOnParent') || !out.includes('msgActionMountKind') || !out.includes('isMessageBodyHostTag')) {
-      throw new Error('[build] msg-action chips must stay on body hosts and skip card chrome');
+    if (!out.includes('isInlayPaintHost') || !out.includes('canMountMsgActionOnParent') || !out.includes('msgActionMountKind') || !out.includes('msgActionBarPlace') || !out.includes('isMessageBodyHostTag')) {
+        throw new Error('[build] msg-action chips must stay on body hosts and skip card chrome');
+    }
+    if (!out.includes('if (atEnd) await mount.appendChild(wrap)')) {
+        throw new Error('[build] msg-action bottom bar must appendChild on the content box');
     }
     if (!out.includes('nxPatchInlinePhotoByCardId') || !out.includes('shouldOverlayInlinePhoto')) {
       throw new Error('[build] missing card-id photo patch / ±1 char overlay');

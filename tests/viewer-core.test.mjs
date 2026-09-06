@@ -28,6 +28,7 @@ import {
   keepMsgActionBarIndexes,
   isInlayPaintHost,
   msgActionMountKind,
+  msgActionBarPlace,
   canMountMsgActionOnParent,
   isMessageBodyHostTag,
   normalizeInlineMsgActions,
@@ -309,16 +310,25 @@ test("normalizeInlineMsgActions maps checkbox and aliases", () => {
   assert.equal(inlineMsgActionsLegacy("compat"), false);
 });
 
-test("msgActionMountKind paints on the body host unless legacy top", () => {
-  assert.equal(msgActionMountKind("top"), "host");
-  assert.equal(msgActionMountKind("bot"), "host");
+test("msgActionMountKind puts both bars on the content parent when chips are on", () => {
+  assert.equal(msgActionMountKind("top"), "parent");
+  assert.equal(msgActionMountKind("bot"), "parent");
   assert.equal(msgActionMountKind(""), "host");
-  assert.equal(msgActionMountKind("top", "compat"), "host");
+  assert.equal(msgActionMountKind("top", "compat"), "parent");
   assert.equal(msgActionMountKind("top", "legacy"), "parent");
-  assert.equal(msgActionMountKind("bot", "legacy"), "host");
+  assert.equal(msgActionMountKind("bot", "compat"), "parent");
+  assert.equal(msgActionMountKind("bot", "legacy"), "parent");
+  assert.equal(msgActionMountKind("top", "off"), "host");
+  assert.equal(msgActionMountKind("bot", "off"), "host");
 });
 
-test("canMountMsgActionOnParent is legacy-only and stays inside the bubble", () => {
+test("msgActionBarPlace puts the bottom bar after the last sibling", () => {
+  assert.equal(msgActionBarPlace("top"), "before");
+  assert.equal(msgActionBarPlace("bot"), "after");
+  assert.equal(msgActionBarPlace(""), "before");
+});
+
+test("canMountMsgActionOnParent stays inside the bubble for legacy and compat", () => {
   const bubble = { id: "msg" };
   const content = { id: "box" };
   const chatRow = { id: "row" };
@@ -326,13 +336,14 @@ test("canMountMsgActionOnParent is legacy-only and stays inside the bubble", () 
   assert.equal(canMountMsgActionOnParent(bubble, bubble), false);
   assert.equal(canMountMsgActionOnParent(null, bubble), false);
   assert.equal(canMountMsgActionOnParent(content, bubble, "compat"), false);
-  assert.equal(canMountMsgActionOnParent(content, bubble, "compat", true), false);
+  assert.equal(canMountMsgActionOnParent(content, bubble, "compat", true), true);
   assert.equal(canMountMsgActionOnParent(content, bubble, "legacy"), false);
   assert.equal(canMountMsgActionOnParent(content, bubble, "legacy", false), false);
   assert.equal(canMountMsgActionOnParent(chatRow, bubble, "legacy", false), false);
   assert.equal(canMountMsgActionOnParent(content, bubble, "legacy", true), true);
   assert.equal(canMountMsgActionOnParent(bubble, bubble, "legacy", true), false);
   assert.equal(canMountMsgActionOnParent(null, bubble, "legacy", true), false);
+  assert.equal(canMountMsgActionOnParent(content, bubble, "off", true), false);
 });
 
 test("findElementIndexForLine matches text + occurrence order", () => {

@@ -3533,20 +3533,26 @@ export function isMessageBodyHostTag(tag: unknown): boolean {
   return name === 'P' || name === 'LI' || name === 'BLOCKQUOTE' || /^H[1-6]$/.test(name);
 }
 
-/** Compat: always the paragraph. Legacy: top bar on the content parent. */
+/** Both bars sit on the prose-box parent. Off stays on the host. */
 export function msgActionMountKind(end: unknown, mode: unknown = 'compat'): 'parent' | 'host' {
-  if (inlineMsgActionsLegacy(mode) && String(end || '') === 'top') return 'parent';
+  const which = String(end || '');
+  if (inlineMsgActionsOn(mode) && (which === 'top' || which === 'bot')) return 'parent';
   return 'host';
 }
 
-/** Legacy only: parent prepend when parent is an inner box under the bubble. */
+/** Top = first child of the box. Bottom = last child of the box. */
+export function msgActionBarPlace(end: unknown): 'before' | 'after' {
+  return String(end || '') === 'bot' ? 'after' : 'before';
+}
+
+/** Parent prepend when parent is an inner box under the bubble (top bar). */
 export function canMountMsgActionOnParent(
   parent: unknown,
   bubbleRoot: unknown,
   mode: unknown = 'compat',
   insideBubble: unknown = false,
 ): boolean {
-  if (!inlineMsgActionsLegacy(mode)) return false;
+  if (!inlineMsgActionsOn(mode)) return false;
   if (parent == null || parent === bubbleRoot) return false;
   return insideBubble === true;
 }

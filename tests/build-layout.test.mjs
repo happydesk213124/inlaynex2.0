@@ -1235,6 +1235,11 @@ test('force tag clear and pending restamp stay scoped to their original message'
     /i >= Number\(r\.shot_count\) && a\.state === "generating"/,
     'toast must flip to 생성 완료 in the same tick as the last inline insert',
   );
+  assert.match(
+    source,
+    /a\.state === "generating" && Number\(r\.shot_count \|\| 0\) > 0 && Number\(r\.shot_done \?\? 0\) >= Number\(r\.shot_count\) \|\| a\.state === "done" \|\| a\.state === "cancelled"/,
+    'settings-open poll must flip last-shot toast to done without attaching',
+  );
   assert.match(poll, /o && t\.jobsInFlight\.delete\(o\)/);
   assert.match(poll, /t\._pollJobId = ""/);
   assert.match(poll, /clearInterval\(t\.pollTimer\)/);
@@ -1543,9 +1548,11 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
     'bind repaint must run after listeners bind',
   );
   assert.match(body, /H\(doc, "div"/);
-  assert.match(body, /host\.prepend\(wrap\)/);
+  assert.match(body, /mount\.prepend\(wrap\)/);
   assert.match(body, /prependBar/);
   assert.match(body, /msgActionMountKind/);
+  assert.match(body, /msgActionBarPlace/);
+  assert.match(body, /if \(atEnd\) await mount\.appendChild\(wrap\)/);
   assert.match(body, /canMountMsgActionOnParent\(parent, msgEl, nxMsgAct\(\), insideBubble\)/);
   // Host eligibility moved into the scan the bars now share with inline shots.
   assert.match(body, /nxScanBubbleHosts\(msgEl\)/);

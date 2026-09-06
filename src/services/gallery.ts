@@ -40,7 +40,7 @@ import {
   roomTallies,
 } from '../storage/stores';
 import type { ZipEntryInput } from '../ui-contract/gallery-zip';
-import { assignGalleryExportFiles, buildGalleryManifest, lookupZipImage, packGalleryZip, resolveReattach, unpackGalleryZip } from '../ui-contract/gallery-zip';
+import { assignGalleryExportFiles, buildGalleryManifest, galleryImageExt, lookupZipImage, packGalleryZip, resolveReattach, unpackGalleryZip, withGalleryExt } from '../ui-contract/gallery-zip';
 import {
   cardMetaFromLocation,
   locationFieldsForCard,
@@ -634,18 +634,23 @@ export async function exportGalleryZip(body: Record<string, unknown> = {}): Prom
   }
   if (!items.length) return { ok: false, ...errorBody('no images to export', 'empty') };
   const numbered = assignGalleryExportFiles(items);
-  const manifest = buildGalleryManifest(numbered);
-  const files: ZipEntryInput[] = [
-    { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) },
-  ];
+  const named: typeof numbered = [];
+  const imageFiles: ZipEntryInput[] = [];
   for (const item of numbered) {
     const id = String(item.id || '');
     if (!id) continue;
-    const png = await getImageBytes(id);
-    if (!png?.byteLength) continue;
-    files.push({ name: String(item.file || `images/${id}.png`), data: asU8(png) });
+    const raw = await getImageBytes(id);
+    if (!raw?.byteLength) continue;
+    const file = withGalleryExt(item.file || `images/${id}.webp`, galleryImageExt(raw));
+    named.push({ ...item, file });
+    imageFiles.push({ name: file, data: asU8(raw) });
   }
-  if (files.length < 2) return { ok: false, ...errorBody('image bytes missing', 'empty') };
+  if (!imageFiles.length) return { ok: false, ...errorBody('image bytes missing', 'empty') };
+  const manifest = buildGalleryManifest(named);
+  const files: ZipEntryInput[] = [
+    { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) },
+    ...imageFiles,
+  ];
   const zip = packGalleryZip(files);
   return {
     ok: true,

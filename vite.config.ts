@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.56';
+const PLUGIN_VERSION = '2.5.57';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.57</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>탐색 저장·ZIP은 저장된 WebP를 그대로 둡니다. PNG로 바꾸지 않습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.56</strong>
@@ -5381,7 +5387,8 @@ const VENDOR_EXPLORER_SAVE_ONE_PATCH =
       if (!href) return $e("이미지를 불러오지 못했습니다", !1);
       const a = document.createElement("a");
       a.href = href;
-      a.download = \`\${card.character_name || "inlay"}_msg\${Number(card.message_index) >= 0 ? card.message_index + 1 : "x"}_s\${Number(card.shot_index) + 1}.png\`;
+      const ext = /^data:image\\/webp/i.test(href) || /\\.webp(?:;|$|\\?)/i.test(href) ? "webp" : /^data:image\\/jpeg/i.test(href) ? "jpg" : /^data:image\\/png/i.test(href) ? "png" : "webp";
+      a.download = \`\${card.character_name || "inlay"}_msg\${Number(card.message_index) >= 0 ? card.message_index + 1 : "x"}_s\${Number(card.shot_index) + 1}.\${ext}\`;
       a.click();
       $e("이미지 저장");
     });`;
@@ -5398,7 +5405,8 @@ const VENDOR_EXPLORER_CTX_SAVE_PATCH =
           const href = await nxExplorerLbFull(card);
           if (!href) return $e("이미지를 불러오지 못했습니다", !1);
           const a = document.createElement("a");
-          a.href = href, a.download = \`\${id}.png\`, a.click();
+          const ext = /^data:image\\/webp/i.test(href) || /\\.webp(?:;|$|\\?)/i.test(href) ? "webp" : /^data:image\\/jpeg/i.test(href) ? "jpg" : /^data:image\\/png/i.test(href) ? "png" : "webp";
+          a.href = href, a.download = \`\${id}.\${ext}\`, a.click();
         }`;
 
 /** Card click stopPropagation ate the doc click that should dismiss the ctx menu. */
@@ -14284,8 +14292,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.56",
-    body: "탐색 ZIP 한글이 안 깨지고, 받는 동안 버튼이 돌아갑니다."
+    title: "2.5.57",
+    body: "탐색 저장과 ZIP은 저장된 WebP를 그대로 둡니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

@@ -5,11 +5,13 @@ import {
   buildStoreZip,
   parseStoreZip,
   buildGalleryManifest,
+  galleryImageExt,
   lookupZipImage,
   originalGalleryFileName,
   resolveReattach,
   stripExportSeqPrefix,
   unpackGalleryZip,
+  withGalleryExt,
   crc32,
 } from "../.test-build/gallery-zip.mjs";
 
@@ -64,8 +66,8 @@ test("newest image in a folder is 000001_ plus the old download name", () => {
     { id: "new", folder_key: "c|t", character_name: "노겜노라", message_index: 9, shot_index: 2, created_at: 99 },
   ]);
   assert.equal(rows[0].id, "new");
-  assert.equal(rows[0].file, "노겜노라/000001_노겜노라_msg10_s3.png");
-  assert.equal(rows[1].file, "노겜노라/000002_노겜노라_msg2_s1.png");
+  assert.equal(rows[0].file, "노겜노라/000001_노겜노라_msg10_s3.webp");
+  assert.equal(rows[1].file, "노겜노라/000002_노겜노라_msg2_s1.webp");
 });
 
 test("full export keeps one directory per explorer folder", () => {
@@ -89,7 +91,15 @@ test("same character name in two rooms keeps both folders", () => {
 test("stripExportSeqPrefix leaves old names alone", () => {
   assert.equal(stripExportSeqPrefix("노겜노라/000001_노겜노라_msg10_s3.png"), "노겜노라_msg10_s3.png");
   assert.equal(stripExportSeqPrefix("images/abc.png"), "abc.png");
-  assert.equal(originalGalleryFileName({ character_name: "inlay", message_index: 0, shot_index: 0 }), "inlay_msg1_s1.png");
+  assert.equal(originalGalleryFileName({ character_name: "inlay", message_index: 0, shot_index: 0 }), "inlay_msg1_s1.webp");
+  assert.equal(originalGalleryFileName({ character_name: "inlay", message_index: 0, shot_index: 0 }, "png"), "inlay_msg1_s1.png");
+});
+
+test("galleryImageExt follows the stored bytes, not the old .png name", () => {
+  const webp = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]);
+  assert.equal(galleryImageExt(webp), "webp");
+  assert.equal(galleryImageExt(new Uint8Array([137, 80, 78, 71])), "png");
+  assert.equal(withGalleryExt("노겜노라/000001_노겜노라_msg10_s3.png", "webp"), "노겜노라/000001_노겜노라_msg10_s3.webp");
 });
 
 test("lookupZipImage accepts prefixed, legacy, and stripped names", () => {
@@ -102,6 +112,8 @@ test("lookupZipImage accepts prefixed, legacy, and stripped names", () => {
   assert.equal(lookupZipImage(legacy, { file: "images/abc.png", id: "abc" }), png);
   const stripped = new Map([["노겜노라/노겜노라_msg10_s3.png", png]]);
   assert.equal(lookupZipImage(stripped, { file: "노겜노라/000001_노겜노라_msg10_s3.png", id: "new" }), png);
+  const webpNamed = new Map([["노겜노라/000001_노겜노라_msg10_s3.webp", png]]);
+  assert.equal(lookupZipImage(webpNamed, { file: "노겜노라/000001_노겜노라_msg10_s3.png", id: "new" }), png);
 });
 
 test("resolveReattach exact / candidate / orphan", () => {

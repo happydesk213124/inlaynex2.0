@@ -1,5 +1,5 @@
 /** Store-method ZIP + gallery manifest / reattach helpers (no deps). */
-import { asU8, concatChunks } from '../core/util/bytes.ts';
+import { asU8, concatChunks, sniffImageMime } from '../core/util/bytes.ts';
 
 /** Anything the ported call sites hand over as entry payloads. */
 export type ByteSource = Uint8Array | ArrayBufferLike | number[] | null | undefined;
@@ -14,6 +14,7 @@ export interface GalleryExportItem {
   id?: string;
   file?: string;
   folder_key?: string;
+  export_ext?: string;
   character_id?: string;
   chat_id?: string;
   character_name?: string;
@@ -277,14 +278,34 @@ export function sanitizeZipName(raw: unknown, fallback = 'file'): string {
   return cut || fallback;
 }
 
-/** The name that used to be the PNG itself, before the newest-first 000001_ prefix. */
-export function originalGalleryFileName(item: GalleryExportItem | null | undefined): string {
+/** Stored shots are WebP; keep PNG/JPEG only when the bytes really are. */
+export function galleryImageExt(bytes: ByteSource | null | undefined): 'webp' | 'png' | 'jpg' {
+  const mime = sniffImageMime(toBytes(bytes));
+  if (mime === 'image/webp') return 'webp';
+  if (mime === 'image/jpeg') return 'jpg';
+  return 'png';
+}
+
+/** Swap `.png` / `.webp` / `.jpg` on a ZIP path without touching the stem. */
+export function withGalleryExt(fileName: unknown, ext: string): string {
+  const raw = String(fileName || '').replace(/\\/g, '/');
+  const safe = /^(webp|png|jpe?g)$/i.test(ext) ? ext.toLowerCase().replace(/^jpeg$/, 'jpg') : 'webp';
+  if (/\.(png|webp|jpe?g)$/i.test(raw)) return raw.replace(/\.(png|webp|jpe?g)$/i, `.${safe}`);
+  return raw ? `${raw}.${safe}` : `image.${safe}`;
+}
+
+/** The download stem, before the newest-first 000001_ prefix. */
+export function originalGalleryFileName(
+  item: GalleryExportItem | null | undefined,
+  ext: string = 'webp',
+): string {
   const char = sanitizeZipName(item?.character_name, 'inlay');
   const msg = Number(item?.message_index);
   const shot = Number(item?.shot_index);
   const msgPart = Number.isFinite(msg) && msg >= 0 ? String(msg + 1) : 'x';
   const shotPart = Number.isFinite(shot) && shot >= 0 ? String(shot + 1) : '1';
-  return `${char}_msg${msgPart}_s${shotPart}.png`;
+  const safe = /^(webp|png|jpe?g)$/i.test(ext) ? ext.toLowerCase().replace(/^jpeg$/, 'jpg') : 'webp';
+  return `${char}_msg${msgPart}_s${shotPart}.${safe}`;
 }
 
 /** `000001_foo.png` → `foo.png`. Leaves unprefixed names alone. */
@@ -315,7 +336,7 @@ function folderZipDir(item: GalleryExportItem, used: Map<string, string>): strin
 
 /**
  * Newest image in each explorer folder is `000001_…`. Paths are
- * `{folder}/000001_{original}.png` so a full export stays one ZIP, one dir per room.
+ * `{folder}/000001_{original}.webp` so a full export stays one ZIP, one dir per room.
  */
 export function assignGalleryExportFiles(items: GalleryExportItem[] = []): GalleryExportItem[] {
   const dirs = new Map<string, string>();
@@ -336,7 +357,8 @@ export function assignGalleryExportFiles(items: GalleryExportItem[] = []): Galle
     const dir = folderZipDir(list[0] || {}, dirs);
     list.forEach((item, i) => {
       const seq = String(i + 1).padStart(6, '0');
-      out.push({ ...item, file: `${dir}/${seq}_${originalGalleryFileName(item)}` });
+      const ext = typeof item.export_ext === 'string' ? item.export_ext : 'webp';
+      out.push({ ...item, file: `${dir}/${seq}_${originalGalleryFileName(item, ext)}` });
     });
   }
   return out;
@@ -350,14 +372,19 @@ export function lookupZipImage(
   if (!images?.size) return undefined;
   const file = String(item?.file || '').replace(/\\/g, '/');
   if (file && images.has(file)) return images.get(file);
-  const idName = `${String(item?.id || '')}.png`;
-  const legacy = `images/${idName}`;
-  if (item?.id && images.has(legacy)) return images.get(legacy);
-  const wantBase = stripExportSeqPrefix(file.split('/').pop() || '');
+  const id = String(item?.id || '');
+  if (id) {
+    for (const ext of ['png', 'webp', 'jpg', 'jpeg']) {
+      const legacy = `images/${id}.${ext}`;
+      if (images.has(legacy)) return images.get(legacy);
+    }
+  }
+  const wantStem = stripExportSeqPrefix(file.split('/').pop() || '').replace(/\.(png|webp|jpe?g)$/i, '');
   for (const [name, data] of images) {
     const base = name.replace(/\\/g, '/').split('/').pop() || '';
-    if (item?.id && base === idName) return data;
-    if (wantBase && stripExportSeqPrefix(base) === wantBase) return data;
+    const stem = stripExportSeqPrefix(base).replace(/\.(png|webp|jpe?g)$/i, '');
+    if (id && stem === id) return data;
+    if (wantStem && stem === wantStem) return data;
   }
   return undefined;
 }

@@ -794,8 +794,8 @@ for (const name of oldSteps.keys()) {
     if (!newStep.ok) findings.push({ at: name, old: '(intentional)', new: 'failed', note: 'new step errored' });
     if (name === 'gallery.export') {
       const names = Array.isArray(newStep.value?.names) ? newStep.value.names : [];
-      const pngs = names.filter((n) => /\.png$/i.test(String(n)));
-      const numbered = pngs.length >= 1 && pngs.every((n) => /\/\d{6}_.+\.png$/i.test(String(n)));
+      const shots = names.filter((n) => /\.(png|webp|jpe?g)$/i.test(String(n)));
+      const numbered = shots.length >= 1 && shots.every((n) => /\/\d{6}_.+\.(png|webp|jpe?g)$/i.test(String(n)));
       const files = Array.isArray(newStep.value?.manifest?.items)
         ? newStep.value.manifest.items.map((it) => String(it?.file || ''))
         : [];
@@ -804,7 +804,7 @@ for (const name of oldSteps.keys()) {
           at: name,
           old: 'images/<id>.png',
           new: JSON.stringify({ names, files }).slice(0, 240),
-          note: '2.5.55 export must be {folder}/000001_oldname.png newest-first per room',
+          note: '2.5.55 export must be {folder}/000001_oldname.webp newest-first per room',
         });
       }
     }

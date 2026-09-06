@@ -8,6 +8,10 @@ import {
   createDebouncedSaveQueue,
   createScrollPhaseBus,
   createScrollSettleTracker,
+  isScrollHoldLatest,
+  pickScrollHoldAnchor,
+  scrollHoldDelta,
+  shouldHoldScroll,
   createSessionChangeGuard,
   evenAnchorPercent,
   findHashRebindCandidates,
@@ -2583,4 +2587,51 @@ test("parseAutotagLookJson falls back flat tags to appearance", () => {
   assert.equal(out.appearance, "1girl, long hair, hoodie");
   assert.equal(out.attire, "");
   assert.equal(out.accessories, "");
+});
+
+test("pickScrollHoldAnchor prefers the bubble crossing the scroller top", () => {
+  const scroller = { top: 100, bottom: 500, height: 400 };
+  assert.equal(
+    pickScrollHoldAnchor(scroller, [
+      { top: 80, bottom: 180 },
+      { top: 200, bottom: 280 },
+      { top: 520, bottom: 600 },
+    ]),
+    0,
+  );
+  assert.equal(
+    pickScrollHoldAnchor(scroller, [
+      { top: 40, bottom: 90 },
+      { top: 160, bottom: 240 },
+    ]),
+    1,
+  );
+  assert.equal(pickScrollHoldAnchor(scroller, []), -1);
+});
+
+test("scrollHoldDelta ignores jitter and viewport-sized jumps", () => {
+  assert.equal(scrollHoldDelta(40, 41), 0);
+  assert.equal(scrollHoldDelta(40, 80), 40);
+  assert.equal(scrollHoldDelta(40, 500, 200), 0);
+  assert.equal(scrollHoldDelta("x", 10), 0);
+});
+
+test("shouldHoldScroll skips latest and user control", () => {
+  assert.equal(shouldHoldScroll({}), true);
+  assert.equal(shouldHoldScroll({ atLatest: true }), false);
+  assert.equal(shouldHoldScroll({ userControl: true }), false);
+  assert.equal(
+    isScrollHoldLatest({
+      scrollerRect: { top: 0, bottom: 400, height: 400 },
+      newestRect: { top: 300, bottom: 390 },
+    }),
+    true,
+  );
+  assert.equal(
+    isScrollHoldLatest({
+      scrollerRect: { top: 0, bottom: 400, height: 400 },
+      newestRect: { top: 20, bottom: 80 },
+    }),
+    false,
+  );
 });

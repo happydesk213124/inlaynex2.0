@@ -300,6 +300,8 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   card.inline_previews = overlayOn;
   if (card.inline_chat_images == null) card.inline_chat_images = false;
   else card.inline_chat_images = card.inline_chat_images === true || card.inline_chat_images === 'true' || card.inline_chat_images === 1 || card.inline_chat_images === '1';
+  if (card.scroll_hold == null) card.scroll_hold = false;
+  else card.scroll_hold = card.scroll_hold === true || card.scroll_hold === 'true' || card.scroll_hold === 1 || card.scroll_hold === '1';
   card.inline_chat_text_side = normalizeInlineChatTextSide(card.inline_chat_text_side);
   card.inline_msg_actions = normalizeInlineMsgActions(card.inline_msg_actions);
   {

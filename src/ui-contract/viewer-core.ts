@@ -1902,6 +1902,72 @@ export function createScrollPhaseBus({
   };
 }
 
+export interface ScrollHoldRect {
+  top: number;
+  bottom: number;
+  height?: number;
+}
+
+/** Bubble that crosses the scroller top, else the closest visible one. */
+export function pickScrollHoldAnchor(
+  scrollerRect: ScrollHoldRect | null | undefined,
+  bubbleRects: Array<ScrollHoldRect | null | undefined> | null | undefined,
+): number {
+  if (!scrollerRect || !Array.isArray(bubbleRects) || !bubbleRects.length) return -1;
+  const viewportTop = Number(scrollerRect.top) + 1;
+  const viewportBottom = Number(scrollerRect.bottom) - 1;
+  if (!Number.isFinite(viewportTop) || !Number.isFinite(viewportBottom)) return -1;
+  let bestIndex = -1;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < bubbleRects.length; i += 1) {
+    const rect = bubbleRects[i];
+    if (!rect || rect.bottom <= viewportTop || rect.top >= viewportBottom) continue;
+    const crossesTop = rect.top <= viewportTop && rect.bottom > viewportTop;
+    const score = crossesTop
+      ? Math.abs(rect.top - viewportTop) * 0.001
+      : Math.abs(rect.top - viewportTop) + 10;
+    if (score < bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+/** Newest bubble sits in the bottom band — leave Risu autoscroll alone. */
+export function isScrollHoldLatest(args: {
+  scrollerRect?: ScrollHoldRect | null;
+  newestRect?: ScrollHoldRect | null;
+} = {}): boolean {
+  const scroller = args.scrollerRect;
+  const newest = args.newestRect;
+  if (!scroller || !newest) return false;
+  const heightRaw = Number(scroller.height);
+  const height = Number.isFinite(heightRaw) && heightRaw > 0
+    ? heightRaw
+    : Math.max(0, Number(scroller.bottom) - Number(scroller.top));
+  const bottomBand = Number(scroller.bottom) - Math.min(140, height * 0.28);
+  return newest.bottom >= bottomBand && newest.top < Number(scroller.bottom) + 24;
+}
+
+/** Ignore jitter and jumps bigger than the scroller. */
+export function scrollHoldDelta(prevOffset: unknown, nextOffset: unknown, viewportHeight: unknown = 0): number {
+  const prev = Number(prevOffset);
+  const next = Number(nextOffset);
+  if (!Number.isFinite(prev) || !Number.isFinite(next)) return 0;
+  const delta = next - prev;
+  if (Math.abs(delta) < 2) return 0;
+  const vh = Number(viewportHeight);
+  if (Number.isFinite(vh) && vh > 0 && Math.abs(delta) > vh) return 0;
+  return delta;
+}
+
+export function shouldHoldScroll(opts: { atLatest?: unknown; userControl?: unknown } = {}): boolean {
+  if (opts.atLatest === true) return false;
+  if (opts.userControl === true) return false;
+  return true;
+}
+
 /** True when sticky shot index changed enough to warrant a paint (not every pointer pixel). */
 export function stickySegChanged(prev: unknown, next: unknown): boolean {
   const b = Number(next);

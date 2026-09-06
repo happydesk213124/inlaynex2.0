@@ -27,10 +27,7 @@ test("store zip marks UTF-8 names so Windows does not mojibake Hangul", () => {
   const flags = zip[6] | (zip[7] << 8);
   assert.equal(flags, 0x0800);
   const extraLen = zip[28] | (zip[29] << 8);
-  assert.ok(extraLen >= 9);
-  const nameLen = zip[26] | (zip[27] << 8);
-  const extra = zip.subarray(30 + nameLen, 30 + nameLen + extraLen);
-  assert.equal(extra[0] | (extra[1] << 8), 0x7075);
+  assert.equal(extraLen, 0);
   const map = parseStoreZip(zip);
   assert.ok(map.has("노겜노라/000001_노겜노라_msg1_s1.png"));
 });

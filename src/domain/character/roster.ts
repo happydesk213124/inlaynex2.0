@@ -329,6 +329,21 @@ export function foldCharacterUpsert(
 }
 
 /**
+ * Whether `new_characters` merge may treat linked chats as "already on the roster".
+ * Off matches `rosterForSession`: live chat + globals only, even if the job
+ * still sends `source_session_ids`.
+ */
+export function scanLinkedChatsForRosterMerge(
+  unifiedChatPriority: unknown,
+  sourceSessionIds: unknown[] | null | undefined,
+): boolean {
+  if (!unifiedChatPriority) return false;
+  return (Array.isArray(sourceSessionIds) ? sourceSessionIds : []).some((id) =>
+    Boolean(String(id ?? '').trim()),
+  );
+}
+
+/**
  * Merge per-chat session characters with globals for tagging / generation.
  *
  * Attire-only session rows (empty appearance, optional attire/accessories) must NOT

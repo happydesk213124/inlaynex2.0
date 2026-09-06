@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { foldCharacterUpsert, matchCharactersInText, mergeSessionAndGlobalRoster, normalizeCharacterRecord, pickUnifiedWinners } from "../.test-build/roster-merge.mjs";
+import { foldCharacterUpsert, matchCharactersInText, mergeSessionAndGlobalRoster, normalizeCharacterRecord, pickUnifiedWinners, scanLinkedChatsForRosterMerge } from "../.test-build/roster-merge.mjs";
 
 function helpers() {
   const key = (v) => String(v || "").trim().toLowerCase();
@@ -248,5 +248,13 @@ test("tagger trigger list is one merged roster match, not separate global+sessio
   const hits = matchCharactersInText("오늘 유나가 카페에 왔다", roster);
   assert.equal(hits.length, 1);
   assert.equal(hits[0].id, roster[0].id);
+});
+
+test("linked-chat merge scan follows unified_chat_priority, not just source ids", () => {
+  const linked = ["sess_here", "sess_other"];
+  assert.equal(scanLinkedChatsForRosterMerge(false, linked), false);
+  assert.equal(scanLinkedChatsForRosterMerge(true, linked), true);
+  assert.equal(scanLinkedChatsForRosterMerge(true, []), false);
+  assert.equal(scanLinkedChatsForRosterMerge(true, ["", "  "]), false);
 });
 

@@ -8,7 +8,8 @@
  * merge across linked chats, never a store of its own, so `rosterStoreSessionId`
  * and `mergeRosterFromTagged` deliberately ignore the unified id when choosing a
  * write target. Editing the unified view therefore patches the root chats that
- * already hold the character and never creates rows in them.
+ * already hold the character and never creates rows in them. "Already exists?"
+ * during tagged merge uses linked chats only when `unified_chat_priority` is on.
  *
  * **Session rows with no appearance are legacy wardrobe overlays.** They no
  * longer rewrite a global's attire/accessories at merge time; shot `wear_state` /
@@ -41,6 +42,7 @@ import {
   normalizeCharacterRecord,
   pickUnifiedWinners,
   resolveCharacter,
+  scanLinkedChatsForRosterMerge,
 } from '../domain/character/roster';
 import {
   characterHasAppearance,
@@ -866,7 +868,8 @@ export async function mergeRosterFromTagged(args: MergeRosterArgs): Promise<Char
     rosterForSession(sessionId, unifiedSessionId, characterId, sourceSessionIds);
 
   let roster = await readRoster();
-  const pool = sourceSessionIds.length
+  // Same gate as roster reads: priority off must not see sibling chats as "already exists".
+  const pool = scanLinkedChatsForRosterMerge(getConfig()?.card?.unified_chat_priority, sourceSessionIds)
     ? await listMergedSessionCharacters([writeSessionId, ...sourceSessionIds])
     : roster;
   const newList = [...(tagged.new_characters || [])];

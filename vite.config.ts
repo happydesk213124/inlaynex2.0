@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.51';
+const PLUGIN_VERSION = '2.5.52';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -782,6 +782,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.52</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스크롤 붙잡기가 켜져 있으면 첫 스피너가 붙어도 말이 안 밀립니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.51</strong>
@@ -10647,21 +10653,23 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         confirmedEmpty: !cards.length && String(t._galleryCache?.sessionId || "") === String(row?.msg?.sessionId || sel.sessionId || "")
       });
     };
-    for (const row of spinDiff.enter || []) {
-      if (stale()) return;
-      await stampAt(Number(row.idx), enterPhotoEls.has(row.el));
-    }
-    for (const row of photoDiff.enter || []) {
-      if (stale()) return;
-      if ((spinDiff.enter || []).some((s) => {
-        const ka = typeof VC?.inlineIdentityKey == "function" ? VC.inlineIdentityKey(s) : "";
-        const kb = typeof VC?.inlineIdentityKey == "function" ? VC.inlineIdentityKey(row) : "";
-        return ka && kb ? ka === kb : s.el === row.el;
-      })) continue;
-      await stampAt(Number(row.idx), !0);
-    }
-    t._inlineSpinnerEls = nextSpinnerEls;
-    t._inlinePhotoEls = nextPhotoEls;
+    await nxAroundScrollHold(async () => {
+      for (const row of spinDiff.enter || []) {
+        if (stale()) return;
+        await stampAt(Number(row.idx), enterPhotoEls.has(row.el));
+      }
+      for (const row of photoDiff.enter || []) {
+        if (stale()) return;
+        if ((spinDiff.enter || []).some((s) => {
+          const ka = typeof VC?.inlineIdentityKey == "function" ? VC.inlineIdentityKey(s) : "";
+          const kb = typeof VC?.inlineIdentityKey == "function" ? VC.inlineIdentityKey(row) : "";
+          return ka && kb ? ka === kb : s.el === row.el;
+        })) continue;
+        await stampAt(Number(row.idx), !0);
+      }
+      t._inlineSpinnerEls = nextSpinnerEls;
+      t._inlinePhotoEls = nextPhotoEls;
+    }, { idx: selIdx, edge: "bottom", allowLarge: !0, force: !0 });
     if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold();
   }
   async function nxSelectedInlineShotCount() {
@@ -11771,55 +11779,57 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           if (!nextPhotoIdx.has(idx)) await evictPhotosIn(els[idx]);
         }
       }
-      for (const idx of spinnerIdxs) {
-        if (stale()) return;
-        const row = win.msgAt(idx) || await resolveAt(idx);
-        await injectChatMsgActions(els[idx], [], idx, { role: roleAt(idx), text: row?.text });
-        if (isSkipBodyAt(idx)) continue;
-        let cards = [];
-        try {
-          if (row?.msg) {
-            cards = linkedCards(row.msg) || [];
-            if (!cards.length) cards = await nxRebind(row.msg, []);
-            if (typeof VC?.cardsForInlineBubble == "function") {
-              cards = VC.cardsForInlineBubble({
-                cards,
-                role: roleAt(idx),
-                allRoles: !1,
-                selHash: sel.hash,
-                liveHash: row.msg.hash,
-                isSelectionSlot: idx === selIdx
-              });
+      await nxAroundScrollHold(async () => {
+        for (const idx of spinnerIdxs) {
+          if (stale()) return;
+          const row = win.msgAt(idx) || await resolveAt(idx);
+          await injectChatMsgActions(els[idx], [], idx, { role: roleAt(idx), text: row?.text });
+          if (isSkipBodyAt(idx)) continue;
+          let cards = [];
+          try {
+            if (row?.msg) {
+              cards = linkedCards(row.msg) || [];
+              if (!cards.length) cards = await nxRebind(row.msg, []);
+              if (typeof VC?.cardsForInlineBubble == "function") {
+                cards = VC.cardsForInlineBubble({
+                  cards,
+                  role: roleAt(idx),
+                  allRoles: !1,
+                  selHash: sel.hash,
+                  liveHash: row.msg.hash,
+                  isSelectionSlot: idx === selIdx
+                });
+              }
             }
+          } catch {
+            cards = [];
           }
-        } catch {
-          cards = [];
+          const frameKey = nxInlineStampKey(row?.msg)
+            || (idx === selIdx ? nxInlineStampKey(sel) : "")
+            || \`\${String(row?.msg?.sessionId || sel.sessionId || "")}|\${String(row?.msg?.hash || sel.hash || "unknown")}|d\${idx}\`;
+          const lockKey = ye(frameKey);
+          const injectOwner = typeof VC?.inlineInjectOwnerKey == "function"
+            ? VC.inlineInjectOwnerKey(row?.msg, idx, sel.sessionId)
+            : \`\${String(row?.msg?.sessionId || sel.sessionId || "unknown")}|\${Number.isInteger(Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)) ? \`m\${Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)}\` : \`d\${idx}\`}\`;
+          if (t.backendSettings?.card?.inline_chat_images === !0) {
+            await injectChatInlineImages(els[idx], cards, idx === selIdx ? nxPendingForInlineSelection(sel) : [], {
+              lockKey,
+              injectLockKey: ye(injectOwner),
+              role: roleAt(idx),
+              allRoles: !1,
+              wantPhotos: nextPhotoIdx.has(idx),
+              confirmedEmpty: !cards.length && String(t._galleryCache?.sessionId || "") === String(row?.msg?.sessionId || sel.sessionId || "")
+            });
+          }
         }
-        const frameKey = nxInlineStampKey(row?.msg)
-          || (idx === selIdx ? nxInlineStampKey(sel) : "")
-          || \`\${String(row?.msg?.sessionId || sel.sessionId || "")}|\${String(row?.msg?.hash || sel.hash || "unknown")}|d\${idx}\`;
-        const lockKey = ye(frameKey);
-        const injectOwner = typeof VC?.inlineInjectOwnerKey == "function"
-          ? VC.inlineInjectOwnerKey(row?.msg, idx, sel.sessionId)
-          : \`\${String(row?.msg?.sessionId || sel.sessionId || "unknown")}|\${Number.isInteger(Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)) ? \`m\${Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)}\` : \`d\${idx}\`}\`;
-        if (t.backendSettings?.card?.inline_chat_images === !0) {
-          await injectChatInlineImages(els[idx], cards, idx === selIdx ? nxPendingForInlineSelection(sel) : [], {
-            lockKey,
-            injectLockKey: ye(injectOwner),
-            role: roleAt(idx),
-            allRoles: !1,
-            wantPhotos: nextPhotoIdx.has(idx),
-            confirmedEmpty: !cards.length && String(t._galleryCache?.sessionId || "") === String(row?.msg?.sessionId || sel.sessionId || "")
-          });
+        if (onlySel) {
+          const rest = (Array.isArray(t._inlinePhotoEls) ? t._inlinePhotoEls : []).filter((row) => Number(row?.idx) !== selIdx);
+          t._inlinePhotoEls = [...rest, ...nextPhotoEls];
+        } else {
+          t._inlinePhotoEls = nextPhotoEls;
         }
-      }
-      if (onlySel) {
-        const rest = (Array.isArray(t._inlinePhotoEls) ? t._inlinePhotoEls : []).filter((row) => Number(row?.idx) !== selIdx);
-        t._inlinePhotoEls = [...rest, ...nextPhotoEls];
-      } else {
-        t._inlinePhotoEls = nextPhotoEls;
-      }
-      hideAttachToast({ done: 1 }).catch(() => {});
+        hideAttachToast({ done: 1 }).catch(() => {});
+      }, { idx: selIdx, edge: "bottom", allowLarge: !0, force: !0 });
       if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold();
     } catch (err) {
       y("warn", "inline.refresh.fail", z(err?.message || err, 100));
@@ -14018,8 +14028,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.51",
-    body: "카드에 실제 생성 크기를 남깁니다. 다시 그려도 스피너 칸이 맞습니다."
+    title: "2.5.52",
+    body: "스크롤 붙잡기가 켜져 있으면 첫 스피너가 붙어도 말이 안 밀립니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -18405,7 +18415,6 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'scroll_hold: ee("nx-scroll-hold")', 'scroll hold persists from dashboard');
     assertOnce(out, 'async function nxApplyScrollHold(opts)', 'scroll hold apply helper landed');
     assertOnce(out, 'async function nxCaptureScrollHold(opts)', 'scroll hold capture helper landed');
-    assertOnce(out, 'hideAttachToast({ done: 1 }).catch(() => {});\n      if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold();', 'inline refresh applies scroll hold');
     assertOnce(out, 'async function nxAroundScrollHold(work, opts)', 'scroll hold wraps explicit frame teardown');
     assertOnce(out, 'async function nxRemoveInlineFrames(msgEl, isCurrent = () => !0) {\n    await nxAroundScrollHold(async () => {', 'tag/refresh frame drop applies scroll hold');
     assertOnce(out, 'if (tagStampKey) await nxDropInlineFramesByKey(t.hostDoc, ye(tagStampKey));', 'tag chip drops frames under one scroll-hold wrap');
@@ -18474,6 +18483,8 @@ const loadVendorUi = (): string => {
         throw new Error('[build] attach toast must not hide behind job/index busy');
       }
     }
+    assertOnce(out, 'hideAttachToast({ done: 1 }).catch(() => {});\n      }, { idx: selIdx, edge: "bottom", allowLarge: !0, force: !0 });', 'inline refresh holds the selected bubble like tag teardown');
+    assertOnce(out, 't._inlinePhotoEls = nextPhotoEls;\n    }, { idx: selIdx, edge: "bottom", allowLarge: !0, force: !0 });', 'select-path stamp holds the selected bubble like tag teardown');
     assertOnce(out, '/v1/cards/" + e.id + "/nai-prompt', 'card tag nai-prompt fill landed');
     assertOnce(out, 'await addChip("수정", "base"', 'viewer base chip 수정 landed');
     assertOnce(out, 'await addInspectBtn(chipRow, "수정", "base"', 'inspect base chip 수정 landed');

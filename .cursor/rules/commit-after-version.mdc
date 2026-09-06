@@ -1,0 +1,16 @@
+---
+description: After a plugin version bump, commit locally (never skip; do not push).
+alwaysApply: true
+---
+
+# Commit after every version bump
+
+When you change `PLUGIN_VERSION` / `package.json` version / changelog / `HEAD_HELP` (a release cut):
+
+1. `npm test` then `npm run build` so `dist/inlaynexus2.0.js` matches source.
+2. **Create a git commit immediately.** Include source, tests, `vite.config.ts`, and `dist/`.
+3. **Do not push** unless the user explicitly asks.
+
+Do not leave a new version sitting only in the working tree. The user will treat an uncommitted version bump as forgotten work.
+
+This overrides the generic “only commit when asked” habit **for version bumps**. Other work still waits for an explicit commit request unless they already said to save/commit.

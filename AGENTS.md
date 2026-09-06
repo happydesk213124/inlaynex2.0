@@ -73,6 +73,7 @@ build them.
 2. Change it. Keep the layering in REPOMAP §4 — imports point downward only.
 3. `npm test`.
 4. If parity reports a diff, resolve it before moving on.
+5. After a version bump (`PLUGIN_VERSION` / changelog / `HEAD_HELP`), `npm run build` and **commit locally** (include `dist/`). Do not push unless asked.
 
 When you add a guard, prove it can fail. Break the thing it watches, watch it go
 red, then put it back. Two of the checks in `tools/` were passing vacuously when

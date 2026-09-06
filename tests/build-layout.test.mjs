@@ -719,6 +719,8 @@ test('stale decode and selection passes cannot overwrite newer photos', () => {
   const sync = source.slice(syncFrom, syncTo);
   assert.match(sync, /_inlinePhotoSyncGen/);
   assert.match(sync, /if \(stale\(\)\) return/);
+  assert.match(sync, /await nxAroundScrollHold\(async \(\) => \{\s*for \(const row of spinDiff\.enter \|\| \[\]\) \{/);
+  assert.match(sync, /stampAt\(Number\(row\.idx\), !0\);[\s\S]*\}, \{ idx: selIdx, edge: "bottom", allowLarge: !0, force: !0 \}\)/);
 
   const refreshFrom = source.indexOf('async function refreshSelectedInlineImages(force');
   const refreshTo = source.indexOf('async function openSettingsTab(tab) {', refreshFrom);
@@ -1728,6 +1730,8 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
     assert.match(refresh, /window: photoIdxs/);
     assert.match(refresh, /wantPhotos: nextPhotoIdx\.has\(idx\)/);
     assert.match(refresh, /evictPhotosIn/);
+    assert.match(refresh, /await nxAroundScrollHold\(async \(\) => \{\s*for \(const idx of spinnerIdxs\) \{/);
+    assert.match(refresh, /injectChatInlineImages\(els\[idx\], cards,[\s\S]*\}, \{ idx: selIdx, edge: "bottom", allowLarge: !0, force: !0 \}\)/);
     assert.doesNotMatch(refresh, /nxInlineAlreadyPainted\(els\[selIdx\]/);
     assert.match(refresh, /onlySel/);
     assert.doesNotMatch(refresh, /data-inlay-inline-shot\],\[data-inlay-inline-pending\],\[x-inlay-msg-actions\]/);

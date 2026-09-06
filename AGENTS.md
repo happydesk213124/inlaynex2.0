@@ -74,6 +74,7 @@ build them.
 3. `npm test`.
 4. If parity reports a diff, resolve it before moving on.
 5. After a version bump (`PLUGIN_VERSION` / changelog / `HEAD_HELP`), `npm run build` and **commit locally** (include `dist/`). Do not push unless asked.
+6. When they ask to put it on **main**, also fast-forward and push **nightly** to the same commit. Do not leave `origin/nightly` behind.
 
 When you add a guard, prove it can fail. Break the thing it watches, watch it go
 red, then put it back. Two of the checks in `tools/` were passing vacuously when

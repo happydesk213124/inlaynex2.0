@@ -1,0 +1,16 @@
+---
+description: When putting a release on main, also fast-forward and push nightly.
+alwaysApply: true
+---
+
+# Main and nightly stay together
+
+When the user asks to put work on **main** (`메인에 올려`, push/merge to `origin/main`):
+
+1. Fast-forward `main` to the release commit and `git push origin main`.
+2. **Also** fast-forward `nightly` to that same commit and `git push origin nightly`.
+3. Do not leave `origin/nightly` behind `origin/main`.
+
+Do not force-push either branch. If they are not a fast-forward, stop and say so.
+
+This is only for an explicit “put it on main” request. A version-bump commit stays local until they ask.

@@ -306,3 +306,41 @@ test("overlay_markers is canonical for left-line overlay + inline previews", () 
   assert.equal(off.card.overlay_markers, false);
   assert.equal(off.card.inline_previews, false);
 });
+
+test("migrate drops ephemeral preview data URLs from presets and NAI", () => {
+  const migrated = migrateSettings({
+    nai: {
+      vibe_preview_url: "data:image/png;base64,AAA",
+      reference_preview_url: "data:image/png;base64,BBB",
+    },
+    card: {
+      presets: [{
+        id: "p1",
+        name: "스타일",
+        look_hash: "abc",
+        vibe_configured: true,
+        look_configured: true,
+        vibe_preview_url: "data:image/webp;base64,CCC",
+        look_preview_url: "data:image/webp;base64,DDD",
+      }],
+    },
+  });
+  const preset = migrated.card.presets[0];
+  assert.equal(preset.id, "p1");
+  assert.equal(preset.look_hash, "abc");
+  assert.equal(preset.vibe_configured, true);
+  assert.equal(preset.look_configured, true);
+  assert.equal(preset.vibe_preview_url, undefined);
+  assert.equal(preset.look_preview_url, undefined);
+  assert.equal(migrated.nai.vibe_preview_url, undefined);
+  assert.equal(migrated.nai.reference_preview_url, undefined);
+});
+
+test("settings export also omits ephemeral preview data URLs", () => {
+  const exported = JSON.parse(exportSettings({
+    nai: { vibe_preview_url: "data:image/png;base64,AAA" },
+    card: { presets: [{ id: "p1", look_preview_url: "data:image/webp;base64,DDD" }] },
+  }));
+  assert.equal(exported.nai.vibe_preview_url, undefined);
+  assert.equal(exported.card.presets[0].look_preview_url, undefined);
+});

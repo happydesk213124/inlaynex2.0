@@ -185,6 +185,30 @@ function redactSecrets(value: unknown): unknown {
   return out;
 }
 
+/** Drop in-memory preset/NAI preview data URLs. They are rebuilt on GET, not stored. */
+export function stripEphemeralPreviewUrls(settings: unknown): void {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return;
+  const s = settings as Record<string, unknown>;
+  const card = s.card && typeof s.card === 'object' && !Array.isArray(s.card)
+    ? s.card as Record<string, unknown>
+    : null;
+  if (Array.isArray(card?.presets)) {
+    for (const raw of card.presets) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+      const p = raw as Record<string, unknown>;
+      delete p.vibe_preview_url;
+      delete p.look_preview_url;
+    }
+  }
+  const nai = s.nai && typeof s.nai === 'object' && !Array.isArray(s.nai)
+    ? s.nai as Record<string, unknown>
+    : null;
+  if (nai) {
+    delete nai.vibe_preview_url;
+    delete nai.reference_preview_url;
+  }
+}
+
 /** Bring any stored settings blob up to the current schema (clone in, clone out). */
 export function migrateSettings(input: unknown = {}): MigratedSettings {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('Settings must be an object');
@@ -458,6 +482,7 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
       }
     }
   }
+  stripEphemeralPreviewUrls(settings);
   {
     const nai = settings.nai && typeof settings.nai === 'object' && !Array.isArray(settings.nai)
       ? settings.nai as Record<string, unknown>

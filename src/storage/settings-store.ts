@@ -13,7 +13,7 @@
 import { SETTINGS_KEY, LEGACY_SETTINGS_KEY } from '../core/constants';
 import type { Settings } from '../core/types';
 import { deepcopy, deepMerge } from '../core/util/object';
-import { migrateSettings } from '../config/schema';
+import { migrateSettings, stripEphemeralPreviewUrls } from '../config/schema';
 import { DEFAULT_CONFIG } from '../config/defaults';
 import { getDeviceStore, psGet, psSet, saveFileGet, saveFileSet } from './device-store';
 
@@ -62,6 +62,7 @@ export async function loadSettingsFromStorage(): Promise<Settings> {
 
 export async function saveSettingsToStorage(config: Settings): Promise<void> {
   const copy = deepcopy(config);
+  stripEphemeralPreviewUrls(copy);
   try {
     await psSet(SETTINGS_KEY, copy);
   } catch (err) {

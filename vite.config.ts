@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.53';
+const PLUGIN_VERSION = '2.5.54';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.54</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>왼쪽 햄버거에 🌌, 채팅 햄버거에 🌌 인레이 넥서스 설정을 넣었습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.53</strong>
@@ -9146,7 +9152,58 @@ const VENDOR_UNLOAD_SAVE_NEEDLE =
       }), await syncQuickSettingsButton(!1)`;
 const VENDOR_UNLOAD_SAVE_PATCH =
   `t.timersBySession.forEach((e) => clearTimeout(e)), await xa({ silent: !0 }).catch(() => {
-      }), await syncQuickSettingsButton(!1)`;
+      }), await syncQuickSettingsButton(!1), await syncRisuNavButtons(!1)`;
+
+const VENDOR_RISU_NAV_FN_NEEDLE =
+  `      t.quickButtonRegistered = !1;
+    }
+  }
+  function mergeSettingsPatch(e, n) {`;
+const VENDOR_RISU_NAV_FN_PATCH =
+  `      t.quickButtonRegistered = !1;
+    }
+  }
+  async function syncRisuNavButtons(enabled) {
+    if (typeof k.registerButton != "function") return;
+    if (enabled) {
+      if (!t.hamburgerButtonRegistered) {
+        const registered = await D("registerButton", () => k.registerButton({
+          name: "인레이 넥서스 설정",
+          icon: "🌌",
+          iconType: "html",
+          location: "hamburger",
+          id: "inlay-nexus-hamburger"
+        }, At), null);
+        registered !== null && (t.hamburgerButtonRegistered = !0);
+      }
+      if (!t.chatMenuButtonRegistered) {
+        const registered = await D("registerButton", () => k.registerButton({
+          name: "인레이 넥서스 설정",
+          icon: "🌌",
+          iconType: "html",
+          location: "chat",
+          id: "inlay-nexus-chat-menu"
+        }, At), null);
+        registered !== null && (t.chatMenuButtonRegistered = !0);
+      }
+      return;
+    }
+    if (typeof k.unregisterUIPart != "function") return;
+    if (t.hamburgerButtonRegistered) {
+      await D("unregisterButton", () => k.unregisterUIPart("inlay-nexus-hamburger"), null);
+      t.hamburgerButtonRegistered = !1;
+    }
+    if (t.chatMenuButtonRegistered) {
+      await D("unregisterButton", () => k.unregisterUIPart("inlay-nexus-chat-menu"), null);
+      t.chatMenuButtonRegistered = !1;
+    }
+  }
+  function mergeSettingsPatch(e, n) {`;
+
+const VENDOR_RISU_NAV_BOOT_NEEDLE =
+  `typeof k.registerSetting == "function" && await D("registerSetting", () => k.registerSetting("Inlay Nexus", At, "🖼️", "html", "inlay-nexus-settings"), null), await syncQuickSettingsButton((t.backendSettings?.card || {}).show_risu_settings_button !== !1), await Rt();`;
+const VENDOR_RISU_NAV_BOOT_PATCH =
+  `typeof k.registerSetting == "function" && await D("registerSetting", () => k.registerSetting("Inlay Nexus", At, "🖼️", "html", "inlay-nexus-settings"), null), await syncQuickSettingsButton((t.backendSettings?.card || {}).show_risu_settings_button !== !1), await syncRisuNavButtons(!0), await Rt();`;
 
 /** Full save: tab-agnostic chars/prompts + llm_roles; silent mode for close. */
 const VENDOR_XA_FULL_NEEDLE =
@@ -14120,8 +14177,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.53",
-    body: "NAI 키가 없으면 태깅 전에 알려 주고, 모델 설정 탭이 빨개집니다."
+    title: "2.5.54",
+    body: "왼쪽 햄버거에 🌌, 채팅 햄버거에 인레이 넥서스 설정이 뜹니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -17744,6 +17801,8 @@ const loadVendorUi = (): string => {
     [VENDOR_RESET_CHAR_REF_EVT_NEEDLE, 'reset char ref button'],
     [VENDOR_XA_FULL_NEEDLE, 'xa full silent save'],
     [VENDOR_UNLOAD_SAVE_NEEDLE, 'unload xa silent save'],
+    [VENDOR_RISU_NAV_FN_NEEDLE, 'risu hamburger/chat nav buttons'],
+    [VENDOR_RISU_NAV_BOOT_NEEDLE, 'risu nav buttons boot'],
     [VENDOR_FF_FONT_BODY_NEEDLE, 'firefox font body'],
     [VENDOR_FF_FONT_TOGGLE_NEEDLE, 'firefox font toggle-row'],
     [VENDOR_INLINE_HELP_NEEDLE, 'inline chat help'],
@@ -18157,6 +18216,8 @@ const loadVendorUi = (): string => {
     .replace(VENDOR_RESET_CHAR_REF_EVT_NEEDLE, VENDOR_RESET_CHAR_REF_EVT_PATCH)
     .replace(VENDOR_XA_FULL_NEEDLE, VENDOR_XA_FULL_PATCH)
     .replace(VENDOR_UNLOAD_SAVE_NEEDLE, VENDOR_UNLOAD_SAVE_PATCH)
+    .replace(VENDOR_RISU_NAV_FN_NEEDLE, VENDOR_RISU_NAV_FN_PATCH)
+    .replace(VENDOR_RISU_NAV_BOOT_NEEDLE, VENDOR_RISU_NAV_BOOT_PATCH)
     .replace(VENDOR_FF_FONT_BODY_NEEDLE, VENDOR_FF_FONT_BODY_PATCH)
     .replace(VENDOR_FF_FONT_TOGGLE_NEEDLE, VENDOR_FF_FONT_TOGGLE_PATCH)
     .replace(VENDOR_INLINE_HELP_NEEDLE, VENDOR_INLINE_HELP_PATCH)

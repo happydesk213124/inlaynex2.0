@@ -2096,6 +2096,17 @@ test('missing nai key toasts before the tagger and marks the models tab', () => 
   assert.match(vite, /NovelAI API 키를 먼저 입력하세요/);
 });
 
+test('risu hamburger and chat menus open Inlay settings', () => {
+  const vite = read('vite.config.ts');
+  assert.match(vite, /location: "hamburger"/);
+  assert.match(vite, /location: "chat"/);
+  assert.match(vite, /inlay-nexus-hamburger/);
+  assert.match(vite, /inlay-nexus-chat-menu/);
+  assert.match(vite, /인레이 넥서스 설정/);
+  assert.match(vite, /icon: "🌌"/);
+  assert.match(vite, /syncRisuNavButtons\(!0\)/);
+});
+
 test('viewer thumb strip never walks getChildren()', () => {
   // The in-place restyle was dead (SafeElement throws on data-* reads) and each
   // arrow press leaked N+1 host-side handles pinning detached data-URL <img>s.

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.55';
+const PLUGIN_VERSION = '2.5.56';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.56</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>탐색 ZIP 한글 이름이 깨지지 않게 했고, 받는 동안 버튼에 스피너가 돕니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.55</strong>
@@ -2318,7 +2324,9 @@ body:has(.explorer-shell){overflow:hidden;height:100dvh;max-height:100dvh}
 #nx-shell:not(:has(.explorer-shell)) #nx-import-all{display:inline-flex!important;visibility:visible!important;opacity:1!important;font-weight:700}
 #nx-shell:not(:has(.explorer-shell)) #nx-save-flash{visibility:visible!important;opacity:1!important}
 /* Keep side+grid 2-col even at ≤900px; collapse is the only full-width mode. */
-@media(max-width:900px){.explorer-layout{grid-template-columns:minmax(120px,38%) minmax(0,1fr);grid-template-rows:none}.explorer-layout.folders-collapsed{grid-template-columns:minmax(0,1fr)!important}}`;
+@media(max-width:900px){.explorer-layout{grid-template-columns:minmax(120px,38%) minmax(0,1fr);grid-template-rows:none}.explorer-layout.folders-collapsed{grid-template-columns:minmax(0,1fr)!important}}
+.nx-zip-spin{width:14px;height:14px;display:inline-block;vertical-align:-2px;margin-right:6px;border-width:2px}
+button.secondary[aria-busy="true"]{opacity:.88;cursor:wait}`;
 
 const VENDOR_EXPLORER_GRID_CSS_NEEDLE =
   `.explorer-grid{position:relative;display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--ex-thumb,148px),1fr));gap:12px;padding:14px;max-height:620px;overflow:auto;user-select:none}`;
@@ -2731,6 +2739,99 @@ const VENDOR_EXPLORER_HA_PATCH =
     bindExplorerGridScroll();
   }
   function downloadBase64Zip(b64, filename) {`;
+
+const VENDOR_EXPLORER_EXPORT_NEEDLE =
+  `  function downloadBase64Zip(b64, filename) {
+    const bin = atob(String(b64 || ""));
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) u8[i] = bin.charCodeAt(i);
+    const blob = new Blob([u8], { type: "application/zip" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url, a.download = filename || "inlay-gallery.zip", a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2e3);
+  }
+  async function explorerExport(scope = "selection") {
+    const ex = ensureExplorerState(), body = {};
+    if (scope === "all") body.all = !0;
+    else if (scope === "folder") {
+      if (!ex.folderKey || ex.folderKey === "__all__") body.all = !0;
+      else body.folder_key = ex.folderKey || "";
+    } else body.card_ids = [...ex.selection?.selected || []];
+    if (scope === "selection" && !body.card_ids.length) {
+      $e("선택된 이미지가 없습니다", !1);
+      return;
+    }
+    try {
+      const res = await K("/v1/gallery/export", { method: "POST", body }, 12e4);
+      if (!res?.ok) throw new Error(res?.error?.message || "내보내기 실패");
+      downloadBase64Zip(res.zip_base64, res.filename);
+      $e(\`ZIP 내보내기 · \${res.count}장\`);
+    } catch (err) {
+      t.uiMessage = { type: "error", text: z(err?.message || err) }, await P();
+    }
+  }`;
+
+const VENDOR_EXPLORER_EXPORT_PATCH =
+  `  async function downloadBase64Zip(b64, filename) {
+    const raw = String(b64 || "").replace(/^data:.*base64,/, "");
+    let blob;
+    try {
+      blob = await fetch("data:application/zip;base64," + raw).then((r) => r.blob());
+    } catch {
+      const bin = atob(raw);
+      const u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) u8[i] = bin.charCodeAt(i);
+      blob = new Blob([u8], { type: "application/zip" });
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url, a.download = filename || "inlay-gallery.zip", a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4e3);
+  }
+  async function explorerExport(scope = "selection") {
+    const ex = ensureExplorerState(), body = {};
+    if (scope === "all") body.all = !0;
+    else if (scope === "folder") {
+      if (!ex.folderKey || ex.folderKey === "__all__") body.all = !0;
+      else body.folder_key = ex.folderKey || "";
+    } else body.card_ids = [...ex.selection?.selected || []];
+    if (scope === "selection" && !body.card_ids.length) {
+      $e("선택된 이미지가 없습니다", !1);
+      return;
+    }
+    const btnId = scope === "all" ? "nx-explorer-export-all" : scope === "folder" ? "nx-explorer-export-folder" : "nx-explorer-export-sel";
+    const ids = ["nx-explorer-export-all", "nx-explorer-export-folder", "nx-explorer-export-sel"];
+    const labels = new Map();
+    const spin = (on) => {
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        if (on) {
+          if (!labels.has(id)) labels.set(id, el.textContent || "");
+          el.disabled = !0;
+          el.setAttribute("aria-busy", "true");
+          if (id === btnId) el.innerHTML = '<span class="explorer-loading-spin nx-zip-spin"></span>ZIP 준비';
+        } else {
+          el.disabled = !1;
+          el.removeAttribute("aria-busy");
+          el.textContent = labels.get(id) || el.textContent;
+        }
+      }
+    };
+    spin(!0);
+    try {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+      const res = await K("/v1/gallery/export", { method: "POST", body }, 12e4);
+      if (!res?.ok) throw new Error(res?.error?.message || "내보내기 실패");
+      await downloadBase64Zip(res.zip_base64, res.filename);
+      $e(\`ZIP 내보내기 · \${res.count}장\`);
+    } catch (err) {
+      t.uiMessage = { type: "error", text: z(err?.message || err) }, await P();
+    } finally {
+      spin(!1);
+    }
+  }`;
 
 const VENDOR_EXPLORER_TAB_LOAD_NEEDLE =
   `    if (t.uiTab === "explorer" && !t._explorerLoading) {
@@ -14183,8 +14284,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.55",
-    body: "탐색 ZIP은 폴더별로, 최신 그림이 000001_원래이름입니다."
+    title: "2.5.56",
+    body: "탐색 ZIP 한글이 안 깨지고, 받는 동안 버튼이 돌아갑니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -17591,6 +17692,7 @@ const loadVendorUi = (): string => {
   assertOnce(raw, VENDOR_EXPLORER_FAVONLY_PAINT_NEEDLE, 'explorer favonly paint star-only');
   assertOnce(raw, VENDOR_EXPLORER_ET_FN_NEEDLE, 'explorer et windowed');
   assertOnce(raw, VENDOR_EXPLORER_HA_NEEDLE, 'explorer ha window paint');
+  assertOnce(raw, VENDOR_EXPLORER_EXPORT_NEEDLE, 'explorer zip export spinner');
   assertOnce(raw, VENDOR_EXPLORER_TAB_LOAD_NEEDLE, 'explorer tab load optimistic');
   assertOnce(raw, VENDOR_EXPLORER_DELETE_SEL_NEEDLE, 'explorer delete selected optimistic');
   assertOnce(raw, VENDOR_EXPLORER_DELETE_FOLDER_NEEDLE, 'explorer delete folder optimistic');
@@ -18014,6 +18116,7 @@ const loadVendorUi = (): string => {
       .replace(VENDOR_GLOBAL_TOGGLE_BODY_NEEDLE, VENDOR_GLOBAL_TOGGLE_BODY_PATCH)
       .replace(VENDOR_EXPLORER_THUMB_PAINT_NEEDLE, VENDOR_EXPLORER_THUMB_PAINT_PATCH)
       .replace(VENDOR_EXPLORER_HA_NEEDLE, VENDOR_EXPLORER_HA_PATCH)
+      .replace(VENDOR_EXPLORER_EXPORT_NEEDLE, VENDOR_EXPLORER_EXPORT_PATCH)
       .replace(VENDOR_EXPLORER_THUMB_WARM_NEEDLE, VENDOR_EXPLORER_THUMB_WARM_PATCH)
       .replace(VENDOR_EXPLORER_WARM_PROGRESS_NEEDLE, VENDOR_EXPLORER_WARM_PROGRESS_PATCH)
       .replace(VENDOR_EXPLORER_ET_NEEDLE, VENDOR_EXPLORER_ET_PATCH)
@@ -18555,6 +18658,7 @@ const loadVendorUi = (): string => {
     assertOnce(out, '/v1/gallery/explore?limit=0', 'explorer listing is uncapped');
     assertOnce(out, 'id="nx-explorer-select-all"', 'explorer select-all button landed');
     assertOnce(out, 'N.warmExplorerThumbs(missing)', 'explorer warms object-URL thumbs');
+    assertOnce(out, "el.innerHTML = '<span class=\"explorer-loading-spin nx-zip-spin\"></span>ZIP 준비'", 'explorer zip button spinner');
     if (out.includes('/v1/gallery/explore?limit=500')) {
       throw new Error('[build] explorer still requests a 500-card listing cap');
     }

@@ -144,6 +144,27 @@ function encodeUtf8(text: unknown): Uint8Array {
   return new TextEncoder().encode(String(text ?? ''));
 }
 
+/** Language encoding flag — filename/comment are UTF-8. Without this, Explorer reads CP437. */
+const ZIP_UTF8_FLAG = 0x0800;
+
+/** Info-ZIP Unicode Path (0x7075). Older Windows still ignores bit 11 alone. */
+function unicodePathExtra(name: Uint8Array): Uint8Array {
+  const bodyLen = 5 + name.length;
+  const extra = new Uint8Array(4 + bodyLen);
+  extra[0] = 0x75;
+  extra[1] = 0x70;
+  extra[2] = bodyLen & 0xff;
+  extra[3] = (bodyLen >> 8) & 0xff;
+  extra[4] = 1;
+  const nameCrc = crc32(name);
+  extra[5] = nameCrc & 0xff;
+  extra[6] = (nameCrc >> 8) & 0xff;
+  extra[7] = (nameCrc >> 16) & 0xff;
+  extra[8] = (nameCrc >>> 24) & 0xff;
+  extra.set(name, 9);
+  return extra;
+}
+
 /** Build an uncompressed (store) ZIP from { name, data:Uint8Array } entries. */
 export function buildStoreZip(entries: ZipEntryInput[] = []): Uint8Array {
   const locals: Uint8Array[] = [];
@@ -151,12 +172,13 @@ export function buildStoreZip(entries: ZipEntryInput[] = []): Uint8Array {
   let offset = 0;
   for (const entry of entries) {
     const name = encodeUtf8(entry.name || 'file');
+    const extra = unicodePathExtra(name);
     const data = toBytes(entry.data);
     const crc = crc32(data);
     const local = concatBytes([
       u32(0x04034b50),
       u16(20),
-      u16(0),
+      u16(ZIP_UTF8_FLAG),
       u16(0),
       u16(0),
       u16(0),
@@ -164,15 +186,16 @@ export function buildStoreZip(entries: ZipEntryInput[] = []): Uint8Array {
       u32(data.length),
       u32(data.length),
       u16(name.length),
-      u16(0),
+      u16(extra.length),
       name,
+      extra,
       data,
     ]);
     const central = concatBytes([
       u32(0x02014b50),
       u16(20),
       u16(20),
-      u16(0),
+      u16(ZIP_UTF8_FLAG),
       u16(0),
       u16(0),
       u16(0),
@@ -180,6 +203,7 @@ export function buildStoreZip(entries: ZipEntryInput[] = []): Uint8Array {
       u32(data.length),
       u32(data.length),
       u16(name.length),
+      u16(extra.length),
       u16(0),
       u16(0),
       u16(0),
@@ -187,6 +211,7 @@ export function buildStoreZip(entries: ZipEntryInput[] = []): Uint8Array {
       u32(0),
       u32(offset),
       name,
+      extra,
     ]);
     locals.push(local);
     centrals.push(central);

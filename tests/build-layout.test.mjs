@@ -323,11 +323,33 @@ test('normal inline work never removes a mounted frame or photo layer', () => {
   assert.doesNotMatch(inject, /\.remove\(\)/);
 
   const clearFrom = source.indexOf('async function nxClearInlinePhotoWrap(wrap, unwrapSafe, doc, VC) {');
-  const clearTo = source.indexOf('async function nxSyncInlinePhotosOnly()', clearFrom);
+  const clearTo = source.indexOf('async function nxSwapInlinePhoto(', clearFrom);
   const clear = source.slice(clearFrom, clearTo);
   assert.ok(clearFrom >= 0 && clearTo > clearFrom, 'photo clear body not found');
-  assert.doesNotMatch(clear, /\.remove\(\)/);
-  assert.match(clear, /inlineChatOverlayImgStyle\(!1\)/);
+  assert.match(source, /async function nxDropInlinePhotoCell\(cell\)/);
+  assert.match(source, /async function nxListInlinePhotoCells\(wrap, unwrapSafe\)/);
+  assert.match(clear, /nxDropInlinePhotoCell\(cell\)/);
+  assert.doesNotMatch(clear, /nxEnsureInlinePhotoLayers/);
+
+  const hideFrom = source.indexOf('async function nxHideInlinePhotoWrap(wrap, unwrapSafe, doc, VC) {');
+  const hideTo = source.indexOf('async function nxShowInlinePhotoWrap(', hideFrom);
+  const showFrom = hideTo;
+  const showTo = source.indexOf('async function nxListInlinePhotoCells(', showFrom);
+  const hide = source.slice(hideFrom, hideTo);
+  const show = source.slice(showFrom, showTo);
+  assert.ok(hideFrom >= 0 && hideTo > hideFrom && showTo > showFrom, 'hide/show bodies not found');
+  assert.match(hide, /nxListInlinePhotoCells/);
+  assert.match(show, /nxListInlinePhotoCells/);
+  assert.doesNotMatch(hide, /nxEnsureInlinePhotoLayers/);
+  assert.doesNotMatch(show, /nxEnsureInlinePhotoLayers/);
+
+  const stampFrom = source.indexOf('const syncFrameMeta = async (node, shot) => {');
+  const stampTo = source.indexOf('const prependShot = async', stampFrom);
+  assert.doesNotMatch(
+    source.slice(stampFrom, stampTo),
+    /nxEnsureInlinePhotoLayers/,
+    'restamp must not recreate an unused A/B cell',
+  );
 });
 
 test('proven duplicate wrappers are repaired without touching the canonical frame', () => {
@@ -516,6 +538,10 @@ test('double-buffer swap runs against an x-attributes-only SafeElement', async (
     async setInnerHTML(value) {
       this.html = String(value);
     }
+    async remove() {
+      const i = cells.indexOf(this);
+      if (i >= 0) cells.splice(i, 1);
+    }
   }
 
   const cells = [];
@@ -580,25 +606,21 @@ return { nxSwapInlinePhoto, nxHideInlinePhotoWrap, nxClearInlinePhotoWrap };`,
   const second = 'data:image/png;base64,second';
 
   assert.equal(await runtime.nxSwapInlinePhoto(wrap, first, unwrap, {}, VC), true);
-  assert.equal(cells.length, 2);
-  const identities = [...cells];
+  assert.equal(cells.length, 1, 'unused A/B cell node must be removed');
   assert.equal(wrap.attrs.get('x-inlay-inline-active'), 'a');
   assert.match(cells[0].html, /base64,first/);
 
   assert.equal(await runtime.nxSwapInlinePhoto(wrap, second, unwrap, {}, VC), true);
-  assert.deepEqual(cells, identities, 'the two layer nodes must stay mounted');
   assert.equal(wrap.attrs.get('x-inlay-inline-active'), 'b');
-  assert.match(cells[0].html, /base64,first/, 'old photo remains behind the cross-fade');
-  assert.match(cells[1].html, /base64,second/);
-  assert.equal(cells[0].style, 'opacity:0');
-  assert.equal(cells[1].style, 'opacity:1');
+  assert.equal(cells.length, 1, 'unused A/B cell node must be removed');
+  assert.match(cells[0].html, /base64,second/);
+  assert.equal(cells[0].style, 'opacity:1');
 
   await runtime.nxHideInlinePhotoWrap(wrap, unwrap, {}, VC);
-  assert.match(cells[0].html, /base64,first/, 'ordinary parking must retain decoded children');
-  assert.match(cells[1].html, /base64,second/);
+  assert.equal(cells.length, 1, 'ordinary parking must keep the live cell');
+  assert.match(cells[0].html, /base64,second/, 'ordinary parking must retain the live photo');
   await runtime.nxClearInlinePhotoWrap(wrap, unwrap, {}, VC);
-  assert.deepEqual(cells.map((cell) => cell.html), ['', '']);
-  assert.deepEqual(cells, identities, 'explicit clear still keeps both permanent layer nodes');
+  assert.equal(cells.length, 0, 'leaving the photo window must remove the cell nodes');
 
   const stale = runtime.nxSwapInlinePhoto(wrap, 'data:image/png;base64,slow', unwrap, {}, VC);
   await new Promise((resolve) => setTimeout(resolve, 1));
@@ -624,8 +646,8 @@ return { nxSwapInlinePhoto, nxHideInlinePhotoWrap, nxClearInlinePhotoWrap };`,
     'a clear through a fresh SafeDOM proxy must invalidate the old proxy request',
   );
   assert.deepEqual(
-    cells.map((cell) => cell.html),
-    ['', ''],
+    cells,
+    [],
     'an old request must not refill cells after a fresh proxy clears the same frame',
   );
 
@@ -648,7 +670,7 @@ return { nxSwapInlinePhoto, nxHideInlinePhotoWrap, nxClearInlinePhotoWrap };`,
     false,
     'request age must follow invocation order even when an older proxy lookup resolves last',
   );
-  assert.deepEqual(cells.map((cell) => cell.html), ['', '']);
+  assert.deepEqual(cells, []);
   assert.equal(runtimeState._inlinePhotoReq?.size ?? 0, 0, 'settled request generations must be released');
   assert.equal(runtimeState._inlinePhotoLocks?.size ?? 0, 0, 'settled mutation locks must be released');
   assert.equal(runtimeState._inlinePhotoPendingClaims?.size ?? 0, 0);
@@ -670,7 +692,7 @@ return { nxSwapInlinePhoto, nxHideInlinePhotoWrap, nxClearInlinePhotoWrap };`,
     false,
     'replacing session state must invalidate a request still resolving its old DOM identity',
   );
-  assert.deepEqual(cells.map((cell) => cell.html), ['', '']);
+  assert.deepEqual(cells, []);
 });
 
 test('stale decode and selection passes cannot overwrite newer photos', () => {
@@ -689,6 +711,8 @@ test('stale decode and selection passes cannot overwrite newer photos', () => {
   assert.doesNotMatch(source, /getProperty\("naturalWidth"\)/);
   assert.match(source, /const timer = setTimeout\(finish, 80\)/);
   assert.match(swap, /isCurrent\(\)/);
+  assert.match(swap, /nxEnsureInlinePhotoLayers\(wrap, unwrapSafe, doc, VC\)/);
+  assert.match(swap, /nxDropInlinePhotoCell\(row\.cell\)/);
 
   const syncFrom = source.indexOf('async function nxSyncInlinePhotosOnly()');
   const syncTo = source.indexOf('async function nxSelectedInlineShotCount()', syncFrom);
@@ -1000,7 +1024,7 @@ test('selection restore carries the frame owner generation and card id', () => {
   const probeFrom = source.indexOf('async function nxProbeInlineShots(msgEl, unwrapSafe) {');
   const probeTo = source.indexOf('async function nxRepairDuplicateInlineFrames(', probeFrom);
   const restoreFrom = source.indexOf('async function nxRestoreInlinePhotos(msgEl');
-  const restoreTo = source.indexOf('/** Selection hop:', restoreFrom);
+  const restoreTo = source.indexOf('async function nxInlineWindow(els, selIdx, sel, radius, opts)', restoreFrom);
   const probe = source.slice(probeFrom, probeTo);
   const restore = source.slice(restoreFrom, restoreTo);
   assert.match(probe, /getAttribute\("x-inlay-inline-owner"\)/);
@@ -1126,14 +1150,16 @@ test('message click cannot enter the structural inline refresh', () => {
   const callTo = source.indexOf('const VENDOR_INLINE_SAME_NEEDLE', callFrom);
   const callPatch = source.slice(callFrom, callTo);
   assert.match(callPatch, /source === "provisional" && opts\.auto/);
-  assert.match(callPatch, /nxBubbleHasInlineFrame\(o, linkedCards\(t\.selectedMessage\), nxPendingForInlineSelection\(t\.selectedMessage\)\)/);
-  assert.match(callPatch, /if \(hasFr\) await nxSyncInlinePhotosOnly\(\);[\s\S]*else await refreshSelectedInlineImages\(\)/);
+  assert.match(callPatch, /await refreshSelectedInlineImages\(\)/);
+  assert.match(callPatch, /else if \(source === "click" \|\| source === "text" \|\| source === "scroll"\)[\s\S]*await nxSyncInlinePhotosOnly\(\)/);
+  assert.doesNotMatch(callPatch, /if \(hasFr\) await nxSyncInlinePhotosOnly/);
 
   const sameFrom = source.indexOf('const VENDOR_INLINE_SAME_PATCH =');
   const sameTo = source.indexOf('/** Progressive bubble inline', sameFrom);
   const samePatch = source.slice(sameFrom, sameTo);
-  assert.doesNotMatch(samePatch, /nxSyncInlinePhotosOnly/);
-  assert.match(samePatch, /!\(await nxBubbleHasInlineFrame\(o, linkedCards\(t\.selectedMessage\), nxPendingForInlineSelection\(t\.selectedMessage\)\)\)[\s\S]*await refreshSelectedInlineImages\(\)/);
+  assert.match(samePatch, /source === "provisional" && opts\.auto/);
+  assert.match(samePatch, /else if \(source === "click" \|\| source === "text" \|\| source === "scroll"\)[\s\S]*await nxSyncInlinePhotosOnly\(\)/);
+  assert.doesNotMatch(samePatch, /hasFr/);
   assert.match(source, /source === "click"[\s\S]*await nxBubbleHasInlineFrame\(o, linkedCards\(t\.selectedMessage\), nxPendingForInlineSelection\(t\.selectedMessage\)\)\) return !0/);
 });
 
@@ -1186,9 +1212,12 @@ test('confirmed selected message without linked cards clears stale overlay photo
   const syncFrom = source.indexOf('async function nxSyncInlinePhotosOnly()');
   const syncTo = source.indexOf('async function nxSelectedInlineShotCount()', syncFrom);
   const sync = source.slice(syncFrom, syncTo);
-  assert.match(sync, /selectedCards/);
-  assert.match(sync, /idx === selIdx && !selectedCards\.length/);
-  assert.match(sync, /await nxClearInlinePhotos\(els\[idx\], \(\) => !stale\(\)\)/);
+  assert.match(sync, /diffInlineIdentityRows/);
+  assert.match(sync, /photoDiff\.leave/);
+  assert.match(sync, /await nxClearInlinePhotos\(row\.el, \(\) => !stale\(\)\)/);
+  assert.match(sync, /confirmedEmpty: !cards\.length/);
+  assert.doesNotMatch(sync, /nxRestoreInlinePhotos/);
+  assert.doesNotMatch(sync, /nxShowInlinePhotoWrap/);
 
   const injectFrom = source.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
   const injectTo = source.indexOf('async function refreshSelectedInlineImages(force', injectFrom);
@@ -1200,8 +1229,17 @@ test('ordinary selection hops drop overlay photo children and keep the spinner',
   const syncFrom = source.indexOf('async function nxSyncInlinePhotosOnly()');
   const syncTo = source.indexOf('async function nxSelectedInlineShotCount()', syncFrom);
   const sync = source.slice(syncFrom, syncTo);
-  assert.match(sync, /await nxClearInlinePhotos\(els\[idx\], \(\) => !stale\(\)\)/);
-  assert.match(sync, /await nxClearInlinePhotos\(prev\.el, \(\) => !stale\(\)\)/);
+  assert.match(sync, /keepSelection: !1/);
+  assert.match(sync, /INLINE_SELECT_SPINNER_RADIUS/);
+  assert.match(sync, /nxInlineBubbleIdentity/);
+  assert.match(source, /async function nxInlineBubbleIdentity\(el, msg\)/);
+  assert.match(source, /getAttribute\("data-chat-id"\)/);
+  assert.match(source, /getAttribute\("data-chat-index"\)/);
+  assert.match(sync, /await nxClearInlinePhotos\(row\.el, \(\) => !stale\(\)\)/);
+  assert.doesNotMatch(sync, /await nxRemoveInlineFrames\(row\.el/);
+  assert.doesNotMatch(sync, /nxRestoreInlinePhotos/);
+  assert.doesNotMatch(sync, /selectedCards/);
+  assert.doesNotMatch(sync, /for \(const row of (?:spinDiff|photoDiff)\.keep/);
   assert.match(source, /async function nxClearInlinePhotos\(/);
   const refreshFrom = source.indexOf('const evictPhotosIn = async (el) => {');
   const refreshTo = source.indexOf('const nextPhotoEls = [];', refreshFrom);
@@ -1665,7 +1703,7 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /id="nx-inline-dom-radius" type="number" min="3" max="20" step="1"/);
   assert.match(source, /inline_chat_dom_radius: Math\.max\(3, Math\.min\(20,/);
   assert.match(source, /inline_chat_dom_radius\) \|\| 4/);
-  assert.match(source, /VC\.inlineWindowFromRoles\(\{ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt \}\)/);
+  assert.match(source, /VC\.inlineWindowFromRoles\(\{ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt, keepSelection \}\)/);
   assert.match(source, /N\?\.prioritizeWarmFocus/);
   {
     const injectFrom = source.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');
@@ -1692,13 +1730,13 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
     assert.doesNotMatch(refresh, /data-inlay-inline-shot\],\[data-inlay-inline-pending\],\[x-inlay-msg-actions\]/);
   }
   {
-    // Both inline passes read their window here, so the full pass and the
-    // photo-only hop cannot disagree about which bubbles are in scope.
+    // Both inline passes read their window here, so refresh and select cannot
+    // disagree about which bubbles are in scope.
     const from = source.indexOf('async function nxInlineWindow(els, selIdx, sel, radius, opts) {');
     const to = source.indexOf('async function nxSyncInlinePhotosOnly() {', from);
     const win = from >= 0 && to > from ? source.slice(from, to) : '';
     assert.ok(win, 'nxInlineWindow body not found');
-    assert.match(win, /VC\.inlineWindowFromRoles\(\{ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt \}\)/);
+    assert.match(win, /VC\.inlineWindowFromRoles\(\{ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt, keepSelection \}\)/);
     // One parallel wave, not a round-trip per slot.
     assert.match(win, /await Promise\.all\(wave\.map\(\(idx\) => readAt\(idx\)\)\)/);
     assert.doesNotMatch(win, /for \(const idx of wave\)[\s\S]{0,80}await readAt/);
@@ -1714,7 +1752,7 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
       1,
     );
     assert.equal(
-      (emitted.match(/nxInlineWindow\(els, selIdx, sel, 1, \{ isStale: stale \}\)/g) || []).length,
+      (emitted.match(/nxInlineWindow\(els, selIdx, sel, radius, \{ isStale: stale, keepSelection: !1 \}\)/g) || []).length,
       1,
     );
   }

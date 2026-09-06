@@ -1,10 +1,22 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   REPLACE_INLINE_PHOTO_KEY,
   replaceInlinePhotoAfterSave,
 } from '../.test-build/tag-studio-replace-inline.mjs';
+
+test('tag-studio save and save-then-reroll patch only that shot', () => {
+  const mount = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'tag-studio', 'mount.ts'),
+    'utf8',
+  );
+  assert.match(mount, /async function commitAndClose[\s\S]*replaceInlinePhotoAfterSave\(/);
+  assert.match(mount, /async function saveThenReroll[\s\S]*replaceInlinePhotoAfterSave\(/);
+});
 
 test('replaceInlinePhotoAfterSave no-ops without a hook or card id', async () => {
   delete globalThis[REPLACE_INLINE_PHOTO_KEY];

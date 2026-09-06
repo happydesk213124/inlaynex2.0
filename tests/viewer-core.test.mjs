@@ -120,6 +120,9 @@ import {
   inlineDomWindow,
   inlineDomWindowFromSel,
   inlineWindowFromRoles,
+  INLINE_SELECT_SPINNER_RADIUS,
+  INLINE_SELECT_PHOTO_RADIUS,
+  diffInlineIdentityRows,
   shouldOverlayInlinePhoto,
   shouldMountMsgActions,
   MSG_ACTION_MIN_BODY_CHARS,
@@ -534,6 +537,97 @@ test("inlineWindowFromRoles always keeps the selection, even a user bubble", () 
   assert.deepEqual(spinner, [1, 2, 0]);
   assert.deepEqual(photos, [1, 2, 0]);
   assert.equal(shouldOverlayInlinePhoto({ idx: 1, selIdx: 1, length: 3, role: "user", window: photos }), false);
+});
+
+test("inlineWindowFromRoles keepSelection false drops a user selection from both windows", () => {
+  const roles = ["char", "user", "char"];
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  const { spinner, photos } = inlineWindowFromRoles({
+    selIdx: 1,
+    length: 3,
+    radius: 2,
+    isCharAt,
+    keepSelection: false,
+  });
+  assert.ok(!spinner.includes(1));
+  assert.ok(!photos.includes(1));
+  assert.deepEqual([...photos].sort((a, b) => a - b), [0, 2]);
+});
+
+test("select windows: DOM 1-7 char 1,4,5,6,7 — 4 then 5 photos", () => {
+  // 1-based DOM 1..7 → indices 0..6. chars at 0,3,4,5,6.
+  const roles = ["char", "user", "user", "char", "char", "char", "char"];
+  const isCharAt = (i) => isCharMessageRole(roles[i]);
+  const at = (selIdx) => inlineWindowFromRoles({
+    selIdx,
+    length: 7,
+    radius: INLINE_SELECT_SPINNER_RADIUS,
+    isCharAt,
+    keepSelection: false,
+  });
+  assert.equal(INLINE_SELECT_SPINNER_RADIUS, 3);
+  assert.equal(INLINE_SELECT_PHOTO_RADIUS, 1);
+  const four = at(3);
+  assert.deepEqual([...four.photos].sort((a, b) => a - b), [0, 3, 4]);
+  assert.deepEqual([...four.spinner].sort((a, b) => a - b), [0, 3, 4, 5, 6]);
+  const five = at(4);
+  assert.deepEqual([...five.photos].sort((a, b) => a - b), [3, 4, 5]);
+  const a = { el: "e0", idx: 0 };
+  const b = { el: "e3", idx: 3 };
+  const c = { el: "e4", idx: 4 };
+  const d = { el: "e5", idx: 5 };
+  const hop = diffInlineIdentityRows({
+    prev: [a, b, c],
+    next: [b, c, d],
+  });
+  assert.deepEqual(hop.enter.map((r) => r.el), ["e5"]);
+  assert.deepEqual(hop.leave.map((r) => r.el), ["e0"]);
+  assert.deepEqual(hop.keep.map((r) => r.el).sort(), ["e3", "e4"]);
+});
+
+test("diffInlineIdentityRows keys off element identity, not DOM index", () => {
+  const el = { id: "same" };
+  const hop = diffInlineIdentityRows({
+    prev: [{ el, idx: 4 }],
+    next: [{ el, idx: 5 }],
+  });
+  assert.deepEqual(hop.enter, []);
+  assert.deepEqual(hop.leave, []);
+  assert.equal(hop.keep.length, 1);
+  assert.equal(hop.keep[0].idx, 5);
+});
+
+test("diffInlineIdentityRows keeps a bubble when SafeDOM wraps the same chat id", () => {
+  const prevEl = { proxy: 1 };
+  const nextEl = { proxy: 2 };
+  const hop = diffInlineIdentityRows({
+    prev: [{ el: prevEl, idx: 0, chatId: "1b088140-0071-4610-a882-795efa5bb2fe", chatIndex: 134 }],
+    next: [{ el: nextEl, idx: 0, chatId: "1b088140-0071-4610-a882-795efa5bb2fe", chatIndex: 134 }],
+  });
+  assert.deepEqual(hop.enter, []);
+  assert.deepEqual(hop.leave, []);
+  assert.equal(hop.keep.length, 1);
+  assert.equal(hop.keep[0].el, nextEl);
+});
+
+test("diffInlineIdentityRows keep uses chat-index when chat id is missing", () => {
+  const hop = diffInlineIdentityRows({
+    prev: [{ el: { a: 1 }, idx: 3, chatIndex: 132 }],
+    next: [{ el: { b: 2 }, idx: 4, chatIndex: 132 }],
+  });
+  assert.equal(hop.keep.length, 1);
+  assert.equal(hop.enter.length, 0);
+  assert.equal(hop.leave.length, 0);
+});
+
+test("diffInlineIdentityRows still hops when chat ids differ", () => {
+  const hop = diffInlineIdentityRows({
+    prev: [{ el: { a: 1 }, idx: 0, chatId: "old", chatIndex: 134 }],
+    next: [{ el: { b: 2 }, idx: 2, chatId: "new", chatIndex: 132 }],
+  });
+  assert.deepEqual(hop.keep, []);
+  assert.equal(hop.leave[0].chatId, "old");
+  assert.equal(hop.enter[0].chatId, "new");
 });
 
 test("pickInlineKeepDomIndices scanCap bounds the walk per side", () => {

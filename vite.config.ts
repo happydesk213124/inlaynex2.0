@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.45';
+const PLUGIN_VERSION = '2.5.49';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -782,6 +782,31 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.49</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>선택 이동에서 스피너 프레임은 남깁니다. 사진만 창 밖이면 지웁니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.48</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>사진 창을 나가거나 리롤하면 숨긴 A/B 칸 노드를 지웁니다. 스피너와 보이는 사진은 그대로입니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.47</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>선택 keep을 SafeDOM 객체가 아니라 말풍선 id/번호로 봅니다. 같은 칸을 래퍼만 바꿔도 그림을 다시 지우지 않습니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.46</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>선택 이동: 스피너 ±3(char) 먼저, 사진 ±1. 들어온 칸만 만들고 나간 칸만 지움. 남은 칸은 안 만짐</li>
+            <li>리롤·스튜디오 저장은 그 장의 숨긴 옛 그림을 비우고 새 img만 남깁니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.45</strong>
@@ -10093,7 +10118,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     if (!wrap) return !1;
     const claim = await nxClaimInlinePhotoRequest(wrap);
     return await nxRunInlinePhotoMutation(claim.frameKey, claim.token, async (isCurrent) => {
-      const cells = await nxEnsureInlinePhotoLayers(wrap, unwrapSafe, doc, VC);
+      // Park only what is already mounted. Ensure would recreate the unused A/B node.
+      const cells = await nxListInlinePhotoCells(wrap, unwrapSafe);
       for (const cell of cells) {
         if (!isCurrent()) return !1;
         if (typeof cell?.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
@@ -10115,7 +10141,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     return await nxRunInlinePhotoMutation(claim.frameKey, claim.token, async (isCurrent) => {
       const valid = async () => isCurrent() && await nxInlinePhotoSemanticCurrent(wrap, semantic);
-      const cells = await nxEnsureInlinePhotoLayers(wrap, unwrapSafe, doc, VC);
+      const cells = await nxListInlinePhotoCells(wrap, unwrapSafe);
       const state = await nxReadInlinePhotoRows(wrap, cells);
       const active = state.rows.find((row) => row.layer === state.activeKey && row.live === "1");
       if (!active?.cell || !(await valid())) return !1;
@@ -10145,25 +10171,35 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       return !0;
     });
   }
+  async function nxListInlinePhotoCells(wrap, unwrapSafe) {
+    try {
+      return await unwrapSafe(await wrap.querySelectorAll("[x-inlay-inline-cell]"));
+    } catch {
+      return [];
+    }
+  }
+  async function nxDropInlinePhotoCell(cell) {
+    if (!cell) return;
+    try {
+      if (typeof cell.remove == "function") {
+        await cell.remove();
+        return;
+      }
+    } catch {
+    }
+    try {
+      if (typeof cell.setInnerHTML == "function") await cell.setInnerHTML("");
+    } catch {
+    }
+  }
   async function nxClearInlinePhotoWrap(wrap, unwrapSafe, doc, VC) {
     if (!wrap) return;
     const claim = await nxClaimInlinePhotoRequest(wrap);
     await nxRunInlinePhotoMutation(claim.frameKey, claim.token, async (isCurrent) => {
-      const cells = await nxEnsureInlinePhotoLayers(wrap, unwrapSafe, doc, VC);
+      const cells = await nxListInlinePhotoCells(wrap, unwrapSafe);
       for (const cell of cells) {
         if (!isCurrent()) return !1;
-        try {
-          if (typeof cell.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
-            await cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(!1));
-          }
-          if (!isCurrent()) return !1;
-          if (typeof cell.setAttribute == "function") {
-            await cell.setAttribute("x-inlay-inline-live", "0");
-            await cell.setAttribute("x-inlay-inline-src-key", "");
-          }
-          if (typeof cell.setInnerHTML == "function") await cell.setInnerHTML("");
-        } catch {
-        }
+        await nxDropInlinePhotoCell(cell);
       }
       if (!isCurrent()) return !1;
       await nxHideLegacyInlinePhotos(wrap, unwrapSafe, VC);
@@ -10183,12 +10219,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       return !1;
     }
     const srcKey = nxInlinePhotoSrcKey(src);
-    let mounted = [];
-    try {
-      mounted = await unwrapSafe(await wrap.querySelectorAll("[x-inlay-inline-cell]"));
-    } catch {
-      mounted = [];
-    }
+    const mounted = await nxListInlinePhotoCells(wrap, unwrapSafe);
     const mountedState = await nxReadInlinePhotoRows(wrap, mounted);
     const same = mountedState.rows.find((row) => row.srcKey === srcKey && row.live === "1");
     if (same) {
@@ -10298,9 +10329,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         for (const row of state.rows) {
           if (!(await valid())) return !1;
           if (row.cell === target.cell) continue;
-          if (typeof row.cell?.setStyleAttribute == "function" && typeof VC?.inlineChatOverlayImgStyle == "function") {
-            await row.cell.setStyleAttribute(VC.inlineChatOverlayImgStyle(!1));
-          }
+          await nxDropInlinePhotoCell(row.cell);
         }
         await nxHideLegacyInlinePhotos(wrap, unwrapSafe, VC);
         return await valid();
@@ -10309,7 +10338,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       }
     });
   }
-  /** Opacity-only park. Selection hops now clear overlay children instead. */
+  /** Opacity-only park of existing cells. Do not recreate A/B. */
   async function nxHideInlinePhotos(msgEl, isCurrent = () => !0) {
     if (!msgEl || typeof msgEl.querySelectorAll != "function") return;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
@@ -10319,7 +10348,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       await nxHideInlinePhotoWrap(wrap, nxUnwrapSafeNodes, t.hostDoc, VC);
     }
   }
-  /** Explicit tag clear: drop photo children; keep both permanent cells and the spinner. */
+  /** Leave photo window / tag clear: drop the A/B cell nodes; keep the spinner frame. */
   async function nxClearInlinePhotos(msgEl, isCurrent = () => !0) {
     if (!msgEl || typeof msgEl.querySelectorAll != "function") return;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
@@ -10469,18 +10498,20 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       if (!role) return !0;
       return typeof VC?.isCharMessageRole == "function" ? VC.isCharMessageRole(role) : role !== "user";
     };
+    const keepSelection = !opts || opts.keepSelection !== !1;
     const win = !onlySel && typeof VC?.inlineWindowFromRoles == "function"
-      ? VC.inlineWindowFromRoles({ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt })
-      : { spinner: [selIdx], photos: [selIdx] };
-    const spinnerIdxs = Array.isArray(win?.spinner) && win.spinner.length ? win.spinner : [selIdx];
-    const photoIdxs = Array.isArray(win?.photos) && win.photos.length ? win.photos : [selIdx];
+      ? VC.inlineWindowFromRoles({ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt, keepSelection })
+      : { spinner: keepSelection ? [selIdx] : [], photos: keepSelection ? [selIdx] : [] };
+    const emptyFallback = keepSelection ? [selIdx] : [];
+    const spinnerIdxs = Array.isArray(win?.spinner) && win.spinner.length ? win.spinner : emptyFallback;
+    const photoIdxs = Array.isArray(win?.photos) && win.photos.length ? win.photos : emptyFallback;
     if (typeof nxScrollDbg == "function") {
       const ms = Math.round(((typeof performance < "u" && performance.now ? performance.now() : Date.now()) - t0) * 10) / 10;
       nxScrollDbg("inline.window", \`want=\${want} chars=\${spinnerIdxs.length} photos=\${photoIdxs.length} scan=\${wave.length} cap=\${scanCap} ms=\${ms}\`);
     }
     return { spinnerIdxs, photoIdxs, resolveAt: readAt, msgAt: (idx) => msgCache.get(idx) || null, roleAt, isSkipBodyAt };
   }
-  /** Selection hop: photos on/off only. Never tears a spinner. */
+  /** Selection: enter makes, photo leave drops cells, spinner frames stay, keep is a no-op. */
   async function nxSyncInlinePhotosOnly() {
     if (typeof nxScrollDbg == "function") nxScrollDbg("inline.sync.start", \`src=\${t.selectedMessage?.selectSource || ""} DOM#\${t.selectedMessage?.domIndex ?? "?"}\`);
     if (typeof nxCaptureScrollHold == "function" && !t._scrollHold) await nxCaptureScrollHold();
@@ -10508,44 +10539,93 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const selIdx = selDom;
     if (!Number.isFinite(selIdx) || selIdx < 0 || !els[selIdx]) return;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
-    const win = await nxInlineWindow(els, selIdx, sel, 1, { isStale: stale });
+    const radius = Number(VC?.INLINE_SELECT_SPINNER_RADIUS) > 0 ? Number(VC.INLINE_SELECT_SPINNER_RADIUS) : 3;
+    const win = await nxInlineWindow(els, selIdx, sel, radius, { isStale: stale, keepSelection: !1 });
     if (!win || stale()) return;
-    const photoIdxs = win.photoIdxs;
-    const selectedCards = linkedCards(sel) || [];
-    const selectedConfirmedEmpty = !selectedCards.length
-      && String(t._galleryCache?.sessionId || "") === String(sel.sessionId || "");
+    const nextSpinnerEls = [];
     const nextPhotoEls = [];
-    for (const idx of photoIdxs) {
+    for (const idx of win.spinnerIdxs) {
+      if (!els[idx] || win.isSkipBodyAt(idx)) continue;
+      nextSpinnerEls.push({ idx, el: els[idx], ...await nxInlineBubbleIdentity(els[idx], win.msgAt(idx)?.msg) });
+    }
+    for (const idx of win.photoIdxs) {
+      if (!els[idx] || win.isSkipBodyAt(idx)) continue;
       const role = idx === selIdx ? String(sel.role || "") : win.roleAt(idx);
       const want = typeof VC?.shouldOverlayInlinePhoto == "function"
-        ? VC.shouldOverlayInlinePhoto({ idx, selIdx, length: els.length, role, window: photoIdxs })
-        : idx === selIdx && role !== "user";
-      if (!want) {
-        await nxClearInlinePhotos(els[idx], () => !stale());
-        if (stale()) return;
-        continue;
+        ? VC.shouldOverlayInlinePhoto({ idx, selIdx, length: els.length, role, window: win.photoIdxs })
+        : role !== "user";
+      if (want) nextPhotoEls.push({ idx, el: els[idx], ...await nxInlineBubbleIdentity(els[idx], win.msgAt(idx)?.msg) });
+    }
+    const spinDiff = typeof VC?.diffInlineIdentityRows == "function"
+      ? VC.diffInlineIdentityRows({ prev: t._inlineSpinnerEls, next: nextSpinnerEls })
+      : { enter: nextSpinnerEls, leave: [], keep: [] };
+    const photoDiff = typeof VC?.diffInlineIdentityRows == "function"
+      ? VC.diffInlineIdentityRows({ prev: t._inlinePhotoEls, next: nextPhotoEls })
+      : { enter: nextPhotoEls, leave: [], keep: [] };
+    for (const row of photoDiff.leave || []) {
+      await nxClearInlinePhotos(row.el, () => !stale());
+      if (stale()) return;
+    }
+    const enterPhotoEls = new Set((photoDiff.enter || []).map((row) => row.el));
+    const stampAt = async (idx, wantPhotos) => {
+      const row = win.msgAt(idx) || await win.resolveAt(idx);
+      await injectChatMsgActions(els[idx], [], idx, { role: win.roleAt(idx), text: row?.text });
+      if (win.isSkipBodyAt(idx)) return;
+      let cards = [];
+      try {
+        if (row?.msg) {
+          cards = linkedCards(row.msg) || [];
+          if (!cards.length) {
+            try {
+              if (await nxEnsureCardsForHash(row.msg?.hash)) cards = linkedCards(row.msg) || [];
+            } catch {
+            }
+            if (!cards.length) cards = await maybeRebindAndLink(row.msg) || [];
+          }
+          if (typeof VC?.cardsForInlineBubble == "function") {
+            cards = VC.cardsForInlineBubble({
+              cards,
+              role: win.roleAt(idx),
+              allRoles: !1,
+              selHash: sel.hash,
+              liveHash: row.msg.hash,
+              isSelectionSlot: idx === selIdx
+            });
+          }
+        }
+      } catch {
+        cards = [];
       }
-      if (idx === selIdx && !selectedCards.length && selectedConfirmedEmpty) {
-        await nxClearInlinePhotos(els[idx], () => !stale());
-        if (stale()) return;
-        continue;
-      }
-      nextPhotoEls.push({ idx, el: els[idx] });
-      await nxRestoreInlinePhotos(els[idx], () => !stale());
+      const frameKey = nxInlineStampKey(row?.msg)
+        || (idx === selIdx ? nxInlineStampKey(sel) : "")
+        || \`\${String(row?.msg?.sessionId || sel.sessionId || "")}|\${String(row?.msg?.hash || sel.hash || "unknown")}|d\${idx}\`;
+      const lockKey = ye(frameKey);
+      const injectOwner = typeof VC?.inlineInjectOwnerKey == "function"
+        ? VC.inlineInjectOwnerKey(row?.msg, idx, sel.sessionId)
+        : \`\${String(row?.msg?.sessionId || sel.sessionId || "unknown")}|\${Number.isInteger(Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)) ? \`m\${Number(row?.msg?.messageIndex ?? row?.msg?.chatIndex)}\` : \`d\${idx}\`}\`;
+      await injectChatInlineImages(els[idx], cards, idx === selIdx ? nxPendingForInlineSelection(sel) : [], {
+        lockKey,
+        injectLockKey: ye(injectOwner),
+        role: win.roleAt(idx),
+        allRoles: !1,
+        wantPhotos,
+        confirmedEmpty: !cards.length && String(t._galleryCache?.sessionId || "") === String(row?.msg?.sessionId || sel.sessionId || "")
+      });
+    };
+    for (const row of spinDiff.enter || []) {
       if (stale()) return;
+      await stampAt(Number(row.idx), enterPhotoEls.has(row.el));
     }
-    for (const prev of Array.isArray(t._inlinePhotoEls) ? t._inlinePhotoEls : []) {
-      if (nextPhotoEls.some((row) => Number(row.idx) === Number(prev?.idx) && row.el === prev.el)) continue;
-      await nxClearInlinePhotos(prev.el, () => !stale());
+    for (const row of photoDiff.enter || []) {
       if (stale()) return;
+      if ((spinDiff.enter || []).some((s) => {
+        const ka = typeof VC?.inlineIdentityKey == "function" ? VC.inlineIdentityKey(s) : "";
+        const kb = typeof VC?.inlineIdentityKey == "function" ? VC.inlineIdentityKey(row) : "";
+        return ka && kb ? ka === kb : s.el === row.el;
+      })) continue;
+      await stampAt(Number(row.idx), !0);
     }
-    const selEl = els[selIdx];
-    const selKey = nxInlineStampKey(sel);
-    for (const card of selectedCards) {
-      const src = nxCardDisplaySrc(card);
-      if (nxReadyImg(src)) await nxPatchInlinePhotoByCardId(card?.id || "", src, "", selEl, selKey ? ye(selKey) : "");
-      if (stale()) return;
-    }
+    t._inlineSpinnerEls = nextSpinnerEls;
     t._inlinePhotoEls = nextPhotoEls;
     if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold();
   }
@@ -10563,6 +10643,28 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     if (!el) return 0;
     const probe = await nxProbeInlineShots(el, nxUnwrapSafeNodes);
     return probe.length;
+  }
+  async function nxInlineBubbleIdentity(el, msg) {
+    let chatId = "";
+    let chatIndex = NaN;
+    try {
+      if (el && typeof el.getAttribute == "function") {
+        chatId = String(await el.getAttribute("data-chat-id") || "").trim();
+        const raw = Number(await el.getAttribute("data-chat-index"));
+        if (Number.isFinite(raw) && raw >= 0) chatIndex = Math.floor(raw);
+      }
+    } catch {
+    }
+    if (!Number.isFinite(chatIndex)) {
+      const fromMsg = Number(msg?.messageIndex ?? msg?.chatIndex);
+      if (Number.isInteger(fromMsg) && fromMsg >= 0) chatIndex = fromMsg;
+    }
+    if (!chatId) chatId = String(msg?.hostMessageId || msg?.host_message_id || "").trim();
+    return {
+      chatId,
+      chatIndex: Number.isFinite(chatIndex) ? chatIndex : void 0,
+      key: nxInlineStampKey(msg) || ""
+    };
   }
   function nxInlineStampKey(sel) {
     const sessionId = String(sel?.sessionId || "");
@@ -11166,7 +11268,6 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
                 if (!isCurrent()) return !1;
               }
             }
-            await nxEnsureInlinePhotoLayers(node, unwrapSafe, doc, VC);
             return isCurrent();
           } catch {
             return !1;
@@ -11293,8 +11394,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       const msPlace = Date.now() - tPlace;
       const tWatch = Date.now();
       // Every linked card now owns a marker, so the paint is finished. The bytes
-      // are separate: each missing id fills the hidden permanent cell and then
-      // opacity-swaps it. No retry pass and no structural message repaint.
+      // are separate: each missing id fills a hidden A/B cell, then the unused
+      // sibling is dropped. No retry pass and no structural message repaint.
       if (wantPhotos && nxInlineOwnerEpochCurrent(ownerClaim)) {
         nxWatchInlineShots(lockKey, encodeLater, shotNodes, patchShotSrc, ownerClaim);
       }
@@ -11609,7 +11710,7 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         const wantPhoto = typeof VC?.shouldOverlayInlinePhoto == "function"
           ? VC.shouldOverlayInlinePhoto({ idx, selIdx, length: els.length, role, window: photoIdxs })
           : !1;
-        if (wantPhoto) nextPhotoEls.push({ idx, el: els[idx] });
+        if (wantPhoto) nextPhotoEls.push({ idx, el: els[idx], ...await nxInlineBubbleIdentity(els[idx], win.msgAt(idx)?.msg) });
       }
       const nextPhotoIdx = new Set(nextPhotoEls.map((row) => row.idx));
       try {
@@ -12385,10 +12486,8 @@ const VENDOR_INLINE_CALL_PATCH =
       }
     } else if (source === "click" || source === "text" || source === "scroll") {
       try {
-        const hasFr = await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage));
-        if (source === "scroll" && typeof nxScrollDbg == "function") nxScrollDbg("da.inline", hasFr ? "nxSyncInlinePhotosOnly" : "refreshSelectedInlineImages");
-        if (hasFr) await nxSyncInlinePhotosOnly();
-        else await refreshSelectedInlineImages();
+        if (source === "scroll" && typeof nxScrollDbg == "function") nxScrollDbg("da.inline", "nxSyncInlinePhotosOnly");
+        await nxSyncInlinePhotosOnly();
       } catch {
       }
     }
@@ -12414,10 +12513,10 @@ const VENDOR_INLINE_SAME_PATCH =
           await refreshSelectedInlineImages();
         } catch {
         }
-      } else if ((source === "click" || source === "text" || source === "scroll") && !(await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage)))) {
+      } else if (source === "click" || source === "text" || source === "scroll") {
         try {
-          if (source === "scroll" && typeof nxScrollDbg == "function") nxScrollDbg("da.same.inline", "refreshSelectedInlineImages (no frame)");
-          await refreshSelectedInlineImages();
+          if (source === "scroll" && typeof nxScrollDbg == "function") nxScrollDbg("da.same.inline", "nxSyncInlinePhotosOnly");
+          await nxSyncInlinePhotosOnly();
         } catch {
         }
       }
@@ -13571,10 +13670,8 @@ const VENDOR_SCROLL_GALLERY_NEW_PATCH = `    {
         scheduleStickySync(), await onSelectionChanged("content");
       }
       try {
-        const hasFr = await nxBubbleHasInlineFrame(o, linkedCards(t.selectedMessage), nxPendingForInlineSelection(t.selectedMessage));
-        if (typeof nxScrollDbg == "function") nxScrollDbg("da.new.inline", hasFr ? "nxSyncInlinePhotosOnly" : "refreshSelectedInlineImages");
-        if (hasFr) await nxSyncInlinePhotosOnly();
-        else await refreshSelectedInlineImages();
+        if (typeof nxScrollDbg == "function") nxScrollDbg("da.new.inline", "nxSyncInlinePhotosOnly");
+        await nxSyncInlinePhotosOnly();
       } catch {
       }
       return !0;
@@ -13882,8 +13979,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.45",
-    body: "설정에 미리보기 그림을 넣지 않습니다. 화면 열 때 다시 붙입니다."
+    title: "2.5.49",
+    body: "선택은 스피너를 남기고 사진만 창 밖에서 지웁니다. 스크롤이 덜 밀립니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -18150,14 +18247,13 @@ const loadVendorUi = (): string => {
       }
     }
     {
-      // The window is one shared helper on purpose: the full pass and the
-      // photo-only hop disagreeing about which bubbles are in scope is what
-      // left photos on bubbles the spinner pass had already left behind.
+      // The window is one shared helper on purpose: refresh and select must
+      // not disagree about which bubbles are in scope.
       const from = out.indexOf('async function nxInlineWindow(els, selIdx, sel, radius, opts) {');
       const to = out.indexOf('async function nxSyncInlinePhotosOnly() {', from);
       const body = from >= 0 && to > from ? out.slice(from, to) : '';
       if (!body) throw new Error('[build] nxInlineWindow body not found');
-      if (!body.includes('VC.inlineWindowFromRoles({ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt })')) {
+      if (!body.includes('VC.inlineWindowFromRoles({ selIdx, length: len, radius: want, scanCap, isCharAt, isSkipBodyAt, keepSelection })')) {
         throw new Error('[build] the inline window must be counted in character bubbles');
       }
       // Roles slot-by-slot is one bridge round-trip per step, and the walk
@@ -18178,9 +18274,36 @@ const loadVendorUi = (): string => {
         throw new Error('[build] the inline window must report its walk to the scroll debug log');
       }
       const full = out.match(/nxInlineWindow\(els, selIdx, sel, radius, \{ onlySel, isStale: stale \}\)/g) || [];
-      const photoOnly = out.match(/nxInlineWindow\(els, selIdx, sel, 1, \{ isStale: stale \}\)/g) || [];
-      if (full.length !== 1 || photoOnly.length !== 1) {
+      const select = out.match(/nxInlineWindow\(els, selIdx, sel, radius, \{ isStale: stale, keepSelection: !1 \}\)/g) || [];
+      if (full.length !== 1 || select.length !== 1) {
         throw new Error('[build] both inline paths must take their window from nxInlineWindow');
+      }
+    }
+    {
+      const from = out.indexOf('async function nxSyncInlinePhotosOnly() {');
+      const to = out.indexOf('async function nxSelectedInlineShotCount() {', from);
+      const body = from >= 0 && to > from ? out.slice(from, to) : '';
+      if (!body) throw new Error('[build] nxSyncInlinePhotosOnly body not found');
+      if (!body.includes('diffInlineIdentityRows') || !body.includes('keepSelection: !1')) {
+        throw new Error('[build] select sync must diff by element identity and drop a user selection');
+      }
+      if (!body.includes('photoDiff.leave') || !body.includes('await nxClearInlinePhotos(row.el')) {
+        throw new Error('[build] leaving the photo window must drop photo cell nodes');
+      }
+      if (body.includes('await nxRemoveInlineFrames(row.el')) {
+        throw new Error('[build] leaving the spinner window must keep frames');
+      }
+      if (body.includes('nxRestoreInlinePhotos') || body.includes('nxShowInlinePhotoWrap')) {
+        throw new Error('[build] select sync must not restore or show kept photos');
+      }
+      if (body.includes('selectedCards')) {
+        throw new Error('[build] select sync must not special-case selectedCards');
+      }
+      if (!body.includes('nxInlineBubbleIdentity')) {
+        throw new Error('[build] select sync must key keep/leave by chat id, not SafeDOM wrappers');
+      }
+      if (!out.includes('async function nxInlineBubbleIdentity(el, msg)') || !out.includes('getAttribute("data-chat-id")')) {
+        throw new Error('[build] bubble identity must read data-chat-id');
       }
     }
     // Prove sticky scroll/pointer patches actually landed (needle-only assert is not enough).
@@ -18418,7 +18541,9 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'VC.inlineRoleDisposition(opts.role,', 'inline role gate must distinguish unresolved from user');
     assertOnce(out, 'if (roleDisposition === "hold" && !haveWork) return;', 'unresolved role must still stamp when cards or pending exist');
     assertOnce(out, 'VC.roleForInlineBubble({', 'inline role must not trust drifted sel.role');
-    assertOnce(out, 'cards = VC.cardsForInlineBubble({', 'user bubbles must drop char cards');
+    if ((out.match(/cards = VC\.cardsForInlineBubble\(\{/g) || []).length !== 2) {
+      throw new Error('[build] user bubbles must drop char cards on both inline paths');
+    }
     assertOnce(out, 't._inlinePendingMsgIndex = -1;\n        t._inlinePendingSessionId = "";\n        t._inlineNeedStamp = !0;', 'force tag clears photos and flags a one-bubble restamp');
     {
       const from = out.indexOf('async function injectChatInlineImages(msgEl, cards, pendingRows, opts) {');

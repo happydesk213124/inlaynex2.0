@@ -1549,6 +1549,12 @@ export async function openTagStudio(card: unknown): Promise<void> {
         toast(errMsg(res, '리롤에 실패했습니다.'));
         return;
       }
+      const card = res.card && typeof res.card === 'object' ? res.card as Record<string, unknown> : {};
+      await replaceInlinePhotoAfterSave(
+        cleanText(card.id, 80) || state.cardId,
+        cleanText(card.image_url, 20_000_000),
+        state.cardId,
+      );
       closeStudio();
     } catch (err) {
       toast(String((err as Error).message || err));

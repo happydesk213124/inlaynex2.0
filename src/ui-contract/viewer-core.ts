@@ -1157,6 +1157,11 @@ export function pickInlineKeepDomIndices(opts: {
  * stamped first. `photos` is the selection plus the nearest character bubble on
  * each side, which is the ±1 rule restated in character terms.
  */
+/** Select-path spinner window: 3 char bubbles each side. */
+export const INLINE_SELECT_SPINNER_RADIUS = 3;
+/** Select-path photo window: 1 char bubble each side. */
+export const INLINE_SELECT_PHOTO_RADIUS = 1;
+
 export function inlineWindowFromRoles(opts: {
   selIdx: number;
   length: number;
@@ -1165,6 +1170,8 @@ export function inlineWindowFromRoles(opts: {
   isCharAt: (idx: number) => boolean;
   isSkipBodyAt?: (idx: number) => boolean;
   allRoles?: boolean;
+  /** Default true. False = user/short selection is not a spinner/photo slot. */
+  keepSelection?: boolean;
 }): { spinner: number[]; photos: number[] } {
   const selIdx = Math.floor(Number(opts.selIdx));
   const length = Math.floor(Number(opts.length));
@@ -1184,13 +1191,65 @@ export function inlineWindowFromRoles(opts: {
     // selected bubble is the one being read, and its own pass is what keeps its
     // chips and inline frames in step. Whether it earns a photo is still the
     // role guard's call downstream.
-    if (inRange && !kept.includes(selIdx)) kept.unshift(selIdx);
+    if (opts.keepSelection !== false && inRange && !kept.includes(selIdx)) kept.unshift(selIdx);
     return kept;
   };
   const spinner = radiateFromSel(selIdx, walk(radius));
   // Derived from the same walk, so a photo slot is always a spinner slot too.
   const photos = radius <= 1 ? [...spinner] : radiateFromSel(selIdx, walk(1));
   return { spinner, photos };
+}
+
+export type InlineIdentityRow = {
+  el?: unknown;
+  idx?: unknown;
+  chatId?: unknown;
+  chatIndex?: unknown;
+  key?: unknown;
+};
+
+/**
+ * Stable bubble id for select-window diffs.
+ * SafeDOM wrappers are new objects every cache miss; chat id / index are not.
+ */
+export function inlineIdentityKey(row?: InlineIdentityRow | null): string {
+  if (!row) return '';
+  const chatId = String(row.chatId || '').trim();
+  if (chatId) return `id:${chatId}`;
+  const raw = Number(row.chatIndex);
+  if (Number.isFinite(raw) && raw >= 0) return `i:${Math.floor(raw)}`;
+  const stamp = String(row.key || '').trim();
+  return stamp ? `k:${stamp}` : '';
+}
+
+function sameInlineIdentity(a?: InlineIdentityRow | null, b?: InlineIdentityRow | null): boolean {
+  const ka = inlineIdentityKey(a);
+  const kb = inlineIdentityKey(b);
+  if (ka && kb) return ka === kb;
+  return !!(a && b && a.el != null && a.el === b.el);
+}
+
+/**
+ * Split two window snapshots by bubble identity.
+ * Prefer chat id / index; fall back to the live node when those are missing.
+ */
+export function diffInlineIdentityRows(opts: {
+  prev?: readonly InlineIdentityRow[] | null;
+  next?: readonly InlineIdentityRow[] | null;
+} = {}): { enter: InlineIdentityRow[]; leave: InlineIdentityRow[]; keep: InlineIdentityRow[] } {
+  const prev = Array.isArray(opts.prev) ? opts.prev.filter((row) => row && row.el != null) : [];
+  const next = Array.isArray(opts.next) ? opts.next.filter((row) => row && row.el != null) : [];
+  const enter: InlineIdentityRow[] = [];
+  const keep: InlineIdentityRow[] = [];
+  const leave: InlineIdentityRow[] = [];
+  for (const n of next) {
+    if (prev.some((p) => sameInlineIdentity(p, n))) keep.push(n);
+    else enter.push(n);
+  }
+  for (const p of prev) {
+    if (!next.some((n) => sameInlineIdentity(p, n))) leave.push(p);
+  }
+  return { enter, leave, keep };
 }
 
 /** Selection first, then the nearest slot on each side, then the next pair. */
@@ -3966,12 +4025,12 @@ export function inlineChatFrameStyle(visible = true): string {
     : 'display:none';
 }
 
-/** Permanent photo cell. Its child image may change while the cell stays mounted. */
+/** Photo cell. Hidden with opacity; the unused sibling is removed after a swap. */
 export function inlineChatOverlayImgStyle(visible = false): string {
   return `position:absolute;left:50%;top:45.7%;width:90%;height:90%;transform:translate(-50%,-50%);border-radius:8px;display:block;pointer-events:none;opacity:${visible ? 1 : 0};transition:opacity 80ms linear`;
 }
 
-/** Image inside a permanent photo cell. SafeDOM changes it via cell.setInnerHTML(). */
+/** Image inside a photo cell. SafeDOM changes it via cell.setInnerHTML(). */
 export function inlineChatOverlayPhotoStyle(): string {
   return 'width:100%;height:100%;object-fit:contain;border-radius:8px;display:block;pointer-events:auto';
 }

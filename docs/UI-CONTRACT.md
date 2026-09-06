@@ -177,8 +177,12 @@ default `tc`) for progress / selection / host / attach toasts, and
 `card.inline_chat_text_side` (`before` | `after`, default `before`) puts the
 inline spinner/photo before the matched line text or after it. Already-mounted
 frames stay put; the next inject or refresh uses the new side.
-`card.inline_chat_dom_radius` (integer 3–20, default `4`) controls how many
-eligible bubbles on each side are prefetched and retained for inline frames.
+`card.inline_chat_dom_radius` (integer 3–20, default `4`) is the refresh /
+provisional spinner window. Click/text/scroll select is hardcoded: spinner
+±3 character bubbles, photos ±1, both `role=char` only (walk past user/short
+bodies). Enter creates; leave removes the A/B photo cell nodes (spinner stays); keep is a
+no-op — no restore/show. Keep is keyed by `data-chat-id` / `data-chat-index`,
+not the SafeDOM wrapper. A user selection is not itself a spinner/photo slot.
 `card.scroll_hold` (default off) keeps the on-screen chat bubble put after
 inline inject by adjusting `chatScrollEl.scrollTop` only — no `scrollIntoView`,
 no overflow lock. Newest-at-bottom leaves Risu autoscroll alone.
@@ -189,13 +193,14 @@ Scroll-end sticky activate is one scheduler (`nxScheduleStickyScrollSnap`);
 sticky thumb innerHTML is `data:image` only (`composeStickyV2ThumbHtml` — blob
 becomes a transparent placeholder, not `src=""`).
 Canonical inline frames are append-only for the lifetime of a Risu message DOM:
-the spinner keeps the layout height, while two permanent photo cells swap only
-after the incoming URL has decoded. SafeDOM cannot mutate an image `src`, so a
-hidden cell receives its child through `setInnerHTML`; only that child changes,
-never the frame or either cell. Runtime metadata is mirrored onto readable
-`x-inlay-inline-*` attributes. Re-clicking an intact selected message is a
-no-op, and ordinary selection parking drops overlay photo children outside
-selected ±1 while keeping the spinner frame; return restamps from the URL cache.
+the spinner keeps the layout height. A photo swap decodes into a hidden A/B
+cell, then drops the unused sibling. SafeDOM cannot mutate an image `src`, so a
+hidden cell receives its child through `setInnerHTML`. Runtime metadata is
+mirrored onto readable `x-inlay-inline-*` attributes. Re-clicking an intact
+selected message is a no-op. Leaving the photo window removes that bubble's
+A/B cell nodes; leaving the spinner window keeps the frame. Kept bubbles
+are not restored or reloaded. Reroll / tag-studio save drops that shot's
+unused A/B cell and swaps only that wrap.
 A tag action alone
 removes that bubble's spinner frames and photo cells, then restamps after the
 tagger finishes; reroll/regeneration retargets the stable shot slot in place. Frame keys include the API message index as well as

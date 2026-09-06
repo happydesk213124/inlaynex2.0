@@ -185,7 +185,9 @@ no-op — no restore/show. Keep is keyed by `data-chat-id` / `data-chat-index`,
 not the SafeDOM wrapper. A user selection is not itself a spinner/photo slot.
 `card.scroll_hold` (default off) keeps the on-screen chat bubble put after
 inline inject by adjusting `chatScrollEl.scrollTop` only — no `scrollIntoView`,
-no overflow lock. Newest-at-bottom leaves Risu autoscroll alone.
+no overflow lock. Tag / refresh chip teardown holds that bubble's bottom even
+when the drop is taller than the viewport or the newest message is on screen.
+Newest-at-bottom leaves Risu autoscroll alone for ordinary injects.
 Settings → 디버그 → **스크롤** lists `scroll.*` events for the chat scroll
 pipeline (listener → phase bus → track/Da → inline/sticky). Mid-scroll samples
 are coalesced (~200ms) and do not refresh the debug panel; settle and Da do.

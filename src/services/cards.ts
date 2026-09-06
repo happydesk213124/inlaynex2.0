@@ -38,7 +38,7 @@ import { collectStylePositives } from '../domain/prompt/reroll-setup';
 import { modelToNaia } from '../providers/nai/payload';
 import { slimCardCharacters } from '../domain/gallery/slim-cast';
 import { resolveRerollCharacters } from '../domain/gallery/reroll-captions';
-import { extractNaiMetadata } from '../domain/nai-meta';
+import { aspectFromCanvas, extractNaiMetadata } from '../domain/nai-meta';
 import {
   applyNaiSceneOverrides,
   isComicNaiScene,
@@ -537,6 +537,11 @@ export async function rerollCard(
   // of them so the location's value is the only one left.
   for (const key of ['y_percent', 'anchor_percent', 'read_percent']) delete genMeta[key];
   genMeta.y_percent = location.y_percent;
+  const canvasW = Math.max(64, Math.round(Number(scene.width) || 832));
+  const canvasH = Math.max(64, Math.round(Number(scene.height) || 1216));
+  genMeta.aspect = aspectFromCanvas(canvasW, canvasH);
+  genMeta.width = canvasW;
+  genMeta.height = canvasH;
 
   await idbPut('cards', {
     id: newId,
@@ -574,6 +579,9 @@ export async function rerollCard(
     character_name: location.character_name,
     chat_name: location.chat_name,
     assistant_preview: location.assistant_preview,
+    aspect: genMeta.aspect,
+    width: canvasW,
+    height: canvasH,
     storage: 'indexeddb',
     png_bytes: bytes.byteLength,
   };

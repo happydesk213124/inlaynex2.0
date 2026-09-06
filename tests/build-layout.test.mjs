@@ -1253,7 +1253,8 @@ test('force tag clear and pending restamp stay scoped to their original message'
   const force = source.slice(forceFrom, forceTo);
   assert.match(force, /nxInlineStampKey\(l\)/);
   assert.match(force, /const targetStampKey = nxInlineStampKey\(l\)/);
-  assert.match(force, /nxRemoveInlineFramesByKey\(t\.hostDoc, ye\(targetStampKey\)\)/);
+  assert.match(force, /nxDropInlineFramesByKey\(t\.hostDoc, ye\(targetStampKey\)\)/);
+  assert.match(force, /edge: "bottom", allowLarge: !0, force: !0/);
   assert.ok(
     force.indexOf('const targetStampKey') < force.indexOf('if (e.sessionId) await ce'),
     'force-tag target identity must be captured before the gallery await',
@@ -1616,8 +1617,9 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   const refreshTo = body.indexOf('if (kind0 === "regen")', refreshFrom);
   const refresh = refreshFrom >= 0 && refreshTo > refreshFrom ? body.slice(refreshFrom, refreshTo) : "";
   assert.ok(refresh.length > 40, "refresh chip dispatch missing");
-  assert.match(refresh, /nxRemoveInlineFrames\(els\[idx\]\)/);
-  assert.match(refresh, /nxRemoveInlineFramesByKey/);
+  assert.match(refresh, /nxDropInlineFramesIn\(els\[idx\]\)/);
+  assert.match(refresh, /nxDropInlineFramesByKey/);
+  assert.match(refresh, /edge: "bottom", allowLarge: !0, force: !0/);
   assert.match(refresh, /t\._inlineNeedStamp = !0/);
   assert.doesNotMatch(refresh, /await Be\(/);
   assert.doesNotMatch(refresh, /rerollMessageImagesLive/);
@@ -1687,7 +1689,8 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   assert.match(source, /VC\.hostMessageId\(m\)/);
   assert.match(source, /host_message_id: w\(t\.selectedMessage\?\.hostMessageId/);
   assert.match(source, /hostMessageId: message\.hostMessageId \|\| message\.host_message_id/);
-  assert.match(source, /if \(els\[idx\]\) await nxRemoveInlineFrames\(els\[idx\]\);\s*if \(tagStampKey\) await nxRemoveInlineFramesByKey/);
+  assert.match(source, /if \(els\[idx\]\) await nxDropInlineFramesIn\(els\[idx\]\);\s*if \(tagStampKey\) await nxDropInlineFramesByKey/);
+  assert.match(source, /edge: "bottom", allowLarge: !0, force: !0/);
   assert.match(source, /VC\.inlineRoleDisposition\(opts\.role/);
   assert.match(source, /if \(roleDisposition === "hold" && !haveWork\) return/);
   assert.match(source, /getAttribute\("x-inlay-inline-layout"\)/);
@@ -1758,7 +1761,7 @@ test('in-message action bar uses the same H+prepend host path as inline shots', 
   }
   assert.match(source, /async function nxClearInlinePhotos\(/);
   assert.match(source, /t\._inlineNeedStamp = !0/);
-  assert.match(source, /await nxRemoveInlineFramesByKey\(t\.hostDoc, ye\(tagStampKey\)\)/);
+  assert.match(source, /await nxDropInlineFramesByKey\(t\.hostDoc, ye\(tagStampKey\)\)/);
   assert.match(source, /await refreshSelectedInlineImages\(!0, \{ onlySel: !0 \}\)/);
   assert.doesNotMatch(source, /refreshSelectedInlineImages\(\!\(c \|\| a\.state === "done" \|\| pendingChanged\)\)/);
   assert.match(source, /async function nxSyncInlinePhotosOnly\(/);

@@ -11,6 +11,7 @@ import {
   isScrollHoldLatest,
   pickScrollHoldAnchor,
   scrollHoldDelta,
+  scrollHoldOffset,
   shouldHoldScroll,
   createSessionChangeGuard,
   evenAnchorPercent,
@@ -2718,13 +2719,22 @@ test("scrollHoldDelta ignores jitter and viewport-sized jumps", () => {
   assert.equal(scrollHoldDelta(40, 41), 0);
   assert.equal(scrollHoldDelta(40, 80), 40);
   assert.equal(scrollHoldDelta(40, 500, 200), 0);
+  assert.equal(scrollHoldDelta(40, 500, 0), 460);
   assert.equal(scrollHoldDelta("x", 10), 0);
+});
+
+test("scrollHoldOffset uses the requested bubble edge", () => {
+  const scroller = { top: 100, bottom: 700 };
+  const bubble = { top: 220, bottom: 520 };
+  assert.equal(scrollHoldOffset(scroller, bubble, "top"), 120);
+  assert.equal(scrollHoldOffset(scroller, bubble, "bottom"), 420);
 });
 
 test("shouldHoldScroll skips latest and user control", () => {
   assert.equal(shouldHoldScroll({}), true);
   assert.equal(shouldHoldScroll({ atLatest: true }), false);
   assert.equal(shouldHoldScroll({ userControl: true }), false);
+  assert.equal(shouldHoldScroll({ atLatest: true, force: true }), true);
   assert.equal(
     isScrollHoldLatest({
       scrollerRect: { top: 0, bottom: 400, height: 400 },

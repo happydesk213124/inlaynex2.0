@@ -111,6 +111,8 @@ type GalleryRow = {
   y_percent: number | null;
   line?: number | null;
   aspect?: string;
+  width?: number;
+  height?: number;
   kind?: 'comic';
   message_index: number;
   message_role: string;
@@ -407,6 +409,11 @@ export async function gallery(
       y_percent: loc.y_percent,
       line: loc.line,
       aspect: cleanText(meta.aspect || '', 20) || undefined,
+      ...(() => {
+        const width = Math.floor(Number(meta.width));
+        const height = Math.floor(Number(meta.height));
+        return width > 0 && height > 0 ? { width, height } : {};
+      })(),
       ...(normalizeShotKind(meta.kind) === 'comic' ? { kind: 'comic' as const } : {}),
       message_index: loc.message_index ?? -1,
       message_role: loc.message_role || '',

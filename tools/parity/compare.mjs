@@ -230,9 +230,9 @@ const normalize = (root) => {
         && ('main_prompt' in node || 'negative_prompt' in node);
       for (const k of Object.keys(node).sort()) {
         if ((isCardShape || isStoredCardMeta) && (k === 'main_prompt' || k === 'negative_prompt' || k === 'setup')) continue;
-        // 2.0 always persists the first-tagger canvas (portrait when omitted).
-        // 1.x left the field off the card row. Scenario asserts the new value.
-        if (isCardShape && k === 'aspect') continue;
+        // 2.0 persists the actual canvas (aspect + width/height). 1.x left
+        // those fields off the card row. Scenario asserts aspect is the trio.
+        if (isCardShape && (k === 'aspect' || k === 'width' || k === 'height')) continue;
         // 2.5.33 listing rows (gallery / explore / job result cards) carry no
         // `image_url`. The UI resolves display URLs from the sync cache at paint
         // time; a copy on the row kept every evicted data URL alive for the

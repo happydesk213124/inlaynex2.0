@@ -51,6 +51,21 @@ export function resolveShotAspect(value: unknown): ShotAspect {
   return normalizeShotAspect(value) || 'portrait';
 }
 
+/** Label the pixels that were actually generated. Trio sizes first, else ratio. */
+export function aspectFromCanvas(width: unknown, height: unknown): ShotAspect {
+  const w = Math.round(Number(width));
+  const h = Math.round(Number(height));
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return 'portrait';
+  for (const name of Object.keys(ASPECT_SIZES) as ShotAspect[]) {
+    const size = ASPECT_SIZES[name];
+    if (size.width === w && size.height === h) return name;
+  }
+  const ratio = w / h;
+  if (ratio >= 0.9 && ratio <= 1.1) return 'square';
+  if (ratio > 1) return 'landscape';
+  return 'portrait';
+}
+
 export function dimsForAspect(
   aspect: unknown,
   nai: Pick<NaiSettings, 'width' | 'height'>,

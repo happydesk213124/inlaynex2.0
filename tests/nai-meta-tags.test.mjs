@@ -11,6 +11,7 @@ import {
 import { assetMatchTriggers, assetNameTokens, scoreAssetName, assetPriorityForTrigger, pickAssetsPerTrigger, filterAssetTriggersForUnfilledLooks, loreKeysByCompactTrigger, originalTagFromPlains, matchFoundLooksToRoster } from '../.test-build/nai-meta-match.mjs';
 import { naiMetaHasPrompt, pickNaiMeta, promptFromNaiMetadata } from '../.test-build/nai-meta-from-metadata.mjs';
 import {
+  aspectFromCanvas,
   canvasDimsForShot,
   dimsForAspect,
   generationUsesShotAspect,
@@ -371,6 +372,16 @@ test('normalizeShotAspect and dimsForAspect', () => {
     canvasDimsForShot('landscape', { width: 832, height: 1216 }, false, true),
     { width: 1216, height: 832, aspect: 'landscape' },
   );
+});
+
+test('aspectFromCanvas labels the actual canvas, not the tagger string', () => {
+  assert.equal(aspectFromCanvas(1024, 1024), 'square');
+  assert.equal(aspectFromCanvas(832, 1216), 'portrait');
+  assert.equal(aspectFromCanvas(1216, 832), 'landscape');
+  assert.equal(aspectFromCanvas(900, 900), 'square');
+  assert.equal(aspectFromCanvas(1400, 800), 'landscape');
+  assert.equal(aspectFromCanvas(800, 1400), 'portrait');
+  assert.equal(aspectFromCanvas(0, 1024), 'portrait');
 });
 
 test('resolveShotAspect defaults missing or unknown values to portrait', () => {

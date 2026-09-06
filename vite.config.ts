@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.49';
+const PLUGIN_VERSION = '2.5.51';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -782,6 +782,18 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.51</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>카드에 실제 생성 가로세로를 남깁니다. 다시 그려도 스피너가 그 칸을 따릅니다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.50</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스크롤 붙잡기가 켜져 있으면 태그·새로고침으로 프레임을 지워도 말이 안 밀립니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.49</strong>
@@ -9463,7 +9475,9 @@ const VENDOR_DT_FN_PATCH =
     if (!Array.isArray(els) || !els.length) return;
     const rects = [];
     for (let i = 0; i < els.length; i++) rects.push(await nxScrollHoldRect(els[i]));
-    let idx = typeof VC?.pickScrollHoldAnchor == "function" ? VC.pickScrollHoldAnchor(scrollerRect, rects) : -1;
+    const pinIdx = Number(opts?.idx);
+    let idx = Number.isInteger(pinIdx) && pinIdx >= 0 && rects[pinIdx] ? pinIdx : -1;
+    if (idx < 0) idx = typeof VC?.pickScrollHoldAnchor == "function" ? VC.pickScrollHoldAnchor(scrollerRect, rects) : -1;
     if (idx < 0) {
       const hint = Number(t.selectedMessage?.domIndex);
       if (Number.isFinite(hint) && els[hint] && rects[hint]) idx = hint;
@@ -9473,22 +9487,32 @@ const VENDOR_DT_FN_PATCH =
       return;
     }
     const newestRect = rects[0];
-    const atLatest = typeof VC?.isScrollHoldLatest == "function"
-      ? VC.isScrollHoldLatest({ scrollerRect, newestRect })
-      : !1;
+    const atLatest = opts?.force === !0
+      ? !1
+      : typeof VC?.isScrollHoldLatest == "function"
+        ? VC.isScrollHoldLatest({ scrollerRect, newestRect })
+        : !1;
     const chatIndex = await nxChatAttrIndex(els[idx]);
+    const edge = opts?.edge === "bottom" ? "bottom" : "top";
+    const offset = typeof VC?.scrollHoldOffset == "function"
+      ? VC.scrollHoldOffset(scrollerRect, rects[idx], edge)
+      : (edge === "bottom" ? rects[idx].bottom : rects[idx].top) - scrollerRect.top;
     t._scrollHold = {
       idx,
       chatIndex: Number.isFinite(chatIndex) ? chatIndex : -1,
-      offset: rects[idx].top - scrollerRect.top,
+      offset,
+      edge,
+      allowLarge: opts?.allowLarge === !0,
+      force: opts?.force === !0,
       atLatest
     };
   }
-  async function nxApplyScrollHold() {
+  async function nxApplyScrollHold(opts) {
     if (!nxScrollHoldOn() || t.uiOpen) return;
     const hold = t._scrollHold;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
-    if (!hold || typeof VC?.shouldHoldScroll != "function" || !VC.shouldHoldScroll({ atLatest: hold.atLatest, userControl: !1 })) return;
+    const force = !!(opts?.force || hold?.force);
+    if (!hold || typeof VC?.shouldHoldScroll != "function" || !VC.shouldHoldScroll({ atLatest: hold.atLatest, userControl: !1, force })) return;
     const scroller = nxScrollHoldScroller();
     if (!scroller || typeof scroller.scrollTop != "number") return;
     t._scrollHoldApplying = !0;
@@ -9514,8 +9538,12 @@ const VENDOR_DT_FN_PATCH =
       const scrollerRect = await nxScrollHoldRect(scroller);
       const bubbleRect = await nxScrollHoldRect(el);
       if (!scrollerRect || !bubbleRect) return;
-      const nextOffset = bubbleRect.top - scrollerRect.top;
-      const vh = scrollerRect.height || (scrollerRect.bottom - scrollerRect.top);
+      const edge = hold.edge === "bottom" ? "bottom" : "top";
+      const nextOffset = typeof VC?.scrollHoldOffset == "function"
+        ? VC.scrollHoldOffset(scrollerRect, bubbleRect, edge)
+        : (edge === "bottom" ? bubbleRect.bottom : bubbleRect.top) - scrollerRect.top;
+      const allowLarge = !!(opts?.allowLarge || hold.allowLarge);
+      const vh = allowLarge ? 0 : (scrollerRect.height || (scrollerRect.bottom - scrollerRect.top));
       const delta = typeof VC.scrollHoldDelta == "function" ? VC.scrollHoldDelta(hold.offset, nextOffset, vh) : 0;
       if (!delta) return;
       scroller.scrollTop = Number(scroller.scrollTop) + delta;
@@ -9524,19 +9552,19 @@ const VENDOR_DT_FN_PATCH =
       t._scrollHoldApplying = !1;
     }
   }
-  async function nxAroundScrollHold(work) {
+  async function nxAroundScrollHold(work, opts) {
     if (t._scrollHoldCapTimer) {
       clearTimeout(t._scrollHoldCapTimer);
       t._scrollHoldCapTimer = null;
     }
-    if (typeof nxCaptureScrollHold == "function") await nxCaptureScrollHold();
+    if (typeof nxCaptureScrollHold == "function") await nxCaptureScrollHold(opts);
     t._scrollHoldApplying = !0;
     try {
       await work();
     } finally {
       t._scrollHoldApplying = !1;
     }
-    if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold();
+    if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold(opts);
   }
   async function nxWaitNewestDom(doc, maxMs) {
     // Character switch: Risu remounts the chat after we notice the session.
@@ -10375,29 +10403,36 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       await nxClearInlinePhotoWrap(wrap, nxUnwrapSafeNodes, t.hostDoc, VC);
     }
   }
+  async function nxDropInlineFramesIn(msgEl, isCurrent = () => !0) {
+    if (!msgEl) return;
+    const wraps = await nxQueryInlineFrames(msgEl, nxUnwrapSafeNodes);
+    for (const wrap of wraps) {
+      if (!isCurrent()) return;
+      await nxAbandonInlineFrame(wrap);
+    }
+  }
+  async function nxDropInlineFramesByKey(root, key, isCurrent = () => !0) {
+    const k0 = String(key || "");
+    if (!root || typeof root.querySelectorAll != "function" || !/^[A-Za-z0-9_-]+$/.test(k0)) return;
+    let wraps = [];
+    try {
+      wraps = await nxUnwrapSafeNodes(await root.querySelectorAll(\`[x-inlay-inline-key="\${k0}"],[data-inlay-inline-key="\${k0}"]\`));
+    } catch {
+      wraps = [];
+    }
+    for (const wrap of wraps) {
+      if (!isCurrent()) return;
+      await nxAbandonInlineFrame(wrap);
+    }
+  }
   async function nxRemoveInlineFrames(msgEl, isCurrent = () => !0) {
     await nxAroundScrollHold(async () => {
-      const wraps = await nxQueryInlineFrames(msgEl, nxUnwrapSafeNodes);
-      for (const wrap of wraps) {
-        if (!isCurrent()) return;
-        await nxAbandonInlineFrame(wrap);
-      }
+      await nxDropInlineFramesIn(msgEl, isCurrent);
     });
   }
   async function nxRemoveInlineFramesByKey(root, key, isCurrent = () => !0) {
-    const k0 = String(key || "");
-    if (!root || typeof root.querySelectorAll != "function" || !/^[A-Za-z0-9_-]+$/.test(k0)) return;
     await nxAroundScrollHold(async () => {
-      let wraps = [];
-      try {
-        wraps = await nxUnwrapSafeNodes(await root.querySelectorAll(\`[x-inlay-inline-key="\${k0}"],[data-inlay-inline-key="\${k0}"]\`));
-      } catch {
-        wraps = [];
-      }
-      for (const wrap of wraps) {
-        if (!isCurrent()) return;
-        await nxAbandonInlineFrame(wrap);
-      }
+      await nxDropInlineFramesByKey(root, key, isCurrent);
     });
   }
   async function nxRestoreInlinePhotos(msgEl, isCurrent = () => !0) {
@@ -12106,8 +12141,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         const tagStampKey = nxInlineStampKey(A);
         t._inlineNeedStamp = !0;
         t._inlineNeedStampKey = tagStampKey;
-        if (els[idx]) await nxRemoveInlineFrames(els[idx]);
-        if (tagStampKey) await nxRemoveInlineFramesByKey(t.hostDoc, ye(tagStampKey));
+        await nxAroundScrollHold(async () => {
+          if (els[idx]) await nxDropInlineFramesIn(els[idx]);
+          if (tagStampKey) await nxDropInlineFramesByKey(t.hostDoc, ye(tagStampKey));
+        }, { idx, edge: "bottom", allowLarge: !0, force: !0 });
         await Be(await Z({ useOverride: !1 }), A.text, !0);
         y("info", "regen.tag", "msg-actions");
       } catch (err) { y("error", "regen.tag.fail", err?.message || err); }
@@ -12118,8 +12155,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
         const stampKey = nxInlineStampKey(A);
         t._inlineNeedStamp = !0;
         t._inlineNeedStampKey = stampKey;
-        if (els[idx]) await nxRemoveInlineFrames(els[idx]);
-        if (stampKey) await nxRemoveInlineFramesByKey(t.hostDoc, ye(stampKey));
+        await nxAroundScrollHold(async () => {
+          if (els[idx]) await nxDropInlineFramesIn(els[idx]);
+          if (stampKey) await nxDropInlineFramesByKey(t.hostDoc, ye(stampKey));
+        }, { idx, edge: "bottom", allowLarge: !0, force: !0 });
         await refreshSelectedInlineImages(!0, { onlySel: !0 });
         y("info", "msg.refresh", "msg-actions");
       } catch (err) { y("error", "msg.refresh.fail", err?.message || err); }
@@ -13979,8 +14018,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.49",
-    body: "선택은 스피너를 남기고 사진만 창 밖에서 지웁니다. 스크롤이 덜 밀립니다."
+    title: "2.5.51",
+    body: "카드에 실제 생성 크기를 남깁니다. 다시 그려도 스피너 칸이 맞습니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -14994,7 +15033,11 @@ const VENDOR_FORCE_REGEN_INLINE_PATCH =
         if (e.sessionId) await ce(e.sessionId, !0);
         const sameTarget = l?.hash === m && String(l?.sessionId || "") === String(e.sessionId || "")
           && String(t.lastScope?.sessionId || "") === String(e.sessionId || "");
-        if (sameTarget && targetStampKey) await nxRemoveInlineFramesByKey(t.hostDoc, ye(targetStampKey));
+        if (sameTarget && targetStampKey) {
+          await nxAroundScrollHold(async () => {
+            await nxDropInlineFramesByKey(t.hostDoc, ye(targetStampKey));
+          }, { edge: "bottom", allowLarge: !0, force: !0 });
+        }
       } catch {
       }
     }
@@ -18360,11 +18403,12 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'select id="nx-toast-anchor"', 'toast position select landed');
     assertOnce(out, '"nx-scroll-hold": { title: "스크롤 붙잡기"', 'scroll hold help landed');
     assertOnce(out, 'scroll_hold: ee("nx-scroll-hold")', 'scroll hold persists from dashboard');
-    assertOnce(out, 'async function nxApplyScrollHold()', 'scroll hold apply helper landed');
+    assertOnce(out, 'async function nxApplyScrollHold(opts)', 'scroll hold apply helper landed');
     assertOnce(out, 'async function nxCaptureScrollHold(opts)', 'scroll hold capture helper landed');
     assertOnce(out, 'hideAttachToast({ done: 1 }).catch(() => {});\n      if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold();', 'inline refresh applies scroll hold');
-    assertOnce(out, 'async function nxAroundScrollHold(work)', 'scroll hold wraps explicit frame teardown');
+    assertOnce(out, 'async function nxAroundScrollHold(work, opts)', 'scroll hold wraps explicit frame teardown');
     assertOnce(out, 'async function nxRemoveInlineFrames(msgEl, isCurrent = () => !0) {\n    await nxAroundScrollHold(async () => {', 'tag/refresh frame drop applies scroll hold');
+    assertOnce(out, 'if (tagStampKey) await nxDropInlineFramesByKey(t.hostDoc, ye(tagStampKey));', 'tag chip drops frames under one scroll-hold wrap');
     assertOnce(out, 'select id="nx-image-press"', 'image press select landed');
     assertOnce(out, '>더블 탭</option>', 'double-tap press option landed');
     assertOnce(out, '>트리플 탭</option>', 'triple-tap press option landed');
@@ -18703,7 +18747,7 @@ const loadVendorUi = (): string => {
         const from = out.indexOf('if (kind0 === "refresh")');
         const to = out.indexOf('if (kind0 === "regen")', from);
         const refresh = from >= 0 && to > from ? out.slice(from, to) : '';
-        if (!refresh.includes('nxRemoveInlineFrames(els[idx])') || refresh.includes('await Be(')) {
+        if (!refresh.includes('nxDropInlineFramesIn(els[idx])') || !refresh.includes('allowLarge: !0') || refresh.includes('await Be(')) {
           throw new Error('[build] refresh chip must restamp without Be()');
         }
       }

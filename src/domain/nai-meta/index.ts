@@ -36,6 +36,7 @@ export {
   type NaiSceneChar,
 } from './replay.ts';
 export {
+  aspectFromCanvas,
   canvasDimsForShot,
   dimsForAspect,
   generationUsesShotAspect,

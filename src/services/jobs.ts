@@ -49,7 +49,7 @@ import {
 } from '../providers/nai/http';
 import { allUniqueNaiTokens, tokensForFamily } from '../domain/nai/keys';
 import { imageBackendKind, imageGenTokens } from '../providers/comfy/client';
-import { canvasDimsForShot, resolveShotAspect } from '../domain/nai-meta/aspect';
+import { aspectFromCanvas, canvasDimsForShot, resolveShotAspect } from '../domain/nai-meta/aspect';
 import {
   cardFlagOn,
   isNaiQuotaError,
@@ -1300,10 +1300,19 @@ async function runJob(jobId: string): Promise<void> {
         await publishImage(cardId, raw, location);
         const runMeta = jobRunMeta.get(jobId);
         if (runMeta) runMeta.publishedIds.push(cardId);
+        const canvas = canvasDimsForShot(
+          shot.aspect,
+          nai,
+          Boolean(card.auto_aspect),
+          isComicShot(shot),
+        );
+        const canvasAspect = aspectFromCanvas(canvas.width, canvas.height);
         const cardMeta = {
           ...cardMetaFromLocation(meta, location, raw?.byteLength || 0),
           assistant_preview: assistantPreview,
-          aspect: resolveShotAspect(shot.aspect),
+          aspect: canvasAspect,
+          width: canvas.width,
+          height: canvas.height,
           kind: isComicShot(shot) ? 'comic' : 'illustration',
           characters: slimCardCharacters(meta.characters || []),
           ...(cleanText(shot.complexity, 20) ? { complexity: cleanText(shot.complexity, 20) } : {}),
@@ -1325,6 +1334,9 @@ async function runJob(jobId: string): Promise<void> {
           char_index: location.char_index ?? -1,
           chat_index: location.chat_index ?? -1,
           assistant_preview: assistantPreview,
+          aspect: canvasAspect,
+          width: canvas.width,
+          height: canvas.height,
           main_prompt: main,
           negative_prompt: neg,
           characters: slimCardCharacters(meta.characters || []),

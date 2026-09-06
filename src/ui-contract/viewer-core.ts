@@ -2009,7 +2009,20 @@ export function isScrollHoldLatest(args: {
   return newest.bottom >= bottomBand && newest.top < Number(scroller.bottom) + 24;
 }
 
-/** Ignore jitter and jumps bigger than the scroller. */
+/** Viewport offset of a bubble edge. Tag teardown holds the bottom so leftover text stays put. */
+export function scrollHoldOffset(
+  scrollerRect: ScrollHoldRect | null | undefined,
+  bubbleRect: ScrollHoldRect | null | undefined,
+  edge: unknown = 'top',
+): number {
+  if (!scrollerRect || !bubbleRect) return NaN;
+  const origin = Number(scrollerRect.top);
+  const point = edge === 'bottom' ? Number(bubbleRect.bottom) : Number(bubbleRect.top);
+  if (!Number.isFinite(origin) || !Number.isFinite(point)) return NaN;
+  return point - origin;
+}
+
+/** Ignore jitter. Viewport-sized jumps are dropped unless `viewportHeight` is 0 (explicit teardown). */
 export function scrollHoldDelta(prevOffset: unknown, nextOffset: unknown, viewportHeight: unknown = 0): number {
   const prev = Number(prevOffset);
   const next = Number(nextOffset);
@@ -2021,7 +2034,8 @@ export function scrollHoldDelta(prevOffset: unknown, nextOffset: unknown, viewpo
   return delta;
 }
 
-export function shouldHoldScroll(opts: { atLatest?: unknown; userControl?: unknown } = {}): boolean {
+export function shouldHoldScroll(opts: { atLatest?: unknown; userControl?: unknown; force?: unknown } = {}): boolean {
+  if (opts.force === true) return true;
   if (opts.atLatest === true) return false;
   if (opts.userControl === true) return false;
   return true;

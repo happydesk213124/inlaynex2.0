@@ -295,34 +295,41 @@ export function stripExportSeqPrefix(fileName: unknown): string {
   return base.replace(/^\d{6}_/, '');
 }
 
-function folderZipDir(item: GalleryExportItem, used: Map<string, string>): string {
-  const key = String(item.folder_key || `${item.character_id || ''}|${item.chat_id || ''}` || 'folder');
-  const hit = used.get(key);
-  if (hit) return hit;
-  const char = sanitizeZipName(item.character_name, 'folder');
-  const chat = sanitizeZipName(item.chat_name, '');
-  const taken = new Set(used.values());
-  let out = char;
-  if (taken.has(out)) {
-    out = chat && chat !== char ? `${char}_${chat}` : `${char}_2`;
-    let n = 3;
-    while (taken.has(out)) {
-      out = chat && chat !== char ? `${char}_${chat}_${n++}` : `${char}_${n++}`;
-    }
-  }
-  used.set(key, out);
+export type GalleryExportNest = 'chat' | 'character-chat';
+
+function uniqueZipDir(base: string, taken: Set<string>): string {
+  const stem = base || 'folder';
+  let out = stem;
+  let n = 2;
+  while (taken.has(out)) out = `${stem}_${n++}`;
+  taken.add(out);
   return out;
 }
 
+function folderRoomKey(item: GalleryExportItem): string {
+  return String(item.folder_key || `${item.character_id || ''}|${item.chat_id || ''}` || '_');
+}
+
+function chatZipLeaf(item: GalleryExportItem): string {
+  return sanitizeZipName(item.chat_name, '') || sanitizeZipName(item.character_name, 'chat');
+}
+
 /**
- * Newest image in each explorer folder is `000001_…`. Paths are
- * `{folder}/000001_{original}.webp` so a full export stays one ZIP, one dir per room.
+ * Newest image in each explorer room is `000001_…`.
+ * `chat` = `{chat}/000001_…` (한 캐릭터 ZIP).
+ * `character-chat` = `{character}/{chat}/000001_…` (전체 ZIP).
  */
-export function assignGalleryExportFiles(items: GalleryExportItem[] = []): GalleryExportItem[] {
-  const dirs = new Map<string, string>();
+export function assignGalleryExportFiles(
+  items: GalleryExportItem[] = [],
+  { nest = 'chat' }: { nest?: GalleryExportNest } = {},
+): GalleryExportItem[] {
+  const roomDirs = new Map<string, string>();
+  const charDirs = new Map<string, string>();
+  const takenChars = new Set<string>();
+  const takenChats = new Map<string, Set<string>>();
   const byFolder = new Map<string, GalleryExportItem[]>();
   for (const item of items) {
-    const key = String(item.folder_key || `${item.character_id || ''}|${item.chat_id || ''}` || '_');
+    const key = folderRoomKey(item);
     const list = byFolder.get(key) || [];
     list.push(item);
     byFolder.set(key, list);
@@ -334,7 +341,29 @@ export function assignGalleryExportFiles(items: GalleryExportItem[] = []): Galle
       if (dt) return dt;
       return String(a.id || '').localeCompare(String(b.id || ''));
     });
-    const dir = folderZipDir(list[0] || {}, dirs);
+    const head = list[0] || {};
+    const room = folderRoomKey(head);
+    let dir = roomDirs.get(room);
+    if (!dir) {
+      const chat = chatZipLeaf(head);
+      if (nest === 'character-chat') {
+        const ck = String(head.character_id || head.character_name || 'folder');
+        let charDir = charDirs.get(ck);
+        if (!charDir) {
+          charDir = uniqueZipDir(sanitizeZipName(head.character_name, 'folder'), takenChars);
+          charDirs.set(ck, charDir);
+        }
+        const chats = takenChats.get(charDir) || new Set<string>();
+        const chatDir = uniqueZipDir(chat, chats);
+        takenChats.set(charDir, chats);
+        dir = `${charDir}/${chatDir}`;
+      } else {
+        const chats = takenChats.get('_') || new Set<string>();
+        dir = uniqueZipDir(chat, chats);
+        takenChats.set('_', chats);
+      }
+      roomDirs.set(room, dir);
+    }
     list.forEach((item, i) => {
       const seq = String(i + 1).padStart(6, '0');
       const ext = typeof item.export_ext === 'string' ? item.export_ext : 'webp';

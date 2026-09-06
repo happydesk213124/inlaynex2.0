@@ -59,30 +59,34 @@ test("manifest + unpack", () => {
 
 test("newest image in a folder is 000001_ plus the old download name", () => {
   const rows = assignGalleryExportFiles([
-    { id: "old", folder_key: "c|t", character_name: "노겜노라", message_index: 1, shot_index: 0, created_at: 10 },
-    { id: "new", folder_key: "c|t", character_name: "노겜노라", message_index: 9, shot_index: 2, created_at: 99 },
+    { id: "old", folder_key: "c|t", character_name: "노겜노라", chat_name: "new chat2", message_index: 1, shot_index: 0, created_at: 10 },
+    { id: "new", folder_key: "c|t", character_name: "노겜노라", message_index: 9, shot_index: 2, created_at: 99, chat_name: "new chat2" },
   ]);
   assert.equal(rows[0].id, "new");
-  assert.equal(rows[0].file, "노겜노라/000001_노겜노라_msg10_s3.webp");
-  assert.equal(rows[1].file, "노겜노라/000002_노겜노라_msg2_s1.webp");
+  assert.equal(rows[0].file, "new chat2/000001_노겜노라_msg10_s3.webp");
+  assert.equal(rows[1].file, "new chat2/000002_노겜노라_msg2_s1.webp");
 });
 
-test("full export keeps one directory per explorer folder", () => {
+test("character zip is one directory per chat", () => {
   const rows = assignGalleryExportFiles([
-    { id: "a", folder_key: "c1|t1", character_name: "Alice", chat_name: "room1", created_at: 2 },
-    { id: "b", folder_key: "c2|t2", character_name: "Bob", chat_name: "room2", created_at: 3 },
+    { id: "a", folder_key: "c|t1", character_name: "노겜노라", chat_name: "new chat2", created_at: 2 },
+    { id: "b", folder_key: "c|t2", character_name: "노겜노라", chat_name: "new chat5", created_at: 3 },
   ]);
   const dirs = [...new Set(rows.map((r) => r.file.split("/")[0]))].sort();
-  assert.deepEqual(dirs, ["Alice", "Bob"]);
+  assert.deepEqual(dirs, ["new chat2", "new chat5"]);
 });
 
-test("same character name in two rooms keeps both folders", () => {
-  const rows = assignGalleryExportFiles([
-    { id: "a", folder_key: "c|t1", character_name: "노겜노라", chat_name: "room1", created_at: 2 },
-    { id: "b", folder_key: "c|t2", character_name: "노겜노라", chat_name: "room2", created_at: 3 },
-  ]);
-  const dirs = [...new Set(rows.map((r) => r.file.split("/")[0]))].sort();
-  assert.deepEqual(dirs, ["노겜노라", "노겜노라_room2"]);
+test("full export nests chat folders under each character", () => {
+  const rows = assignGalleryExportFiles(
+    [
+      { id: "a", folder_key: "c1|t1", character_name: "Alice", chat_name: "room1", created_at: 2 },
+      { id: "b", folder_key: "c2|t2", character_name: "Bob", chat_name: "room2", created_at: 3 },
+      { id: "c", folder_key: "c1|t2", character_name: "Alice", chat_name: "room9", created_at: 4 },
+    ],
+    { nest: "character-chat" },
+  );
+  const paths = rows.map((r) => r.file.replace(/\/\d{6}_.+$/, "")).sort();
+  assert.deepEqual(paths, ["Alice/room1", "Alice/room9", "Bob/room2"]);
 });
 
 test("stripExportSeqPrefix leaves old names alone", () => {

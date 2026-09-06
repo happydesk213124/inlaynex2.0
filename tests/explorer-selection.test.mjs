@@ -16,6 +16,7 @@ import {
   parseExplorerCharFolderKey,
   explorerCharFolderKey,
   explorerFolderKeysForCharacter,
+  explorerExportFolderKeys,
   EXPLORER_CHAR_FOLDER_PREFIX,
 } from "../.test-build/explorer-selection.mjs";
 
@@ -110,6 +111,17 @@ test("parseExplorerCharFolderKey uses full __char__: prefix (not slice 8)", () =
     ).sort(),
     ["c1|a", "c1|b"],
   );
+});
+
+test("explorerExportFolderKeys expands 이캐릭터 전체보기", () => {
+  const folders = [
+    { key: "c1|a", character_id: "c1" },
+    { key: "c1|b", character_id: "c1" },
+    { key: "c2|a", character_id: "c2" },
+  ];
+  assert.deepEqual(explorerExportFolderKeys("__char__:c1", folders).sort(), ["c1|a", "c1|b"]);
+  assert.deepEqual(explorerExportFolderKeys("c1|a", folders), ["c1|a"]);
+  assert.equal(explorerExportFolderKeys("__all__", folders), null);
 });
 
 test("explorerWindowRange uses viewport + overscan (not fixed 100)", () => {

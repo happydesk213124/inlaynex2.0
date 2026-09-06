@@ -237,6 +237,22 @@ export function defaultExplorerFolderKey(
   return '__pick__';
 }
 
+/**
+ * Folder ZIP keys. `__char__:` expands to every chat of that character.
+ * `null` means the whole gallery (`__all__` / empty).
+ */
+export function explorerExportFolderKeys(
+  folderKey: unknown,
+  folders: Array<{ key?: string; character_id?: string; character_name?: string } | null | undefined> = [],
+): string[] | null {
+  const key = String(folderKey || '').trim();
+  if (!key || key === '__all__') return null;
+  if (key === '__pick__') return [];
+  const charKey = parseExplorerCharFolderKey(key);
+  if (charKey) return explorerFolderKeysForCharacter(folders, charKey);
+  return [key];
+}
+
 /** Folder keys belonging to one character group (for 전체보기 filter). */
 export function explorerFolderKeysForCharacter(
   folders: Array<{ key?: string; character_id?: string; character_name?: string } | null | undefined> = [],

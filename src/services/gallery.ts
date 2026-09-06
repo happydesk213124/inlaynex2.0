@@ -40,7 +40,9 @@ import {
   roomTallies,
 } from '../storage/stores';
 import type { ZipEntryInput } from '../ui-contract/gallery-zip';
+import { explorerExportFolderKeys } from '../ui-contract/explorer-selection';
 import { assignGalleryExportFiles, buildGalleryManifest, galleryImageExt, lookupZipImage, packGalleryZip, resolveReattach, unpackGalleryZip, withGalleryExt } from '../ui-contract/gallery-zip';
+import type { GalleryExportNest } from '../ui-contract/gallery-zip';
 import {
   cardMetaFromLocation,
   locationFieldsForCard,
@@ -622,18 +624,27 @@ export async function exportGalleryZip(body: Record<string, unknown> = {}): Prom
   const explore = await exploreCards(0);
   let items = explore.items;
   const folderKey = cleanText(body.folder_key || '', 400);
+  let nest: GalleryExportNest = 'chat';
   if (body.all) {
-    // keep all
+    nest = 'character-chat';
   } else if (folderKey) {
-    items = items.filter((it) => it.folder_key === folderKey);
+    const keys = explorerExportFolderKeys(folderKey, explore.folders);
+    if (keys === null) {
+      nest = 'character-chat';
+    } else {
+      const want = new Set(keys);
+      items = items.filter((it) => want.has(it.folder_key));
+    }
   } else if (Array.isArray(body.card_ids) && body.card_ids.length) {
     const want = new Set(body.card_ids.map((id) => cleanText(id, 80)));
     items = items.filter((it) => want.has(it.id));
+    const chars = new Set(items.map((it) => String(it.character_id || it.character_name || '')));
+    nest = chars.size > 1 ? 'character-chat' : 'chat';
   } else {
     return { ok: false, ...errorBody('card_ids, folder_key, or all required', 'bad_request') };
   }
   if (!items.length) return { ok: false, ...errorBody('no images to export', 'empty') };
-  const numbered = assignGalleryExportFiles(items);
+  const numbered = assignGalleryExportFiles(items, { nest });
   const named: typeof numbered = [];
   const imageFiles: ZipEntryInput[] = [];
   for (const item of numbered) {

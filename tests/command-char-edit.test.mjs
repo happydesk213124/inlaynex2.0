@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const src = (name) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "services", name), "utf8");
+const formSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "char-command", "form.ts"), "utf8");
 
 import { applyCharacterCommandDeltas, formatCommandDeltaLog } from "../.test-build/command-char-edit.mjs";
 import {
@@ -169,6 +170,17 @@ test("applyCharacterCommandDeltas overwrites name/id/original/gender only when L
   assert.equal(overwritten.name, "New Name");
   assert.equal(overwritten.original, "New Original");
   assert.equal(overwritten.gender, "boy");
+
+  const merged = applyCharacterCommandDeltas(rec, {
+    original: { add: "hatsune_miku", remove: ["Keep Original"] },
+  });
+  assert.match(merged.original, /hatsune_miku/);
+  assert.doesNotMatch(merged.original, /Keep Original/);
+});
+
+test("applyCharacterToForm writes name and original, not only look slots", () => {
+  assert.match(formSrc, /setVal\(q\(root, prefix, 'name'\), rec\.name/);
+  assert.match(formSrc, /setVal\(q\(root, prefix, 'original'\), rec\.original/);
 });
 
 test("formatCommandDeltaLog lists appearance and costume add/remove", () => {

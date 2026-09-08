@@ -68,6 +68,8 @@ export function readCharacterFromForm(root: ParentNode, prefix: FormPrefix, seed
 export function applyCharacterToForm(root: ParentNode, prefix: FormPrefix, rec: Partial<CharacterRecord>): void {
   const { costumes, active_costume } = ensureCostumes(rec);
   const wear = costumes[active_costume] || costumes[0];
+  setVal(q(root, prefix, 'name'), rec.name || '');
+  setVal(q(root, prefix, 'original'), rec.original || '');
   setVal(q(root, prefix, 'appearance'), rec.appearance || '');
   setVal(q(root, prefix, 'attire'), wear?.attire || rec.attire || '');
   setVal(q(root, prefix, 'accessories'), wear?.accessories || rec.accessories || '');

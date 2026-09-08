@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.62';
+const PLUGIN_VERSION = '2.5.63';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.63</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>명령수정이 원본·이름을 폼에 다시 넣습니다. 원본을 더하기/빼기로 보내도 붙습니다</li>
+            <li>JSON 재시도가 컷이 비어 있어도 오류 내역을 붙여 한 번 다시 물어봅니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.62</strong>
@@ -14383,8 +14390,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.62",
-    body: "태거 JSON 오류가 생성실패로 끝납니다. 끊긴 작업이 남아 토스트가 멈추던 걸 고쳤습니다."
+    title: "2.5.63",
+    body: "명령수정이 원본·이름을 폼에 넣습니다. JSON 재시도는 컷이 비어도 한 번 다시 물어봅니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

@@ -47,7 +47,12 @@ export function applyCharacterCommandDeltas(
   const delta = asRecord(parsed) || {};
   if ('name' in delta) base.name = cleanText(delta.name, 200);
   if ('id' in delta) base.id = cleanText(delta.id, 80);
-  if ('original' in delta) base.original = cleanText(delta.original, 400);
+  if ('original' in delta) {
+    // Prompt says replace-if-present, but models often emit {add,remove} like other tag slots.
+    base.original = isDelta(delta.original)
+      ? applyTagDelta(base.original, delta.original)
+      : cleanText(delta.original, 400);
+  }
   if ('gender' in delta) base.gender = normalizeGender(delta.gender);
   if (isDelta(delta.appearance) || delta.appearance != null && delta.appearance !== '') {
     base.appearance = applyMaybeDelta(base.appearance, delta.appearance, 4000);
@@ -168,7 +173,10 @@ export function formatCommandDeltaLog(parsed: unknown): string {
   const lines: string[] = [];
   if ('name' in delta) lines.push(`이름  → ${cleanText(delta.name, 200)}`);
   if ('id' in delta) lines.push(`id  → ${cleanText(delta.id, 80)}`);
-  if ('original' in delta) lines.push(`original  → ${cleanText(delta.original, 400)}`);
+  if ('original' in delta) {
+    if (isDelta(delta.original)) lines.push(...formatDeltaLines('original', delta.original));
+    else lines.push(`original  → ${cleanText(delta.original, 400)}`);
+  }
   if ('gender' in delta) lines.push(`성별  → ${normalizeGender(delta.gender)}`);
   lines.push(...formatDeltaLines('외형', delta.appearance));
   lines.push(...formatDeltaLines('머리색', delta.hair_color));

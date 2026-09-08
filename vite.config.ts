@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.63';
+const PLUGIN_VERSION = '2.5.64';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.64</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>캐릭터 탭·수정 팝업 글상자에 그림을 붙이면 오토태그가 바로 돌아갑니다. 버튼을 먼저 누르지 않아도 됩니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.63</strong>
@@ -7802,7 +7808,7 @@ const VENDOR_LOREFILTER_TAB_INSERT_NEEDLE =
   `오토태그는 버튼 더블클릭(파일) 또는 클릭 후 Ctrl+V.</div>
         <div class="prompt-group-label">이번 샷 (최근 카드)</div>`;
 const VENDOR_LOREFILTER_TAB_INSERT_PATCH =
-  `오토태그는 버튼 더블클릭(파일) 또는 클릭 후 Ctrl+V.</div>
+  `오토태그는 글상자에 그림 붙여넣기, 버튼 더블클릭(파일), 또는 클릭 후 Ctrl+V.</div>
         \${LfHtml}
         <div class="prompt-group-label">이번 샷 (최근 카드)</div>`;
 
@@ -8723,13 +8729,56 @@ const VENDOR_AUTOTAG_WINDOW_PASTE_NEEDLE =
 
   async function blockHostChrome(e) {`;
 const VENDOR_AUTOTAG_WINDOW_PASTE_PATCH =
-  `    }), t._autotagPasteBound || (t._autotagPasteBound = !0, window.addEventListener("paste", async (a) => {
+  `    }), t._autotagPasteBound || (t._autotagPasteBound = !0, t._runFieldImageAutotag = async (a) => {
+      const items = Array.from(a.clipboardData?.items || []);
+      const hit = items.find((p) => p.type.startsWith("image/"));
+      let file = hit ? hit.getAsFile() : null;
+      if (!file) file = Array.from(a.clipboardData?.files || []).find((x) => String(x.type || "").startsWith("image/")) || null;
+      if (!file) {
+        const text = String(a.clipboardData?.getData?.("text") || a.clipboardData?.getData?.("text/plain") || "").trim();
+        const m = text.match(/^data:(image\\/[a-zA-Z0-9.+-]+);base64,([\\s\\S]+)$/i);
+        if (m) {
+          try {
+            const bin = atob(m[2].replace(/\\s+/g, ""));
+            const u8 = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+            file = new File([u8], "paste.png", { type: m[1] });
+          } catch { file = null; }
+        }
+      }
+      if (!file) return !1;
+      const ae = a.target || document.activeElement;
+      const tag = String(ae?.tagName || "").toLowerCase();
+      const inField = tag === "textarea" || tag === "input" || !!ae?.isContentEditable;
+      if (t.charEditUi?.root?.isConnected && (inField ? t.charEditUi.root.contains(ae) : !1)) {
+        a.preventDefault();
+        try { a.stopPropagation(); } catch {}
+        if (t.charRefFocus?.scope === "modal" && typeof t.charEditUi.uploadRef == "function") await t.charEditUi.uploadRef(file);
+        else if (typeof t.charEditUi.runAutotag == "function") await t.charEditUi.runAutotag(file);
+        return !0;
+      }
+      if (t.charCreateUi?.root?.isConnected && inField && t.charCreateUi.root.contains(ae) && typeof t.charCreateUi.runAutotag == "function") {
+        a.preventDefault();
+        try { a.stopPropagation(); } catch {}
+        await t.charCreateUi.runAutotag(file);
+        return !0;
+      }
+      if (t.uiOpen && t.uiTab === "characters" && inField) {
+        const card = typeof ae.closest == "function" ? ae.closest("[data-char-scope]") : null;
+        if (card) {
+          a.preventDefault();
+          try { a.stopPropagation(); } catch {}
+          await Tt(card, file);
+          return !0;
+        }
+      }
+      return !1;
+    }, window.addEventListener("paste", async (a) => {
+      if (typeof t._runFieldImageAutotag == "function" && await t._runFieldImageAutotag(a)) return;
       if (!t.autotagFocus) return;
       const r = Array.from(a.clipboardData?.items || []).find((p) => p.type.startsWith("image/"));
       if (!r) return;
       if (t.autotagFocus.scope === "modal") {
-        const ae = document.activeElement, tag = String(ae?.tagName || "").toLowerCase();
-        if (tag === "textarea" || tag === "input" || ae?.isContentEditable) return;
         const id = String(t.autotagFocus.id || "");
         const run = id === "char-edit" ? t.charEditUi?.runAutotag : id === "char-create" ? t.charCreateUi?.runAutotag : null;
         if (typeof run != "function") return;
@@ -8762,12 +8811,19 @@ const VENDOR_CHAR_EDIT_MODAL_PASTE_NEEDLE =
     const U = async () => {`;
 const VENDOR_CHAR_EDIT_MODAL_PASTE_PATCH =
   `    }), i.addEventListener("paste", async (f) => {
+      if (typeof t._runFieldImageAutotag == "function" && await t._runFieldImageAutotag(f)) return;
       const ae = f.target || document.activeElement, tag = String(ae?.tagName || "").toLowerCase();
-      if (tag === "textarea" || tag === "input" || ae?.isContentEditable) return;
+      const inField = tag === "textarea" || tag === "input" || !!ae?.isContentEditable;
       const x = Array.from(f.clipboardData?.items || []).find((R) => R.type.startsWith("image/"));
-      if (!x) return;
-      const I = x.getAsFile();
+      const I = x ? x.getAsFile() : Array.from(f.clipboardData?.files || []).find((R) => String(R.type || "").startsWith("image/"));
       if (!I) return;
+      if (inField && i.contains(ae)) {
+        f.preventDefault(), f.stopPropagation();
+        if (t.charRefFocus?.scope === "modal" && typeof t.charEditUi?.uploadRef == "function") await t.charEditUi.uploadRef(I);
+        else await d(I);
+        return;
+      }
+      if (inField) return;
       if (t.charRefFocus?.scope === "modal" && t.charRefFocus?.id === "char-edit") {
         const run = t.charEditUi?.uploadRef;
         if (typeof run != "function") return;
@@ -8817,6 +8873,7 @@ const VENDOR_CHAR_EDIT_UI_PASTE_PATCH =
         const host = window.parent && window.parent !== window ? window.parent : null;
         host && host.addEventListener("paste", async (ev) => {
           if (!t.charEditUi?.root?.isConnected && !t.charCreateUi?.root?.isConnected) return;
+          if (typeof t._runFieldImageAutotag == "function" && await t._runFieldImageAutotag(ev)) return;
           const focus = t.charRefFocus?.scope === "modal" ? t.charRefFocus : t.autotagFocus?.scope === "modal" ? t.autotagFocus : null;
           if (!focus) return;
           const item = Array.from(ev.clipboardData?.items || []).find((R) => R.type.startsWith("image/"));
@@ -14390,8 +14447,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.63",
-    body: "명령수정이 원본·이름을 폼에 넣습니다. JSON 재시도는 컷이 비어도 한 번 다시 물어봅니다."
+    title: "2.5.64",
+    body: "캐릭터 글상자에 그림을 붙이면 오토태그가 바로 돌아갑니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -18800,6 +18857,7 @@ const loadVendorUi = (): string => {
     assertOnce(out, '"nx-scroll-hold": { title: "스크롤 붙잡기"', 'scroll hold help landed');
     assertOnce(out, 'scroll_hold: ee("nx-scroll-hold")', 'scroll hold persists from dashboard');
     assertOnce(out, 'async function nxApplyScrollHold(opts)', 'scroll hold apply helper landed');
+    assertOnce(out, 't._runFieldImageAutotag = async (a) => {', 'field image paste runs autotag');
     assertOnce(out, 'async function nxCaptureScrollHold(opts)', 'scroll hold capture helper landed');
     assertOnce(out, 'async function nxAroundScrollHold(work, opts)', 'scroll hold wraps explicit frame teardown');
     assertOnce(out, 'async function nxRemoveInlineFrames(msgEl, isCurrent = () => !0) {\n    await nxAroundScrollHold(async () => {', 'tag/refresh frame drop applies scroll hold');

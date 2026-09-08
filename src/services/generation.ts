@@ -642,36 +642,53 @@ export async function generateImage(
   // collecting actual refs so an empty image-mode cast keeps shared vibes.
   // Encode only on models that accept vibe (V4 / V3) — V5 must not call encode-vibe.
   const naiModel = modelToNaia(routeModel);
+  const encodeModel = resolveModel(naiModel);
   if (shouldPrepareSharedVibe(characterRefs.length) && supportsVibeTransfer(naiModel)) {
-    let vibeRow = presetId ? await ensurePresetVibeEncoded(presetId) : null;
-    if (!vibeRow) {
-      const vibeMode = cleanText(nai.vibe_transfer || 'none').toLowerCase();
-      if (!['', 'none', 'off', 'false', '0'].includes(vibeMode)) {
-        vibeRow = await ensureVibeEncoded();
+    try {
+      let vibeRow = presetId ? await ensurePresetVibeEncoded(presetId, encodeModel) : null;
+      if (!vibeRow) {
+        const vibeMode = cleanText(nai.vibe_transfer || 'none').toLowerCase();
+        if (!['', 'none', 'off', 'false', '0'].includes(vibeMode)) {
+          vibeRow = await ensureVibeEncoded(encodeModel);
+        }
       }
-    }
-    if (vibeRow?.encoded) {
-      let strength = Number(nai.vibe_transfer_strength ?? 0.6);
-      let ie = Number(nai.vibe_transfer_information_extracted ?? vibeRow.information_extracted ?? 1.0);
-      if (Number.isNaN(strength)) strength = 0.6;
-      if (Number.isNaN(ie)) ie = 1.0;
-      vibes.push({
-        encoded: vibeRow.encoded,
-        strength: Math.max(0, Math.min(1, strength)),
-        information_extracted: Math.max(0, Math.min(1, ie)),
-      });
+      if (vibeRow?.encoded) {
+        let strength = Number(nai.vibe_transfer_strength ?? 0.6);
+        let ie = Number(nai.vibe_transfer_information_extracted ?? vibeRow.information_extracted ?? 1.0);
+        if (Number.isNaN(strength)) strength = 0.6;
+        if (Number.isNaN(ie)) ie = 1.0;
+        vibes.push({
+          encoded: vibeRow.encoded,
+          strength: Math.max(0, Math.min(1, strength)),
+          information_extracted: Math.max(0, Math.min(1, ie)),
+        });
+      }
+    } catch (err) {
+      dbg('nai.vibe.encode_fail', {
+        message: String((err as Error)?.message || err),
+        encode_model: encodeModel,
+        generate_model: resolveModel(routeModel),
+      }, 'warn');
     }
   }
 
-  if (charRefMode === 'vibe' && shouldPrepareSharedVibe(characterRefs.length)) {
+  if (charRefMode === 'vibe' && shouldPrepareSharedVibe(characterRefs.length) && supportsVibeTransfer(naiModel)) {
     for (const { id: cid, scope } of cast) {
-      const row = await ensureCharRefVibeEncoded(scope, cid, charRefFidelity);
-      if (!row?.encoded) continue;
-      vibes.push({
-        encoded: row.encoded,
-        strength: charRefStrength,
-        information_extracted: charRefFidelity,
-      });
+      try {
+        const row = await ensureCharRefVibeEncoded(scope, cid, charRefFidelity, encodeModel);
+        if (!row?.encoded) continue;
+        vibes.push({
+          encoded: row.encoded,
+          strength: charRefStrength,
+          information_extracted: charRefFidelity,
+        });
+      } catch (err) {
+        dbg('nai.vibe.char_ref_encode_fail', {
+          message: String((err as Error)?.message || err),
+          character_id: cid,
+          encode_model: encodeModel,
+        }, 'warn');
+      }
     }
   }
 
@@ -723,6 +740,8 @@ export async function generateImage(
     model: resolveModel(routeModel),
     family: routeFamily,
     char_ref: charRefMode,
+    encode_model: encodeModel,
+    vibe_count: vibes.length,
     aspect: dims.aspect,
     auto_aspect: Boolean(getConfig().card?.auto_aspect) || Boolean(opts?.useShotAspect),
     steps: req.steps,

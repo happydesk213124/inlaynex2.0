@@ -1080,6 +1080,7 @@ export async function persistChatWearStates(
     const rec = resolveCharacter(key, roster);
     if (!rec) continue;
     const prev = parseWearState(rec.wear_state) || 'clothed';
+    rec.wear_state = state;
     if (prev === state) continue;
     await upsertCharacter(writeSessionId, {
       id: rec.id,

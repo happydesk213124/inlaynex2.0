@@ -59,6 +59,34 @@ function paintCharRefPreviews(characterId: string, url: string, configured: bool
   });
 }
 
+async function hydrateCharRefPreview(
+  root: ParentNode,
+  ids: { characterId: string; scope: string; sessionId: string },
+): Promise<void> {
+  try {
+    const res = await fetchFn()('/v1/characters/ref/hydrate', {
+      method: 'POST',
+      body: {
+        character_id: ids.characterId,
+        scope: ids.scope,
+        session_id: ids.sessionId,
+      },
+    }, 30000);
+    const rows = [...(Array.isArray(res?.session) ? res.session : []), ...(Array.isArray(res?.global) ? res.global : [])];
+    const row = rows.find((c) => String((c as { id?: unknown })?.id || '') === ids.characterId) as {
+      preview_url?: string;
+      configured?: boolean;
+    } | undefined;
+    const url = String(row?.preview_url || '');
+    paintHeaderRefSlot(root, url);
+    paintCharRefPreviews(ids.characterId, url, !!row?.configured);
+  } catch {
+    /* preview can stay on the POST url */
+  }
+  const refreshBtn = root.querySelector('[data-ce-ref-refresh], [data-char-ref-refresh]') as HTMLElement | null;
+  refreshBtn?.click();
+}
+
 function paintHeadShot(root: ParentNode, url: string): void {
   const head = root.querySelector('[data-char-head-shot]') as HTMLElement | null;
   if (!head) return;
@@ -211,6 +239,11 @@ export function bindCharacterExampleShot(root: ParentNode, opts: ExampleShotOpts
       const url = String(res?.preview_url || '');
       paintHeaderRefSlot(root, url);
       paintCharRefPreviews(id, url, !!res?.configured);
+      await hydrateCharRefPreview(root, {
+        characterId: id,
+        scope: opts.scope(),
+        sessionId: opts.sessionId(),
+      });
       toast('참고이미지로 등록됨');
     } catch (err) {
       toast(String((err as Error)?.message || err), false);

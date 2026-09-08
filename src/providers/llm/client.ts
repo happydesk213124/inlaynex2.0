@@ -13,16 +13,21 @@ import { cleanText } from '../../core/util/text.ts';
 import { networkFetch, type FetchLikeResponse } from '../nai/http.ts';
 import { googleAccessTokenFromServiceAccount } from './google-auth.ts';
 import { applyReasoningToBody, ensureLlmRequestUrl, normalizeLlmProvider } from './providers.ts';
+import { prepareAutotagImage } from '../../core/util/image.ts';
+import { base64ToBytes, bytesToBase64Async } from '../../core/util/bytes.ts';
 import {
   extractAnthropicText,
   extractChatCompletionText,
+  llmIsRisuSource,
   llmResponseToText,
   normalizeLlmSource,
   openaiMessagesToAnthropic,
+  risuModeForSource,
   readStreamToText,
   type AnthropicMessage,
   type AnthropicPayload,
   type ChatCompletionPayload,
+  type LlmContentPart,
   type LlmMessage,
   type StreamReadOptions,
 } from './transform.ts';
@@ -91,6 +96,45 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
+async function rewriteVisionImagesPng(messages: LlmMessage[]): Promise<LlmMessage[]> {
+  const out: LlmMessage[] = [];
+  for (const msg of messages || []) {
+    if (!Array.isArray(msg.content)) {
+      out.push(msg);
+      continue;
+    }
+    const parts: Array<LlmContentPart | string> = [];
+    for (const part of msg.content) {
+      if (!part || typeof part !== 'object') {
+        parts.push(part);
+        continue;
+      }
+      const image = part.image_url;
+      const url = (typeof image === 'object' && image ? image.url : '')
+        || (typeof image === 'string' ? image : '');
+      const m = String(url).match(/^data:([^;]+);base64,([\s\S]+)$/i);
+      const mime = (m?.[1] || '').toLowerCase();
+      if ((part.type === 'image_url' || url) && m && mime && mime !== 'image/png' && mime !== 'image/jpeg') {
+        try {
+          const prepared = await prepareAutotagImage(base64ToBytes(m[2].replace(/\s+/g, '')));
+          const b64 = await bytesToBase64Async(prepared.bytes);
+          parts.push({
+            ...part,
+            type: 'image_url',
+            image_url: { url: `data:${prepared.mime || 'image/png'};base64,${b64}` },
+          });
+          continue;
+        } catch {
+          /* keep the original part */
+        }
+      }
+      parts.push(part);
+    }
+    out.push({ ...msg, content: parts });
+  }
+  return out;
+}
+
 /** Runs one tagging request, routing to Risu's own model when the source is main/aux. */
 export async function callLlm(
   llm: LlmSettings,
@@ -98,11 +142,12 @@ export async function callLlm(
   opts: CallLlmOptions = {},
 ): Promise<string> {
   throwIfAborted(opts.signal);
+  const visionMessages = await rewriteVisionImagesPng(messages);
   const source = normalizeLlmSource(llm.source);
-  if (source === 'main' || source === 'aux') {
+  if (llmIsRisuSource(source)) {
     // Do NOT pass the custom Model field as staticModel — that overrides Risu's
     // configured main/aux model with a leftover OpenRouter/etc id and skips the real request.
-    return callLlmViaRisu(llm, messages, source, '', opts.signal);
+    return callLlmViaRisu(llm, visionMessages, source, '', opts.signal);
   }
   const provider = normalizeLlmProvider(llm.provider);
   const model = cleanText(llm.model);
@@ -151,7 +196,7 @@ export async function callLlm(
   try {
     let resp: FetchLikeResponse;
     if (provider === 'anthropic_compatible') {
-      const converted = openaiMessagesToAnthropic(messages);
+      const converted = openaiMessagesToAnthropic(visionMessages);
       const body: AnthropicRequestBody = {
         model,
         max_tokens: Number(llm.max_tokens ?? 8000),
@@ -172,7 +217,7 @@ export async function callLlm(
     } else {
       const body = applyReasoningToBody({
         model,
-        messages,
+        messages: visionMessages,
         temperature: Number(llm.temperature ?? 0.4),
         max_tokens: Number(llm.max_tokens ?? 8000),
       }, llm.reasoning_effort);
@@ -266,7 +311,7 @@ export async function callLlmViaRisu(
   }
   // Risu ModelModeExtended: 'model' | 'submodel' | 'memory' | 'emotion' | 'otherAx' | 'translate'
   // "main" is NOT valid — anything other than "model" falls through to db.subModel.
-  const mode = source === 'main' ? 'model' : 'otherAx';
+  const mode = risuModeForSource(source);
   const timeoutMs = Math.max(5000, Number(llm.timeout_seconds ?? 180) * 1000);
   // Only honor an explicit override; never the custom-endpoint Model text box.
   const staticOverride = cleanText(staticModel) || '';

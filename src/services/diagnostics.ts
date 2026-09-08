@@ -30,7 +30,7 @@ import { naiFamilyOfModel } from '../domain/nai/routing';
 import { comfyBaseUrl, imageBackendKind } from '../providers/comfy/client';
 import { callLlm } from './llm-call';
 import { normalizeLlmProvider } from '../providers/llm/providers';
-import { llmConfigured, normalizeLlmSource } from '../providers/llm/transform';
+import { llmConfigured, llmIsRisuSource, normalizeLlmSource } from '../providers/llm/transform';
 import { generateT2i, getAnlas, getNaiQuotaDetail } from '../providers/nai/client';
 import { modelToNaia, type T2iRequest } from '../providers/nai/payload';
 import { allUniqueNaiTokens, maskNaiToken } from '../domain/nai/keys';
@@ -86,7 +86,7 @@ export async function testLlm(llmOverride: unknown): Promise<ApiResult> {
           : '태깅 LLM Model/API key가 비어 있습니다. NovelAI 키가 아니라 태깅용 LLM 키를 넣으세요.',
       };
     }
-    if ((source === 'main' || source === 'aux') && !hostHas('runLLMModel')) {
+    if (llmIsRisuSource(source) && !hostHas('runLLMModel')) {
       return { ok: false, message: 'RisuAI runLLMModel API를 사용할 수 없습니다.' };
     }
     const text = await callLlm(cfg, [{ role: 'user', content: 'Reply with exactly: ok' }], { plain: true });

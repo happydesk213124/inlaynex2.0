@@ -371,33 +371,32 @@ export interface PreparedImage {
   readonly filename: string;
 }
 
-/** Shrinks a reference image to what the autotag vision LLM can accept, keeping the original on any failure. */
+/**
+ * Vision-LLM image: downscale huge pastes, and always re-encode WebP to PNG
+ * (Vertex / Anthropic / many Risu providers reject WebP). Decode failure
+ * keeps the original bytes.
+ */
 export async function prepareAutotagImage(imageBytes: BytesLike): Promise<PreparedImage> {
   let u8 = asU8(imageBytes);
   if (!u8.length) throw new Error('image is empty');
-  // Donmai autotagger + Risu nativeFetch log path hate multi-MB pastes.
-  // Downscale like Tampermonkey's canvas path (display-sized), keep PNG.
   const maxEdge = 1536;
   const maxBytes = 1_200_000;
   const mime = sniffImageMime(u8);
   const needsShrink = u8.length > maxBytes;
+  const needsPng = mime === 'image/webp' || isWebpBytes(u8);
   try {
-    // No <img> fallback and no OffscreenCanvas on this path: without
-    // `createImageBitmap` + `document` the bytes go out unchanged.
     const image = await decodeImage(u8, mime, false);
-    if (image && (needsShrink || image.width > maxEdge || image.height > maxEdge)) {
-      const scale = Math.min(1, maxEdge / Math.max(image.width, image.height, 1));
+    const tooBig = Boolean(image && (needsShrink || image.width > maxEdge || image.height > maxEdge));
+    if (image && (tooBig || needsPng)) {
+      const scale = tooBig ? Math.min(1, maxEdge / Math.max(image.width, image.height, 1)) : 1;
       const w = Math.max(1, Math.round(image.width * scale));
       const h = Math.max(1, Math.round(image.height * scale));
-      const drawn = drawToCanvas(image, w, h, false);
-      if (drawn?.kind === 'dom') {
-        const outBlob = await new Promise<Blob | null>((resolve) => {
-          drawn.canvas.toBlob(resolve, 'image/png');
-        });
-        if (outBlob) {
-          u8 = new Uint8Array(await outBlob.arrayBuffer());
+      const drawn = drawToCanvas(image, w, h, false) || drawToCanvas(image, w, h, true);
+      if (drawn) {
+        const png = await canvasToPng(drawn);
+        if (png && isPngBytes(asU8(png))) {
           image.close();
-          return { bytes: u8, mime: 'image/png', filename: 'image.png' };
+          return { bytes: asU8(png), mime: 'image/png', filename: 'image.png' };
         }
       }
     }

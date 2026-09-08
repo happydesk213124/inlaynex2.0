@@ -76,18 +76,31 @@ const isStreamLike = (value: unknown): value is StreamLike =>
 const partText = (part: unknown): unknown =>
   (typeof part === 'object' ? (part as { text?: unknown } | null)?.text || '' : String(part || ''));
 
-/** custom | main (Risu) | aux (Risu otherAx) */
+/** custom | main (Risu) | aux / otherAx / memory / translate / emotion */
 export function normalizeLlmSource(value: unknown): LlmSource {
   const s = String(value || '').trim().toLowerCase();
   if (s === 'main' || s === 'risu_main' || s === 'risu-main') return 'main';
-  if (s === 'aux' || s === 'otherax' || s === 'other_ax' || s === 'risu_aux' || s === 'risu-aux' || s === 'sub' || s === 'secondary') return 'aux';
+  if (s === 'memory' || s === 'risu_memory' || s === 'longterm' || s === 'long_term') return 'memory';
+  if (s === 'translate' || s === 'translation' || s === 'risu_translate') return 'translate';
+  if (s === 'emotion' || s === 'risu_emotion') return 'emotion';
+  if (s === 'other' || s === 'otherax' || s === 'other_ax' || s === 'risu_other') return 'other';
+  if (s === 'aux' || s === 'risu_aux' || s === 'risu-aux' || s === 'sub' || s === 'submodel' || s === 'secondary') return 'aux';
   return 'custom';
+}
+
+/** Risu `runLLMModel` mode for a normalised source. custom is unused. */
+export function risuModeForSource(value: unknown): string {
+  const s = normalizeLlmSource(value);
+  if (s === 'main') return 'model';
+  if (s === 'memory') return 'memory';
+  if (s === 'translate') return 'translate';
+  if (s === 'emotion') return 'emotion';
+  return 'otherAx';
 }
 
 /** True when the request should be delegated to Risu's own model instead of our HTTP lane. */
 export function llmIsRisuSource(value: unknown): boolean {
-  const s = normalizeLlmSource(value);
-  return s === 'main' || s === 'aux';
+  return normalizeLlmSource(value) !== 'custom';
 }
 
 /** True when the LLM settings are complete enough to attempt a tagging call. */

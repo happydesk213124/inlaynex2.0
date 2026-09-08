@@ -135,11 +135,9 @@ export function applyWearContinuityToShots<T extends ShotLike>(
       const prev = running.get(key) || parseWearState(previousForName(name)) || 'clothed';
       const next = resolveWearState(ch, prev);
       running.set(key, next);
-      if (next === 'clothed') {
-        delete ch.wear_state;
-      } else {
-        ch.wear_state = next;
-      }
+      // Always bake, including clothed. Deleting clothed made caption inherit
+      // the stale roster nude/topless and clothes never came back.
+      ch.wear_state = next;
     }
   }
   return running;

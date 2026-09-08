@@ -19,7 +19,11 @@ const FOLLOW_TRUE = new Set(['true', '1', 'on', 'yes', 'follow', 'follow_main'])
 function normalizeRoleSource(value: unknown): LlmSource {
   const s = String(value ?? '').toLowerCase().trim();
   if (s === 'main') return 'main';
-  if (s === 'aux' || s === 'secondary' || s === 'sub') return 'aux';
+  if (s === 'memory') return 'memory';
+  if (s === 'translate' || s === 'translation') return 'translate';
+  if (s === 'emotion') return 'emotion';
+  if (s === 'other' || s === 'otherax' || s === 'other_ax') return 'other';
+  if (s === 'aux' || s === 'secondary' || s === 'sub' || s === 'submodel') return 'aux';
   return 'custom';
 }
 

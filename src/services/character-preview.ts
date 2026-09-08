@@ -11,7 +11,7 @@ import { formatAgeCaption, formatHeightCaption } from '../domain/character/looks
 import { tokensForFamily } from '../domain/nai/keys';
 import { naiSamplerForFamily, naiStepsForFamily } from '../domain/nai/samplers';
 import { findPresetById, modelForFamily, normalizeNaiFamily, type NaiFamily } from '../domain/nai/routing';
-import { joinCharacterPreviewPrompt } from '../domain/style-presets/look-prompt';
+import { joinCharacterPreviewPrompt, joinExampleShotPrompt } from '../domain/style-presets/look-prompt';
 import { resolveGenerationCfgParams } from '../domain/style-preset-overrides';
 import { generateViaComfy, imageBackendKind } from '../providers/comfy/client';
 import { generateT2i } from '../providers/nai/client';
@@ -83,7 +83,8 @@ export async function generateCharacterPreview(body: Record<string, unknown>): P
     scheduler: row.scheduler,
   });
   const model = modelToNaia(modelForFamily(nai, family));
-  const prompt = joinCharacterPreviewPrompt(joinTags(row.positive, characterPrompt(rec)));
+  const rawPrompt = joinCharacterPreviewPrompt(joinTags(row.positive, characterPrompt(rec)));
+  const prompt = body.example_shot === true ? joinExampleShotPrompt(rawPrompt) : rawPrompt;
   const req: T2iRequest = {
     prompt,
     negative_prompt: String(row.negative || ''),

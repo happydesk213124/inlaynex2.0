@@ -69,6 +69,7 @@ const MODULES = {
   'nai-meta-risu-asset-list': 'src/domain/nai-meta/risu-asset-list.ts',
   'text-util': 'src/core/util/text.ts',
   'bytes-util': 'src/core/util/bytes.ts',
+  'image-util': 'src/core/util/image.ts',
   'blob-url-cache': 'src/storage/blob-url-cache.ts',
   'explorer-thumbs': 'src/storage/explorer-thumbs.ts',
   'image-url-subs': 'src/storage/image-url-subs.ts',

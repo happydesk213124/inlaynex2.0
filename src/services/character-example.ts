@@ -105,7 +105,7 @@ export async function generateCharacterExample(body: Record<string, unknown>): P
     : '';
   const cid = cleanText(body.character_id || body.characterId || body.id || fromChar, 80);
   const sid = normalizeCharRefScope(body.scope, body.session_id) || cleanText(body.session_id || body.scope, 200);
-  const shot = await generateCharacterPreview(body) as Record<string, unknown>;
+  const shot = await generateCharacterPreview({ ...body, example_shot: true }) as Record<string, unknown>;
   const b64 = String(shot.image_b64 || '');
   if (!b64) throw new Error('예제샷 생성 실패');
   const bytes = u8ToArrayBuffer(base64ToBytes(b64));

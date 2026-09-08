@@ -40,7 +40,9 @@ function sourceValue(s: Partial<LlmSettings & LlmRoleSettings> | null | undefine
     return 'follow_main';
   }
   const src = String(s?.source || 'custom');
-  if (src === 'main' || src === 'aux') return src;
+  if (src === 'main' || src === 'aux' || src === 'memory' || src === 'translate' || src === 'emotion' || src === 'other') {
+    return src;
+  }
   return 'custom';
 }
 
@@ -64,9 +66,11 @@ export function renderLlmRoleCardHtml(opts: LlmCardRenderOpts): string {
     : !!raw.api_key_configured;
   const customSource = llmSource === 'custom';
   const fieldsOn = !follow && customSource;
+  const risuSrc = llmSource === 'main' || llmSource === 'aux'
+    || llmSource === 'memory' || llmSource === 'translate'
+    || llmSource === 'emotion' || llmSource === 'other';
   const active = follow
-    || llmSource === 'main'
-    || llmSource === 'aux'
+    || risuSrc
     || !!(String(raw.model || '').trim() && (credOk || String(raw.endpoint || '').trim()));
   const epPh = defaultEndpointForProvider(f, { region: String(raw.vertex_region || 'us-central1') })
     || 'https://openrouter.ai/api/v1/chat/completions';
@@ -77,7 +81,15 @@ export function renderLlmRoleCardHtml(opts: LlmCardRenderOpts): string {
       ? 'Risu 메인'
       : llmSource === 'aux'
         ? 'Risu 보조'
-        : `${vertexOn ? 'Service Account' : 'API key'} ${credOk ? '설정됨' : '없음'}`;
+        : llmSource === 'memory'
+          ? 'Risu 장기기억'
+          : llmSource === 'translate'
+            ? 'Risu 번역'
+            : llmSource === 'emotion'
+              ? 'Risu 감정'
+              : llmSource === 'other'
+                ? 'Risu 기타'
+                : `${vertexOn ? 'Service Account' : 'API key'} ${credOk ? '설정됨' : '없음'}`;
   const dis = fieldsOn ? '' : 'disabled';
   const hide = opts.hidden ? 'display:none' : '';
   const sourceLabel = allowFollow ? '모델 소스' : '태깅 모델 소스';
@@ -113,6 +125,10 @@ export function renderLlmRoleCardHtml(opts: LlmCardRenderOpts): string {
                 <option value="custom" ${llmSource === 'custom' ? 'selected' : ''}>직접 입력 (엔드포인트 + 키)</option>
                 <option value="main" ${llmSource === 'main' ? 'selected' : ''}>Risu 메인 모델</option>
                 <option value="aux" ${llmSource === 'aux' ? 'selected' : ''}>Risu 보조 모델</option>
+                <option value="memory" ${llmSource === 'memory' ? 'selected' : ''}>Risu 보조모델/장기기억</option>
+                <option value="translate" ${llmSource === 'translate' ? 'selected' : ''}>Risu 보조모델/번역</option>
+                <option value="emotion" ${llmSource === 'emotion' ? 'selected' : ''}>Risu 보조모델/감정</option>
+                <option value="other" ${llmSource === 'other' ? 'selected' : ''}>Risu 보조모델/기타</option>
               </select>
             </label>
             <label><span>Provider</span>
@@ -163,7 +179,10 @@ export function readLlmRoleFromDom(
     return { follow_main: true, source: 'custom' };
   }
   const out: Record<string, unknown> = {
-    source: srcRaw === 'main' || srcRaw === 'aux' ? srcRaw : 'custom',
+    source: srcRaw === 'main' || srcRaw === 'aux' || srcRaw === 'memory'
+      || srcRaw === 'translate' || srcRaw === 'emotion' || srcRaw === 'other'
+      ? srcRaw
+      : 'custom',
     provider: get(`${prefix}-provider`),
     model: get(`${prefix}-model`),
     endpoint: get(`${prefix}-endpoint`),

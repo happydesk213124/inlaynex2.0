@@ -561,5 +561,18 @@ test("wear continuity fills omitted shots from previous", () => {
   assert.equal(later[0].characters[0].wear_state, "topless");
   const reset = [{ characters: [{ name: "Han", wear_state: "clothed" }] }];
   applyWearContinuityToShots(reset, () => "topless");
-  assert.equal(reset[0].characters[0].wear_state, undefined);
+  assert.equal(reset[0].characters[0].wear_state, "clothed");
+});
+
+test("clothed shot puts catalog clothes back over a topless roster", () => {
+  const stored = {
+    name: "Han",
+    appearance: "black hair, boy",
+    attire: "white shirt, trousers",
+    wear_state: "topless",
+  };
+  const prompt = composeCharacterCaptionTags(stored, { wear_state: "clothed" });
+  assert.match(prompt, /white shirt/);
+  assert.equal(prompt.includes("topless"), false);
+  assert.equal(prompt.includes("0.6::"), false);
 });

@@ -38,7 +38,7 @@ import {
 } from '../core/debug';
 import type { ApiResult, JobRequest, JobState, TaggedShot, TaggerResult } from '../core/types';
 import { cleanText, stripCbs, toInt, uuid } from '../core/util/text';
-import { parseJsonLoose, parseTaggerJsonAfterRetry } from '../core/util/object';
+import { parseJsonLoose, parseTaggerJsonAfterRetry, TAGGER_JSON_RETRY_FAIL_MESSAGE } from '../core/util/object';
 import {
   forceFinishNaiBody,
   getNaiBodyBytesExpected,
@@ -872,7 +872,13 @@ async function runJob(jobId: string): Promise<void> {
       tagged = parseJsonLoose(taggedRaw) as TaggerResult;
     } catch (parseErr) {
       const retryOn = getConfig().card?.llm_json_retry === true;
-      if (!retryOn) throw parseErr;
+      if (!retryOn) {
+        dbg('job.tagger.json_fail', {
+          err: String((parseErr as Error)?.message || parseErr).slice(0, 160),
+          raw_len: String(taggedRaw || '').length,
+        }, 'warn');
+        throw new Error(TAGGER_JSON_RETRY_FAIL_MESSAGE);
+      }
       if (await cancelJobIfStale(jobId, 'superseded before json retry')) return;
       const errMsg = String((parseErr as Error)?.message || parseErr).slice(0, 800);
       dbg('job.tagger.json_retry', { err: errMsg.slice(0, 160), raw_len: String(taggedRaw || '').length }, 'warn');

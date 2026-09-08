@@ -28,7 +28,7 @@ import { lookBytesForTarget, refSeedTargets } from '../domain/character/char-ref
 import { sanitizeHash } from '../domain/character/char-ref-store';
 import { collectBestLookAssets } from './asset-tags';
 import { vibeEncodeToken } from '../domain/nai/keys';
-import { modelToNaia, resolveModel } from '../providers/nai/payload';
+import { modelToNaia, resolveModel, supportsVibeTransfer } from '../providers/nai/payload';
 import { encodeVibe } from '../providers/nai/vibe';
 import { pngToDataUrl } from '../storage/image-urls';
 import { idbDelete, idbGet, idbGetAll, idbPut } from '../storage/stores';
@@ -197,13 +197,14 @@ export async function clearVibeTransfer(): Promise<ApiResult> {
  * extraction level has moved since it was made. Returns null when no vibe image
  * is stored, so callers can treat "not configured" and "nothing to send" alike.
  */
-export async function ensureVibeEncoded(): Promise<MetaRow | null> {
+export async function ensureVibeEncoded(encodeModel?: string): Promise<MetaRow | null> {
   const vibe = await getVibeTransfer();
   if (!vibe?.png || vibe.png.byteLength < MIN_IMAGE_BYTES) return null;
   const cfg = getConfig();
   const token = requireVibeEncodeToken(false);
-  const model = resolveModel(modelToNaia(cfg.nai.model || 'nai-diffusion-4-5-full'));
+  const model = resolveModel(modelToNaia(encodeModel || cfg.nai.model || 'nai-diffusion-4-5-full'));
   const ie = normalizeInformationExtracted(cfg.nai.vibe_transfer_information_extracted);
+  if (!supportsVibeTransfer(model)) return vibe;
   const needEncode =
     !cleanText(vibe.encoded) ||
     cleanText(vibe.model) !== model ||
@@ -299,13 +300,14 @@ export async function copyPresetVibeTransfer(fromId: string, toId: string): Prom
  * Preset vibe for generation: re-encode when model / IE drifted. Returns null
  * when this preset has no vibe image (caller should fall back to NAI default).
  */
-export async function ensurePresetVibeEncoded(presetId: string): Promise<MetaRow | null> {
+export async function ensurePresetVibeEncoded(presetId: string, encodeModel?: string): Promise<MetaRow | null> {
   const vibe = await getPresetVibeTransfer(presetId);
   if (!vibe?.png || vibe.png.byteLength < MIN_IMAGE_BYTES) return null;
   const cfg = getConfig();
   const token = requireVibeEncodeToken(false);
-  const model = resolveModel(modelToNaia(cfg.nai.model || 'nai-diffusion-4-5-full'));
+  const model = resolveModel(modelToNaia(encodeModel || cfg.nai.model || 'nai-diffusion-4-5-full'));
   const ie = normalizeInformationExtracted(cfg.nai.vibe_transfer_information_extracted);
+  if (!supportsVibeTransfer(model)) return vibe;
   const needEncode =
     !cleanText(vibe.encoded) ||
     cleanText(vibe.model) !== model ||
@@ -514,13 +516,15 @@ export async function ensureCharRefVibeEncoded(
   scope: unknown,
   characterId: string,
   informationExtracted?: number,
+  encodeModel?: string,
 ): Promise<MetaRow | null> {
   const hash = await readRosterRefHash(scope, characterId);
   const png = hash ? await getCharRefImageBytes(scope, characterId) : null;
   if (!hash || !png || png.byteLength < MIN_IMAGE_BYTES) return null;
   const cfg = getConfig();
   const token = requireVibeEncodeToken(false);
-  const model = resolveModel(modelToNaia(cfg.nai.model || 'nai-diffusion-4-5-full'));
+  const model = resolveModel(modelToNaia(encodeModel || cfg.nai.model || 'nai-diffusion-4-5-full'));
+  if (!supportsVibeTransfer(model)) return null;
   const ie = normalizeInformationExtracted(
     informationExtracted ?? cfg.card?.char_ref_fidelity ?? 1,
   );

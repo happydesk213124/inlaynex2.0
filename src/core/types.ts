@@ -17,7 +17,7 @@ export type FocusCharacterMode = 'off' | 'female' | 'male' | 'auto';
 /** How strongly / whether the tagger is told to emit shot.focus (manual = code path). */
 export type FocusPromptMode = 'default' | 'strong' | 'always' | 'manual';
 export type LoreExtraMode = 'tags' | 'full' | 'off';
-export type LlmSource = 'custom' | 'main' | 'aux';
+export type LlmSource = 'custom' | 'main' | 'aux' | 'memory' | 'translate' | 'emotion' | 'other';
 /** Secondary chat-LLM roles (main tagging stays on `settings.llm`). */
 export type LlmRoleId = 'autotag' | 'asset_char' | 'curator';
 export type ImageBackend = 'nai' | 'comfy';

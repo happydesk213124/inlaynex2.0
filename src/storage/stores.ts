@@ -49,7 +49,7 @@ import { dbg } from '../core/debug';
 import { base64ToAb, bytesToBase64Async } from '../core/util/bytes';
 import type { CardRow, CharacterRecord, JobRow, MetaRow, StoreName } from '../core/types';
 import { cardIdsToStripPreview } from '../domain/gallery/preview-retention';
-import { jobIdsToPrune } from '../domain/jobs/retention';
+import { jobIdsToPrune, orphanJobIds, ORPHAN_JOB_ERROR } from '../domain/jobs/retention';
 import { psGet, psRemove, psSet, resetDeviceStore } from './device-store';
 import { blobUrlCache, explorerThumbCache } from './blob-url-cache';
 import {
@@ -480,6 +480,28 @@ function pruneJobStoreUnlocked(opts: { persist?: boolean } = {}): number {
   if (opts.persist !== false) schedulePersist('jobs');
   dbg('jobs.prune', { message: `${drop.size} dropped`, dropped: drop.size, kept: memStores.jobs.size });
   return drop.size;
+}
+
+/**
+ * Close out job rows that were in flight when the previous page died. Runs
+ * once per boot, before any job can start, so "active at boot" is exactly
+ * "orphaned". Marked `error` rather than deleted so the poller of a UI that
+ * survived the reload sees a terminal state instead of `not_found`.
+ */
+function reapOrphanJobsUnlocked(): number {
+  const rows = [...memStores.jobs.entries()].map(([k, row]) => ({
+    id: String(row.id || k),
+    state: String(row.state || ''),
+  }));
+  const orphans = orphanJobIds(rows);
+  if (!orphans.length) return 0;
+  const now = Date.now() / 1000;
+  for (const [k, row] of memStores.jobs) {
+    if (!orphans.includes(String(row.id || k))) continue;
+    memStores.jobs.set(k, { ...row, state: 'error', error: ORPHAN_JOB_ERROR, updated_at: now });
+  }
+  dbg('jobs.reap_orphans', { message: `${orphans.length} in-flight rows from a previous session`, reaped: orphans.length });
+  return orphans.length;
 }
 
 function locationWithoutPreview(
@@ -921,6 +943,7 @@ export async function openDb(): Promise<boolean> {
     }
     loadRoomIndex(parseStored(await psGet(ROOM_INDEX_KEY)));
     await splitLegacyPacks();
+    if (reapOrphanJobsUnlocked() > 0) await persistStore('jobs');
 
     if (migratedVersionUnlocked() >= MIGRATION_VERSION) return true;
 

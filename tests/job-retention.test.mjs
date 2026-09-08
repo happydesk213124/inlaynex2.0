@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { JOB_RETENTION_LIMIT, jobIdsToPrune, jobRetentionStamp } from "../.test-build/job-retention.mjs";
+import {
+  JOB_RETENTION_LIMIT,
+  ORPHAN_JOB_ERROR,
+  jobIdsToPrune,
+  jobRetentionStamp,
+  orphanJobIds,
+} from "../.test-build/job-retention.mjs";
 
 function row(id, state, created_at, updated_at) {
   return { id, state, created_at, updated_at };
@@ -30,8 +36,34 @@ test("never drops an in-flight job even when it is the oldest", () => {
   ];
   const drop = new Set(jobIdsToPrune(rows));
   assert.equal(drop.has("old-gen"), false);
-  assert.equal(drop.size, rows.length - JOB_RETENTION_LIMIT);
+  // The active row does not use up a slot: the cap applies to finished rows only.
+  assert.equal(drop.size, 20 - JOB_RETENTION_LIMIT);
   assert.equal(drop.has("done19"), false);
+});
+
+test("a job that just finished is never dropped by rows still in flight", () => {
+  // Three leftover in-flight rows (a reload mid-run each) used to fill the cap by
+  // themselves, so the write that moved a job to error/done deleted that job.
+  const zombies = Array.from({ length: JOB_RETENTION_LIMIT }, (_, i) => row(`z${i}`, "tagging", i + 1));
+  for (const terminal of ["error", "done", "cancelled"]) {
+    const drop = jobIdsToPrune([...zombies, row("fresh", terminal, 9999)]);
+    assert.deepEqual(drop, [], `${terminal} row must survive`);
+  }
+});
+
+test("orphanJobIds is exactly the in-flight rows", () => {
+  const rows = [
+    row("q", "queued", 1),
+    row("t", "tagging", 2),
+    row("g", "generating", 3),
+    row("d", "done", 4),
+    row("e", "error", 5),
+    row("c", "cancelled", 6),
+  ];
+  assert.deepEqual(orphanJobIds(rows), ["q", "t", "g"]);
+  assert.deepEqual(orphanJobIds([]), []);
+  assert.equal(typeof ORPHAN_JOB_ERROR, "string");
+  assert.ok(ORPHAN_JOB_ERROR.length > 0);
 });
 
 test("prefers updated_at over created_at when ranking", () => {

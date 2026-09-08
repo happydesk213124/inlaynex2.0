@@ -25,31 +25,54 @@ export function jobRetentionStamp(row: JobRetentionRow): number {
   return Number.isFinite(created) && created > 0 ? created : 0;
 }
 
-/** Ids that fall outside the newest `limit` rows, excluding any still running. */
+/**
+ * Ids that fall outside the newest `limit` *finished* rows. Rows still running
+ * are always kept and never count against the cap.
+ *
+ * They must not count: a row is written on every state change, and this prune
+ * runs on each write. When three in-flight rows filled the cap by themselves,
+ * the very write that moved a job to `error` or `done` was the write that
+ * deleted it — the poller then got `not_found` and the toast froze on
+ * "장면 태깅" forever. Retry toasts still worked because `tagging` is active.
+ */
 export function jobIdsToPrune(
   rows: readonly JobRetentionRow[],
   limit = JOB_RETENTION_LIMIT,
 ): string[] {
-  if (rows.length <= limit) return [];
-  const keep = new Set<string>();
-  for (const row of rows) {
-    const id = String(row.id || '');
-    if (id && ACTIVE_STATES.has(String(row.state || ''))) keep.add(id);
-  }
-  const newest = [...rows].sort((a, b) => {
+  const finished = rows.filter((row) => !ACTIVE_STATES.has(String(row.state || '')));
+  if (finished.length <= limit) return [];
+  const newest = [...finished].sort((a, b) => {
     const dt = jobRetentionStamp(b) - jobRetentionStamp(a);
     if (dt !== 0) return dt;
     return String(b.id).localeCompare(String(a.id));
   });
+  const keep = new Set<string>();
   for (const row of newest) {
     if (keep.size >= limit) break;
     const id = String(row.id || '');
     if (id) keep.add(id);
   }
   const drop: string[] = [];
-  for (const row of rows) {
+  for (const row of finished) {
     const id = String(row.id || '');
     if (id && !keep.has(id)) drop.push(id);
   }
   return drop;
+}
+
+export const ORPHAN_JOB_ERROR = '이전 세션에서 중단된 작업입니다.';
+
+/**
+ * In-flight rows found at boot. Nothing can be running before the plugin has
+ * loaded, so every one of these is a job that was cut off by a reload or a
+ * crash. Left alone they never leave the active set: no runner owns them, stop
+ * cannot see them, and each one permanently occupies a retention slot.
+ */
+export function orphanJobIds(rows: readonly JobRetentionRow[]): string[] {
+  const out: string[] = [];
+  for (const row of rows) {
+    const id = String(row.id || '');
+    if (id && ACTIVE_STATES.has(String(row.state || ''))) out.push(id);
+  }
+  return out;
 }

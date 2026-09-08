@@ -38,7 +38,7 @@ import {
 } from '../core/debug';
 import type { ApiResult, JobRequest, JobState, TaggedShot, TaggerResult } from '../core/types';
 import { cleanText, stripCbs, toInt, uuid } from '../core/util/text';
-import { parseJsonLoose, parseTaggerJsonAfterRetry, TAGGER_JSON_RETRY_FAIL_MESSAGE } from '../core/util/object';
+import { parseJsonLoose, TAGGER_JSON_RETRY_FAIL_MESSAGE } from '../core/util/object';
 import {
   forceFinishNaiBody,
   getNaiBodyBytesExpected,
@@ -849,6 +849,15 @@ async function runJob(jobId: string): Promise<void> {
       }
     }
 
+    await setJob(jobId, 'tagging', {
+      phase: 'tagging',
+      progress: 10,
+      message: '장면 태깅 중…',
+      shot_count: 0,
+      shot_done: 0,
+      debug_stage: 'job.tagging',
+    });
+
     const messages = await buildTaggerMessages(request, { skipAssetInject });
     const chatContext = extractTaggerChatContext(messages);
     dbg('job.tagger.messages', { msgs: messages.length, skip_asset_inject: skipAssetInject });
@@ -877,7 +886,7 @@ async function runJob(jobId: string): Promise<void> {
           err: String((parseErr as Error)?.message || parseErr).slice(0, 160),
           raw_len: String(taggedRaw || '').length,
         }, 'warn');
-        throw new Error(TAGGER_JSON_RETRY_FAIL_MESSAGE);
+        throw parseErr;
       }
       if (await cancelJobIfStale(jobId, 'superseded before json retry')) return;
       const errMsg = String((parseErr as Error)?.message || parseErr).slice(0, 800);
@@ -900,11 +909,11 @@ async function runJob(jobId: string): Promise<void> {
       );
       taggedRaw = await callLlm(resolveLlmRole(getConfig(), 'main'), messages);
       if (await cancelJobIfStale(jobId, 'superseded after json retry')) return;
-      tagged = parseTaggerJsonAfterRetry(taggedRaw) as TaggerResult;
+      tagged = parseJsonLoose(taggedRaw) as TaggerResult;
     }
     let shots = flattenShots(tagged, request.assistant_text);
     dbg('job.tagger.done', { shots: shots.length, raw_len: String(taggedRaw || '').length });
-    if (!shots.length) throw new Error('태거가 shot을 반환하지 않았습니다.');
+    if (!shots.length) throw new Error(TAGGER_JSON_RETRY_FAIL_MESSAGE);
     const card = getConfig().card || {};
     const imageMin = Math.max(1, Number(card.image_min ?? 1));
     const imageMax = Math.max(imageMin, Number(card.image_max ?? 3));

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.61';
+const PLUGIN_VERSION = '2.5.62';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,14 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.62</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>태거 JSON이 깨지면 이제 생성실패로 끝납니다. 예전에 새로고침으로 끊긴 작업 3개가 남아 있으면, 실패·완료로 바뀌는 순간 그 작업이 지워져 토스트가 「장면 태깅」에서 멈추던 걸 고쳤습니다</li>
+            <li>켤 때 지난 세션에서 끊긴 작업은 실패로 정리합니다</li>
+            <li>에셋 캐릭터 룩 태깅이 끝나면 토스트가 「장면 태깅 중…」으로 넘어갑니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.61</strong>
@@ -14375,8 +14383,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.61",
-    body: "Risu 메인/보조 오토태그가 그림을 multimodals로 보냅니다."
+    title: "2.5.62",
+    body: "태거 JSON 오류가 생성실패로 끝납니다. 끊긴 작업이 남아 토스트가 멈추던 걸 고쳤습니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

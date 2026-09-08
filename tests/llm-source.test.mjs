@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { llmIsRisuSource, normalizeLlmSource, risuModeForSource } from '../.test-build/llm-transform.mjs';
+import { llmIsRisuSource, normalizeLlmSource, openaiMessagesToRisu, risuModeForSource } from '../.test-build/llm-transform.mjs';
 
 test('normalizeLlmSource maps split Risu aux modes', () => {
   assert.equal(normalizeLlmSource('main'), 'main');
@@ -28,4 +28,23 @@ test('llmIsRisuSource is true for every Risu lane', () => {
   assert.equal(llmIsRisuSource('aux'), true);
   assert.equal(llmIsRisuSource('memory'), true);
   assert.equal(llmIsRisuSource('custom'), false);
+});
+
+test('openaiMessagesToRisu moves vision parts onto multimodals', () => {
+  const dataUrl = 'data:image/png;base64,AAA';
+  const out = openaiMessagesToRisu([
+    { role: 'system', content: 'Tag one image.' },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Tag this character image.' },
+        { type: 'image_url', image_url: { url: dataUrl } },
+      ],
+    },
+  ]);
+  assert.equal(out[0].content, 'Tag one image.');
+  assert.equal(out[0].multimodals, undefined);
+  assert.equal(out[1].content, 'Tag this character image.');
+  assert.deepEqual(out[1].multimodals, [{ type: 'image', base64: dataUrl }]);
+  assert.equal(Array.isArray(out[1].content), false);
 });

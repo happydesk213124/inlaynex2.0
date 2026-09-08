@@ -103,6 +103,82 @@ export function llmIsRisuSource(value: unknown): boolean {
   return normalizeLlmSource(value) !== 'custom';
 }
 
+export interface RisuMultiModal {
+  type: 'image' | 'video' | 'audio' | 'signature';
+  base64: string;
+  width?: number;
+  height?: number;
+}
+
+/** Message shape `runLLMModel` actually forwards (`content` must be a string). */
+export interface RisuChatMessage {
+  role: string;
+  content: string;
+  multimodals?: RisuMultiModal[];
+  [key: string]: unknown;
+}
+
+function imageUrlFromPart(part: LlmContentPart): string {
+  const image = part.image_url;
+  if (typeof image === 'string') return image;
+  if (image && typeof image === 'object') return String(image.url || '');
+  return '';
+}
+
+function risuImageFromDataUrl(url: string): RisuMultiModal | null {
+  const raw = String(url || '').trim();
+  if (!raw) return null;
+  if (/^data:/i.test(raw)) return { type: 'image', base64: raw };
+  return null;
+}
+
+/**
+ * Risu `OpenAIChat.content` is a string. Vision goes on `multimodals`, the same
+ * field chat inlays use. Passing an OpenAI part array stringifies to
+ * `[object Object],[object Object]` and the pixels never leave.
+ */
+export function openaiMessagesToRisu(messages: readonly LlmMessage[] | null | undefined): RisuChatMessage[] {
+  const out: RisuChatMessage[] = [];
+  for (const row of messages || []) {
+    const role = String(row?.role || 'user');
+    const content = row?.content;
+    const { role: _role, content: _content, ...extra } = row;
+    const existing = Array.isArray(row.multimodals)
+      ? (row.multimodals as RisuMultiModal[]).filter((m) => m && typeof m === 'object')
+      : [];
+    if (!Array.isArray(content)) {
+      const text = String(content ?? '');
+      const next: RisuChatMessage = { ...extra, role, content: text };
+      if (existing.length) next.multimodals = existing;
+      out.push(next);
+      continue;
+    }
+    const texts: string[] = [];
+    const multimodals = [...existing];
+    for (const part of content) {
+      if (typeof part === 'string') {
+        const t = part.trim();
+        if (t) texts.push(t);
+        continue;
+      }
+      if (!part || typeof part !== 'object') continue;
+      const url = imageUrlFromPart(part);
+      if (part.type === 'image_url' || url) {
+        const image = risuImageFromDataUrl(url);
+        if (image) multimodals.push(image);
+        continue;
+      }
+      const t = String(part.text || '').trim();
+      if (t) texts.push(t);
+    }
+    const next: RisuChatMessage = { ...extra, role, content: texts.join('\n') };
+    if (multimodals.length) next.multimodals = multimodals;
+    else delete next.multimodals;
+    out.push(next);
+  }
+  return out;
+}
+
 /** True when the LLM settings are complete enough to attempt a tagging call. */
 export function llmConfigured(llm: Partial<LlmSettings> | null | undefined): boolean {
   const cfg: Partial<LlmSettings> = llm || {};

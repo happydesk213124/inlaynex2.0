@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.59';
+const PLUGIN_VERSION = '2.5.60';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,14 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.60</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>벗긴 뒤 wear_state가 clothed면 옷을 다시 입힙니다</li>
+            <li>LLM 비전은 PNG로 올리고, Risu 보조모델을 장기기억·번역·감정·기타로 고를 수 있습니다</li>
+            <li>JSON 오류는 생성실패로 보이고, 마지막 장 삽입이 실패해도 완료 후 새로고침합니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.59</strong>
@@ -14361,8 +14369,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.59",
-    body: "이 캐릭터 전체보기 ZIP이 채팅 폴더로 나뉘고, 전체 ZIP은 캐릭터/채팅입니다."
+    title: "2.5.60",
+    body: "벗긴 뒤 clothed면 옷을 다시 입히고, LLM 비전은 PNG, JSON 오류는 생성실패로 보입니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

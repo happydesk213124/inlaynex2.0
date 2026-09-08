@@ -876,20 +876,26 @@ async function runJob(jobId: string): Promise<void> {
     const taggedRaw0 = await callLlm(resolveLlmRole(getConfig(), 'main'), messages);
     if (await cancelJobIfStale(jobId, 'superseded after tagging')) return;
     let taggedRaw = taggedRaw0;
+    const readMainTagger = (raw: string): { tagged: TaggerResult; shots: TaggedShot[] } => {
+      const tagged = parseJsonLoose(raw) as TaggerResult;
+      const shots = flattenShots(tagged, request.assistant_text);
+      if (!shots.length) throw new Error('태거가 shot을 반환하지 않았습니다.');
+      return { tagged, shots };
+    };
     let tagged: TaggerResult;
+    let shots: TaggedShot[];
     try {
-      tagged = parseJsonLoose(taggedRaw) as TaggerResult;
+      ({ tagged, shots } = readMainTagger(taggedRaw));
     } catch (parseErr) {
       const retryOn = getConfig().card?.llm_json_retry === true;
-      if (!retryOn) {
-        dbg('job.tagger.json_fail', {
-          err: String((parseErr as Error)?.message || parseErr).slice(0, 160),
-          raw_len: String(taggedRaw || '').length,
-        }, 'warn');
-        throw parseErr;
-      }
-      if (await cancelJobIfStale(jobId, 'superseded before json retry')) return;
       const errMsg = String((parseErr as Error)?.message || parseErr).slice(0, 800);
+      dbg('job.tagger.json_fail', {
+        err: errMsg.slice(0, 160),
+        raw_len: String(taggedRaw || '').length,
+        retry: retryOn,
+      }, 'warn');
+      if (!retryOn) throw parseErr;
+      if (await cancelJobIfStale(jobId, 'superseded before json retry')) return;
       dbg('job.tagger.json_retry', { err: errMsg.slice(0, 160), raw_len: String(taggedRaw || '').length }, 'warn');
       await setJob(jobId, 'tagging', {
         phase: 'tagging',
@@ -904,16 +910,18 @@ async function runJob(jobId: string): Promise<void> {
         {
           role: 'user',
           content:
-            `이전 응답 JSON 파싱 실패:\n${errMsg}\nformat 스키마에 맞는 JSON 객체 하나만 다시 출력하세요.`,
+            `이전 응답 JSON 파싱 실패:\n${errMsg}\nformat 스키마에 맞는 JSON 객체 하나만 다시 출력하세요. scenes[].shots에 컷을 넣으세요.`,
         },
       );
       taggedRaw = await callLlm(resolveLlmRole(getConfig(), 'main'), messages);
       if (await cancelJobIfStale(jobId, 'superseded after json retry')) return;
-      tagged = parseJsonLoose(taggedRaw) as TaggerResult;
+      try {
+        ({ tagged, shots } = readMainTagger(taggedRaw));
+      } catch {
+        throw new Error(TAGGER_JSON_RETRY_FAIL_MESSAGE);
+      }
     }
-    let shots = flattenShots(tagged, request.assistant_text);
     dbg('job.tagger.done', { shots: shots.length, raw_len: String(taggedRaw || '').length });
-    if (!shots.length) throw new Error(TAGGER_JSON_RETRY_FAIL_MESSAGE);
     const card = getConfig().card || {};
     const imageMin = Math.max(1, Number(card.image_min ?? 1));
     const imageMax = Math.max(imageMin, Number(card.image_max ?? 3));

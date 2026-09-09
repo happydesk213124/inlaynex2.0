@@ -65,20 +65,17 @@ export function resolveWearState(
 }
 
 /**
- * Down-weight the whole clothes/accessories blob so state tags can win.
- * clothed = as-is; completely = drop; empty stays empty.
+ * Clothes stay unweighted except completely, which drops them so the nude
+ * state tag is the only clothing signal.
  */
 export function wrapWearCatalogTags(text: unknown, state: WearState): string {
   const base = cleanText(text, 4000).replace(/,\s*$/, '');
-  if (!base || state === 'clothed') return base;
-  if (state === 'completely') return '';
-  if (state === 'torn') return `0.8::${base}::`;
-  if (state === 'nude') return `0.3::${base}::`;
-  return `0.6::${base}::`;
+  if (!base || state === 'completely') return '';
+  return base;
 }
 
 /**
- * Keep base attire (weighted by state); append English clothing-state tags +
+ * Keep base attire unweighted (dropped when completely); append clothing-state tags +
  * anatomy. topless → nipples only; bottomless → penis (male) or pussy (female).
  */
 export function wearTagsForWearState(
@@ -91,11 +88,11 @@ export function wearTagsForWearState(
   const malePenis = cleanText(penisSize, 40) || 'penis';
   if (state === 'clothed') return base;
   if (state === 'torn') return joinTags(base, '2::torn clothes::');
-  if (state === 'topless') return joinTags(base, 'topless', 'nipples');
+  if (state === 'topless') return joinTags(base, '2::topless::', 'nipples');
   if (state === 'bottomless') {
-    if (gender === 'f') return joinTags(base, 'bottomless', 'pussy');
-    if (gender === 'm') return joinTags(base, 'bottomless', malePenis);
-    return joinTags(base, 'bottomless');
+    if (gender === 'f') return joinTags(base, '2::bottomless::', 'pussy');
+    if (gender === 'm') return joinTags(base, '2::bottomless::', malePenis);
+    return joinTags(base, '2::bottomless::');
   }
   if (state === 'nude') {
     const tag = '2.5::nude::';

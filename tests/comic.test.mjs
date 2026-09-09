@@ -357,8 +357,9 @@ test("composeComicSlotCaption applies wear_state like illustration", () => {
       wear_state: "bottomless",
     },
   );
-  assert.match(caption, /0\.6::navy dress::/);
-  assert.match(caption, /bottomless/);
+  assert.match(caption, /navy dress/);
+  assert.equal(caption.includes("0.6::"), false);
+  assert.match(caption, /2::bottomless::/);
   assert.match(caption, /pussy/);
 });
 

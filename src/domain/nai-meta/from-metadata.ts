@@ -22,12 +22,13 @@ function parseMaybeJson(value: unknown): unknown {
 }
 
 /** Collect caption strings from a V4-style caption object. */
-function captionsFromV4(caption: unknown): string[] {
+function captionsFromV4(caption: unknown, includeChars = true): string[] {
   const c = asRecord(caption);
   if (!c) return [];
   const out: string[] = [];
   const base = cleanText(c.base_caption ?? c.baseCaption ?? '');
   if (base) out.push(base);
+  if (!includeChars) return out;
   const chars = c.char_captions ?? c.charCaptions;
   if (Array.isArray(chars)) {
     for (const row of chars) {
@@ -42,8 +43,13 @@ function captionsFromV4(caption: unknown): string[] {
 /**
  * Normalize a top-level NAI metadata blob (stealth JSON or Comment object)
  * into one comma-joined positive prompt. Skips uc/negative.
+ * Style presets pass `{ includeCharCaptions: false }` so only `base_caption`
+ * (or legacy `prompt`) is used — character slots stay out.
  */
-export function promptFromNaiMetadata(meta: unknown): string {
+export function promptFromNaiMetadata(
+  meta: unknown,
+  opts?: { includeCharCaptions?: boolean },
+): string {
   let root = parseMaybeJson(meta);
   const rootObj = asRecord(root);
   if (!rootObj) return cleanText(meta);
@@ -53,19 +59,23 @@ export function promptFromNaiMetadata(meta: unknown): string {
   comment = parseMaybeJson(comment);
   const commentObj = asRecord(comment);
 
+  const includeChars = opts?.includeCharCaptions !== false;
   const parts: string[] = [];
 
   const takePrompt = (obj: Record<string, unknown> | null): void => {
     if (!obj) return;
     const p = cleanText(obj.prompt ?? obj.Prompt ?? '');
-    if (p) parts.push(p);
-
     const v4 = asRecord(obj.v4_prompt ?? obj.v4Prompt);
-    if (v4) {
-      parts.push(...captionsFromV4(v4.caption ?? v4));
+    const captionSrc = v4 ? (v4.caption ?? v4) : obj.caption;
+    const fromCaption = captionsFromV4(captionSrc, includeChars);
+    if (includeChars) {
+      if (p) parts.push(p);
+      parts.push(...fromCaption);
+      return;
     }
-    // Some exports put caption at top level.
-    parts.push(...captionsFromV4(obj.caption));
+    // Style preset: only base_caption. Legacy `prompt` if there is no V4 caption object.
+    if (fromCaption.length) parts.push(...fromCaption);
+    else if (!asRecord(captionSrc) && p) parts.push(p);
   };
 
   takePrompt(commentObj);
@@ -77,7 +87,12 @@ export function promptFromNaiMetadata(meta: unknown): string {
   // Description sometimes holds the prompt when Comment is nested oddly.
   // "NovelAI" / software names are PNG Source/Description labels, not prompts.
   const desc = cleanText(rootObj.Description ?? rootObj.description ?? '');
-  if (desc && !isNaiSoftwareLabel(desc) && !parts.some((p) => p.includes(desc.slice(0, 40)))) {
+  if (
+    desc &&
+    !isNaiSoftwareLabel(desc) &&
+    (includeChars || parts.length === 0) &&
+    !parts.some((p) => p.includes(desc.slice(0, 40)))
+  ) {
     parts.push(desc);
   }
 

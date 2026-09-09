@@ -626,8 +626,8 @@ export function wearLocked(value: unknown): boolean {
  * Character caption for one shot.
  *
  * Base: appearance + attire (clothes+jewelry). Weapons only when weapon=on.
- * wear_state (or legacy nude 0–3): keep attire/accessories as-is (drop
- * them when completely), then append English clothing state + anatomy.
+ * wear_state (or legacy nude 0–3): keep attire/accessories as-is, wrap them
+ * at 0.5 when nude (drop them when completely), then append clothing state + anatomy.
  * Omit on the shot to inherit roster / prior shot.
  * Accessories tokens containing penis/nipples/pussy also join while not clothed/torn,
  * even when weapon=off (other props stay gated by weapon).

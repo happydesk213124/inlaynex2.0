@@ -24,7 +24,7 @@ export {
   type PackedAssetTags,
   type PackedAssetTriggerGroup,
 } from './prompt-tags.ts';
-export { naiMetaHasNegative, pickNaiMeta, promptFromNaiMetadata } from './from-metadata.ts';
+export { naiMetaHasNegative, naiMetaHasPrompt, pickNaiMeta, promptFromNaiMetadata } from './from-metadata.ts';
 export {
   applyNaiSceneOverrides,
   isComicNaiScene,

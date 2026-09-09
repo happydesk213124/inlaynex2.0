@@ -65,17 +65,18 @@ export function resolveWearState(
 }
 
 /**
- * Clothes stay unweighted except completely, which drops them so the nude
- * state tag is the only clothing signal.
+ * Clothes stay unweighted except nude (0.5) and completely (dropped so the
+ * nude state tag is the only clothing signal).
  */
 export function wrapWearCatalogTags(text: unknown, state: WearState): string {
   const base = cleanText(text, 4000).replace(/,\s*$/, '');
   if (!base || state === 'completely') return '';
+  if (state === 'nude') return `0.5::${base}::`;
   return base;
 }
 
 /**
- * Keep base attire unweighted (dropped when completely); append clothing-state tags +
+ * Keep base attire unweighted except nude at 0.5 (dropped when completely); append clothing-state tags +
  * anatomy. topless → nipples only; bottomless → penis (male) or pussy (female).
  */
 export function wearTagsForWearState(

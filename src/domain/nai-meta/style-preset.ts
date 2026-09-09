@@ -72,7 +72,8 @@ function numOrNull(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Pull uc/negative + CFG fields from a NAI metadata object. */
+/** Pull uc/negative + CFG fields from a NAI metadata object.
+ *  `positivePrompt` should already be base_caption-only (style import). */
 export function styleFieldsFromNaiMetadata(
   meta: unknown,
   positivePrompt: string,

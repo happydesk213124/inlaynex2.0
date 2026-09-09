@@ -330,6 +330,32 @@ test('promptFromNaiMetadata merges base and char captions', () => {
   assert.match(prompt, /witch hat/);
 });
 
+test('style-preset prompt uses base_caption only', () => {
+  const meta = {
+    Comment: JSON.stringify({
+      prompt: 'solo, dark green hair',
+      uc: 'lowres, bad hands',
+      v4_prompt: {
+        caption: {
+          base_caption: '0.5::artist:freng::, best quality',
+          char_captions: [
+            { char_caption: 'dark green hair, purple eyes' },
+            { char_caption: 'witch hat' },
+          ],
+        },
+      },
+    }),
+  };
+  const base = promptFromNaiMetadata(meta, { includeCharCaptions: false });
+  assert.match(base, /artist:freng/);
+  assert.match(base, /best quality/);
+  assert.equal(base.includes('dark green hair'), false);
+  assert.equal(base.includes('witch hat'), false);
+  const fields = styleFieldsFromNaiMetadata(meta, base);
+  assert.match(fields.positive, /artist:freng/);
+  assert.equal(fields.negative, 'lowres, bad hands');
+});
+
 test('Comment string that is not JSON is still a prompt', () => {
   assert.ok(naiMetaHasPrompt({ Comment: '1girl, white hair, red eyes' }));
   assert.match(promptFromNaiMetadata({ Comment: '1girl, white hair, red eyes' }), /white hair/);

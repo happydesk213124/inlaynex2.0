@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.65';
+const PLUGIN_VERSION = '2.5.66';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,13 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.66</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>스타일 프리셋을 이미지에서 넣을 때 긍정은 메인 칸(base_caption)만. 인물 칸은 빼고요, 네거는 그대로입니다</li>
+            <li>nude일 때 옷·악세 태그는 0.5로 넣습니다. 완전 누드는 예전처럼 삭제</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.65</strong>
@@ -14453,8 +14460,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.65",
-    body: "옷 태그는 숫자 없이 두고, 윗옷/아랫옷 벗김만 2로 강조합니다."
+    title: "2.5.66",
+    body: "이미지 스타일 프리셋은 메인 칸만. nude 옷 태그는 0.5입니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */

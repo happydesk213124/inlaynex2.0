@@ -22,6 +22,7 @@ import { deepMerge } from '../core/util/object';
 import { cleanText } from '../core/util/text';
 import {
   extractNaiMetadata,
+  naiMetaHasPrompt,
   promptFromNaiMetadata,
   sceneFromNaiMetadata,
   styleFieldsFromNaiMetadata,
@@ -284,8 +285,8 @@ export async function evaluatePresetFromImage(
   if (!bytes?.byteLength) throw new Error('image is empty');
   const meta = await extractNaiMetadata(bytes);
   if (!meta) throw new Error('이미지에서 NovelAI 메타데이터를 읽지 못했습니다. PNG/WebP NAI 원본인지 확인하세요.');
-  const prompt = promptFromNaiMetadata(meta);
-  if (!cleanText(prompt)) throw new Error('메타데이터에 프롬프트가 없습니다.');
+  if (!naiMetaHasPrompt(meta)) throw new Error('메타데이터에 프롬프트가 없습니다.');
+  const prompt = promptFromNaiMetadata(meta, { includeCharCaptions: false });
   const filterTags = opts?.filterTags !== false;
   const fields = styleFieldsFromNaiMetadata(meta, prompt, { filterTags });
   if (filterTags && !fields.positive && !fields.negative) {

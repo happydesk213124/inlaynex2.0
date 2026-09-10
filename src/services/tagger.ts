@@ -22,6 +22,7 @@ import { dbg } from '../core/debug';
 import type { CharacterRecord, JobRequest, TaggedShot, TaggerResult } from '../core/types';
 import { deepMerge } from '../core/util/object';
 import { cleanText, stripCbs } from '../core/util/text';
+import { stripBakeTokens } from '../domain/chat-bake';
 import { normalizeAssetNaiTagsMode, normalizeFocusCharacterMode, normalizeFocusPromptMode, normalizeNaturalBaseMode, type NaturalBaseMode } from '../config/schema';
 import type { FocusCharacterMode, FocusPromptMode } from '../core/types';
 import { characterTriggers, dedupeShotCharacters, matchCharactersInText } from '../domain/character/roster';
@@ -129,7 +130,7 @@ export interface BuildTaggerOptions {
 
 /** Lore + UI trigger keys used for asset name matching. */
 export function assetTriggerPoolForRequest(request: TaggerArgs): string[] {
-  const assistant = cleanText(request.assistant_text, 20000);
+  const assistant = cleanText(stripBakeTokens(request.assistant_text), 20000);
   return [
     ...(Array.isArray(request.lore_trigger_keys) ? request.lore_trigger_keys : []),
     ...collectTriggeredLoreKeys(request.lorebook || [], assistant),
@@ -158,7 +159,7 @@ export async function collectAssetTagsForTagger(
       withPreviews: opts.withPreviews === true,
       roster,
       lorebook: Array.isArray(request.lorebook) ? request.lorebook : null,
-      message: cleanText(request.assistant_text, 20000),
+      message: cleanText(stripBakeTokens(request.assistant_text), 20000),
     });
   } catch (err) {
     setLastAssetWeightMap(new Map());
@@ -332,7 +333,7 @@ export async function buildCharacterLooksMessages(
     text: await getPrompt('asset_author_note'),
   });
 
-  const assistant = cleanText(request.assistant_text, 20000);
+  const assistant = cleanText(stripBakeTokens(request.assistant_text), 20000);
   const sourceSessionIds = Array.isArray(request.source_session_ids)
     ? request.source_session_ids.map((s) => cleanText(s, 200)).filter(Boolean)
     : [];
@@ -545,7 +546,7 @@ export async function buildTaggerMessages(
     });
   }
 
-  const assistant = cleanText(request.assistant_text, 20000);
+  const assistant = cleanText(stripBakeTokens(request.assistant_text), 20000);
   const sourceSessionIds = Array.isArray(request.source_session_ids)
     ? request.source_session_ids.map((s) => cleanText(s, 200)).filter(Boolean)
     : [];

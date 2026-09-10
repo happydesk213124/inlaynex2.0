@@ -9,6 +9,7 @@ import { dbg } from '../core/debug';
 import { hostHas, risuHost } from '../core/host';
 import { asU8, sniffImageMime, u8ToArrayBuffer, type BytesLike } from '../core/util/bytes';
 import { cleanText } from '../core/util/text';
+import { bakeAssetName } from '../domain/chat-bake';
 import {
   SHOT_MODULE_ID,
   SHOT_MODULE_NAME,
@@ -227,6 +228,55 @@ function upsertShotTuples(modules: ModuleRow[], saved: ShotAssetSaved[]): void {
     lorebook: Array.isArray(modules[idx]?.lorebook) ? modules[idx]!.lorebook : [],
     assets,
   };
+}
+
+function upsertBakeAliasTuple(modules: ModuleRow[], name: string, path: string): void {
+  let idx = findModuleIndex(modules);
+  if (idx < 0) {
+    modules.push({
+      id: SHOT_MODULE_ID,
+      name: SHOT_MODULE_NAME,
+      description: '생성된 이미지. Inlay가 관리합니다.',
+      namespace: SHOT_MODULE_NS,
+      hideIcon: false,
+      lorebook: [],
+      assets: [],
+    });
+    idx = modules.length - 1;
+  }
+  const assets = parseShotModuleAssets(modules[idx]!.assets);
+  const same = assets.findIndex((a) => a[0] === name);
+  if (same >= 0) assets[same] = [name, path, name];
+  else assets.push([name, path, name]);
+  modules[idx] = {
+    ...modules[idx],
+    id: SHOT_MODULE_ID,
+    name: modules[idx]?.name || SHOT_MODULE_NAME,
+    namespace: SHOT_MODULE_NS,
+    hideIcon: false,
+    lorebook: Array.isArray(modules[idx]?.lorebook) ? modules[idx]!.lorebook : [],
+    assets,
+  };
+}
+
+/** Extra module name so `{{#asset::inxbake_*}}` resolves to the same bytes. */
+export async function ensureBakeAssetAlias(cardId: string, path: string): Promise<string> {
+  const name = bakeAssetName(cardId);
+  const assetPath = normalizeAssetPath(path);
+  if (!name || !assetPath || !shotModuleAvailable()) return '';
+  await ensureDbAccess();
+  const host = hostOrNull();
+  if (!host) return '';
+  const db = await host.getDatabase!(['modules', 'enabledModules']);
+  if (!db) return '';
+  const modules = readModules(db);
+  const existing = findModuleIndex(modules);
+  if (existing >= 0 && assetListLooksUnloaded(modules[existing]!.assets)) return name;
+  upsertBakeAliasTuple(modules, name, assetPath);
+  const enabled = asShotAssetRows(db.enabledModules).map((row) => cleanText(row, 200)).filter(Boolean);
+  if (!enabled.includes(SHOT_MODULE_ID) && !enabled.includes(SHOT_MODULE_NS)) enabled.push(SHOT_MODULE_ID);
+  await host.setDatabase!({ modules: modules as never, enabledModules: enabled as string[] });
+  return name;
 }
 
 export async function putShotAsset(

@@ -97,12 +97,26 @@ import {
   canRetargetJobSaveHash,
   jobMatchesMessageIdentity,
 } from '../ui-contract/viewer-core';
+import { stripBakeTokens } from '../domain/chat-bake';
+import {
+  bakeCardsIntoChatMessage,
+  jobChatTarget,
+  persistChatImagesOn,
+  stripBakedImagesFromChatMessage,
+} from './chat-bake';
 
 export { canRetargetJobSaveHash, jobMatchesMessageIdentity };
 
 
 /** Progress heartbeat period while waiting on NovelAI. */
 const HEARTBEAT_MS = 5000;
+
+let bakeWriteChain: Promise<void> = Promise.resolve();
+function enqueueBakeWrite(work: () => Promise<void>): Promise<void> {
+  const next = bakeWriteChain.then(work, work);
+  bakeWriteChain = next.then(() => undefined, () => undefined);
+  return next;
+}
 
 /**
  * Mid-job streaming can rebind earlier shots to a newer message hash while later
@@ -679,6 +693,14 @@ async function runJob(jobId: string): Promise<void> {
   let shotSaveFailed: unknown = null;
   try {
     if (await cancelJobIfStale(jobId, 'superseded before start')) return;
+    request.assistant_text = stripBakeTokens(request.assistant_text);
+    if (request.force && persistChatImagesOn()) {
+      try {
+        await stripBakedImagesFromChatMessage(jobChatTarget(request));
+      } catch (err) {
+        dbg('job.bake.strip.fail', { message: String((err as Error)?.message || err) }, 'warn');
+      }
+    }
     // createJob already unlinked on force; repeated here because a job can also
     // be started by a retry path that skips createJob's unlink.
     if (request.force) {
@@ -1394,6 +1416,19 @@ async function runJob(jobId: string): Promise<void> {
           created_at: now,
         });
         dbg('job.shot.saved', { shot: idx, card_id: cardId });
+        if (persistChatImagesOn()) {
+          const ready = cards.filter((c): c is Record<string, unknown> => Boolean(c && (c as { id?: unknown }).id));
+          try {
+            await enqueueBakeWrite(async () => {
+              await bakeCardsIntoChatMessage({
+                ...jobChatTarget(request),
+                cards: ready,
+              });
+            });
+          } catch (err) {
+            dbg('job.bake.fail', { message: String((err as Error)?.message || err), shot: idx }, 'warn');
+          }
+        }
         await setJob(
           jobId,
           'generating',

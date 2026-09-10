@@ -1544,6 +1544,21 @@ export async function imageLocation(id: string): Promise<Record<string, unknown>
   return loc && typeof loc === 'object' ? (loc as Record<string, unknown>) : {};
 }
 
+/** Wait until the gallery-module write for this id has finished (or failed). */
+export async function flushImagePersist(): Promise<void> {
+  await imagePersistChain;
+}
+
+export async function imageAssetRef(id: string): Promise<{ path: string; name: string } | null> {
+  await flushImagePersist();
+  await ensureCard(id);
+  const row = memStores.images.get(String(id));
+  const path = String(row?.asset_path || row?.location?.asset_path || '');
+  const name = String(row?.asset_name || row?.location?.asset_name || '');
+  if (!path) return null;
+  return { path, name };
+}
+
 /** One unmigrated image: pixels exist but not in the gallery module. */
 export interface LegacyImageRow {
   id: string;

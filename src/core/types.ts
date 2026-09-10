@@ -227,6 +227,8 @@ export interface CardSettings {
   inline_msg_actions?: 'off' | 'legacy' | 'compat' | boolean;
   /** Insert shot images into chat bubbles at LLM `line`. */
   inline_chat_images?: boolean;
+  /** After a shot is ready, merge it into the saved Risu message. */
+  persist_chat_images?: boolean;
   /** Keep the on-screen bubble put when inline inject changes height. */
   scroll_hold?: boolean;
   /** Spinner/photo before the line text, or after it. */

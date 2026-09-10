@@ -7,6 +7,18 @@
  */
 
 export { matchCharactersInText } from '../domain/character/roster';
+import {
+  bakeTokenForCard,
+  stripBakeTokens,
+} from '../domain/chat-bake';
+export {
+  bakeAssetName,
+  bakeTokenForCard,
+  messageHasBakeToken,
+  proseForHash,
+  stripBakeTokenForCard,
+  stripBakeTokens,
+} from '../domain/chat-bake';
 import { normalizeShotKind } from '../domain/comic/kind';
 import { resolveShotAspect } from '../domain/nai-meta/aspect';
 import { normalizeInlineChatTextSide } from '../domain/inline-chat';
@@ -4468,6 +4480,64 @@ export function markerBlockHtml(
     + `</span><br>`
     + `</div>`
   );
+}
+
+function bodyLooksLikeHtml(body: string): boolean {
+  return /<[a-zA-Z][\s\S]*>/.test(body);
+}
+
+/**
+ * Same splice point as `injectInlineImagesIntoHtml`, but inserts an arbitrary
+ * snippet (bake token). HTML keeps formatting; plain text uses ln offsets.
+ */
+export function insertSnippetAtShotLine(
+  body: unknown,
+  line: unknown,
+  side: unknown,
+  snippet: unknown,
+): string {
+  const raw = String(body ?? '');
+  const token = String(snippet ?? '');
+  if (!raw || !token) return raw;
+  const textSide = normalizeInlineChatTextSide(side);
+  if (bodyLooksLikeHtml(raw)) {
+    const cleaned = stripInlayInlineHtml(raw);
+    const mapped = mapHtmlToPlain(cleaned);
+    const plain = mapped.map((c) => c.ch).join('');
+    const clamped = clampShotLine(line, splitMessageLines(plain).length);
+    if (!clamped || !mapped.length) return cleaned;
+    const htmlIndex = htmlIndexForLineInsert(cleaned, mapped, plain, clamped, textSide);
+    if (htmlIndex == null) return cleaned;
+    return cleaned.slice(0, htmlIndex) + token + cleaned.slice(htmlIndex);
+  }
+  const clamped = clampShotLine(line, splitMessageLines(raw).length);
+  if (!clamped) return raw;
+  if (textSide === 'before') {
+    const start = findPlainLineStartOffset(raw, clamped);
+    if (start == null) return raw;
+    return raw.slice(0, start) + token + '\n' + raw.slice(start);
+  }
+  const end = findPlainLineEndOffset(raw, clamped);
+  if (end == null) return raw;
+  return raw.slice(0, end) + '\n' + token + raw.slice(end);
+}
+
+/** Strip existing bake tokens, then place one token per card from last line first. */
+export function applyBakeTokensToBody(
+  body: unknown,
+  placements: Array<{ line?: unknown; cardId?: unknown }> | null | undefined,
+  side: unknown,
+): string {
+  let text = stripBakeTokens(body);
+  const list = Array.isArray(placements) ? placements.slice() : [];
+  list.sort((a, b) => Math.floor(Number(b?.line)) - Math.floor(Number(a?.line)));
+  for (const row of list) {
+    const token = bakeTokenForCard(row?.cardId);
+    const line = Math.floor(Number(row?.line));
+    if (!token || !Number.isFinite(line) || line < 1) continue;
+    text = insertSnippetAtShotLine(text, line, side, token);
+  }
+  return text;
 }
 
 /**

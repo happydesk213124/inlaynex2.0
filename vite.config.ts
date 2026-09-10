@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.66';
+const PLUGIN_VERSION = '2.5.67';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.67</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>생성완료 시 채팅에 박제: 한 장이 끝나면 그 줄에 Risu 에셋으로 넣습니다. 글 수정해도 남고, 태그는 박제한 그림만 빼고 다시 만듭니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.66</strong>
@@ -9564,6 +9570,7 @@ const VENDOR_INLINE_HELP_NEEDLE =
 const VENDOR_INLINE_HELP_PATCH =
   `    "nx-overlay": { title: "채팅 왼쪽 줄 오버레이", body: "채팅 왼쪽 핀·스티키 이미지를 보여 줍니다. 꺼도 내부 동기화는 유지하고, 상시 이미지 0% + 핀을 화면 밖으로 치워 가려 둡니다(꺼서 통째로 뜯으면 렉이 나서). 메시지 클릭·말풍선 삽화는 그대로입니다." },
     "nx-inline-chat": { title: "이미지 채팅에", body: "선택 기준에서 설정한 탐색 숫자만큼 위·아래의 char 말풍선을 유지합니다. 유저·라이트보드(본문 30자 이하)는 건너뜁니다. 켜면 스티키 활성 이미지는 마우스에 가장 가까운 샷을 우선합니다. 길게 누르면 크게보기/태그·재생성·리롤 메뉴. 「모든 메시지 이미지 생성」이 켜지면 선택 옆도 역할 무관하되 라이트보드는 건너뜁니다. 나머지는 지워서 메모리를 막습니다. 배율(%)은 기본 100(말풍선 폭 약 78%·높이 상한 70vh)이며 25–200으로 조절합니다." },
+    "nx-persist-chat": { title: "생성완료 시 채팅에 박제", body: "한 장 생성이 끝나면 그 줄에 Risu 에셋으로 넣습니다. 글을 고쳐도 남습니다. 태그를 누르면 박제한 그림만 빼고 다시 만듭니다. 선택 때는 스피너만 꽂고, 끝난 장은 인라인으로 다시 넣지 않습니다." },
     "nx-scroll-hold": { title: "스크롤 붙잡기", body: "보고 있는 말풍선이 화면에서 같은 자리에 남도록 채팅 칸의 scrollTop만 보정합니다. 맨 아래 최신 말을 보고 있으면 Risu 자동 스크롤을 그대로 둡니다. 창 전체가 아니라 채팅 스크롤만 움직입니다." },
     "nx-inline-text-side": { title: "선택된글 위치", body: "줄에 맞는 문단 안에서 스피너·삽화를 글 앞 또는 글 뒤에 둡니다. 이미 꽂힌 프레임은 그대로이고, 새로 넣거나 새로고침할 때 적용됩니다." },
     "nx-inline-msg-actions": { title: "메시지 안에 생성 버튼", body: "사용안함 / 편의성(오류율 있음, DIV도 호스트로 씀) / 호환성(문단만 호스트). 둘 다 위 바는 본문 상자 맨 앞, 아래 바는 상자 맨 뒤. 헤더가 비면 채팅 카드 복구를 쓰세요. 태그=LLM 태그 재생성, 재생성=첫 생성 또는 전체 리롤, 중단=남은 생성 멈추기, 캐릭터=메시지에서 트리거된 캐릭터 태그 수정, 프리셋=설정 스타일 프리셋 탭." },
@@ -9580,6 +9587,7 @@ const VENDOR_INLINE_TOGGLE_NEEDLE =
 const VENDOR_INLINE_TOGGLE_PATCH =
   `            <label class="toggle-row" data-nx-help-id="nx-overlay"><input type="checkbox" id="nx-overlay" \${i.overlay_markers !== !1 ? "checked" : ""}><span>채팅 왼쪽 줄 오버레이</span></label>
             <label class="toggle-row" data-nx-help-id="nx-inline-chat"><input type="checkbox" id="nx-inline-chat" \${i.inline_chat_images ? "checked" : ""}><span>이미지 채팅에</span></label>
+            <label class="toggle-row" data-nx-help-id="nx-persist-chat"><input type="checkbox" id="nx-persist-chat" \${i.persist_chat_images ? "checked" : ""}><span>생성완료 시 채팅에 박제</span></label>
             <label class="toggle-row" data-nx-help-id="nx-scroll-hold"><input type="checkbox" id="nx-scroll-hold" \${i.scroll_hold ? "checked" : ""}><span>스크롤 붙잡기</span></label>
             <label data-nx-help-id="nx-inline-text-side"><span>선택된글 위치</span>
               <select id="nx-inline-text-side">
@@ -9614,11 +9622,20 @@ const VENDOR_INLINE_TOGGLE_PATCH =
             </label>
             <label class="toggle-row" data-nx-help-id="nx-nai4-fallback"><input type="checkbox" id="nx-nai4-fallback" \${i.nai4_fallback ? "checked" : ""}><span>할당량 끝나면 NAI4 폴백</span></label>`;
 
+const VENDOR_YE_HASH_NEEDLE =
+  `  function ye(e) {
+    const n = w(e, 1e6);`;
+const VENDOR_YE_HASH_PATCH =
+  `  function ye(e) {
+    const VCHash = globalThis.__INLAY_VIEWER_CORE__;
+    const n = w(typeof VCHash?.proseForHash == "function" ? VCHash.proseForHash(e) : e, 1e6);`;
+
 const VENDOR_INLINE_SAVE_NEEDLE =
   `      overlay_markers: ee("nx-overlay"),`;
 const VENDOR_INLINE_SAVE_PATCH =
   `      overlay_markers: ee("nx-overlay"),
       inline_chat_images: ee("nx-inline-chat"),
+      persist_chat_images: ee("nx-persist-chat"),
       scroll_hold: ee("nx-scroll-hold"),
       inline_chat_text_side: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeInlineChatTextSide == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeInlineChatTextSide(N("nx-inline-text-side")) : (String(N("nx-inline-text-side") || "before") === "after" ? "after" : "before")),
       inline_msg_actions: (typeof globalThis.__INLAY_VIEWER_CORE__?.normalizeInlineMsgActions == "function" ? globalThis.__INLAY_VIEWER_CORE__.normalizeInlineMsgActions(N("nx-inline-msg-actions")) : String(N("nx-inline-msg-actions") || "off")),
@@ -9854,7 +9871,7 @@ const VENDOR_DT_FN_PATCH =
     }, 40);
   }
   async function nxCaptureScrollHold(opts) {
-    if (!nxScrollHoldOn() || t.uiOpen || t._scrollHoldApplying) return;
+    if ((!nxScrollHoldOn() && opts?.force !== !0) || t.uiOpen || t._scrollHoldApplying) return;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     const scroller = nxScrollHoldScroller();
     if (!scroller) return;
@@ -9902,7 +9919,7 @@ const VENDOR_DT_FN_PATCH =
     };
   }
   async function nxApplyScrollHold(opts) {
-    if (!nxScrollHoldOn() || t.uiOpen) return;
+    if ((!nxScrollHoldOn() && !(opts?.force || t._scrollHold?.force)) || t.uiOpen) return;
     const hold = t._scrollHold;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     const force = !!(opts?.force || hold?.force);
@@ -9960,6 +9977,7 @@ const VENDOR_DT_FN_PATCH =
     }
     if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold(opts);
   }
+  globalThis.__INLAY_SCROLL_HOLD__ = (work) => nxAroundScrollHold(work, { edge: "bottom", allowLarge: !0, force: !0 });
   async function nxWaitNewestDom(doc, maxMs) {
     // Character switch: Risu remounts the chat after we notice the session.
     // A fixed 250 ms is early on a phone and late on localhost. Ask for the
@@ -11481,7 +11499,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     const planned = typeof VC.desiredInlinePlacements == "function"
       ? VC.desiredInlinePlacements(list, pending, resolveSrc)
       : { placements: [], encodeLater: [] };
-    const placements = Array.isArray(planned.placements) ? planned.placements : [];
+    let placements = Array.isArray(planned.placements) ? planned.placements : [];
+    if (t.backendSettings?.card?.persist_chat_images === !0) placements = placements.filter((p) => p.pending === !0);
     const encodeLater = Array.isArray(planned.encodeLater) ? planned.encodeLater : [];
     const unwrapSafe = async (arr) => {
       if (!arr) return [];
@@ -14460,8 +14479,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.66",
-    body: "이미지 스타일 프리셋은 메인 칸만. nude 옷 태그는 0.5입니다."
+    title: "2.5.67",
+    body: "생성완료 시 채팅에 박제 토글. 한 장이 끝나면 그 줄에 넣습니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -18089,6 +18108,7 @@ const loadVendorUi = (): string => {
     [VENDOR_RISU_NAV_BOOT_NEEDLE, 'risu nav buttons boot'],
     [VENDOR_FF_FONT_BODY_NEEDLE, 'firefox font body'],
     [VENDOR_FF_FONT_TOGGLE_NEEDLE, 'firefox font toggle-row'],
+    [VENDOR_YE_HASH_NEEDLE, 'ye message hash'],
     [VENDOR_INLINE_HELP_NEEDLE, 'inline chat help'],
     [VENDOR_INLINE_TOGGLE_NEEDLE, 'inline chat toggle'],
     [VENDOR_INLINE_SAVE_NEEDLE, 'inline chat save'],
@@ -18248,6 +18268,7 @@ const loadVendorUi = (): string => {
   return (() => {
     let out = raw
       .replace(VENDOR_VERSION_NEEDLE, `He = "${PLUGIN_VERSION}"`)
+      .replace(VENDOR_YE_HASH_NEEDLE, VENDOR_YE_HASH_PATCH)
       .replace(VENDOR_PROMPT_RESET_NEEDLE, VENDOR_PROMPT_RESET_PATCH)
       .replace(VENDOR_PROMPT_TAB_HTML_NEEDLE, VENDOR_PROMPT_TAB_HTML_PATCH)
       .replace(VENDOR_PROMPT_TAB_EVENTS_AFTER_RESET_NEEDLE, VENDOR_PROMPT_TAB_EVENTS_PATCH)
@@ -18873,6 +18894,11 @@ const loadVendorUi = (): string => {
     assertOnce(out, 't._runFieldImageAutotag = async (a) => {', 'field image paste runs autotag');
     assertOnce(out, 'async function nxCaptureScrollHold(opts)', 'scroll hold capture helper landed');
     assertOnce(out, 'async function nxAroundScrollHold(work, opts)', 'scroll hold wraps explicit frame teardown');
+    assertOnce(out, 'globalThis.__INLAY_SCROLL_HOLD__ = (work) => nxAroundScrollHold(work, { edge: "bottom", allowLarge: !0, force: !0 });', 'bake remount uses scroll hold');
+    assertOnce(out, '<input type="checkbox" id="nx-persist-chat"', 'persist chat images toggle landed');
+    assertOnce(out, 'persist_chat_images: ee("nx-persist-chat")', 'persist chat images saves');
+    assertOnce(out, 'VCHash?.proseForHash', 'message hash ignores bake tokens');
+    assertOnce(out, 'persist_chat_images === !0) placements = placements.filter', 'persist skips ready inline photos');
     assertOnce(out, 'async function nxRemoveInlineFrames(msgEl, isCurrent = () => !0) {\n    await nxAroundScrollHold(async () => {', 'tag/refresh frame drop applies scroll hold');
     assertOnce(out, 'if (tagStampKey) await nxDropInlineFramesByKey(t.hostDoc, ye(tagStampKey));', 'tag chip drops frames under one scroll-hold wrap');
     assertOnce(out, 'select id="nx-image-press"', 'image press select landed');

@@ -12,6 +12,7 @@ import {
   sanitizeShotId,
   sessionFromShotAssetName,
   shotAssetName,
+  bounceEnabledModuleIds,
 } from "../.test-build/shot-assets.mjs";
 
 test("shot asset names stay in a gallery-only prefix", () => {
@@ -52,6 +53,14 @@ test("an id holding underscores is not mistaken for a room stamp", () => {
   assert.equal(sessionFromShotAssetName(name), "risu_1");
   assert.equal(idFromShotAssetName("inxshot_a__sb.webp"), "a__sb");
   assert.equal(sessionFromShotAssetName("inxshot_a__sb.webp"), "");
+});
+
+test("bounceEnabledModuleIds drops gallery ids then puts them back", () => {
+  const { off, on } = bounceEnabledModuleIds(["other", "inlay-gallery", "inlay.gallery"]);
+  assert.deepEqual(off, ["other"]);
+  assert.ok(on.includes("other"));
+  assert.ok(on.includes("inlay-gallery"));
+  assert.ok(!off.includes("inlay-gallery"));
 });
 
 test("parseShotModuleAssets accepts tuples and named objects", () => {

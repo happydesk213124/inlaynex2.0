@@ -179,7 +179,10 @@ as inline inject, using `[[@inray::<cardId>::<inxshot_name>]]` (gallery
 bytes, not a second asset). The `inlay-inray-display` module (`editdisplay`)
 turns the token into a centered `<img src="{{raw::<inxshot_name>}}">`
 (Risu official path CBS) plus a hover fullscreen chip that
-opens the same inspect sheet as triple-tap / hold. Tag (`force`)
+opens the same inspect sheet as triple-tap / hold. After writing tokens
+the plugin bounces the gallery module on `enabledModules` (or a host
+refresh helper) so CBS sees the new name without a manual asset-list
+reload. Tag (`force`)
 strips those tokens first. Ready inline photos are not re-injected; pending
 spinners still are. Message `content_hash` (`ye`) hashes `proseForHash`
 (tokens stripped). Bake remount always runs `nxAroundScrollHold` via

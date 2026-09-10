@@ -10,6 +10,7 @@ import { applyBakeTokensToBody } from '../ui-contract/viewer-core';
 import { getConfig } from './context';
 import { imageAssetRef } from '../storage/stores';
 import { ensureInrayDisplayModule } from '../storage/inray-display-module';
+import { refreshGalleryAssetLookup } from '../storage/shot-module';
 
 export type BakeCardRow = {
   id?: unknown;
@@ -97,6 +98,7 @@ export async function bakeCardsIntoChatMessage(opts: {
   messages[idx] = msg;
   if (Array.isArray(loaded.chat.message)) loaded.chat.message = messages;
   else loaded.chat.messages = messages;
+  await refreshGalleryAssetLookup();
   await writeChat(loaded.host, opts.charIndex, opts.chatIndex, loaded.chat);
   return true;
 }

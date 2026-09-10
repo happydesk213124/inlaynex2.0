@@ -8,12 +8,14 @@
 import { dbg } from '../core/debug';
 import { hostHas, risuHost } from '../core/host';
 import { asU8, sniffImageMime, u8ToArrayBuffer, type BytesLike } from '../core/util/bytes';
+import { sleep } from '../core/util/async';
 import { cleanText } from '../core/util/text';
 import {
   SHOT_MODULE_ID,
   SHOT_MODULE_NAME,
   SHOT_MODULE_NS,
   asShotAssetRows,
+  bounceEnabledModuleIds,
   idFromShotAssetName,
   isShotAssetName,
   normalizeAssetPath,
@@ -75,6 +77,48 @@ export function resetShotModuleState(): void {
 
 export function shotModuleAvailable(): boolean {
   return hostHas('saveAsset') && hostHas('readImage') && hostHas('getDatabase') && hostHas('setDatabase');
+}
+
+const HOST_ASSET_REFRESH = [
+  'refreshModules',
+  'refreshAssets',
+  'hydrateModuleAssets',
+  'refreshAssetList',
+  'reloadAssets',
+] as const;
+
+/**
+ * Rebuild the host's name→path map so `{{raw::inxshot_…}}` sees a just-written
+ * gallery row. Touches enabledModules only — never the asset byte list.
+ */
+export async function refreshGalleryAssetLookup(): Promise<boolean> {
+  const host = hostOrNull();
+  if (!host) return false;
+  for (const name of HOST_ASSET_REFRESH) {
+    const fn = host[name];
+    if (typeof fn !== 'function') continue;
+    try {
+      await (fn as () => unknown)();
+      return true;
+    } catch (err) {
+      dbg('shot.module.asset-refresh.host.fail', { name, message: String((err as Error)?.message || err) }, 'warn');
+    }
+  }
+  if (!hostHas('getDatabase') || !hostHas('setDatabase')) return false;
+  await ensureDbAccess();
+  const db = await host.getDatabase!(['enabledModules']);
+  if (!db) return false;
+  const { off, on } = bounceEnabledModuleIds(db.enabledModules);
+  try {
+    await host.setDatabase!({ enabledModules: off as string[] });
+    await sleep(16);
+    await host.setDatabase!({ enabledModules: on as string[] });
+    await sleep(16);
+    return true;
+  } catch (err) {
+    dbg('shot.module.asset-refresh.fail', { message: String((err as Error)?.message || err) }, 'warn');
+    return false;
+  }
 }
 
 async function ensureDbAccess(): Promise<void> {

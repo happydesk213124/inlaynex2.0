@@ -9,6 +9,22 @@ export const SHOT_MODULE_ID = 'inlay-gallery';
 export const SHOT_MODULE_NS = 'inlay.gallery';
 export const SHOT_MODULE_NAME = 'Inlay 갤러리';
 
+/** Drop then restore our gallery ids so the host rebuilds the name→path map. */
+export function bounceEnabledModuleIds(
+  enabled: unknown,
+  bounceIds: readonly string[] = [SHOT_MODULE_ID, SHOT_MODULE_NS],
+): { off: string[]; on: string[] } {
+  const drop = new Set(bounceIds.map((id) => cleanText(id, 200)).filter(Boolean));
+  const ids = asShotAssetRows(enabled).map((row) => cleanText(row, 200)).filter(Boolean);
+  const off = ids.filter((id) => !drop.has(id));
+  const on = [...off];
+  for (const id of bounceIds) {
+    const key = cleanText(id, 200);
+    if (key && !on.includes(key)) on.push(key);
+  }
+  return { off, on };
+}
+
 export function sanitizeShotId(id: unknown): string {
   return String(id || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
 }

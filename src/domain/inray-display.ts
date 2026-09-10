@@ -5,7 +5,7 @@
  */
 export const INRAY_DISPLAY_MODULE_ID = 'inlay-inray-display';
 export const INRAY_DISPLAY_MODULE_NS = 'inlay.inray_display';
-export const INRAY_DISPLAY_MODULE_NAME = 'Inlay Inray 디스플레이';
+export const INRAY_DISPLAY_MODULE_NAME = 'Inlay 디스플레이';
 export const INRAY_DISPLAY_SCRIPT_COMMENT = 'inray-shot-display';
 
 /** Capture card id and gallery asset name. */

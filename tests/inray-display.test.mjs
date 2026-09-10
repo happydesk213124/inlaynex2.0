@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   INRAY_DISPLAY_IN,
   INRAY_DISPLAY_MODULE_ID,
+  INRAY_DISPLAY_MODULE_NAME,
   INRAY_DISPLAY_OUT,
   inrayDisplayRegexScript,
 } from '../.test-build/inray-display.mjs';
@@ -17,4 +18,5 @@ test('display regex rewrites Inray tokens to centered gallery assets', () => {
   assert.match(out, /margin:1\.15em auto/);
   assert.equal(inrayDisplayRegexScript().type, 'editdisplay');
   assert.equal(INRAY_DISPLAY_MODULE_ID, 'inlay-inray-display');
+  assert.equal(INRAY_DISPLAY_MODULE_NAME, 'Inlay 디스플레이');
 });

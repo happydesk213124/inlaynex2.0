@@ -86,14 +86,19 @@ export async function ensureInrayDisplayModule(): Promise<boolean> {
         regex[hit] = wanted;
         changed = true;
       }
-      if (cur.hideIcon || cur.id !== INRAY_DISPLAY_MODULE_ID || cur.namespace !== INRAY_DISPLAY_MODULE_NS) {
+      if (
+        cur.hideIcon ||
+        cur.id !== INRAY_DISPLAY_MODULE_ID ||
+        cur.namespace !== INRAY_DISPLAY_MODULE_NS ||
+        cur.name !== INRAY_DISPLAY_MODULE_NAME
+      ) {
         changed = true;
       }
       if (changed) {
         modules[idx] = {
           ...cur,
           id: INRAY_DISPLAY_MODULE_ID,
-          name: cur.name || INRAY_DISPLAY_MODULE_NAME,
+          name: INRAY_DISPLAY_MODULE_NAME,
           namespace: INRAY_DISPLAY_MODULE_NS,
           hideIcon: false,
           regex,

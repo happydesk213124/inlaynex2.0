@@ -143,6 +143,7 @@ export async function runScenario(N, handles) {
     return {
       inline_chat_images: card.inline_chat_images === true,
       persist_chat_images: card.persist_chat_images === true,
+      persist_chat_images_folded: card.persist_chat_images_folded === true,
       inline_msg_actions: card.inline_msg_actions === true,
       inline_chat_dom_radius: Number(card.inline_chat_dom_radius ?? 4),
       progress_toast: card.progress_toast === true,

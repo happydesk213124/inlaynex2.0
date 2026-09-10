@@ -42,7 +42,7 @@ function scriptComment(row: unknown): string {
   return cleanText((row as { comment?: unknown }).comment, 80);
 }
 
-export async function ensureInrayDisplayModule(): Promise<boolean> {
+export async function ensureInrayDisplayModule(folded = false): Promise<boolean> {
   if (!hostHas('getDatabase') || !hostHas('setDatabase')) return false;
   const host = risuHost();
   if (!host?.getDatabase || !host.setDatabase) return false;
@@ -57,7 +57,7 @@ export async function ensureInrayDisplayModule(): Promise<boolean> {
     const db = await host.getDatabase(['modules', 'enabledModules']);
     if (!db) return false;
     const modules = readModules(db);
-    const wanted = inrayDisplayRegexScript();
+    const wanted = inrayDisplayRegexScript(folded);
     let idx = findModuleIndex(modules);
     let changed = false;
     if (idx < 0) {

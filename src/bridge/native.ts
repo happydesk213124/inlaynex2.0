@@ -63,7 +63,7 @@ async function boot(): Promise<void> {
 
   setConfig(await loadSettingsFromStorage());
   if (getConfig().card?.persist_chat_images) {
-    void ensureInrayDisplayModule().catch((err: unknown) => {
+    void ensureInrayDisplayModule(getConfig().card?.persist_chat_images_folded === true).catch((err: unknown) => {
       dbg('boot.inray-display', { message: String((err as Error)?.message || err) }, 'warn');
     });
   }

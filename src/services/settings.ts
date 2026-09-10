@@ -29,6 +29,7 @@ import { naiHasAnyToken, normalizeTokenList, publicKeyRows } from '../domain/nai
 import { LLM_ROLE_IDS, normalizeLlmRolesSettings } from '../domain/llm/roles';
 import { comfyConfigured, imageBackendKind } from '../providers/comfy/client';
 import { llmConfigured } from '../providers/llm/transform';
+import { ensureInrayDisplayModule } from '../storage/inray-display-module';
 import { saveSettingsToStorage } from '../storage/settings-store';
 import { idbGet, idbGetAll, idbPut, roomRows, storeSize, totalImageBytes } from '../storage/stores';
 import { configLock, getConfig, getPresetLookPreviewUrl, getPresetVibePreviewUrl, getRefPreviewUrl, getVibePreviewUrl, setConfig } from './context';
@@ -189,6 +190,7 @@ function parsePromptsImport(raw: unknown): Record<string, string> {
 export async function saveConfig(): Promise<void> {
   const snapshot = deepcopy(getConfig());
   await configLock.run(() => saveSettingsToStorage(snapshot));
+  void ensureInrayDisplayModule(getConfig().card?.persist_chat_images_folded === true).catch(() => undefined);
 }
 
 export function exportSettingsJson(): string {

@@ -5,6 +5,7 @@ import {
   INRAY_DISPLAY_MODULE_ID,
   INRAY_DISPLAY_MODULE_NAME,
   INRAY_DISPLAY_OUT,
+  inrayDisplayOut,
   inrayDisplayRegexScript,
 } from '../.test-build/inray-display.mjs';
 
@@ -23,4 +24,6 @@ test('display regex rewrites Inray tokens to centered gallery assets', () => {
   assert.equal(inrayDisplayRegexScript().type, 'editdisplay');
   assert.equal(INRAY_DISPLAY_MODULE_ID, 'inlay-inray-display');
   assert.equal(INRAY_DISPLAY_MODULE_NAME, 'Inlay 디스플레이');
+  assert.equal(/ checked/.test(INRAY_DISPLAY_OUT), false);
+  assert.match(inrayDisplayOut(true), /id="inray-fold-\$1" checked/);
 });

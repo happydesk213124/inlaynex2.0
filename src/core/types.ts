@@ -229,6 +229,8 @@ export interface CardSettings {
   inline_chat_images?: boolean;
   /** After a shot is ready, merge it into the saved Risu message. */
   persist_chat_images?: boolean;
+  /** Display-module checkbox starts checked (baked shots folded). */
+  persist_chat_images_folded?: boolean;
   /** Keep the on-screen bubble put when inline inject changes height. */
   scroll_hold?: boolean;
   /** Spinner/photo before the line text, or after it. */

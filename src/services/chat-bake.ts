@@ -75,7 +75,7 @@ export async function bakeCardsIntoChatMessage(opts: {
 }): Promise<boolean> {
   const loaded = await loadTargetChat(opts.charIndex, opts.chatIndex);
   if (!loaded) return false;
-  await ensureInrayDisplayModule();
+  await ensureInrayDisplayModule(getConfig().card?.persist_chat_images_folded === true);
   const messages = chatMessageList(loaded.chat);
   const idx = Math.floor(Number(opts.messageIndex));
   if (!Number.isFinite(idx) || idx < 0 || idx >= messages.length) return false;

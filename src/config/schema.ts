@@ -326,6 +326,8 @@ export function migrateSettings(input: unknown = {}): MigratedSettings {
   else card.inline_chat_images = card.inline_chat_images === true || card.inline_chat_images === 'true' || card.inline_chat_images === 1 || card.inline_chat_images === '1';
   if (card.persist_chat_images == null) card.persist_chat_images = false;
   else card.persist_chat_images = card.persist_chat_images === true || card.persist_chat_images === 'true' || card.persist_chat_images === 1 || card.persist_chat_images === '1';
+  if (card.persist_chat_images_folded == null) card.persist_chat_images_folded = false;
+  else card.persist_chat_images_folded = card.persist_chat_images_folded === true || card.persist_chat_images_folded === 'true' || card.persist_chat_images_folded === 1 || card.persist_chat_images_folded === '1';
   if (card.scroll_hold == null) card.scroll_hold = false;
   else card.scroll_hold = card.scroll_hold === true || card.scroll_hold === 'true' || card.scroll_hold === 1 || card.scroll_hold === '1';
   card.inline_chat_text_side = normalizeInlineChatTextSide(card.inline_chat_text_side);

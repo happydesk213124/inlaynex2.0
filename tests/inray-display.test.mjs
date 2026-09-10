@@ -20,6 +20,9 @@ test('display regex rewrites Inray tokens to centered gallery assets', () => {
   assert.match(out, /inray-fold-card-1/);
   assert.match(out, /content:"▼"/);
   assert.match(out, /content:"▲"/);
+  assert.match(out, /inray-clip/);
+  assert.match(out, /grid-template-rows:4\.5em/);
+  assert.equal(/checked~img\{display:none/.test(out), false);
   assert.match(out, /margin:1\.15em auto/);
   assert.equal(inrayDisplayRegexScript().type, 'editdisplay');
   assert.equal(INRAY_DISPLAY_MODULE_ID, 'inlay-inray-display');

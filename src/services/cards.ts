@@ -67,6 +67,7 @@ import {
   locationFieldsForCard,
   readImageLocation,
 } from './generation';
+import { persistChatImagesOn, rewriteBakedCardInChatMessage } from './chat-bake';
 import { deleteCard, getImageBytes } from './gallery';
 import { busyReplyForRequest, jobKey } from './job-locks';
 import { createJob } from './jobs';
@@ -560,6 +561,19 @@ export async function rerollCard(
     await deleteCard(cardId);
   } catch {
     /* the replacement is stored; a leftover row is not worth failing the call */
+  }
+  if (persistChatImagesOn()) {
+    try {
+      await rewriteBakedCardInChatMessage({
+        charIndex: toInt(location.char_index, -1),
+        chatIndex: toInt(location.chat_index, -1),
+        messageIndex: toInt(location.message_index, -1),
+        prevCardId: cardId,
+        nextCardId: newId,
+      });
+    } catch {
+      /* inline overlay must not run on a bake; a missed token rewrite is the fallback */
+    }
   }
 
   const card = {

@@ -44,6 +44,20 @@ export function proseForHash(text: unknown): string {
   return stripBakeTokens(text);
 }
 
+/** Swap one baked card's token for a reroll — same slot, new id / asset name. */
+export function replaceBakeTokenCard(
+  text: unknown,
+  prevCardId: unknown,
+  nextCardId: unknown,
+  nextAssetName: unknown,
+): string {
+  const prev = sanitizeShotId(prevCardId);
+  const token = bakeTokenForCard(nextCardId, nextAssetName);
+  if (!prev || !token) return String(text ?? '');
+  const escaped = prev.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return String(text ?? '').replace(new RegExp(`\\[\\[@inray::${escaped}::[^\\]]+\\]\\]`, 'g'), token);
+}
+
 export function stripBakeTokenForCard(text: unknown, cardId: unknown): string {
   const id = sanitizeShotId(cardId);
   if (!id) return String(text ?? '');

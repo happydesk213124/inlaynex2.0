@@ -17,6 +17,7 @@ export {
   messageHasBakeToken,
   messageHasBakeTokenForCard,
   proseForHash,
+  replaceBakeTokenCard,
   stripBakeTokenForCard,
   stripBakeTokens,
 } from '../domain/chat-bake';

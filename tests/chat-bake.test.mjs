@@ -5,6 +5,7 @@ import {
   messageHasBakeToken,
   messageHasBakeTokenForCard,
   proseForHash,
+  replaceBakeTokenCard,
   stripBakeTokenForCard,
   stripBakeTokens,
 } from '../.test-build/chat-bake.mjs';
@@ -30,6 +31,10 @@ test('bake tokens point at gallery shots and strip leaves user assets', () => {
   assert.equal(messageHasBakeToken(stripBakeTokens(body)), false);
   assert.equal(stripBakeTokenForCard(body, 'card-1').includes(token), false);
   assert.equal(proseForHash(body), proseForHash(stripBakeTokens(body)));
+  assert.equal(
+    replaceBakeTokenCard(body, 'card-1', 'card-2', 'inxshot_card-2.webp'),
+    '안녕\n{{#asset::portrait}}\n[[@inray::card-2::inxshot_card-2.webp]]\n커피',
+  );
 });
 
 test('legacy inxbake tokens still strip', () => {

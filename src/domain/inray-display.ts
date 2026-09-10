@@ -31,7 +31,7 @@ export function inrayDisplayOut(folded = false): string {
     '.inray-fold,.inray-fs{width:34px;height:34px;padding:0;border:0;border-radius:9px;background:rgba(15,18,28,.55);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1}',
     '.inray-fold::before{content:"▼"}',
     '.inray-fold-cb:checked~.inray-bar .inray-fold::before{content:"▲"}</style>',
-    '<div class="inray-shot" data-inlay-inline-shot="$1" x-inlay-inline-shot="$1">',
+    '<div class="inray-shot" data-inray-bake="1" x-inray-bake="1" data-inlay-inline-shot="$1" x-inlay-inline-shot="$1">',
     `<input type="checkbox" class="inray-fold-cb" id="inray-fold-$1"${checked}>`,
     '<div class="inray-bar">',
     '<label class="inray-fold" for="inray-fold-$1" title="접기 / 펼치기" aria-label="접기 / 펼치기"></label>',

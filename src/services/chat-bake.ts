@@ -3,7 +3,7 @@
  */
 import { risuHost } from '../core/host';
 import { toInt } from '../core/util/text';
-import { stripBakeTokens } from '../domain/chat-bake';
+import { replaceBakeTokenCard, stripBakeTokens } from '../domain/chat-bake';
 import { isShotAssetName, shotAssetName } from '../domain/gallery/shot-assets';
 import { normalizeInlineChatTextSide } from '../domain/inline-chat';
 import { applyBakeTokensToBody } from '../ui-contract/viewer-core';
@@ -123,6 +123,32 @@ export async function stripBakedImagesFromChatMessage(opts: {
   if (Array.isArray(loaded.chat.message)) loaded.chat.message = messages;
   else loaded.chat.messages = messages;
   await writeChat(loaded.host, opts.charIndex, opts.chatIndex, loaded.chat);
+  return true;
+}
+
+export async function rewriteBakedCardInChatMessage(opts: {
+  charIndex: number;
+  chatIndex: number;
+  messageIndex: number;
+  prevCardId: string;
+  nextCardId: string;
+}): Promise<boolean> {
+  const loaded = await loadTargetChat(opts.charIndex, opts.chatIndex);
+  if (!loaded) return false;
+  const messages = chatMessageList(loaded.chat);
+  const idx = Math.floor(Number(opts.messageIndex));
+  if (!Number.isFinite(idx) || idx < 0 || idx >= messages.length) return false;
+  const msg = messages[idx]!;
+  const prev = messageBody(msg);
+  const asset = await imageAssetRef(opts.nextCardId);
+  const assetName = asset && isShotAssetName(asset.name) ? asset.name : shotAssetName(opts.nextCardId, 'webp');
+  const next = replaceBakeTokenCard(prev, opts.prevCardId, opts.nextCardId, assetName);
+  if (next === prev) return false;
+  setMessageBody(msg, next);
+  messages[idx] = msg;
+  if (Array.isArray(loaded.chat.message)) loaded.chat.message = messages;
+  else loaded.chat.messages = messages;
+  await writeChat(loaded.host, opts.charIndex, opts.chatIndex, loaded.chat, { refreshAssets: true });
   return true;
 }
 

@@ -13,7 +13,7 @@ test('display regex rewrites Inray tokens to centered gallery assets', () => {
   const out = token.replace(re, INRAY_DISPLAY_OUT);
   assert.match(out, /data-inlay-inline-shot="card-1"/);
   assert.match(out, /data-inray-fs="card-1"/);
-  assert.match(out, /\{\{#asset::inxshot_card-1\.sroom\.webp\}\}/);
+  assert.match(out, /src="\{\{raw::inxshot_card-1\.sroom\.webp\}\}"/);
   assert.match(out, /margin:1\.15em auto/);
   assert.equal(inrayDisplayRegexScript().type, 'editdisplay');
   assert.equal(INRAY_DISPLAY_MODULE_ID, 'inlay-inray-display');

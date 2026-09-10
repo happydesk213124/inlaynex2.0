@@ -1416,19 +1416,6 @@ async function runJob(jobId: string): Promise<void> {
           created_at: now,
         });
         dbg('job.shot.saved', { shot: idx, card_id: cardId });
-        if (persistChatImagesOn()) {
-          const ready = cards.filter((c): c is Record<string, unknown> => Boolean(c && (c as { id?: unknown }).id));
-          try {
-            await enqueueBakeWrite(async () => {
-              await bakeCardsIntoChatMessage({
-                ...jobChatTarget(request),
-                cards: ready,
-              });
-            });
-          } catch (err) {
-            dbg('job.bake.fail', { message: String((err as Error)?.message || err), shot: idx }, 'warn');
-          }
-        }
         await setJob(
           jobId,
           'generating',
@@ -1498,6 +1485,18 @@ async function runJob(jobId: string): Promise<void> {
     // Last shot needs one generating poll tick, same as shots 1..N-1, before
     // done. 2.5.8 skips painting on done on purpose.
     await waitForLastGeneratingPoll(jobId);
+    if (persistChatImagesOn()) {
+      try {
+        await enqueueBakeWrite(async () => {
+          await bakeCardsIntoChatMessage({
+            ...jobChatTarget(request),
+            cards: finalCards,
+          });
+        });
+      } catch (err) {
+        dbg('job.bake.fail', { message: String((err as Error)?.message || err) }, 'warn');
+      }
+    }
     await setJob(jobId, 'done', result);
     // The run succeeded, so its cards are the user's now and must survive any
     // later supersession of this job id.

@@ -9,11 +9,13 @@
 export { matchCharactersInText } from '../domain/character/roster';
 import {
   bakeTokenForCard,
+  messageHasBakeTokenForCard,
   stripBakeTokens,
 } from '../domain/chat-bake';
 export {
   bakeTokenForCard,
   messageHasBakeToken,
+  messageHasBakeTokenForCard,
   proseForHash,
   stripBakeTokenForCard,
   stripBakeTokens,
@@ -2020,6 +2022,17 @@ export function isScrollHoldLatest(args: {
   return newest.bottom >= bottomBand && newest.top < Number(scroller.bottom) + 24;
 }
 
+/** Persist on: keep ready inline until that card is already baked into the body. */
+export function keepReadyInlineWithPersist(
+  persist: unknown,
+  body: unknown,
+  placement: { pending?: unknown; cardId?: unknown } | null | undefined,
+): boolean {
+  if (persist !== true) return true;
+  if (placement?.pending === true) return true;
+  return !messageHasBakeTokenForCard(body, placement?.cardId);
+}
+
 /** Viewport offset of a bubble edge. Tag teardown holds the bottom so leftover text stays put. */
 export function scrollHoldOffset(
   scrollerRect: ScrollHoldRect | null | undefined,
@@ -2046,9 +2059,9 @@ export function scrollHoldDelta(prevOffset: unknown, nextOffset: unknown, viewpo
 }
 
 export function shouldHoldScroll(opts: { atLatest?: unknown; userControl?: unknown; force?: unknown } = {}): boolean {
-  if (opts.force === true) return true;
   if (opts.atLatest === true) return false;
   if (opts.userControl === true) return false;
+  if (opts.force === true) return true;
   return true;
 }
 

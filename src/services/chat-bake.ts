@@ -61,8 +61,10 @@ async function writeChat(
   charIndex: number,
   chatIndex: number,
   chat: Record<string, unknown>,
+  opts?: { refreshAssets?: boolean },
 ): Promise<void> {
   await aroundScrollHold(async () => {
+    if (opts?.refreshAssets) await refreshGalleryAssetLookup();
     await host.setChatToIndex!(charIndex, chatIndex, chat);
   });
 }
@@ -98,8 +100,7 @@ export async function bakeCardsIntoChatMessage(opts: {
   messages[idx] = msg;
   if (Array.isArray(loaded.chat.message)) loaded.chat.message = messages;
   else loaded.chat.messages = messages;
-  await refreshGalleryAssetLookup();
-  await writeChat(loaded.host, opts.charIndex, opts.chatIndex, loaded.chat);
+  await writeChat(loaded.host, opts.charIndex, opts.chatIndex, loaded.chat, { refreshAssets: true });
   return true;
 }
 

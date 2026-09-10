@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.74';
+const PLUGIN_VERSION = '2.5.75';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.75</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>박제는 작업이 끝날 때 한 번. 생성 중엔 인라인 유지. 채팅 다시 그릴 때 스크롤을 한 세션으로 붙잡습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.74</strong>
@@ -9975,11 +9981,9 @@ const VENDOR_DT_FN_PATCH =
       return;
     }
     const newestRect = rects[0];
-    const atLatest = opts?.force === !0
-      ? !1
-      : typeof VC?.isScrollHoldLatest == "function"
-        ? VC.isScrollHoldLatest({ scrollerRect, newestRect })
-        : !1;
+    const atLatest = typeof VC?.isScrollHoldLatest == "function"
+      ? VC.isScrollHoldLatest({ scrollerRect, newestRect })
+      : !1;
     const chatIndex = await nxChatAttrIndex(els[idx]);
     const edge = opts?.edge === "bottom" ? "bottom" : "top";
     const offset = typeof VC?.scrollHoldOffset == "function"
@@ -9995,11 +9999,86 @@ const VENDOR_DT_FN_PATCH =
       atLatest
     };
   }
+  async function nxWaitScrollHoldSettle(maxMs) {
+    const cap = Number(maxMs) > 0 ? Number(maxMs) : 400;
+    const t0 = Date.now();
+    const hold = t._scrollHold;
+    const tick = () => new Promise((r) => {
+      try {
+        const raf = globalThis.requestAnimationFrame;
+        if (typeof raf == "function") raf(() => raf(() => r()));
+        else setTimeout(r, 32);
+      } catch {
+        setTimeout(r, 32);
+      }
+    });
+    await tick();
+    const findEl = async () => {
+      let els = [];
+      try {
+        els = await getCachedMsgEls(t.hostDoc || t.overlayUi?.doc);
+      } catch {
+        els = [];
+      }
+      if (hold && Number.isFinite(hold.chatIndex) && hold.chatIndex >= 0) {
+        for (let i = 0; i < els.length; i++) {
+          const ci = await nxChatAttrIndex(els[i]);
+          if (ci === hold.chatIndex) return els[i];
+        }
+      }
+      return hold && els[hold.idx] ? els[hold.idx] : null;
+    };
+    let el = await findEl();
+    if (el && typeof el.querySelectorAll == "function") {
+      try {
+        const raw = await el.querySelectorAll("img");
+        const list = [];
+        const n = raw && typeof raw.length == "number" ? raw.length : 0;
+        for (let i = 0; i < n; i++) list.push(raw[i]);
+        await Promise.race([
+          Promise.all(list.map((img) => {
+            try {
+              if (img && typeof img.decode == "function") return img.decode().catch(() => {});
+            } catch {
+            }
+            return Promise.resolve();
+          })),
+          new Promise((r) => setTimeout(r, cap))
+        ]);
+      } catch {
+      }
+    }
+    let lastH = NaN;
+    let stable = 0;
+    while (Date.now() - t0 < cap) {
+      el = await findEl();
+      const rect = await nxScrollHoldRect(el);
+      const h = rect && Number.isFinite(rect.height) ? rect.height : 0;
+      if (Number.isFinite(lastH) && Math.abs(h - lastH) < 2) {
+        stable += 1;
+        if (stable >= 2) break;
+      } else {
+        stable = 0;
+        lastH = h;
+      }
+      await new Promise((r) => setTimeout(r, 32));
+    }
+  }
   async function nxApplyScrollHold(opts) {
     if ((!nxScrollHoldOn() && !(opts?.force || t._scrollHold?.force)) || t.uiOpen) return;
     const hold = t._scrollHold;
     const VC = globalThis.__INLAY_VIEWER_CORE__;
     const force = !!(opts?.force || hold?.force);
+    if (hold?.atLatest) {
+      const scroller = nxScrollHoldScroller();
+      if (scroller && typeof scroller.scrollTop == "number") {
+        const sh = Number(scroller.scrollHeight) || 0;
+        const ch = Number(scroller.clientHeight) || 0;
+        scroller.scrollTop = Math.max(0, sh - ch);
+        if (t.overlayUi) t.overlayUi._liveScrollY = scroller.scrollTop;
+      }
+      return;
+    }
     if (!hold || typeof VC?.shouldHoldScroll != "function" || !VC.shouldHoldScroll({ atLatest: hold.atLatest, userControl: !1, force })) return;
     const scroller = nxScrollHoldScroller();
     if (!scroller || typeof scroller.scrollTop != "number") return;
@@ -10041,6 +10120,11 @@ const VENDOR_DT_FN_PATCH =
     }
   }
   async function nxAroundScrollHold(work, opts) {
+    if ((Number(t._scrollHoldDepth) || 0) > 0) {
+      await work();
+      return;
+    }
+    t._scrollHoldDepth = 1;
     if (t._scrollHoldCapTimer) {
       clearTimeout(t._scrollHoldCapTimer);
       t._scrollHoldCapTimer = null;
@@ -10052,9 +10136,14 @@ const VENDOR_DT_FN_PATCH =
     } finally {
       t._scrollHoldApplying = !1;
     }
-    if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold(opts);
+    try {
+      if (typeof nxWaitScrollHoldSettle == "function") await nxWaitScrollHoldSettle(400);
+      if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold(opts);
+    } finally {
+      t._scrollHoldDepth = 0;
+    }
   }
-  globalThis.__INLAY_SCROLL_HOLD__ = (work) => nxAroundScrollHold(work, { edge: "bottom", allowLarge: !0, force: !0 });
+  globalThis.__INLAY_SCROLL_HOLD__ = (work) => nxAroundScrollHold(work, { edge: "top", allowLarge: !0, force: !0 });
   async function nxWaitNewestDom(doc, maxMs) {
     // Character switch: Risu remounts the chat after we notice the session.
     // A fixed 250 ms is early on a phone and late on localhost. Ask for the
@@ -11577,7 +11666,28 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
       ? VC.desiredInlinePlacements(list, pending, resolveSrc)
       : { placements: [], encodeLater: [] };
     let placements = Array.isArray(planned.placements) ? planned.placements : [];
-    if (t.backendSettings?.card?.persist_chat_images === !0) placements = placements.filter((p) => p.pending === !0);
+    if (t.backendSettings?.card?.persist_chat_images === !0) {
+      let html = "";
+      try {
+        html = String(typeof msgEl.getInnerHTML == "function" ? await msgEl.getInnerHTML() : "");
+      } catch {
+        html = "";
+      }
+      placements = placements.filter((p) => {
+        if (typeof VC.keepReadyInlineWithPersist == "function") {
+          if (!VC.keepReadyInlineWithPersist(!0, html, p)) return !1;
+        } else if (p.pending !== !0 && typeof VC.messageHasBakeTokenForCard == "function" && VC.messageHasBakeTokenForCard(html, p.cardId)) {
+          return !1;
+        }
+        const id = String(p?.cardId || "");
+        if (p.pending === !0 || !id || typeof msgEl.querySelector != "function") return !0;
+        try {
+          if (msgEl.querySelector("[data-inlay-inline-shot=\\"" + id + "\\"]")) return !1;
+        } catch {
+        }
+        return !0;
+      });
+    }
     const encodeLater = Array.isArray(planned.encodeLater) ? planned.encodeLater : [];
     const unwrapSafe = async (arr) => {
       if (!arr) return [];
@@ -14556,8 +14666,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.74",
-    body: "박제 접기: 위쪽만 살짝 남기고 촤라락 접힙니다."
+    title: "2.5.75",
+    body: "박제는 작업 끝에 한 번. 채팅을 다시 그려도 스크롤이 한 세션으로 붙잡힙니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -18971,13 +19081,15 @@ const loadVendorUi = (): string => {
     assertOnce(out, 't._runFieldImageAutotag = async (a) => {', 'field image paste runs autotag');
     assertOnce(out, 'async function nxCaptureScrollHold(opts)', 'scroll hold capture helper landed');
     assertOnce(out, 'async function nxAroundScrollHold(work, opts)', 'scroll hold wraps explicit frame teardown');
-    assertOnce(out, 'globalThis.__INLAY_SCROLL_HOLD__ = (work) => nxAroundScrollHold(work, { edge: "bottom", allowLarge: !0, force: !0 });', 'bake remount uses scroll hold');
+    assertOnce(out, 'globalThis.__INLAY_SCROLL_HOLD__ = (work) => nxAroundScrollHold(work, { edge: "top", allowLarge: !0, force: !0 });', 'bake remount uses scroll hold');
+    assertOnce(out, 'async function nxWaitScrollHoldSettle(maxMs)', 'scroll hold waits for image layout');
+    assertOnce(out, 'if ((Number(t._scrollHoldDepth) || 0) > 0)', 'scroll hold reenters one session');
     assertOnce(out, '<input type="checkbox" id="nx-persist-chat"', 'persist chat images toggle landed');
     assertOnce(out, 'persist_chat_images: ee("nx-persist-chat")', 'persist chat images saves');
     assertOnce(out, '<input type="checkbox" id="nx-persist-fold"', 'persist fold default toggle landed');
     assertOnce(out, 'persist_chat_images_folded: ee("nx-persist-fold")', 'persist fold default saves');
     assertOnce(out, 'VCHash?.proseForHash', 'message hash ignores bake tokens');
-    assertOnce(out, 'persist_chat_images === !0) placements = placements.filter', 'persist skips ready inline photos');
+    assertOnce(out, 'VC.keepReadyInlineWithPersist(!0, html, p)', 'persist skips ready inline only after bake token');
     assertOnce(out, 'async function nxRemoveInlineFrames(msgEl, isCurrent = () => !0) {\n    await nxAroundScrollHold(async () => {', 'tag/refresh frame drop applies scroll hold');
     assertOnce(out, 'if (tagStampKey) await nxDropInlineFramesByKey(t.hostDoc, ye(tagStampKey));', 'tag chip drops frames under one scroll-hold wrap');
     assertOnce(out, 'select id="nx-image-press"', 'image press select landed');

@@ -175,8 +175,8 @@ fields when those controls are absent (`Ct()` + `assertOnce`).
 `card.persist_chat_images` (boolean, default `false`) is the dashboard
 toggle **생성완료 시 채팅에 박제**. `card.persist_chat_images_folded`
 (boolean, default `false`) is **박제이미지 접혀있는게 기본** — the display
-module checkbox starts `checked` (top peek, animated clip — the image is not hidden). When persist is on, each finished shot is written
-into the saved Risu message at the same `line` / `inline_chat_text_side`
+module checkbox starts `checked` (top peek, animated clip — the image is not hidden). When persist is on, finished shots stay inline during the job and are written
+into the saved Risu message **once the job is done**, at the same `line` / `inline_chat_text_side`
 as inline inject, using `[[@inray::<cardId>::<inxshot_name>]]` (gallery
 bytes, not a second asset). The `inlay-inray-display` module (`editdisplay`)
 turns the token into a centered `<img src="{{raw::<inxshot_name>}}">`
@@ -184,8 +184,10 @@ turns the token into a centered `<img src="{{raw::<inxshot_name>}}">`
 opens the same inspect sheet as triple-tap / hold. After writing tokens
 the plugin bounces the gallery module on `enabledModules` (or a host
 refresh helper) so CBS sees the new name without a manual asset-list
-reload. Tag (`force`)
-strips those tokens first. Ready inline photos are not re-injected; pending
+reload — bounce and `setChatToIndex` share one scroll-hold session that waits
+for image layout. Tag (`force`)
+strips those tokens first. Ready inline photos are skipped only after that
+card's bake token (or display wrapper) is already on the bubble; pending
 spinners still are. Message `content_hash` (`ye`) hashes `proseForHash`
 (tokens stripped). Bake remount always runs `nxAroundScrollHold` via
 `globalThis.__INLAY_SCROLL_HOLD__` even when `scroll_hold` is off.

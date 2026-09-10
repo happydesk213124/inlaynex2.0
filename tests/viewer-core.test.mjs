@@ -130,6 +130,7 @@ import {
   MSG_ACTION_TOP_MIN_BODY_CHARS,
   msgActionWantedEnds,
   desiredInlinePlacements,
+  keepReadyInlineWithPersist,
   runBoundedPool,
   canSkipInlineInject,
   desiredInlinePaintKey,
@@ -1588,6 +1589,14 @@ test("remapped paint target with no cards of its own still strips", () => {
   assert.equal(empty.source, "remap");
 });
 
+test("keepReadyInlineWithPersist skips a ready shot only after its bake token", () => {
+  const body = "안녕\n[[@inray::card-1::inxshot_card-1.webp]]\n커피";
+  assert.equal(keepReadyInlineWithPersist(false, body, { cardId: "card-1", pending: false }), true);
+  assert.equal(keepReadyInlineWithPersist(true, body, { cardId: "card-1", pending: true }), true);
+  assert.equal(keepReadyInlineWithPersist(true, "안녕", { cardId: "card-1", pending: false }), true);
+  assert.equal(keepReadyInlineWithPersist(true, body, { cardId: "card-1", pending: false }), false);
+});
+
 test("desiredInlinePlacements treats blob URLs as ready", () => {
   const got = desiredInlinePlacements(
     [{ id: "c1", line: 2, shot_index: 0 }],
@@ -2734,7 +2743,8 @@ test("shouldHoldScroll skips latest and user control", () => {
   assert.equal(shouldHoldScroll({}), true);
   assert.equal(shouldHoldScroll({ atLatest: true }), false);
   assert.equal(shouldHoldScroll({ userControl: true }), false);
-  assert.equal(shouldHoldScroll({ atLatest: true, force: true }), true);
+  assert.equal(shouldHoldScroll({ atLatest: true, force: true }), false);
+  assert.equal(shouldHoldScroll({ force: true }), true);
   assert.equal(
     isScrollHoldLatest({
       scrollerRect: { top: 0, bottom: 400, height: 400 },

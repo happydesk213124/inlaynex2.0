@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   bakeTokenForCard,
   messageHasBakeToken,
+  messageHasBakeTokenForCard,
   proseForHash,
   stripBakeTokenForCard,
   stripBakeTokens,
@@ -23,6 +24,8 @@ test('bake tokens point at gallery shots and strip leaves user assets', () => {
   assert.equal(bakeTokenForCard('card-1'), '');
   const body = `안녕\n{{#asset::portrait}}\n${token}\n커피`;
   assert.equal(messageHasBakeToken(body), true);
+  assert.equal(messageHasBakeTokenForCard(body, 'card-1'), true);
+  assert.equal(messageHasBakeTokenForCard(body, 'other'), false);
   assert.equal(stripBakeTokens(body).includes('{{#asset::portrait}}'), true);
   assert.equal(messageHasBakeToken(stripBakeTokens(body)), false);
   assert.equal(stripBakeTokenForCard(body, 'card-1').includes(token), false);

@@ -21,6 +21,15 @@ export function messageHasBakeToken(text: unknown): boolean {
   return /\[\[@inray::[^\]]+\]\]/.test(raw) || /\{\{#asset::inxbake_[^}]+\}\}/.test(raw);
 }
 
+export function messageHasBakeTokenForCard(text: unknown, cardId: unknown): boolean {
+  const id = sanitizeShotId(cardId);
+  if (!id) return false;
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const raw = String(text || '');
+  return new RegExp(`\\[\\[@inray::${escaped}::`).test(raw)
+    || new RegExp(`\\{\\{#asset::inxbake_${escaped}`).test(raw);
+}
+
 export function stripBakeTokens(text: unknown): string {
   INRAY_TOKEN_RE.lastIndex = 0;
   LEGACY_BAKE_RE.lastIndex = 0;

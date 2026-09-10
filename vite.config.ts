@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.67';
+const PLUGIN_VERSION = '2.5.68';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.68</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>박제는 갤러리 그림을 [[@inray]] 표로 남깁니다. Inray 디스플레이 모듈이 가운데 정렬하고, 호버 전체화면은 트리플탭·꾸욱과 같은 확대입니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.67</strong>
@@ -5827,6 +5833,38 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
               forClick: !1,
               forText: !1
             };
+            return;
+          }
+        } catch {
+        }
+      }
+      // Baked Inray fullscreen chip → same inspect sheet as triple-tap / hold.
+      if (!inspectOpen) {
+        try {
+          const rawFs = typeof e.querySelectorAll == "function" ? await e.querySelectorAll("[x-inray-fs],[data-inray-fs]") : null;
+          const unwrapFs = rawFs && typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(rawFs) : rawFs;
+          const fsNodes = Array.isArray(unwrapFs) ? unwrapFs : unwrapFs ? [unwrapFs] : [];
+          for (const node of fsNodes) {
+            if (!node || !await hitEl(node, x, I)) continue;
+            let cardId = "";
+            try {
+              if (typeof node.getAttribute == "function") cardId = String(await node.getAttribute("x-inray-fs") || await node.getAttribute("data-inray-fs") || "");
+            } catch {
+            }
+            if (!cardId) {
+              try {
+                const oh = typeof node.getOuterHTML == "function" ? String(await node.getOuterHTML() || "") : "";
+                const mm = /(?:data|x)-inray-fs="([^"]+)"/.exec(oh);
+                if (mm) cardId = mm[1];
+              } catch {
+              }
+            }
+            const card = (t.gallery || []).find((c) => String(c?.id || "") === String(cardId || ""));
+            if (!card) continue;
+            if (typeof f.preventDefault == "function") f.preventDefault();
+            cancelMobilePress();
+            showStickyInspect(card).catch(() => {});
+            pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
             return;
           }
         } catch {
@@ -14479,8 +14517,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.67",
-    body: "생성완료 시 채팅에 박제 토글. 한 장이 끝나면 그 줄에 넣습니다."
+    title: "2.5.68",
+    body: "박제는 갤러리 [[@inray]] 표. 디스플레이 모듈이 가운데 정렬하고 호버 전체화면을 엽니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -18998,6 +19036,9 @@ const loadVendorUi = (): string => {
     }
     if (!out.includes('nxActivateStickyByCardId(card.id)')) {
       throw new Error('[build] inline longpress missing nxActivateStickyByCardId');
+    }
+    if (!out.includes('[x-inray-fs],[data-inray-fs]') || !out.includes('showStickyInspect(card)')) {
+      throw new Error('[build] baked Inray fullscreen chip must open sticky inspect');
     }
     if (out.includes('scheduleStickySync(), scheduleScrollTrack()')) {
       throw new Error('[build] scroll phase patch missing — thrash path still present');

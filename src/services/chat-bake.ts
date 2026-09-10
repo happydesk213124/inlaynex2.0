@@ -1,15 +1,15 @@
 /**
- * Write / strip `{{#asset::inxbake_*}}` on one Risu chat message.
+ * Write / strip `[[@inray::cardId::inxshot_…]]` on one Risu chat message.
  */
 import { risuHost } from '../core/host';
-import { dbg } from '../core/debug';
 import { toInt } from '../core/util/text';
-import { bakeAssetName, stripBakeTokens } from '../domain/chat-bake';
+import { stripBakeTokens } from '../domain/chat-bake';
+import { isShotAssetName, shotAssetName } from '../domain/gallery/shot-assets';
 import { normalizeInlineChatTextSide } from '../domain/inline-chat';
 import { applyBakeTokensToBody } from '../ui-contract/viewer-core';
 import { getConfig } from './context';
 import { imageAssetRef } from '../storage/stores';
-import { ensureBakeAssetAlias } from '../storage/shot-module';
+import { ensureInrayDisplayModule } from '../storage/inray-display-module';
 
 export type BakeCardRow = {
   id?: unknown;
@@ -66,36 +66,6 @@ async function writeChat(
   });
 }
 
-async function aliasAndCharacterAsset(
-  charIndex: number,
-  cardId: string,
-  path: string,
-): Promise<void> {
-  await ensureBakeAssetAlias(cardId, path);
-  const host = risuHost();
-  if (!host || typeof host.getCharacterFromIndex !== 'function' || typeof host.setCharacterToIndex !== 'function') {
-    return;
-  }
-  if (charIndex < 0) return;
-  try {
-    const character = await host.getCharacterFromIndex(charIndex);
-    if (!character || typeof character !== 'object') return;
-    const rec = character as Record<string, unknown>;
-    const key = Array.isArray(rec.additionalAssets) ? 'additionalAssets' : Array.isArray(rec.additional_assets) ? 'additional_assets' : 'additionalAssets';
-    const list = Array.isArray(rec[key]) ? [...(rec[key] as unknown[])] : [];
-    const name = bakeAssetName(cardId);
-    if (!name) return;
-    const same = list.findIndex((row) => Array.isArray(row) && String(row[0]) === name);
-    const tuple = [name, path, name];
-    if (same >= 0) list[same] = tuple;
-    else list.push(tuple);
-    rec[key] = list;
-    await host.setCharacterToIndex(charIndex, rec);
-  } catch (err) {
-    dbg('chat-bake.char-asset.fail', { message: String((err as Error)?.message || err) }, 'warn');
-  }
-}
-
 export async function bakeCardsIntoChatMessage(opts: {
   charIndex: number;
   chatIndex: number;
@@ -104,20 +74,22 @@ export async function bakeCardsIntoChatMessage(opts: {
 }): Promise<boolean> {
   const loaded = await loadTargetChat(opts.charIndex, opts.chatIndex);
   if (!loaded) return false;
+  await ensureInrayDisplayModule();
   const messages = chatMessageList(loaded.chat);
   const idx = Math.floor(Number(opts.messageIndex));
   if (!Number.isFinite(idx) || idx < 0 || idx >= messages.length) return false;
   const msg = messages[idx]!;
   const side = normalizeInlineChatTextSide(getConfig().card?.inline_chat_text_side);
-  const placements: Array<{ line: number; cardId: string }> = [];
+  const placements: Array<{ line: number; cardId: string; assetName: string }> = [];
   for (const card of opts.cards) {
     const cardId = String(card?.id || '');
     const line = Math.floor(Number(card?.line));
     if (!cardId || !Number.isFinite(line) || line < 1) continue;
     const asset = await imageAssetRef(cardId);
     if (!asset?.path) continue;
-    await aliasAndCharacterAsset(opts.charIndex, cardId, asset.path);
-    placements.push({ line, cardId });
+    const assetName = isShotAssetName(asset.name) ? asset.name : shotAssetName(cardId, 'webp');
+    if (!assetName) continue;
+    placements.push({ line, cardId, assetName });
   }
   const next = applyBakeTokensToBody(messageBody(msg), placements, side);
   if (next === messageBody(msg)) return placements.length > 0;

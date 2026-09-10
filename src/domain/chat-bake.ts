@@ -1,34 +1,31 @@
 /**
- * Permanent chat-image tokens. Risu renders `{{#asset::inxbake_*}}`.
- * Strip these before hashing, tagging, or placing the next shot.
+ * Permanent chat-image tokens. Stored as `[[@inray::cardId::inxshot_…]]`.
+ * Display (center / hover fullscreen) is a Risu editdisplay module, not this
+ * string. Strip before hashing, tagging, or placing the next shot.
  */
-import { sanitizeShotId } from './gallery/shot-assets.ts';
+import { isShotAssetName, sanitizeShotId } from './gallery/shot-assets.ts';
+import { cleanText } from '../core/util/text.ts';
 
-export const BAKE_ASSET_PREFIX = 'inxbake_';
+const INRAY_TOKEN_RE = /\[\[@inray::[^\]]+\]\]/g;
+const LEGACY_BAKE_RE = /\{\{#asset::inxbake_[^}]+\}\}/g;
 
-const BAKE_TOKEN_RE = /\{\{#asset::inxbake_[^}]+\}\}/g;
-
-export function bakeAssetName(cardId: unknown): string {
+export function bakeTokenForCard(cardId: unknown, assetName?: unknown): string {
   const id = sanitizeShotId(cardId);
-  return id ? `${BAKE_ASSET_PREFIX}${id}.webp` : '';
-}
-
-export function bakeTokenForCard(cardId: unknown): string {
-  const name = bakeAssetName(cardId);
-  return name ? `{{#asset::${name}}}` : '';
-}
-
-export function isBakeAssetName(name: unknown): boolean {
-  return String(name || '').toLowerCase().startsWith(BAKE_ASSET_PREFIX);
+  const name = cleanText(assetName, 400);
+  if (!id || !name || !isShotAssetName(name)) return '';
+  return `[[@inray::${id}::${name}]]`;
 }
 
 export function messageHasBakeToken(text: unknown): boolean {
-  return /\{\{#asset::inxbake_[^}]+\}\}/.test(String(text || ''));
+  const raw = String(text || '');
+  return /\[\[@inray::[^\]]+\]\]/.test(raw) || /\{\{#asset::inxbake_[^}]+\}\}/.test(raw);
 }
 
 export function stripBakeTokens(text: unknown): string {
-  BAKE_TOKEN_RE.lastIndex = 0;
+  INRAY_TOKEN_RE.lastIndex = 0;
+  LEGACY_BAKE_RE.lastIndex = 0;
   return String(text ?? '')
+    .replace(/\[\[@inray::[^\]]+\]\]\n?/g, '')
     .replace(/\{\{#asset::inxbake_[^}]+\}\}\n?/g, '')
     .replace(/\n{3,}/g, '\n\n');
 }
@@ -39,8 +36,10 @@ export function proseForHash(text: unknown): string {
 }
 
 export function stripBakeTokenForCard(text: unknown, cardId: unknown): string {
-  const token = bakeTokenForCard(cardId);
-  if (!token) return String(text ?? '');
-  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return String(text ?? '').replace(new RegExp(`${escaped}\\n?`, 'g'), '');
+  const id = sanitizeShotId(cardId);
+  if (!id) return String(text ?? '');
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return String(text ?? '')
+    .replace(new RegExp(`\\[\\[@inray::${escaped}::[^\\]]+\\]\\]\\n?`, 'g'), '')
+    .replace(new RegExp(`\\{\\{#asset::inxbake_${escaped}(?:\\.webp)?\\}\\}\\n?`, 'g'), '');
 }

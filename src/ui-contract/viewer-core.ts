@@ -12,7 +12,6 @@ import {
   stripBakeTokens,
 } from '../domain/chat-bake';
 export {
-  bakeAssetName,
   bakeTokenForCard,
   messageHasBakeToken,
   proseForHash,
@@ -4525,14 +4524,14 @@ export function insertSnippetAtShotLine(
 /** Strip existing bake tokens, then place one token per card from last line first. */
 export function applyBakeTokensToBody(
   body: unknown,
-  placements: Array<{ line?: unknown; cardId?: unknown }> | null | undefined,
+  placements: Array<{ line?: unknown; cardId?: unknown; assetName?: unknown }> | null | undefined,
   side: unknown,
 ): string {
   let text = stripBakeTokens(body);
   const list = Array.isArray(placements) ? placements.slice() : [];
   list.sort((a, b) => Math.floor(Number(b?.line)) - Math.floor(Number(a?.line)));
   for (const row of list) {
-    const token = bakeTokenForCard(row?.cardId);
+    const token = bakeTokenForCard(row?.cardId, row?.assetName);
     const line = Math.floor(Number(row?.line));
     if (!token || !Number.isFinite(line) || line < 1) continue;
     text = insertSnippetAtShotLine(text, line, side, token);

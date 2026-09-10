@@ -23,12 +23,14 @@ import { loadSettingsFromStorage } from '../storage/settings-store';
 import { blobUrlCount, idbGet, imageCacheStats, isStorageMigrated, knownCharRefHashCount, openDb, storeSize } from '../storage/stores';
 import { setKnownCharRefCount } from '../services/char-ref-module';
 import {
+  getConfig,
   getRefPreviewUrl,
   getVibePreviewUrl,
   setConfig,
   setRefPreviewUrl,
   setVibePreviewUrl,
 } from '../services/context';
+import { ensureInrayDisplayModule } from '../storage/inray-display-module';
 import { migrateAppearanceToCharacters, migrateCharacterIdentity } from '../services/characters';
 import { hydratePresetVibePreviews } from '../services/nai-assets';
 import { hydratePresetLookPreviews } from '../services/preset-look';
@@ -60,6 +62,11 @@ async function boot(): Promise<void> {
   await stampBoot();
 
   setConfig(await loadSettingsFromStorage());
+  if (getConfig().card?.persist_chat_images) {
+    void ensureInrayDisplayModule().catch((err: unknown) => {
+      dbg('boot.inray-display', { message: String((err as Error)?.message || err) }, 'warn');
+    });
+  }
   await seedPrompts();
   // Both only ever find pre-roster / schema-1 rows. Once the storage migration
   // has run they are guaranteed to be no-ops, so skip the scans entirely.

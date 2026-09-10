@@ -111,6 +111,7 @@ const MODULES = {
   'embedding-client': 'src/providers/embedding/client.ts',
   'shot-line': 'src/domain/tagging/shot-line.ts',
   'chat-bake': 'src/domain/chat-bake.ts',
+  'inray-display': 'src/domain/inray-display.ts',
   'comic-kind': 'src/domain/comic/kind.ts',
   'comic-llm-prose': 'src/domain/comic/llm-prose.ts',
   'comic-schedule': 'src/domain/comic/schedule.ts',

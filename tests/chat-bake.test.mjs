@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  bakeAssetName,
   bakeTokenForCard,
   messageHasBakeToken,
   proseForHash,
@@ -15,10 +14,13 @@ import {
   stripInlayInlineHtml,
 } from '../.test-build/viewer-core.mjs';
 
-test('bake tokens are namespaced and strip leaves user assets', () => {
-  const token = bakeTokenForCard('card-1');
-  assert.equal(bakeAssetName('card-1'), 'inxbake_card-1.webp');
-  assert.equal(token, '{{#asset::inxbake_card-1.webp}}');
+const NAME = 'inxshot_card-1.webp';
+const TOKEN = '[[@inray::card-1::inxshot_card-1.webp]]';
+
+test('bake tokens point at gallery shots and strip leaves user assets', () => {
+  const token = bakeTokenForCard('card-1', NAME);
+  assert.equal(token, TOKEN);
+  assert.equal(bakeTokenForCard('card-1'), '');
   const body = `안녕\n{{#asset::portrait}}\n${token}\n커피`;
   assert.equal(messageHasBakeToken(body), true);
   assert.equal(stripBakeTokens(body).includes('{{#asset::portrait}}'), true);
@@ -27,13 +29,20 @@ test('bake tokens are namespaced and strip leaves user assets', () => {
   assert.equal(proseForHash(body), proseForHash(stripBakeTokens(body)));
 });
 
+test('legacy inxbake tokens still strip', () => {
+  const body = '안녕\n{{#asset::inxbake_old.webp}}\n커피';
+  assert.equal(messageHasBakeToken(body), true);
+  assert.equal(stripBakeTokens(body).includes('inxbake_'), false);
+  assert.equal(stripBakeTokens(body).includes('커피'), true);
+});
+
 test('plain bake insert matches inline line side', () => {
   const plain = '차를 탔다\n커피를 마셨다\n끝';
-  const token = bakeTokenForCard('c1');
+  const token = bakeTokenForCard('c1', 'inxshot_c1.webp');
   const before = insertSnippetAtShotLine(plain, 2, 'before', token);
-  assert.match(before, new RegExp(`${token.replace(/[{}]/g, '\\$&')}\\n커피를 마셨다`));
+  assert.match(before, new RegExp(`${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n커피를 마셨다`));
   const after = insertSnippetAtShotLine(plain, 2, 'after', token);
-  assert.match(after, /커피를 마셨다\n\{\{#asset::inxbake_c1\.webp\}\}/);
+  assert.match(after, /커피를 마셨다\n\[\[@inray::c1::inxshot_c1\.webp\]\]/);
 });
 
 test('html bake insert index matches inline inject', () => {
@@ -42,7 +51,7 @@ test('html bake insert index matches inline inject', () => {
   const injected = injectInlineImagesIntoHtml(rich, [
     { line: 2, src, shotIndex: 0, cardId: 'c1' },
   ], { textSide: 'before' });
-  const token = bakeTokenForCard('c1');
+  const token = bakeTokenForCard('c1', 'inxshot_c1.webp');
   const baked = insertSnippetAtShotLine(rich, 2, 'before', token);
   const injAt = injected.indexOf('data-inlay-inline-shot="c1"');
   const wrapStart = injected.lastIndexOf('<div', injAt);
@@ -55,16 +64,16 @@ test('html bake insert index matches inline inject', () => {
 test('applyBakeTokensToBody rewrites from a clean body', () => {
   const plain = '첫째\n둘째\n셋째';
   const once = applyBakeTokensToBody(plain, [
-    { line: 1, cardId: 'a' },
-    { line: 3, cardId: 'c' },
+    { line: 1, cardId: 'a', assetName: 'inxshot_a.webp' },
+    { line: 3, cardId: 'c', assetName: 'inxshot_c.webp' },
   ], 'before');
   const again = applyBakeTokensToBody(once, [
-    { line: 1, cardId: 'a' },
-    { line: 3, cardId: 'c2' },
+    { line: 1, cardId: 'a', assetName: 'inxshot_a.webp' },
+    { line: 3, cardId: 'c2', assetName: 'inxshot_c2.sroom.webp' },
   ], 'before');
-  assert.equal(again.includes('inxbake_a.webp'), true);
-  assert.equal(again.includes('inxbake_c2.webp'), true);
-  assert.equal(again.includes('inxbake_c.webp'), false);
+  assert.equal(again.includes('[[@inray::a::inxshot_a.webp]]'), true);
+  assert.equal(again.includes('[[@inray::c2::inxshot_c2.sroom.webp]]'), true);
+  assert.equal(again.includes('inxshot_c.webp'), false);
   assert.equal(proseForHash(once), proseForHash(plain));
   assert.equal(proseForHash(again), proseForHash(plain));
 });

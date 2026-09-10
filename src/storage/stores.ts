@@ -49,6 +49,7 @@ import { dbg } from '../core/debug';
 import { base64ToAb, bytesToBase64Async } from '../core/util/bytes';
 import type { CardRow, CharacterRecord, JobRow, MetaRow, StoreName } from '../core/types';
 import { cardIdsToStripPreview } from '../domain/gallery/preview-retention';
+import { shotAssetName } from '../domain/gallery/shot-assets';
 import { jobIdsToPrune, orphanJobIds, ORPHAN_JOB_ERROR } from '../domain/jobs/retention';
 import { psGet, psRemove, psSet, resetDeviceStore } from './device-store';
 import { blobUrlCache, explorerThumbCache } from './blob-url-cache';
@@ -1554,8 +1555,9 @@ export async function imageAssetRef(id: string): Promise<{ path: string; name: s
   await ensureCard(id);
   const row = memStores.images.get(String(id));
   const path = String(row?.asset_path || row?.location?.asset_path || '');
-  const name = String(row?.asset_name || row?.location?.asset_name || '');
+  let name = String(row?.asset_name || row?.location?.asset_name || '');
   if (!path) return null;
+  if (!name) name = shotAssetName(id, 'webp', row?.location?.session_id);
   return { path, name };
 }
 

@@ -175,7 +175,10 @@ fields when those controls are absent (`Ct()` + `assertOnce`).
 `card.persist_chat_images` (boolean, default `false`) is the dashboard
 toggle **생성완료 시 채팅에 박제**. When on, each finished shot is written
 into the saved Risu message at the same `line` / `inline_chat_text_side`
-as inline inject, using `{{#asset::inxbake_<cardId>.webp}}`. Tag (`force`)
+as inline inject, using `[[@inray::<cardId>::<inxshot_name>]]` (gallery
+bytes, not a second asset). The `inlay-inray-display` module (`editdisplay`)
+centers the image with vertical margin and a hover fullscreen chip that
+opens the same inspect sheet as triple-tap / hold. Tag (`force`)
 strips those tokens first. Ready inline photos are not re-injected; pending
 spinners still are. Message `content_hash` (`ye`) hashes `proseForHash`
 (tokens stripped). Bake remount always runs `nxAroundScrollHold` via

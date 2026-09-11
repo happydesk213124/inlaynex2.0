@@ -1595,6 +1595,8 @@ test("keepReadyInlineWithPersist skips a ready shot only after its bake token", 
   assert.equal(keepReadyInlineWithPersist(true, body, { cardId: "card-1", pending: true }), true);
   assert.equal(keepReadyInlineWithPersist(true, "안녕", { cardId: "card-1", pending: false }), true);
   assert.equal(keepReadyInlineWithPersist(true, body, { cardId: "card-1", pending: false }), false);
+  assert.equal(keepReadyInlineWithPersist(true, '<div data-inlay-inline-shot="card-1">', { cardId: "card-1", pending: false }), true);
+  assert.equal(keepReadyInlineWithPersist(true, '<div data-inray-bake="1" data-inlay-inline-shot="card-1">', { cardId: "card-1", pending: false }), false);
 });
 
 test("desiredInlinePlacements treats blob URLs as ready", () => {

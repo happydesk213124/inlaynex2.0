@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   bakeTokenForCard,
+  htmlHasBakeWrapForCard,
+  htmlHasInrayBake,
   messageHasBakeToken,
   messageHasBakeTokenForCard,
   proseForHash,
@@ -35,6 +37,11 @@ test('bake tokens point at gallery shots and strip leaves user assets', () => {
     replaceBakeTokenCard(body, 'card-1', 'card-2', 'inxshot_card-2.webp'),
     '안녕\n{{#asset::portrait}}\n[[@inray::card-2::inxshot_card-2.webp]]\n커피',
   );
+  assert.equal(htmlHasInrayBake(token), true);
+  assert.equal(htmlHasInrayBake('<div data-inray-bake="1" data-inlay-inline-shot="card-1">'), true);
+  assert.equal(htmlHasInrayBake('<div data-inlay-inline-shot="card-1">'), false);
+  assert.equal(htmlHasBakeWrapForCard('<div data-inray-bake="1" data-inlay-inline-shot="card-1">', 'card-1'), true);
+  assert.equal(htmlHasBakeWrapForCard('<div data-inlay-inline-shot="card-1">', 'card-1'), false);
 });
 
 test('legacy inxbake tokens still strip', () => {

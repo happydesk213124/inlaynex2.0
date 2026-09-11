@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.76';
+const PLUGIN_VERSION = '2.5.77';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.77</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>박제된 말풍선은 새로고침 칩이 동작하지 않습니다. 접기·박제 때 스크롤을 더 붙잡습니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.76</strong>
@@ -5886,6 +5892,21 @@ const VENDOR_INLINE_LONGPRESS_PATCH =
         } catch {
         }
       }
+      // Fold/expand baked shots: pin scroll while the clip height animates.
+      if (!inspectOpen) {
+        try {
+          const rawFold = typeof e.querySelectorAll == "function" ? await e.querySelectorAll("[title='접기 / 펼치기'],[aria-label='접기 / 펼치기']") : null;
+          const unwrapFold = rawFold && typeof k.unwarpSafeArray == "function" ? await k.unwarpSafeArray(rawFold) : rawFold;
+          const foldNodes = Array.isArray(unwrapFold) ? unwrapFold : unwrapFold ? [unwrapFold] : [];
+          for (const node of foldNodes) {
+            if (!node || !await hitEl(node, x, I)) continue;
+            nxAroundScrollHold(() => new Promise((r) => setTimeout(r, 460)), { edge: "top", allowLarge: !0, force: !0 }).catch(() => {});
+            pointerGesture = { x, y: I, movement: 0, marker: !0, forClick: !1, forText: !1 };
+            return;
+          }
+        } catch {
+        }
+      }
       // Baked Inray fullscreen chip → same inspect sheet as triple-tap / hold.
       if (!inspectOpen) {
         try {
@@ -10002,7 +10023,8 @@ const VENDOR_DT_FN_PATCH =
       edge,
       allowLarge: opts?.allowLarge === !0,
       force: opts?.force === !0,
-      atLatest
+      atLatest,
+      tail: Math.max(0, Number(scroller.scrollHeight) - Number(scroller.scrollTop))
     };
   }
   async function nxWaitScrollHoldSettle(maxMs) {
@@ -10079,8 +10101,10 @@ const VENDOR_DT_FN_PATCH =
       const scroller = nxScrollHoldScroller();
       if (scroller && typeof scroller.scrollTop == "number") {
         const sh = Number(scroller.scrollHeight) || 0;
-        const ch = Number(scroller.clientHeight) || 0;
-        scroller.scrollTop = Math.max(0, sh - ch);
+        const tail = Number(hold.tail);
+        scroller.scrollTop = Number.isFinite(tail)
+          ? Math.max(0, sh - tail)
+          : Math.max(0, sh - (Number(scroller.clientHeight) || 0));
         if (t.overlayUi) t.overlayUi._liveScrollY = scroller.scrollTop;
       }
       return;
@@ -10143,7 +10167,7 @@ const VENDOR_DT_FN_PATCH =
       t._scrollHoldApplying = !1;
     }
     try {
-      if (typeof nxWaitScrollHoldSettle == "function") await nxWaitScrollHoldSettle(400);
+      if (typeof nxWaitScrollHoldSettle == "function") await nxWaitScrollHoldSettle(opts?.force ? 720 : 400);
       if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold(opts);
     } finally {
       t._scrollHoldDepth = 0;
@@ -10286,13 +10310,31 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     return "";
   }
   async function nxIsInrayBakeWrap(wrap) {
-    if (!wrap || typeof wrap.getAttribute != "function") return !1;
+    if (!wrap) return !1;
     try {
-      const a = String(await wrap.getAttribute("data-inray-bake") || await wrap.getAttribute("x-inray-bake") || "");
-      return a === "1";
+      if (typeof wrap.getAttribute == "function") {
+        const a = String(await wrap.getAttribute("data-inray-bake") || await wrap.getAttribute("x-inray-bake") || "");
+        if (a === "1") return !0;
+      }
     } catch {
-      return !1;
     }
+    try {
+      const oh = typeof wrap.getOuterHTML == "function" ? String(await wrap.getOuterHTML() || "") : "";
+      if (/inray-bake|inray-shot|inray-clip|inray-fold-cb/.test(oh)) return !0;
+    } catch {
+    }
+    return !1;
+  }
+  async function nxBubbleHasInrayBake(msgEl) {
+    if (!msgEl) return !1;
+    try {
+      const html = String(typeof msgEl.getInnerHTML == "function" ? await msgEl.getInnerHTML() : "");
+      const VC = globalThis.__INLAY_VIEWER_CORE__;
+      if (typeof VC?.htmlHasInrayBake == "function") return VC.htmlHasInrayBake(html);
+      if (/inray-bake|inray-shot/.test(html) || html.includes("[[@inray::")) return !0;
+    } catch {
+    }
+    return !1;
   }
   async function nxQueryInlineFrames(root, unwrapSafe) {
     const unwrap = unwrapSafe || nxUnwrapSafeNodes;
@@ -11701,11 +11743,8 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
           return !1;
         }
         const id = String(p?.cardId || "");
-        if (p.pending === !0 || !id || typeof msgEl.querySelector != "function") return !0;
-        try {
-          if (msgEl.querySelector("[data-inlay-inline-shot=\\"" + id + "\\"]")) return !1;
-        } catch {
-        }
+        if (p.pending === !0 || !id) return !0;
+        if (typeof VC.htmlHasBakeWrapForCard == "function" && VC.htmlHasBakeWrapForCard(html, id)) return !1;
         return !0;
       });
     }
@@ -12789,6 +12828,10 @@ const VENDOR_INLINE_INJECT_FN_PATCH =
     }
     if (kind0 === "refresh") {
       try {
+        if (els[idx] && await nxBubbleHasInrayBake(els[idx])) {
+          y("info", "msg.refresh.skip", "bake");
+          return;
+        }
         const stampKey = nxInlineStampKey(A);
         t._inlineNeedStamp = !0;
         t._inlineNeedStampKey = stampKey;
@@ -14688,8 +14731,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.76",
-    body: "새로고침이 박제를 지우지 않음. 박제 리롤은 토큰만 교체."
+    title: "2.5.77",
+    body: "박제 말풍선은 새로고침 안 함. 접기·박제 스크롤 보정."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -19108,6 +19151,8 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'if ((Number(t._scrollHoldDepth) || 0) > 0)', 'scroll hold reenters one session');
     assertOnce(out, 'async function nxIsInrayBakeWrap(wrap)', 'refresh/reroll skip baked display wraps');
     assertOnce(out, 'if (await nxIsInrayBakeWrap(wrap)) continue;', 'reroll does not overlay a bake wrap');
+    assertOnce(out, 'y("info", "msg.refresh.skip", "bake")', 'refresh chip no-ops when bake wraps exist');
+    assertOnce(out, 'nxAroundScrollHold(() => new Promise((r) => setTimeout(r, 460))', 'fold/expand pins scroll');
     assertOnce(out, '<input type="checkbox" id="nx-persist-chat"', 'persist chat images toggle landed');
     assertOnce(out, 'persist_chat_images: ee("nx-persist-chat")', 'persist chat images saves');
     assertOnce(out, '<input type="checkbox" id="nx-persist-fold"', 'persist fold default toggle landed');

@@ -9,11 +9,14 @@
 export { matchCharactersInText } from '../domain/character/roster';
 import {
   bakeTokenForCard,
+  htmlHasBakeWrapForCard,
   messageHasBakeTokenForCard,
   stripBakeTokens,
 } from '../domain/chat-bake';
 export {
   bakeTokenForCard,
+  htmlHasBakeWrapForCard,
+  htmlHasInrayBake,
   messageHasBakeToken,
   messageHasBakeTokenForCard,
   proseForHash,
@@ -2031,7 +2034,8 @@ export function keepReadyInlineWithPersist(
 ): boolean {
   if (persist !== true) return true;
   if (placement?.pending === true) return true;
-  return !messageHasBakeTokenForCard(body, placement?.cardId);
+  if (messageHasBakeTokenForCard(body, placement?.cardId)) return false;
+  return !htmlHasBakeWrapForCard(body, placement?.cardId);
 }
 
 /** Viewport offset of a bubble edge. Tag teardown holds the bottom so leftover text stays put. */

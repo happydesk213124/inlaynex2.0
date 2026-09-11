@@ -21,6 +21,20 @@ export function messageHasBakeToken(text: unknown): boolean {
   return /\[\[@inray::[^\]]+\]\]/.test(raw) || /\{\{#asset::inxbake_[^}]+\}\}/.test(raw);
 }
 
+export function htmlHasInrayBake(html: unknown): boolean {
+  const raw = String(html || '');
+  return /inray-bake|inray-shot|\[\[@inray::/.test(raw);
+}
+
+export function htmlHasBakeWrapForCard(html: unknown, cardId: unknown): boolean {
+  const id = sanitizeShotId(cardId);
+  if (!id) return false;
+  const raw = String(html || '');
+  const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`inray-bake="1"[^>]{0,240}inlay-inline-shot="${esc}"`).test(raw)
+    || new RegExp(`inlay-inline-shot="${esc}"[^>]{0,240}inray-bake`).test(raw);
+}
+
 export function messageHasBakeTokenForCard(text: unknown, cardId: unknown): boolean {
   const id = sanitizeShotId(cardId);
   if (!id) return false;

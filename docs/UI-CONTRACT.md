@@ -186,8 +186,8 @@ the plugin bounces the gallery module on `enabledModules` (or a host
 refresh helper) so CBS sees the new name without a manual asset-list
 reload — bounce and `setChatToIndex` share one scroll-hold session that waits
 for image layout. Tag (`force`)
-strips those tokens first. The refresh chip drops plugin inline frames only
-(`data-inray-bake` wrappers stay). A persist reroll rewrites
+strips those tokens first. The refresh chip no-ops when the bubble already has a bake wrap or
+`[[@inray]]` token. Otherwise it drops plugin inline frames only. A persist reroll rewrites
 `[[@inray::prev::inxshot_…]]` to the new card id / asset name and does not
 overlay an inline photo on the bake wrap. Ready inline photos are skipped only after that
 card's bake token (or display wrapper) is already on the bubble; pending

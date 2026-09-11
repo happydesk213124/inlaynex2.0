@@ -18,6 +18,7 @@ test('display regex rewrites Inray tokens to centered gallery assets', () => {
   assert.match(out, /data-inray-fs="card-1"/);
   assert.match(out, /src="\{\{raw::inxshot_card-1\.sroom\.webp\}\}"/);
   assert.match(out, /max-width:75%/);
+  assert.match(out, /aspect-ratio:2\/3/);
   assert.match(out, /inray-fold-card-1/);
   assert.match(out, /content:"▼"/);
   assert.match(out, /content:"▲"/);

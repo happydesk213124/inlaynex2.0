@@ -19,12 +19,12 @@ export const INRAY_DISPLAY_IN = '\\[\\[@inray::([^:\\]]+)::(inxshot_[^\\]]+)\\]\
 export function inrayDisplayOut(folded = false): string {
   const checked = folded ? ' checked' : '';
   return [
-    '<style>.inray-shot[data-inlay-inline-shot]{position:relative;display:block;width:fit-content;max-width:75%;margin:1.15em auto;text-align:center}',
-    '.inray-shot[data-inlay-inline-shot] img{display:block;max-width:100%;height:auto;margin:0 auto}',
-    '.inray-clip{position:relative;display:grid;grid-template-rows:1fr;overflow:hidden;max-height:200vh;border-radius:10px;transition:grid-template-rows .42s cubic-bezier(.4,0,.2,1),max-height .42s cubic-bezier(.4,0,.2,1)}',
-    '.inray-clip img{min-height:0}',
+    '<style>.inray-shot[data-inlay-inline-shot]{position:relative;display:block;width:75%;max-width:75%;margin:1.15em auto;text-align:center}',
+    '.inray-shot[data-inlay-inline-shot] img{display:block;width:100%;max-width:100%;height:auto;margin:0 auto}',
+    '.inray-clip{position:relative;display:grid;grid-template-rows:1fr;width:100%;overflow:hidden;max-height:200vh;border-radius:10px;aspect-ratio:2/3;transition:grid-template-rows .42s cubic-bezier(.4,0,.2,1),max-height .42s cubic-bezier(.4,0,.2,1)}',
+    '.inray-clip img{min-height:0;width:100%;height:auto}',
     '.inray-fold-cb{position:absolute;width:0;height:0;opacity:0;pointer-events:none}',
-    '.inray-fold-cb:checked~.inray-clip{grid-template-rows:4.5em;max-height:4.5em}',
+    '.inray-fold-cb:checked~.inray-clip{grid-template-rows:4.5em;max-height:4.5em;aspect-ratio:auto}',
     '.inray-fold-cb:checked~.inray-clip::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1.6em;pointer-events:none;background:linear-gradient(transparent,rgba(8,10,16,.45))}',
     '.inray-bar{position:absolute;top:8px;right:8px;z-index:2;display:flex;gap:6px;opacity:0;transition:opacity .15s}',
     '.inray-shot[data-inlay-inline-shot]:hover .inray-bar,.inray-shot[data-inlay-inline-shot]:focus-within .inray-bar,.inray-fold-cb:checked~.inray-bar{opacity:1}',

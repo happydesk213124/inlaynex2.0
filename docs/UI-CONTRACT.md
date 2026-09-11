@@ -184,8 +184,8 @@ turns the token into a centered `<img src="{{raw::<inxshot_name>}}">`
 opens the same inspect sheet as triple-tap / hold. After writing tokens
 the plugin bounces the gallery module on `enabledModules` (or a host
 refresh helper) so CBS sees the new name without a manual asset-list
-reload — bounce and `setChatToIndex` share one scroll-hold session that waits
-for image layout. Tag (`force`)
+reload — bounce and `setChatToIndex` share one scroll-hold session that reserves
+bake-box aspect from the card size and waits for image layout. Tag (`force`)
 strips those tokens first. The refresh chip no-ops when the bubble already has a bake wrap or
 `[[@inray]]` token. Otherwise it drops plugin inline frames only. A persist reroll rewrites
 `[[@inray::prev::inxshot_…]]` to the new card id / asset name and does not

@@ -46,7 +46,7 @@ const PROMPTS_DIR = resolve(configRoot, 'prompts');
  * Renaming it would orphan every existing user's settings, gallery and roster.
  */
 const PLUGIN_ID = 'inlay-nexus-native';
-const PLUGIN_VERSION = '2.5.78';
+const PLUGIN_VERSION = '2.5.79';
 
 /** The version string the frozen UI bundle hardcodes for its footer. */
 const VENDOR_VERSION_NEEDLE = 'He = "1.3.0"';
@@ -832,6 +832,12 @@ const VENDOR_CURATION_PANEL_PATCH =
         <div class="card">
           <strong>Inlay Nexus 업데이트 내역</strong>
           <div class="muted" style="margin-top:8px">최신 버전이 위에 옵니다. 2.3은 구간으로 묶었습니다.</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <strong>2.5.79</strong>
+          <ul style="margin:10px 0 0;padding-left:18px;line-height:1.55;color:#c9d4e6;font-size:13px">
+            <li>메시지 다시 쓸 때 채팅 스크롤 위치를 매 프레임 붙잡습니다. 박제로 채팅이 다시 그려져도 덜 튑니다</li>
+          </ul>
         </div>
         <div class="card" style="margin-top:14px">
           <strong>2.5.78</strong>
@@ -9965,6 +9971,91 @@ const VENDOR_DT_FN_PATCH =
     }
     return null;
   }
+  function nxChatScrollers() {
+    const out = [];
+    const add = (el) => {
+      if (el && typeof el.scrollTop == "number" && !out.includes(el)) out.push(el);
+    };
+    add(nxScrollHoldScroller());
+    try {
+      const doc = t.overlayUi?.doc || t.hostDoc;
+      add(doc && (doc.scrollingElement || doc.documentElement || doc.body));
+    } catch {
+    }
+    try {
+      if (typeof document < "u") {
+        add(document.scrollingElement);
+        add(document.documentElement);
+        add(document.body);
+        const start = document.querySelector("[data-chat-id],.risu-chat,.chattext");
+        let p = start && start.parentElement;
+        for (let i = 0; p && i < 10; i++) {
+          try {
+            const st = getComputedStyle(p);
+            if (/(auto|scroll)/.test(String(st.overflowY || st.overflow || ""))) {
+              add(p);
+              break;
+            }
+          } catch {
+          }
+          p = p.parentElement;
+        }
+      }
+    } catch {
+    }
+    return out;
+  }
+  function nxPinChatScrollers() {
+    // setChatToIndex remounts the chat tree, so the scroller node we captured
+    // may be gone. Snapshot the offset, then re-find live scrollers every frame.
+    const pins = nxChatScrollers().map((el) => {
+      const top = Number(el.scrollTop) || 0;
+      const sh = Number(el.scrollHeight) || 0;
+      const ch = Number(el.clientHeight) || 0;
+      const tail = Math.max(0, sh - top);
+      const nearBottom = tail <= Math.max(48, ch * 0.2);
+      return { el, top, tail, nearBottom };
+    });
+    if (!pins.length) return () => {};
+    const snap = pins[0];
+    const apply = () => {
+      const live = nxChatScrollers();
+      const els = live.length ? live : pins.map((p) => p.el);
+      for (const el of els) {
+        try {
+          const pin = pins.find((p) => p.el === el) || snap;
+          const nsh = Number(el.scrollHeight) || 0;
+          el.scrollTop = pin.nearBottom ? Math.max(0, nsh - pin.tail) : pin.top;
+          if (t.overlayUi) t.overlayUi._liveScrollY = el.scrollTop;
+        } catch {
+        }
+      }
+    };
+    let live = !0;
+    let raf = 0;
+    const loop = () => {
+      if (!live) return;
+      apply();
+      try {
+        raf = requestAnimationFrame(loop);
+      } catch {
+        raf = 0;
+      }
+    };
+    apply();
+    try {
+      raf = requestAnimationFrame(loop);
+    } catch {
+    }
+    return () => {
+      live = !1;
+      if (raf) try {
+        cancelAnimationFrame(raf);
+      } catch {
+      }
+      apply();
+    };
+  }
   async function nxScrollHoldRect(node) {
     if (!node) return null;
     try {
@@ -10219,6 +10310,7 @@ const VENDOR_DT_FN_PATCH =
       clearTimeout(t._scrollHoldCapTimer);
       t._scrollHoldCapTimer = null;
     }
+    const unpin = typeof nxPinChatScrollers == "function" ? nxPinChatScrollers() : () => {};
     if (typeof nxCaptureScrollHold == "function") await nxCaptureScrollHold(opts);
     t._scrollHoldApplying = !0;
     try {
@@ -10234,6 +10326,10 @@ const VENDOR_DT_FN_PATCH =
       if (typeof nxWaitScrollHoldSettle == "function") await nxWaitScrollHoldSettle(opts?.force ? 900 : 400);
       if (typeof nxApplyScrollHold == "function") await nxApplyScrollHold(opts);
     } finally {
+      try {
+        unpin();
+      } catch {
+      }
       t._scrollHoldDepth = 0;
     }
   }
@@ -14795,8 +14891,8 @@ const VENDOR_HEAD_HELP_DEFAULT_NEEDLE =
   };`;
 const VENDOR_HEAD_HELP_DEFAULT_PATCH =
   `  const HEAD_HELP_DEFAULT = {
-    title: "2.5.78",
-    body: "박제 시 그림 칸을 미리 잡아 스크롤이 덜 튀게 합니다."
+    title: "2.5.79",
+    body: "메시지 다시 쓸 때 채팅 스크롤을 매 프레임 붙잡습니다."
   };`;
 
 /** Message select gesture: options + help + save + reader. */
@@ -19213,6 +19309,7 @@ const loadVendorUi = (): string => {
     assertOnce(out, 'globalThis.__INLAY_SCROLL_HOLD__ = (work) => nxAroundScrollHold(work, { edge: "top", allowLarge: !0, force: !0 });', 'bake remount uses scroll hold');
     assertOnce(out, 'async function nxWaitScrollHoldSettle(maxMs)', 'scroll hold waits for image layout');
     assertOnce(out, 'async function nxReserveInrayBakeBoxes(root)', 'bake boxes reserve aspect before pixels load');
+    assertOnce(out, 'function nxPinChatScrollers()', 'message rewrite pins chat scrollTop across remount');
     assertOnce(out, 'if ((Number(t._scrollHoldDepth) || 0) > 0)', 'scroll hold reenters one session');
     assertOnce(out, 'async function nxIsInrayBakeWrap(wrap)', 'refresh/reroll skip baked display wraps');
     assertOnce(out, 'if (await nxIsInrayBakeWrap(wrap)) continue;', 'reroll does not overlay a bake wrap');
